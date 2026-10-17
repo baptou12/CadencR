@@ -25,7 +25,17 @@ pub fn plugin_dir(id: &str) -> Result<PathBuf, AppError> {
             format!("`{id}` is not a valid custom tab id"),
         ));
     }
-    Ok(tabs_dir().join(id))
+    let local = tabs_dir().join(id);
+    match local.symlink_metadata() {
+        Ok(_) => return Ok(local),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(AppError::Internal(format!(
+                "cannot inspect local tab: {error}"
+            )))
+        }
+    }
+    Ok(super::managed::storage::directory(&super::managed::storage::root(), id)?.unwrap_or(local))
 }
 
 #[cfg(test)]

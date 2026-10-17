@@ -21,12 +21,22 @@ pub async fn inspect(
 ) -> Result<PublicationReadinessResponse, AppError> {
     let (root, plugin_id, target) = author_project(pool, project_id).await?;
     let theme = target == ProjectAuthoringTarget::Theme;
+    let tab = target == ProjectAuthoringTarget::Tab;
     // Resolve before spawn_blocking: test settings directories are thread-local.
     let descriptor_dir = descriptors_dir();
     let files_root = root.clone();
     let files_plugin_id = plugin_id.clone();
     let mut checks = tokio::task::spawn_blocking(move || {
-        if theme {
+        if tab {
+            match cadencr_registry_core::snapshot_tab_folder(&files_root) {
+                Ok(_) => vec![pass(
+                    "tab-build",
+                    "Compiled custom tab",
+                    "Manifest and compiled web files are ready for packaging.",
+                )],
+                Err(error) => vec![fail("tab-build", "Compiled custom tab", &error.to_string())],
+            }
+        } else if theme {
             theme_checks(&files_root)
         } else {
             files::checks(&files_root, &files_plugin_id, &descriptor_dir)
@@ -41,7 +51,9 @@ pub async fn inspect(
     } else {
         PublicationPreparationStatus::Prepared
     };
-    let summary = if theme && blocked {
+    let summary = if tab {
+        "Custom tab publication requires a validated manifest, compiled web output, source release, and registry verification. Local checks do not publish anything."
+    } else if theme && blocked {
         "Local theme preparation has blocking issues. Strict declarative document and raster validation, source-release, maintainer, and registry verification are required."
     } else if theme {
         "No blocking local issues found. This is not publication approval: closed declarative packaging, source-release, maintainer, and registry verification remain."
@@ -56,7 +68,7 @@ pub async fn inspect(
         local_preparation,
         summary: summary.into(),
         checks,
-        supported_package_targets: if theme {
+        supported_package_targets: if theme || tab {
             Vec::new()
         } else {
             ACP_BINARY_TARGETS
@@ -81,20 +93,18 @@ pub(super) async fn author_project(
     let target = target
         .as_deref()
         .and_then(|value| ProjectAuthoringTarget::try_from(value).ok())
-        // Custom tabs have no publication contract yet (docs/CUSTOM_TABS.md).
-        .filter(|target| *target != ProjectAuthoringTarget::Tab)
         .ok_or_else(|| {
             AppError::coded(
                 StatusCode::BAD_REQUEST,
                 UNSUPPORTED,
-                "publication readiness is supported for authored provider or theme projects",
+                "publication readiness is supported for authored provider, theme or custom tab projects",
             )
         })?;
     let plugin_id = plugin_id.filter(|value| !value.is_empty()).ok_or_else(|| {
         AppError::coded(
             StatusCode::BAD_REQUEST,
             UNSUPPORTED,
-            "authored provider project is missing its stable plugin id",
+            "authored project is missing its stable plugin id",
         )
     })?;
     let root = tokio::fs::canonicalize(path).await.map_err(|error| {
@@ -322,6 +332,31 @@ mod tests {
             std::fs::read_to_string(&executable).unwrap(),
             "provider sentinel"
         );
+    }
+
+    #[tokio::test]
+    async fn custom_tab_author_projects_require_a_built_entry_without_platforms() {
+        let pool = pool().await;
+        let root = tempfile::tempdir().unwrap();
+        sqlx::query("INSERT INTO projects VALUES (9, ?, 'tab', 'graph')")
+            .bind(root.path().to_str().unwrap())
+            .execute(&pool)
+            .await
+            .unwrap();
+        std::fs::write(root.path().join("tab.json"),r#"{"schema_version":1,"kind":"tab","id":"graph","name":"Graph","version":"1.0.0","api_version":1,"entry":"dist/index.html"}"#).unwrap();
+        let before = inspect(&pool, 9).await.unwrap();
+        assert!(before.supported_package_targets.is_empty());
+        assert!(before
+            .checks
+            .iter()
+            .any(|check| check.id == "tab-build" && check.status == Status::Fail));
+        std::fs::create_dir(root.path().join("dist")).unwrap();
+        std::fs::write(root.path().join("dist/index.html"), "<html></html>").unwrap();
+        let after = inspect(&pool, 9).await.unwrap();
+        assert!(after
+            .checks
+            .iter()
+            .any(|check| check.id == "tab-build" && check.status == Status::Pass));
     }
 
     #[cfg(unix)]

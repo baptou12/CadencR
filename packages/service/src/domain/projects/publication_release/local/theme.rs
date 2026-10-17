@@ -15,49 +15,51 @@ pub(super) fn load(
     let bytes = read_regular(
         &bundle.join("package.json"),
         MAX_METADATA_BYTES,
-        "theme metadata",
+        "package metadata",
     )?;
     let metadata = cadencr_registry_core::parse_json_bytes(&bytes)
         .map_err(|error| invalid(error.to_string()))?;
     cadencr_registry_core::validate_marketplace_package(&metadata)
         .map_err(|error| invalid(error.to_string()))?;
-    if metadata["kind"] != "theme" || metadata["package"]["theme"]["id"] != plugin_id {
-        return Err(invalid("theme package identity does not match project"));
+    let kind = metadata["kind"].as_str().unwrap_or_default();
+    if !matches!(kind, "theme" | "tab") || metadata["package"][kind]["id"] != plugin_id {
+        return Err(invalid("package identity does not match project"));
     }
-    let theme = &metadata["package"]["theme"];
+    let descriptor = &metadata["package"][kind];
     let text = |field: &str| {
-        theme[field]
+        descriptor[field]
             .as_str()
-            .ok_or_else(|| invalid(format!("theme {field} missing")))
+            .ok_or_else(|| invalid(format!("{kind} {field} missing")))
     };
     let repository = super::validation::parse_repository(Some(text("repository")?))?;
-    let archive = theme["distribution"]["archive"]
+    let archive = descriptor["distribution"]["archive"]
         .as_str()
-        .ok_or_else(|| invalid("theme archive URL missing"))?;
+        .ok_or_else(|| invalid("package archive URL missing"))?;
     let (tag, archive_name) = super::validation::validate_archive_url(archive, &repository)?;
-    let file =
-        super::super::remote::ArchiveFile::open(&bundle.join("theme.tar.gz"), MAX_ARCHIVE_BYTES)?;
-    if theme["distribution"]["sha256"].as_str() != Some(file.sha256.as_str()) {
-        return Err(invalid(
-            "theme archive content differs from package checksum",
-        ));
+    let file = super::super::remote::ArchiveFile::open(
+        &bundle.join(format!("{kind}.tar.gz")),
+        MAX_ARCHIVE_BYTES,
+    )?;
+    if descriptor["distribution"]["sha256"].as_str() != Some(file.sha256.as_str()) {
+        return Err(invalid("archive content differs from package checksum"));
     }
     let archive_bytes = read_regular(
-        &bundle.join("theme.tar.gz"),
+        &bundle.join(format!("{kind}.tar.gz")),
         MAX_ARCHIVE_BYTES,
-        "theme archive",
+        "package archive",
     )?;
     if digest(&archive_bytes) != file.sha256 {
-        return Err(invalid(
-            "theme archive changed during declarative validation",
-        ));
+        return Err(invalid("archive changed during package validation"));
     }
-    let mut snapshot =
-        tempfile::NamedTempFile::new().map_err(|error| invalid(error.to_string()))?;
-    std::io::Write::write_all(&mut snapshot, &archive_bytes)
-        .map_err(|error| invalid(error.to_string()))?;
-    cadencr_registry_core::read_theme_archive(snapshot.path())
-        .map_err(|error| invalid(error.to_string()))?;
+    if kind == "tab" {
+        let files = cadencr_registry_core::read_tab_archive_bytes(&archive_bytes)
+            .map_err(|e| invalid(e.to_string()))?;
+        cadencr_registry_core::validate_tab_package_files(&metadata["package"], &files)
+            .map_err(|error| invalid(error.to_string()))?;
+    } else {
+        cadencr_registry_core::read_theme_archive_bytes(&archive_bytes)
+            .map_err(|e| invalid(e.to_string()))?;
+    }
     let version =
         semver::Version::parse(text("version")?).map_err(|error| invalid(error.to_string()))?;
     Ok(LocalRelease {
@@ -186,16 +188,63 @@ mod tests {
         std::fs::write(bundle.join("theme.tar.gz"), b"tampered").unwrap();
         assert!(load(1, "acme-theme".into(), bundle, id, "Changes".into()).is_err());
     }
+    #[test]
+    fn custom_tab_release_reaches_schema_two_contribution() {
+        let root = tempfile::tempdir().unwrap();
+        let bundle_id = "00000000-0000-4000-8000-000000000002";
+        let bundle = root.path().join("1").join(bundle_id);
+        let stage = root.path().join("stage");
+        std::fs::create_dir_all(&bundle).unwrap();
+        std::fs::create_dir_all(stage.join("dist")).unwrap();
+        std::fs::write(stage.join("tab.json"),r#"{"schema_version":1,"kind":"tab","id":"graph","name":"Graph","version":"1.0.0","api_version":1,"entry":"dist/index.html"}"#).unwrap();
+        std::fs::write(stage.join("dist/index.html"), "<html>Graph</html>").unwrap();
+        let packed = cadencr_registry_core::pack_tab(
+            cadencr_registry_core::PackTabRequest::builder()
+                .directory(&stage)
+                .output(&bundle.join("tab.tar.gz"))
+                .build(),
+        )
+        .unwrap();
+        let metadata = json!({"kind":"tab","package":{"tab":{"id":"graph","name":"Graph","description":"Graph","version":"1.0.0","api_version":1,"repository":"https://github.com/acme/tabs","license":"MIT","distribution":{"archive":"https://github.com/acme/tabs/releases/download/v1.0.0/tab.tar.gz","sha256":packed.sha256}},"host":{"publisher":"acme","compatibility":{"min_app_version":"0.1.0"}}}});
+        std::fs::write(bundle.join("package.json"), metadata.to_string()).unwrap();
+        let mut local = super::super::load_candidate(
+            1,
+            "graph".into(),
+            root.path().into(),
+            bundle_id,
+            &[],
+            "Release".into(),
+        )
+        .unwrap();
+        validate_project_kind(&local.metadata, ProjectAuthoringTarget::Tab).unwrap();
+        assert!(validate_project_kind(&local.metadata, ProjectAuthoringTarget::Provider).is_err());
+        assert!(validate_project_kind(&local.metadata, ProjectAuthoringTarget::Theme).is_err());
+        local.plan.source_commit = "a".repeat(40);
+        let documents =
+            crate::domain::projects::publication_release::contribution::submission::build(
+                &local, "alice",
+            )
+            .unwrap();
+        let submission: serde_json::Value = serde_json::from_slice(&documents.submission).unwrap();
+        cadencr_registry_core::validate_submission(&submission).unwrap();
+        assert_eq!(submission["package"]["kind"], "tab");
+        assert!(String::from_utf8(documents.markdown)
+            .unwrap()
+            .contains("Custom tab version contribution"));
+    }
 }
 
-pub(in crate::domain::projects::publication_release) fn validate_project_kind(
+pub(crate) fn validate_project_kind(
     bytes: &[u8],
     kind: ProjectAuthoringTarget,
 ) -> Result<(), AppError> {
     let metadata: serde_json::Value =
         serde_json::from_slice(bytes).map_err(|error| AppError::BadRequest(error.to_string()))?;
-    let theme = metadata.get("kind").and_then(serde_json::Value::as_str) == Some("theme");
-    if theme != (kind == ProjectAuthoringTarget::Theme) {
+    let actual = metadata
+        .get("kind")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("provider");
+    if actual != kind.as_str() {
         return Err(AppError::BadRequest(
             "publication bundle kind differs from author project".into(),
         ));

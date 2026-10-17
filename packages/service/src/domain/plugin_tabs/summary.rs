@@ -67,6 +67,10 @@ fn build(
     let manifest = report.manifest.as_ref();
     let name = manifest.map_or_else(|| tab.id.clone(), |manifest| manifest.name.clone());
     PluginTabSummary {
+        managed: report
+            .directory
+            .starts_with(super::managed::storage::root())
+            .then_some(true),
         label: manifest.map_or_else(|| name.clone(), |manifest| manifest.label().to_string()),
         version: manifest.map(|manifest| manifest.version.clone()),
         description: manifest.and_then(|manifest| manifest.description.clone()),

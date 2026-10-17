@@ -158,7 +158,10 @@ async fn claim_folder(
         } else {
             format!("{base}-{attempt}")
         };
-        if RESERVED_IDS.contains(&id.as_str()) || owned.contains(&id) {
+        if RESERVED_IDS.contains(&id.as_str())
+            || owned.contains(&id)
+            || super::managed::storage::directory(&super::managed::storage::root(), &id)?.is_some()
+        {
             continue;
         }
         let dir = root.join(&id);
