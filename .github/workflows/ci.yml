@@ -145,6 +145,9 @@ jobs:
           - name: landing + brand
             cache: landing-brand
             run: pnpm turbo run test --filter=@cadencr/landing --filter=@cadencr/brand --log-order=stream
+          - name: tab-sdk + tab-kit
+            cache: tab-packages
+            run: pnpm turbo run test --filter=@cadencr/tab-sdk --filter=@cadencr/tab-kit --log-order=stream
     steps:
       # actions/checkout@v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

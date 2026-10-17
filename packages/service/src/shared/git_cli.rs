@@ -81,6 +81,42 @@ pub async fn run_git_with_env(
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Make `dir` a repository whose first commit holds everything in it, as
+/// Cadencr (`author_email`). Idempotent and repairing: `init` only without
+/// `.git`, the commit only while `HEAD` does not resolve — so a folder created
+/// or copied by hand, or a creation interrupted after `init`, is completed on
+/// the next call and an existing history is never touched.
+pub async fn ensure_repository_with_initial_commit(
+    dir: &Path,
+    author_email: &str,
+    message: &str,
+) -> Result<(), AppError> {
+    if !dir.join(".git").exists() {
+        run_git(&["init", "-q", "-b", "main"], dir).await?;
+    }
+    let head = run_git_output_with_env(&["rev-parse", "--verify", "HEAD"], dir, &[]).await?;
+    if head.status.success() {
+        return Ok(());
+    }
+    run_git(&["add", "-A"], dir).await?;
+    // A fresh repository inherits no identity of its own and `git commit`
+    // refuses without one. `-c commit.gpgsign=false`: this commit is
+    // Cadencr's, and a global signing config would stop it on a key prompt.
+    let identity = [
+        ("GIT_AUTHOR_NAME", "Cadencr"),
+        ("GIT_AUTHOR_EMAIL", author_email),
+        ("GIT_COMMITTER_NAME", "Cadencr"),
+        ("GIT_COMMITTER_EMAIL", author_email),
+    ];
+    run_git_with_env(
+        &["-c", "commit.gpgsign=false", "commit", "-qm", message],
+        dir,
+        &identity,
+    )
+    .await?;
+    Ok(())
+}
+
 /// Run a git command that operates on paths. Validates that no positional
 /// starts with `-` (which would be parsed as a flag) and inserts `--` between
 /// flags and positionals so the tokens cannot be reinterpreted as options.

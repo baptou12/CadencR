@@ -1,5 +1,6 @@
 #![allow(clippy::result_large_err)]
 
+pub mod cors;
 pub mod middleware;
 pub mod openapi;
 
@@ -249,6 +250,7 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(usage_stats_router())
         .merge(crate::domain::maintenance::routes::routes())
         .merge(themes_router())
+        .merge(crate::domain::plugin_tabs::plugin_tabs_router())
         .merge(prompt_commands_router())
         .merge(neovim_routes())
         .merge(neovim_ws_routes())
@@ -291,6 +293,9 @@ pub fn build_router(state: AppState) -> Router {
         .merge(provider_update_actions_router())
         .merge(crate::domain::mcp::control::control_router())
         .merge(crate::domain::remote::loopback_router())
+        // Custom tab grants, plugin-token routes and the plugin socket: a
+        // desktop feature, never on the remote listener.
+        .merge(crate::domain::plugin_tabs::plugin_tabs_loopback_router())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::auth_middleware,

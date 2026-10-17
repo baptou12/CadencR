@@ -1,5 +1,3 @@
-use std::fs::File;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::{DescriptorError, PluginValidationError, ProviderDescriptor, RejectionCode};
@@ -86,7 +84,7 @@ fn read_descriptor(path: &Path) -> Result<ProviderDescriptor, PluginValidationEr
             path: path.to_path_buf(),
         });
     }
-    let bytes = read_limited(path, MAX_DESCRIPTOR_BYTES).map_err(|source| {
+    let bytes = crate::read_regular_bounded(path, MAX_DESCRIPTOR_BYTES).map_err(|source| {
         PluginValidationError::DescriptorUnreadable {
             path: path.to_path_buf(),
             source,
@@ -126,8 +124,8 @@ fn validate_marker(folder: &Path, provider_id: &str) -> Result<(), PluginValidat
     if !metadata.file_type().is_file() || metadata.len() > MAX_MARKER_BYTES {
         return Err(PluginValidationError::MarkerNotRegular);
     }
-    let marker =
-        read_limited(&path, MAX_MARKER_BYTES).map_err(PluginValidationError::MarkerUnreadable)?;
+    let marker = crate::read_regular_bounded(&path, MAX_MARKER_BYTES)
+        .map_err(PluginValidationError::MarkerUnreadable)?;
     if String::from_utf8_lossy(&marker).trim() != provider_id {
         return Err(PluginValidationError::WorkspaceIdentityMismatch {
             provider_id: provider_id.to_owned(),
@@ -152,18 +150,6 @@ fn validate_executable(folder: &Path, path: &Path) -> Result<(), PluginValidatio
         return Err(PluginValidationError::ExecutableNotExecutable { path: resolved });
     }
     Ok(())
-}
-
-fn read_limited(path: &Path, max: u64) -> Result<Vec<u8>, std::io::Error> {
-    let mut bytes = Vec::new();
-    File::open(path)?.take(max + 1).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > max {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "file exceeds inspection limit",
-        ));
-    }
-    Ok(bytes)
 }
 
 #[cfg(unix)]

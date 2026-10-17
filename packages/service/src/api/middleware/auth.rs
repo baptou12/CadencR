@@ -1,11 +1,13 @@
 use super::response::{misdirected, unauthorized};
 use crate::app_state::AppState;
+use crate::domain::plugin_tabs::principal::{self, PLUGIN_TOKEN_HEADER};
+use crate::error::AppError;
 use crate::shared::security::constant_time_str_eq;
 use axum::{
     extract::{Request, State},
-    http::header,
+    http::{header, request::Parts, StatusCode},
     middleware::Next,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 
 /// Non-CORS-safelisted header name, so any cross-origin `fetch` must trigger
@@ -24,7 +26,7 @@ pub async fn auth_middleware(
 
     // Only known WebSocket routes authenticate inside their upgrade handler.
     // An Upgrade header on an ordinary API route must not bypass token checks.
-    if is_websocket_upgrade(&request) && is_known_ws_path(request.uri().path()) {
+    if is_websocket_upgrade(&request) && is_known_loopback_ws_path(request.uri().path()) {
         return next.run(request).await;
     }
 
@@ -39,6 +41,17 @@ pub async fn auth_middleware(
         return next.run(request).await;
     }
 
+    if request.headers().contains_key(PLUGIN_TOKEN_HEADER) {
+        let (mut parts, body) = request.into_parts();
+        return match authorize_plugin(&state, &mut parts).await {
+            Ok(principal) => {
+                parts.extensions.insert(principal);
+                next.run(Request::from_parts(parts, body)).await
+            }
+            Err(error) => error.into_response(),
+        };
+    }
+
     let presented = request
         .headers()
         .get(AUTH_HEADER)
@@ -49,6 +62,29 @@ pub async fn auth_middleware(
     }
 
     next.run(request).await
+}
+
+/// A custom tab's grant token (`docs/CUSTOM_TABS.md` §4.3): either it or the
+/// main token, never both — a request presenting both is ambiguous about whose
+/// authority it carries.
+async fn authorize_plugin(
+    state: &AppState,
+    parts: &mut Parts,
+) -> Result<principal::PluginPrincipal, AppError> {
+    if parts.headers.contains_key(AUTH_HEADER) {
+        return Err(AppError::coded(
+            StatusCode::BAD_REQUEST,
+            "PLUGIN_TOKEN_CONFLICT",
+            "send either x-cadencr-token or x-cadencr-plugin-token, not both",
+        ));
+    }
+    let token = parts
+        .headers
+        .get(PLUGIN_TOKEN_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    principal::authorize(&state.plugin_tab_grants, &token, parts).await
 }
 
 pub(crate) fn is_websocket_upgrade(request: &Request) -> bool {
@@ -66,6 +102,14 @@ pub(super) fn is_known_ws_path(path: &str) -> bool {
         || path == "/api/terminal/ws"
         || path == "/api/neovim/ws"
         || (path.starts_with("/api/lsp/sessions/") && path.ends_with("/connect"))
+}
+
+/// The loopback listener also hosts the plugin socket (self-authenticated by
+/// its `cadencr-plugin.<token>` subprotocol). It is deliberately not in
+/// [`is_known_ws_path`], which the remote listener shares: there the path is
+/// unrouted and would otherwise reach `GET /api/plugin-tabs/{id}` unauthenticated.
+fn is_known_loopback_ws_path(path: &str) -> bool {
+    is_known_ws_path(path) || path == crate::domain::plugin_tabs::socket::SOCKET_PATH
 }
 
 /// DNS-rebinding defense: `Host` must name the loopback interface and carry

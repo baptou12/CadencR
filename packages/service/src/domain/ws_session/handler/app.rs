@@ -21,6 +21,12 @@ pub(super) async fn handle_app_action(
             super::app_notifications::subscribe_settings_events(sender, app_state)
         }
         "subscribe.theme_events" => handle_subscribe_theme_events(sender, app_state),
+        "subscribe.plugin_tab_events" => forward_app_events(
+            sender,
+            app_state.plugin_tab_events_tx.subscribe(),
+            "plugin_tab_changed",
+            OnLag::ResendBare,
+        ),
         "subscribe.alacritty_config_events" => {
             handle_subscribe_alacritty_config_events(sender, app_state).await
         }
@@ -114,7 +120,7 @@ async fn handle_unsubscribe_git_status(
 /// (re)connecting client anchors its elapsed timer to the same instant the
 /// host did. The DB has no per-turn start column, so this is the only place
 /// the snapshot picks the timestamp up.
-async fn session_status_snapshot_with_timers(
+pub(crate) async fn session_status_snapshot_with_timers(
     app_state: &AppState,
 ) -> std::collections::HashMap<String, crate::domain::sessions::models::SessionStatusSnapshotEntry>
 {

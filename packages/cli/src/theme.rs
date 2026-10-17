@@ -4,53 +4,32 @@ use serde_json::json;
 
 use crate::{operation_error, output, Diagnostic};
 
-pub(crate) fn validate_plugin_kind(
+/// `cadencr plugin validate <folder> --kind theme`.
+pub(crate) fn validate(
     folder: &Path,
     descriptor: Option<&Path>,
-    kind: &str,
 ) -> Result<Option<String>, Diagnostic> {
-    if kind == "theme" {
-        if descriptor.is_some() {
-            return Err(operation_error(
-                "THEME_VALIDATION_FAILED",
-                "--descriptor is not used for declarative themes",
-            ));
-        }
-        let theme =
-            cadencr_plugin_core::theme::validate_theme_folder(folder).map_err(|issues| {
-                operation_error(
-                    "THEME_VALIDATION_FAILED",
-                    issues
-                        .iter()
-                        .map(cadencr_plugin_core::theme::ThemeIssue::describe)
-                        .collect::<Vec<_>>()
-                        .join("; "),
-                )
-            })?;
-        return Ok(Some(format!(
-            "valid declarative theme: {} ({})",
-            theme.document.label,
-            theme.directory.display()
-        )));
+    if descriptor.is_some() {
+        return Err(operation_error(
+            "THEME_VALIDATION_FAILED",
+            "--descriptor is not used for declarative themes",
+        ));
     }
-    let descriptor = descriptor.ok_or_else(|| {
+    let theme = cadencr_plugin_core::theme::validate_theme_folder(folder).map_err(|issues| {
         operation_error(
-            "PLUGIN_DESCRIPTOR_REQUIRED",
-            "provider validation requires --descriptor",
+            "THEME_VALIDATION_FAILED",
+            issues
+                .iter()
+                .map(cadencr_plugin_core::theme::ThemeIssue::describe)
+                .collect::<Vec<_>>()
+                .join("; "),
         )
     })?;
-    cadencr_plugin_core::validate_plugin_folder(folder, descriptor)
-        .map(|_| {
-            Some(format!(
-                "valid local provider structure: {} (publication completeness and theme assets not checked)",
-                folder.display()
-            ))
-        })
-        .map_err(|error| Diagnostic {
-            code: error.code(),
-            message: error.to_string(),
-            exit_code: 1,
-        })
+    Ok(Some(format!(
+        "valid declarative theme: {} ({})",
+        theme.document.label,
+        theme.directory.display()
+    )))
 }
 
 pub(crate) fn pack(directory: &Path, destination: &Path) -> Result<Option<String>, Diagnostic> {

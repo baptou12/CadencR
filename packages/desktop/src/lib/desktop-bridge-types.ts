@@ -32,6 +32,7 @@ import type {
   BrowserAgentActivity,
 } from "@/shared/browser-types";
 import type { BrowserResponsiveRequest } from "@/shared/browser-responsive";
+import type { PluginTabsBridge } from "@/shared/plugin-tab-host";
 
 export interface RuntimeConfig {
   baseUrl: string;
@@ -249,6 +250,16 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   onBrowserPopupRequestsChanged: (cb: (event: { scopeId: number }) => void) => () => void;
   onBrowserDownloadsChanged: (cb: (snapshot: BrowserDownloadSnapshot) => void) => () => void;
   onBrowserDownloadCounts: (cb: (counts: Record<number, number>) => void) => () => void;
+  /**
+   * Native guest views for custom tabs (docs/CUSTOM_TABS.md §5); no-ops off the
+   * desktop shell. Each guest load also delivers the renderer's end of that
+   * instance's MessageChannel — not through this object (contextBridge can't
+   * carry ports) but as a `window` "message" event whose `data` is a
+   * `PluginTabPortMessage` (`type === PLUGIN_TAB_PORT_MESSAGE_TYPE`; both live in
+   * `@/shared/plugin-tab-host`) with `event.source === window` and the port
+   * in `event.ports[0]`.
+   */
+  pluginTabs: PluginTabsBridge;
 }
 
 declare global {

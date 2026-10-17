@@ -130,6 +130,18 @@ test("brand files outside src/ check only brand", () => {
   assert.ok(!result.some((command) => command.includes("@cadencr/desktop")));
 });
 
+test("tab packages check themselves; desktop UI changes also check tab-kit", () => {
+  const sdk = commands(plan(["packages/tab-sdk/src/client.ts"]));
+  assert.ok(sdk.includes("pnpm turbo run test --filter=@cadencr/tab-sdk --log-order=stream"));
+  const ui = commands(plan(["packages/desktop/src/components/ui/button.tsx"]));
+  assert.ok(
+    ui.includes(
+      "pnpm turbo run format:check lint ts-check knip --filter=@cadencr/desktop --filter=@cadencr/tab-kit --log-order=stream",
+    ),
+  );
+  assert.ok(ui.includes("pnpm turbo run test --filter=@cadencr/tab-kit --log-order=stream"));
+});
+
 test("staged name-status fields become paths flagged when deleted", () => {
   assert.deepEqual(parseNameStatus(["M", "a.ts", "D", "b.ts", "A", "c.ts"]), [
     { path: "a.ts", deleted: false },

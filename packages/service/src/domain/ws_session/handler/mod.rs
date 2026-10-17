@@ -43,6 +43,7 @@ mod session_runtime_config;
 mod thinking_effort;
 mod types;
 
+pub(crate) use app::session_status_snapshot_with_timers;
 pub use connection::ws_handler;
 pub use session_prompt::user_shell_recovery::recover_user_shell_context;
 

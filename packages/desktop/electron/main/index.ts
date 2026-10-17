@@ -1,5 +1,5 @@
 import path from "node:path";
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, protocol } from "electron";
 import { loadDevEnv } from "./env";
 import { clearRegisteredFilePaths, registerIpc, registerThemeEvents } from "./ipc";
 import { installApplicationMenu } from "./menu";
@@ -29,6 +29,9 @@ import { installDefaultRendererCrashRecovery } from "./renderer-crash-recovery";
 import { installCsp, rendererLoadTarget, secureWebContents } from "./renderer-window-security";
 import { registerNotchIpc } from "./notch-ipc";
 import type { NotchController } from "./notch-window";
+import { PLUGIN_TAB_PRIVILEGED_SCHEME } from "./plugin-tabs/plugin-tab-ids";
+import { registerPluginTabIpc } from "./plugin-tabs/plugin-tab-ipc";
+import type { PluginTabManager } from "./plugin-tabs/plugin-tab-manager";
 let mainWindow: BrowserWindow | null = null;
 let splash: SplashHandle | null = null;
 let sidecar: SidecarHandle | null = null;
@@ -44,6 +47,7 @@ let browserManager: BrowserManager | null = null;
 let browserBridge: BrowserBridgeHandle | null = null;
 let browserFlushPromise: Promise<void> | null = null;
 let notch: NotchController | null = null;
+let pluginTabs: PluginTabManager | null = null;
 let shutdownReady = false;
 /** Dev-env load result from module scope; the failure is re-raised by `bootstrap()`. */
 let devProfile: DevProfile | null = null;
@@ -144,10 +148,17 @@ function createWindow(): BrowserWindow {
   });
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
+    // Guests belong to this window's placeholders; the window (and so the
+    // views' parent) is already gone, so they are only closed here.
+    pluginTabs?.destroyAll();
     // The island mirrors this window's state; without it there is nothing to show.
     void notch?.setEnabled(false);
   });
-  win.webContents.on("did-start-navigation", () => clearRegisteredFilePaths());
+  win.webContents.on("did-start-navigation", (details) => {
+    clearRegisteredFilePaths();
+    // A renderer reload drops every placeholder; orphaned guests would paint over the new UI.
+    if (details.isMainFrame && !details.isSameDocument) pluginTabs?.destroyAll();
+  });
 
   const loadTarget = rendererLoadTarget();
   if (loadTarget.kind === "url") void win.loadURL(loadTarget.value);
@@ -173,8 +184,15 @@ function wireMainProcess(): void {
     ipcRegistered = true;
   }
   notch ??= registerNotchIpc(() => mainWindow);
+  pluginTabs ??= registerPluginTabIpc({
+    getMainWindow: () => mainWindow,
+    preloadPath: path.join(__dirname, "../preload/plugin-tab.js"),
+  });
   if (!browserIpcRegistered) {
-    browserManager = registerBrowserIpc({ getMainWindow: () => mainWindow });
+    browserManager = registerBrowserIpc({
+      getMainWindow: () => mainWindow,
+      onSuppressed: (value) => pluginTabs?.setSuppressed(value),
+    });
     browserIpcRegistered = true;
   }
   if (!themeEventsRegistered) {
@@ -264,6 +282,10 @@ if (!app.isPackaged) {
   devProfile = resolveDevProfile(app.getPath("appData"), loadDevEnv);
   app.setPath("userData", devProfile.userDataPath);
 }
+
+// Electron accepts exactly one privileged-scheme registration, before `ready`:
+// every privileged scheme belongs in this single call.
+protocol.registerSchemesAsPrivileged([PLUGIN_TAB_PRIVILEGED_SCHEME]);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();

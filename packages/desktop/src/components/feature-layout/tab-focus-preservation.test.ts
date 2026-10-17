@@ -2,13 +2,13 @@
 import { renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ALL_TAB_KINDS, type TabKind } from "@/stores/feature-layout-schema";
+import { BUILTIN_TAB_KINDS, type TabKind } from "@/stores/feature-layout-schema";
 
 import { restoreTabFocus, useTabFocusMemory } from "./tab-focus-preservation";
 
 function setup() {
   const mounts = {} as Record<TabKind, HTMLDivElement>;
-  for (const tab of ALL_TAB_KINDS) {
+  for (const tab of BUILTIN_TAB_KINDS) {
     const mount = document.createElement("div");
     mount.setAttribute("data-tab-mount", tab);
     mounts[tab] = mount;

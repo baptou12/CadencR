@@ -22,6 +22,7 @@ import {
   type useSessionRefs,
 } from "@/components/WebSocketSessionFeatureBlockHooks";
 import type { NonAgentTabReadiness } from "@/components/useAgentFirstNonAgentWork";
+import { usePluginTabDefs, type PluginTabDefs } from "@/components/plugin-tabs/usePluginTabDefs";
 import { useAgentTab } from "./WebSocketSessionAgentTab";
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
 const FeaturePreviewTab = lazy(() =>
@@ -53,6 +54,11 @@ export interface UseSessionTabsArgs {
   sendFromGitTab: (message: string) => void;
   /** Opener for file references clicked inside the agent conversation. */
   openAgentFileInEditor: OpenDiffInEditor;
+  /**
+   * Offer the project's custom tabs (`plugin:<id>`). Only the feature route:
+   * an embedded unified-grid card shows built-ins only.
+   */
+  pluginTabsEnabled: boolean;
 }
 
 export function useSessionTabs(args: UseSessionTabsArgs): FeatureTabs {
@@ -62,6 +68,7 @@ export function useSessionTabs(args: UseSessionTabsArgs): FeatureTabs {
   const editorTab = useEditorTab(args);
   const browserTab = useBrowserTab(args);
   const previewTab = usePreviewTab(args);
+  const pluginTabs = useSessionPluginTabs(args);
   return useMemo(
     () => ({
       agent: agentTab,
@@ -70,9 +77,20 @@ export function useSessionTabs(args: UseSessionTabsArgs): FeatureTabs {
       editor: editorTab,
       browser: browserTab,
       preview: previewTab,
+      ...pluginTabs,
     }),
-    [agentTab, browserTab, editorTab, gitTab, previewTab, terminalTab],
+    [agentTab, browserTab, editorTab, gitTab, pluginTabs, previewTab, terminalTab],
   );
+}
+
+function useSessionPluginTabs(args: UseSessionTabsArgs): PluginTabDefs {
+  const { featureId, projectId, data, pluginTabsEnabled } = args;
+  return usePluginTabDefs({
+    featureId,
+    projectId,
+    contextData: data,
+    enabled: pluginTabsEnabled,
+  });
 }
 
 /**

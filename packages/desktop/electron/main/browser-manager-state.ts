@@ -1,5 +1,5 @@
 import type { BrowserWindow } from "electron";
-import { reclaimFocusForShortcut } from "./browser-manager-utils";
+import { relayGuestShortcut } from "./browser-manager-utils";
 import { tabCountRecordsEqual } from "./browser-manager-tabs";
 import type { BrowserOriginStore } from "./browser-origin-store";
 import type { BrowserScopeState } from "./browser-scope-state";
@@ -44,8 +44,6 @@ export class BrowserManagerState {
   }
 
   emitShortcut(shortcut: BrowserShortcut): void {
-    const window = this.getWindow();
-    reclaimFocusForShortcut(window, shortcut);
-    sendToWindow(window, "browser:shortcut", shortcut);
+    relayGuestShortcut(this.getWindow(), shortcut);
   }
 }

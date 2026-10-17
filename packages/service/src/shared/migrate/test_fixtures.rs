@@ -216,6 +216,31 @@ pub(crate) async fn ensure_agent_session_context_window(pool: &SqlitePool) {
     .await;
 }
 
+/// The plugin-tabs migration (20261017090000) moves the authoring-marker
+/// columns aside and re-adds them, so fixtures baselined after the marker
+/// migration (20260912090000) need its era-accurate shape: both columns, their
+/// CHECKs and the partial identity index.
+pub(crate) async fn ensure_project_authoring_marker(pool: &SqlitePool) {
+    if !support::table_exists(pool, "projects").await.unwrap()
+        || support::table_has_column(pool, "projects", "authoring_target")
+            .await
+            .unwrap()
+    {
+        return;
+    }
+    sqlx::raw_sql(
+        "ALTER TABLE projects ADD COLUMN authoring_target TEXT \
+         CHECK (authoring_target IN ('theme', 'provider')); \
+         ALTER TABLE projects ADD COLUMN plugin_id TEXT \
+         CHECK ((authoring_target IS NULL) = (plugin_id IS NULL)); \
+         CREATE UNIQUE INDEX projects_authoring_identity ON projects (authoring_target, plugin_id) \
+         WHERE authoring_target IS NOT NULL;",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
 /// Add `column` to `table` when the fixture's baseline predates it.
 ///
 /// `ALTER TABLE ADD COLUMN` rejects non-constant defaults, so timestamp columns

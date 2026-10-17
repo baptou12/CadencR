@@ -4,12 +4,9 @@
 
 use cadencr_service::{api, app_state, config, dev_env, domain, remote, shared, shutdown};
 
-use axum::http::header::{HeaderName, CONTENT_TYPE};
-use axum::http::Method;
 use axum::serve::ListenerExt;
 use clap::Parser;
 use std::path::PathBuf;
-use tower_http::cors::CorsLayer;
 use tracing::info;
 
 use app_state::AppState;
@@ -256,6 +253,17 @@ async fn main() -> anyhow::Result<()> {
                 state.theme_events_tx.clone(),
             );
 
+            domain::plugin_tabs::watcher::start(
+                &domain::plugin_tabs::paths::tabs_dir(),
+                state.plugin_tab_events_tx.clone(),
+            );
+            // A manifest edit that changes a tab's permissions revokes its
+            // live grants (a `dist/` rebuild does not).
+            tokio::spawn(domain::plugin_tabs::grants::revoke_on_manifest_change(
+                state.plugin_tab_grants.clone(),
+                state.plugin_tab_events_tx.subscribe(),
+            ));
+
             // A theme is built in a project named after it, and renaming a theme
             // is editing its file — so the same event that reloads the theme
             // renames the project in the sidebar.
@@ -319,7 +327,8 @@ async fn main() -> anyhow::Result<()> {
             let write_pool_for_shutdown = state.write_pool.clone();
             let maintenance_pool = state.write_pool.clone();
             let maintenance_events = state.storage_maintenance_events_tx.clone();
-            let app = api::build_router(state).layer(build_cors_layer(config.frontend_port));
+            let app =
+                api::build_router(state).layer(api::cors::build_cors_layer(config.frontend_port));
 
             let addr = format!("127.0.0.1:{}", config.port);
             info!("Cadencr service listening on {addr}");
@@ -357,41 +366,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn build_cors_layer(frontend_port: u16) -> CorsLayer {
-    let mut origins = vec!["null".parse().expect("static origin")];
-    if cfg!(debug_assertions) {
-        origins.push(
-            format!("http://localhost:{frontend_port}")
-                .parse()
-                .expect("frontend origin"),
-        );
-        origins.push(
-            format!("http://127.0.0.1:{frontend_port}")
-                .parse()
-                .expect("frontend origin"),
-        );
-    }
-
-    CorsLayer::new()
-        .allow_origin(origins)
-        .allow_headers([
-            HeaderName::from_static(api::middleware::AUTH_HEADER),
-            CONTENT_TYPE,
-        ])
-        .allow_methods([
-            Method::GET,
-            Method::POST,
-            Method::PUT,
-            Method::DELETE,
-            Method::PATCH,
-        ])
-        // The renderer is cross-origin (file:// in packaged builds): response
-        // headers it reads must be exposed explicitly.
-        .expose_headers([HeaderName::from_static(
-            domain::editor::document_routes::FORMULAS_HEADER,
-        )])
 }
 
 /// MCP subprocess mode writes to stderr to keep stdout clean for JSON-RPC.

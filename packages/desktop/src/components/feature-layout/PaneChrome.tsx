@@ -1,16 +1,14 @@
-import { type ReactNode, type RefObject } from "react";
-import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { CSS } from "@dnd-kit/utilities";
-import { MinusIcon } from "lucide-react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
+import { useDroppable } from "@dnd-kit/core";
 
-import { ShortcutTooltip } from "@/components/ShortcutTooltip";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList } from "@/components/ui/tabs";
 import type { LayoutLeaf, TabKind } from "@/stores/feature-layout-schema";
 import { useAutoLayoutStore } from "@/stores/auto-layout-store";
 import { cn } from "@/lib/utils";
 
 import { AutoLayoutToggle } from "./AutoLayoutToggle";
 import { LayoutMenu } from "./LayoutMenu";
+import { DraggableTabTrigger, StaticTabTrigger, tabCloseAction } from "./PaneTabTriggers";
 import type { DragSource, FeatureTabs } from "./types";
 
 interface PaneChromeProps {
@@ -20,12 +18,16 @@ interface PaneChromeProps {
   isRoot: boolean;
   isFocused: boolean;
   splitsEnabled: boolean;
+  /** Root pane only: extra controls trailing the strip, before AutoLayoutToggle. */
+  stripActions?: ReactNode;
   containerRef: RefObject<HTMLDivElement | null>;
   contentRef: (el: HTMLDivElement | null) => (() => void) | undefined;
   onFocusPane: () => void;
   onTabChange: (value: string) => void;
   onActivateTab: (tab: TabKind) => void;
   onDockTab: (tab: TabKind) => void;
+  /** Take a closable (plugin) tab out of the layout. */
+  onCloseTab: (tab: TabKind) => void;
 }
 
 export function PaneChrome({
@@ -35,12 +37,14 @@ export function PaneChrome({
   isRoot,
   isFocused,
   splitsEnabled,
+  stripActions,
   containerRef,
   contentRef,
   onFocusPane,
   onTabChange,
   onActivateTab,
   onDockTab,
+  onCloseTab,
 }: PaneChromeProps): ReactNode {
   const autoRevealed = useAutoLayoutStore((s) =>
     s.revealed[featureId]?.paneId === leaf.id ? s.revealed[featureId].kind : undefined,
@@ -80,11 +84,13 @@ export function PaneChrome({
             onTabChange={onTabChange}
             onActivateTab={onActivateTab}
             onDockTab={onDockTab}
+            onCloseTab={onCloseTab}
           />
-          {isRoot && splitsEnabled && (
+          {isRoot && (splitsEnabled || stripActions) && (
             <div className="ml-auto flex shrink-0 items-center gap-0.5 pr-2">
-              <AutoLayoutToggle featureId={featureId} />
-              <LayoutMenu featureId={featureId} />
+              {stripActions}
+              {splitsEnabled && <AutoLayoutToggle featureId={featureId} />}
+              {splitsEnabled && <LayoutMenu featureId={featureId} />}
             </div>
           )}
         </PaneTabStrip>
@@ -107,6 +113,7 @@ interface PaneTabsProps {
   onTabChange: (value: string) => void;
   onActivateTab: (tab: TabKind) => void;
   onDockTab: (tab: TabKind) => void;
+  onCloseTab: (tab: TabKind) => void;
 }
 
 function PaneTabs({
@@ -119,160 +126,59 @@ function PaneTabs({
   onTabChange,
   onActivateTab,
   onDockTab,
+  onCloseTab,
 }: PaneTabsProps): ReactNode {
+  const listRef = useRef<HTMLDivElement>(null);
+  // Custom tab triggers appear once their definitions load, after the layout.
+  const renderedTabCount = leaf.tabIds.filter((tab) => tabs[tab]).length;
+  useRevealActiveTab(listRef, leaf.activeTabId, renderedTabCount);
   return (
     <Tabs
       value={leaf.activeTabId ?? ""}
       onValueChange={onTabChange}
       className="flex min-w-0 flex-1"
     >
-      <TabsList className="flex-1 overflow-x-auto overflow-y-hidden border-b-0">
+      <TabsList ref={listRef} className="flex-1 overflow-x-auto overflow-y-hidden border-b-0">
         {leaf.tabIds.length === 0 && (
           <span className="px-3 py-2 text-xs italic text-muted-foreground">Drag tabs here</span>
         )}
-        {leaf.tabIds.map((tab) =>
-          splitsEnabled ? (
+        {leaf.tabIds.map((tab) => {
+          // The shell renders a view without unavailable tabs; stay defensive.
+          const def = tabs[tab];
+          if (!def) return null;
+          // With splits off the only pane is the root: nothing to dock.
+          const closeAction = tabCloseAction(def, isRoot || !splitsEnabled);
+          const onClose = (): void => {
+            if (closeAction === "close") onCloseTab(tab);
+            else if (closeAction === "dock") onDockTab(tab);
+          };
+          return splitsEnabled ? (
             <DraggableTabTrigger
               key={tab}
               featureId={featureId}
               paneId={leaf.id}
               tab={tab}
-              tabs={tabs}
-              isRootPane={isRoot}
+              def={def}
+              closeAction={closeAction}
               isFocusedPane={isFocused}
               onActivate={() => onActivateTab(tab)}
-              onClose={() => {
-                if (isRoot) return;
-                onDockTab(tab);
-              }}
+              onClose={onClose}
             />
           ) : (
             <StaticTabTrigger
               key={tab}
               featureId={featureId}
               tab={tab}
-              tabs={tabs}
+              def={def}
+              closeAction={closeAction}
               isFocusedPane={isFocused}
               onActivate={() => onActivateTab(tab)}
+              onClose={onClose}
             />
-          ),
-        )}
+          );
+        })}
       </TabsList>
     </Tabs>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Draggable tab trigger
-// ---------------------------------------------------------------------------
-
-interface DraggableTabTriggerProps {
-  featureId: number;
-  paneId: string;
-  tab: TabKind;
-  tabs: FeatureTabs;
-  isRootPane: boolean;
-  isFocusedPane: boolean;
-  onActivate: () => void;
-  onClose: () => void;
-}
-
-function DraggableTabTrigger({
-  featureId,
-  paneId,
-  tab,
-  tabs,
-  isRootPane,
-  isFocusedPane,
-  onActivate,
-  onClose,
-}: DraggableTabTriggerProps): ReactNode {
-  const def = tabs[tab];
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `tab:${paneId}:${tab}`,
-    data: { kind: "pane", paneId, tab } as const,
-  });
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Translate.toString(transform),
-        opacity: isDragging ? 0.4 : undefined,
-      }}
-      className="relative inline-flex shrink-0"
-    >
-      <ShortcutTooltip label={def.label} keys={def.shortcut}>
-        <TabsTrigger
-          value={tab}
-          data-feature-tab-kind={tab}
-          data-feature-id={featureId}
-          {...attributes}
-          {...listeners}
-          onClick={onActivate}
-          className={cn(
-            "cursor-grab active:cursor-grabbing",
-            !isRootPane && "pr-8",
-            !isFocusedPane && "data-[state=active]:after:bg-transparent",
-          )}
-        >
-          <def.Icon className="size-4 shrink-0" />
-          <span>{def.label}</span>
-          {def.badge}
-        </TabsTrigger>
-      </ShortcutTooltip>
-      {!isRootPane && (
-        <ShortcutTooltip
-          label="Return to main tabs"
-          className="absolute right-1.5 top-1/2 -translate-y-1/2"
-        >
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose();
-            }}
-            className="flex rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            aria-label={`Return ${def.label} to the root tab strip`}
-          >
-            <MinusIcon className="size-3" />
-          </button>
-        </ShortcutTooltip>
-      )}
-    </div>
-  );
-}
-
-interface StaticTabTriggerProps {
-  featureId: number;
-  tab: TabKind;
-  tabs: FeatureTabs;
-  isFocusedPane: boolean;
-  onActivate: () => void;
-}
-
-function StaticTabTrigger({
-  featureId,
-  tab,
-  tabs,
-  isFocusedPane,
-  onActivate,
-}: StaticTabTriggerProps): ReactNode {
-  const def = tabs[tab];
-  return (
-    <ShortcutTooltip label={def.label} keys={def.shortcut}>
-      <TabsTrigger
-        value={tab}
-        data-feature-tab-kind={tab}
-        data-feature-id={featureId}
-        onClick={onActivate}
-        className={cn("group", !isFocusedPane && "data-[state=active]:after:bg-transparent")}
-      >
-        <def.Icon className="size-4 shrink-0" />
-        <span>{def.label}</span>
-        {def.badge}
-      </TabsTrigger>
-    </ShortcutTooltip>
   );
 }
 
@@ -361,4 +267,46 @@ function EdgeDropZone({
       )}
     />
   );
+}
+
+/**
+ * Keep the active tab inside a strip that overflows horizontally — a custom tab
+ * added from the "+" menu lands at the end, often past the visible edge. Reads
+ * layout only when the active tab or the tab count changes.
+ */
+function useRevealActiveTab(
+  listRef: RefObject<HTMLDivElement | null>,
+  activeTabId: TabKind | null,
+  tabCount: number,
+): void {
+  useEffect(() => {
+    const list = listRef.current;
+    const target = list && activeTabId ? activeTabTarget(list, activeTabId) : null;
+    if (!list || !target) return;
+    // Tab widths settle after fonts and badges load (any tab before it can
+    // push it out), so follow every tab's size while this one is active.
+    const reveal = (): void => revealInStrip(list, target);
+    reveal();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(reveal);
+    for (const child of Array.from(list.children)) observer.observe(child);
+    return () => observer.disconnect();
+  }, [activeTabId, listRef, tabCount]);
+}
+
+/** The active trigger's wrapper, which also holds its close button. */
+function activeTabTarget(list: HTMLElement, activeTabId: TabKind): HTMLElement | null {
+  const trigger = Array.from(list.querySelectorAll<HTMLElement>("[data-feature-tab-kind]")).find(
+    (element) => element.dataset.featureTabKind === activeTabId,
+  );
+  if (!trigger) return null;
+  return trigger.parentElement && trigger.parentElement !== list ? trigger.parentElement : trigger;
+}
+
+function revealInStrip(list: HTMLElement, target: HTMLElement): void {
+  if (list.scrollWidth <= list.clientWidth) return;
+  const listBox = list.getBoundingClientRect();
+  const box = target.getBoundingClientRect();
+  if (box.left < listBox.left) list.scrollLeft -= listBox.left - box.left;
+  else if (box.right > listBox.right) list.scrollLeft += box.right - listBox.right;
 }

@@ -9,6 +9,8 @@ import { FeatureContentSearchShortcut } from "@/components/FeatureContentSearchS
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureLayoutProvider } from "@/components/feature-layout/FeatureLayoutContext";
 import { FeatureLayoutShell } from "@/components/feature-layout/FeatureLayoutShell";
+import { PluginTabAddMenu } from "@/components/plugin-tabs/PluginTabAddMenu";
+import { pluginTabsAvailable } from "@/lib/plugin-tabs/availability";
 import type { TabKind } from "@/stores/feature-layout-schema";
 import {
   getFocusedTab,
@@ -179,6 +181,11 @@ function SessionFeatureView({
             splitsEnabled={splitsEnabled}
             hotkeysEnabled={hotkeysEnabled}
             mountInactiveTabs={false}
+            rootStripActions={
+              splitsEnabled && pluginTabsAvailable() ? (
+                <PluginTabAddMenu featureId={layoutFeatureId} projectId={projectId} />
+              ) : undefined
+            }
             onTerminalActivate={() =>
               requestAnimationFrame(() => refs.terminal.current?.activate())
             }
@@ -290,6 +297,7 @@ function WebSocketSessionFeatureBody(
     hotkeysEnabled,
     sendFromGitTab,
     openAgentFileInEditor,
+    pluginTabsEnabled: !embedded,
   });
 
   return (

@@ -57,10 +57,10 @@ describe("scrollbar CSS", () => {
     expect(cadencrMaterialCss).toContain('[data-has-floating-pane="true"]');
   });
 
-  it("reserves end padding on floating-pane tabs for the dock-close control", () => {
-    expect(chromeCss).toMatch(
-      /\[data-pane-frame="floating"\]\s*\[data-pane-tab-strip\]\s*\[data-slot="tabs-trigger"\]\s*{[^}]*padding-inline-end:\s*2rem;/s,
-    );
+  it("reserves end padding on floating-pane and closable tabs for their close control", () => {
+    const rule =
+      /\[data-pane-frame="floating"\]\s*\[data-pane-tab-strip\]\s*\[data-slot="tabs-trigger"\],\s*:root\[data-tabs="segmented"\]\s*\[data-pane-tab-strip\]\s*\[data-slot="tabs-trigger"\]\[data-tab-closable\]\s*{[^}]*padding-inline-end:\s*2rem;/s;
+    expect(chromeCss).toMatch(rule);
   });
 
   it("keys the chrome layer on the theme's declared shape, never on a theme id", () => {

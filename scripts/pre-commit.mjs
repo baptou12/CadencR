@@ -17,6 +17,8 @@ const JS_PACKAGES = {
   desktop: "@cadencr/desktop",
   landing: "@cadencr/landing",
   brand: "@cadencr/brand",
+  "tab-sdk": "@cadencr/tab-sdk",
+  "tab-kit": "@cadencr/tab-kit",
 };
 const RUST_ROOT_FILES = new Set([
   "Cargo.toml",
@@ -51,6 +53,9 @@ const DESKTOP_FULL_SUITE =
   /^packages\/desktop\/(vitest\.[^/]+|package\.json|src\/test-setup[^/]*\.tsx?|src\/test\/)/;
 // packages/landing type-checks and tests the desktop shortcut registry.
 const LANDING_READS_DESKTOP = /^packages\/desktop\/src\/(lib\/shortcuts|shared)\//;
+// packages/tab-kit compiles the desktop UI components and derives its tokens.
+const TAB_KIT_READS_DESKTOP =
+  /^packages\/desktop\/src\/(components\/ui\/|lib\/utils\.ts$|lib\/themes\/tokens\.ts$|theme-cadencr\.css$)/;
 const MODULE_FILE = /\.(c|m)?[jt]sx?$|\.css$|\.json$/;
 const PROVIDER_BOUNDARY_ROOTS = /^packages\/(service|desktop)\/src\//;
 
@@ -95,9 +100,10 @@ export function classifyPath(path) {
   }
   const areas = ["other"];
   if (RUST_ROOT_FILES.has(path) || RUST_PACKAGE.test(path)) areas.push("rust");
-  const jsPackage = path.match(/^packages\/(desktop|landing|brand)\//)?.[1];
+  const jsPackage = path.match(/^packages\/(desktop|landing|brand|tab-sdk|tab-kit)\//)?.[1];
   if (jsPackage) areas.push(jsPackage);
   if (LANDING_READS_DESKTOP.test(path)) areas.push("landing");
+  if (TAB_KIT_READS_DESKTOP.test(path)) areas.push("tab-kit");
   if (path.startsWith("packages/brand/src/")) areas.push("desktop", "landing");
   if (RELEASE_INPUTS.some((pattern) => pattern.test(path))) areas.push("release");
   if (PROVIDER_BOUNDARY_ROOTS.test(path)) areas.push("boundaries");
@@ -199,7 +205,9 @@ export function buildPrecommitPlan(entries, { full = false } = {}) {
   if (byArea.has("release")) steps.push(step(STEP.releaseTests));
   if (byArea.has("rust")) steps.push(step(STEP.rustFormat));
 
-  const jsAreas = ["desktop", "landing", "brand"].filter((area) => byArea.has(area));
+  const jsAreas = ["desktop", "landing", "brand", "tab-sdk", "tab-kit"].filter((area) =>
+    byArea.has(area),
+  );
   if (jsAreas.length > 0) {
     const packages = jsAreas.map((area) => JS_PACKAGES[area]);
     steps.push({

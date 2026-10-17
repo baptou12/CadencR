@@ -83,21 +83,24 @@ pub fn validate_ws_token<'a>(
     headers: &'a HeaderMap,
     expected_token: &str,
 ) -> Result<&'a str, Response> {
-    // Sec-WebSocket-Protocol can be a single comma-list or repeated headers.
-    for header_value in headers.get_all(header::SEC_WEBSOCKET_PROTOCOL).iter() {
-        let Ok(raw) = header_value.to_str() else {
-            continue;
-        };
-        for token in raw.split(',').map(str::trim) {
-            if let Some(rest) = token.strip_prefix(WS_TOKEN_PREFIX) {
-                if constant_time_str_eq(rest, expected_token) {
-                    return Ok(token);
-                }
-            }
-        }
-    }
+    offered_subprotocols(headers)
+        .find(|offered| {
+            offered
+                .strip_prefix(WS_TOKEN_PREFIX)
+                .is_some_and(|rest| constant_time_str_eq(rest, expected_token))
+        })
+        .ok_or_else(unauthorized)
+}
 
-    Err(unauthorized())
+/// Every subprotocol the client offered. `Sec-WebSocket-Protocol` can be a
+/// single comma-list or repeated headers; non-UTF-8 values are skipped.
+pub fn offered_subprotocols(headers: &HeaderMap) -> impl Iterator<Item = &str> {
+    headers
+        .get_all(header::SEC_WEBSOCKET_PROTOCOL)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
 }
 
 /// Remote-listener origin check: the served SPA's `Origin` must exactly match
@@ -130,17 +133,12 @@ pub async fn validate_ws_token_remote(
     pool: &sqlx::SqlitePool,
     pepper: &[u8],
 ) -> Result<(String, i64), Response> {
-    for header_value in headers.get_all(header::SEC_WEBSOCKET_PROTOCOL).iter() {
-        let Ok(raw) = header_value.to_str() else {
-            continue;
-        };
-        for token in raw.split(',').map(str::trim) {
-            if let Some(rest) = token.strip_prefix(WS_TOKEN_PREFIX) {
-                if let Some(id) =
-                    crate::domain::remote::tokens::verify_device_token(pool, pepper, rest).await
-                {
-                    return Ok((token.to_string(), id));
-                }
+    for token in offered_subprotocols(headers) {
+        if let Some(rest) = token.strip_prefix(WS_TOKEN_PREFIX) {
+            if let Some(id) =
+                crate::domain::remote::tokens::verify_device_token(pool, pepper, rest).await
+            {
+                return Ok((token.to_string(), id));
             }
         }
     }

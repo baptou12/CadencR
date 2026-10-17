@@ -11,6 +11,7 @@ import { getGetWorkspaceSettingQueryKey } from "@/api/generated";
 import { MAX_BROWSER_FAVICON_DATA_URL_LENGTH } from "@/shared/browser-types";
 import {
   clearDesktopBridgeOverrideForTests,
+  noopPluginTabs,
   setDesktopBridgeOverrideForTests,
   type BrowserShortcut,
   type BrowserStateSnapshot,
@@ -199,6 +200,7 @@ function bridge(): CadencrBrowserBridge {
     fetchChangelog: vi.fn(),
     fetchChangelogImage: vi.fn(),
     onUpdateEvent: vi.fn(() => () => undefined),
+    pluginTabs: noopPluginTabs,
   };
 }
 

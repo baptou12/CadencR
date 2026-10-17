@@ -16,11 +16,11 @@ codex-app-server-sdk-rs = { path = "../codex-app-server-sdk-rs" }
 cursor-agent-sdk-rs = { path = "../cursor-agent-sdk-rs" }
 opencode-sdk-rs = { path = "../opencode-sdk-rs" }
 tokio = { version = "1", features = ["full"] }
-tokio-util = { version = "0.7", features = ["compat"] }
+tokio-util = { version = "0.7", features = ["compat", "io"] }
 sqlx = { version = "0.9", default-features = false, features = ["sqlite", "runtime-tokio", "migrate", "macros", "chrono", "uuid", "json"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 semver = "1"
 utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-axum = "0.2"
@@ -113,6 +113,7 @@ workspace = true
 
 [dev-dependencies]
 assert-json-diff = "2"
+cadencr-plugin-core = { path = "../plugin-core", features = ["test-support"] }
 tower = { version = "0.5", features = ["util"] }
 # `rustls-tls` is dev-only: the remote-listener test needs a rustls client to
 # talk to our rustls server (macOS Secure Transport mis-negotiates against it).

@@ -1,4 +1,5 @@
 import { isSafeExternalUrl, isUserOpenableUrl } from "@/lib/safe-url";
+import type { PluginTabsBridge } from "@/shared/plugin-tab-host";
 import type { CadencrBrowserBridge, DesktopTheme } from "./desktop-bridge-types";
 
 export type {
@@ -60,6 +61,21 @@ function browserTheme(): DesktopTheme {
 function unavailable(name: string): Promise<never> {
   return Promise.reject(new Error(`${name} is only available in the desktop shell.`));
 }
+
+// Custom tabs are desktop-only in v1 (the remote SPA shows a placeholder), so
+// off the shell every call resolves as a no-op — like browser suppression —
+// and no event or port ever arrives.
+export const noopPluginTabs: PluginTabsBridge = {
+  open: () => Promise.resolve(),
+  setBounds: () => Promise.resolve(),
+  setVisible: () => Promise.resolve(),
+  reload: () => Promise.resolve(),
+  close: () => Promise.resolve(),
+  openDevTools: () => Promise.resolve(),
+  focus: () => Promise.resolve(),
+  setTheme: () => Promise.resolve(),
+  onEvent: () => () => undefined,
+};
 
 const browserBridge: CadencrBrowserBridge = {
   isElectron: false,
@@ -205,6 +221,7 @@ const browserBridge: CadencrBrowserBridge = {
   fetchChangelog: () => Promise.resolve(null),
   fetchChangelogImage: () => unavailable("fetchChangelogImage"),
   onUpdateEvent: () => () => undefined,
+  pluginTabs: noopPluginTabs,
 };
 
 function resolveBridgeValue(prop: keyof CadencrBrowserBridge): { owner: object; value: unknown } {

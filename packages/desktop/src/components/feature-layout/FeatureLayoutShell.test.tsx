@@ -97,4 +97,19 @@ describe("FeatureLayoutShell", () => {
     expect(after).not.toBe(before);
     expect(after?.splitRoot).toMatchObject({ type: "leaf", activeTabId: "terminal" });
   });
+
+  it("hides placed tabs that have no definition, stably and without touching the store", () => {
+    const stored = flatLayoutState("plugin:graph", ["plugin:graph"]);
+    useFeatureLayoutStore.setState({ features: { [FEATURE_ID]: stored } });
+    const shell = (): ReactElement => (
+      <FeatureLayoutShell featureId={FEATURE_ID} tabs={{ ...tabs }} />
+    );
+    const view = render(shell());
+    view.rerender(shell());
+
+    const [first, ...rest] = seenLayoutStates;
+    expect(first?.splitRoot).toEqual(flatLayoutState().splitRoot);
+    for (const seen of rest) expect(seen).toBe(first);
+    expect(useFeatureLayoutStore.getState().features[FEATURE_ID]).toBe(stored);
+  });
 });

@@ -28,13 +28,13 @@ interface FocusMemory {
 }
 
 export function useTabFocusMemory(
-  mounts: Record<TabKind, HTMLDivElement>,
+  mounts: Partial<Record<TabKind, HTMLDivElement>>,
 ): React.RefObject<FocusMemory | null> {
   const memory = useRef<FocusMemory | null>(null);
 
   useEffect((): (() => void) => {
     const insideMount = (node: Node): boolean =>
-      Object.values(mounts).some((mount) => mount.contains(node));
+      Object.values(mounts).some((mount) => mount?.contains(node));
 
     const onFocusIn = (event: FocusEvent): void => {
       const target = event.target;

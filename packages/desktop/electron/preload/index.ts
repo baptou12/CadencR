@@ -23,6 +23,7 @@ import type {
 } from "../main/browser-types";
 import type { ChangelogImageBytes } from "../../src/shared/changelog-image";
 import { notchHostBridge } from "./notch-host-bridge";
+import { installPluginTabPortRelay, pluginTabsHostBridge } from "./plugin-tabs-host-bridge";
 
 type RouteType = "workflow" | "session";
 type DesktopTheme = "light" | "dark";
@@ -402,4 +403,7 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("app:fetch-changelog-image", src),
   onUpdateEvent,
   ...notchHostBridge(onIpc),
+  ...pluginTabsHostBridge(onIpc),
 });
+
+installPluginTabPortRelay();

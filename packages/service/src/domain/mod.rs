@@ -41,6 +41,7 @@ pub mod maintenance;
 pub mod mcp;
 pub mod neovim;
 pub mod permission_bridge;
+pub mod plugin_tabs;
 pub mod ports;
 pub mod projects;
 pub mod push;

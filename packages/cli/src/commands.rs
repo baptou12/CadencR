@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde_json::json;
 
-use crate::args::{Cli, Command, PluginArgs, PluginCommand, RegistryCommand};
+use crate::args::{Cli, Command, PluginArgs, PluginCommand, PluginKind, RegistryCommand};
 use crate::{operation_error, output, signing, Diagnostic};
 
 pub(crate) fn run(cli: &Cli) -> Result<Option<String>, Diagnostic> {
@@ -26,9 +26,38 @@ pub(crate) fn run(cli: &Cli) -> Result<Option<String>, Diagnostic> {
                     descriptor,
                     kind,
                 },
-        }) => crate::theme::validate_plugin_kind(folder, descriptor.as_deref(), kind),
+        }) => match kind {
+            PluginKind::Provider => validate_provider(folder, descriptor.as_deref()),
+            PluginKind::Theme => crate::theme::validate(folder, descriptor.as_deref()),
+            PluginKind::Tab => crate::tab::validate(folder, descriptor.as_deref()),
+        },
         Command::Registry(registry) => run_registry(&registry.command),
     }
+}
+
+/// `cadencr plugin validate <folder> --kind provider --descriptor <file>`.
+fn validate_provider(
+    folder: &Path,
+    descriptor: Option<&Path>,
+) -> Result<Option<String>, Diagnostic> {
+    let descriptor = descriptor.ok_or_else(|| {
+        operation_error(
+            "PLUGIN_DESCRIPTOR_REQUIRED",
+            "provider validation requires --descriptor",
+        )
+    })?;
+    cadencr_plugin_core::validate_plugin_folder(folder, descriptor)
+        .map(|_| {
+            Some(format!(
+                "valid local provider structure: {} (publication completeness and theme assets not checked)",
+                folder.display()
+            ))
+        })
+        .map_err(|error| Diagnostic {
+            code: error.code(),
+            message: error.to_string(),
+            exit_code: 1,
+        })
 }
 
 fn run_registry(command: &RegistryCommand) -> Result<Option<String>, Diagnostic> {

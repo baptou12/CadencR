@@ -4,11 +4,14 @@
 //! is the only secret), so it gets a tight bucket; everything else gets a loose
 //! bucket that bounds general abuse. Loopback requests carrying the per-launch
 //! credential use a separate bucket so anonymous local traffic cannot starve
-//! the authenticated renderer. State is in-memory and lives for the life of one
+//! the authenticated renderer, and each custom tab (plugin token) gets its own
+//! smaller bucket, so one chatty tab can starve neither the renderer nor
+//! another tab. State is in-memory and lives for the life of one
 //! listener (each router receives its own limiter), keyed by source IP from
 //! `ConnectInfo<SocketAddr>`.
 
 use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -23,6 +26,7 @@ use super::auth::{is_websocket_upgrade, AUTH_HEADER, MCP_CONTROL_HEADER};
 use super::response::{connection_metadata_unavailable, too_many_requests};
 use super::ws::validate_ws_token;
 use crate::app_state::AppState;
+use crate::domain::plugin_tabs::principal::PLUGIN_TOKEN_HEADER;
 use crate::shared::security::constant_time_str_eq;
 
 const WINDOW: Duration = Duration::from_secs(60);
@@ -37,12 +41,17 @@ const PAIR_LIMIT: u32 = 5;
 /// rather than a traffic policy; pairing brute-force is bounded separately by
 /// `PAIR_LIMIT`.
 const GENERAL_LIMIT: u32 = 6000;
+/// Requests per custom tab per window, across its instances. A tab reads a
+/// feature's state; it has no business near the renderer's ceiling.
+const PLUGIN_LIMIT: u32 = 1200;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Bucket {
     Pair,
     General,
     LoopbackAuthenticated,
+    /// One custom tab, keyed by a hash of its plugin id.
+    Plugin(u64),
 }
 
 struct Window {
@@ -63,6 +72,7 @@ impl RateLimiter {
         let limit = match bucket {
             Bucket::Pair => PAIR_LIMIT,
             Bucket::General | Bucket::LoopbackAuthenticated => GENERAL_LIMIT,
+            Bucket::Plugin(_) => PLUGIN_LIMIT,
         };
         let mut windows = self.windows.lock().expect("rate-limit mutex poisoned");
         // Bound map growth: drop windows that have fully elapsed.
@@ -112,12 +122,24 @@ pub async fn loopback_rate_limit_middleware(
     request: Request,
     next: Next,
 ) -> Response {
-    let bucket = if has_valid_loopback_credential(&request, &state) {
+    let bucket = if let Some(plugin) = plugin_bucket(&request, &state) {
+        plugin
+    } else if has_valid_loopback_credential(&request, &state) {
         Bucket::LoopbackAuthenticated
     } else {
         Bucket::General
     };
     apply_limit(&limiter, bucket, request, next).await
+}
+
+/// The bucket of the custom tab whose live grant the request presents; an
+/// unknown token is anonymous traffic.
+fn plugin_bucket(request: &Request, state: &AppState) -> Option<Bucket> {
+    let token = request.headers().get(PLUGIN_TOKEN_HEADER)?.to_str().ok()?;
+    let grant = state.plugin_tab_grants.resolve(token)?;
+    let mut hasher = DefaultHasher::new();
+    grant.plugin_id.hash(&mut hasher);
+    Some(Bucket::Plugin(hasher.finish()))
 }
 
 async fn apply_limit(
@@ -213,6 +235,20 @@ mod tests {
         // A different IP and a different bucket are unaffected.
         assert!(limiter.check(ip(2), Bucket::Pair, now).is_ok());
         assert!(limiter.check(ip(1), Bucket::General, now).is_ok());
+        assert!(limiter
+            .check(ip(1), Bucket::LoopbackAuthenticated, now)
+            .is_ok());
+    }
+
+    #[test]
+    fn each_plugin_has_its_own_smaller_bucket() {
+        let limiter = RateLimiter::default();
+        let now = Instant::now();
+        for _ in 0..PLUGIN_LIMIT {
+            assert!(limiter.check(ip(1), Bucket::Plugin(1), now).is_ok());
+        }
+        assert!(limiter.check(ip(1), Bucket::Plugin(1), now).is_err());
+        assert!(limiter.check(ip(1), Bucket::Plugin(2), now).is_ok());
         assert!(limiter
             .check(ip(1), Bucket::LoopbackAuthenticated, now)
             .is_ok());
