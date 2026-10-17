@@ -7,7 +7,9 @@
 //! {plugin_id}` and refetch or reload. `node_modules`, sources and dot-files
 //! are ignored — they are not what Cadencr loads.
 
+use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use notify_debouncer_mini::notify::RecursiveMode;
@@ -36,10 +38,56 @@ pub fn start(dir: &Path, tx: broadcast::Sender<PluginTabChangedEvent>) {
         return;
     }
     let roots = roots_of(dir);
+    let folders = Mutex::new(tab_folders(dir));
     watch_dir_coalesced(dir, RecursiveMode::Recursive, DEBOUNCE, tx, move |path| {
-        let plugin_id = changed_plugin_id(&roots, path)?;
+        let plugin_id =
+            changed_plugin_id(&roots, path).or_else(|| moved_plugin_id(&roots, &folders, path))?;
         Some(PluginTabChangedEvent { plugin_id })
     });
+}
+
+/// The tab folders present now: what a folder event is compared against.
+fn tab_folders(dir: &Path) -> HashSet<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return HashSet::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_dir())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| !name.starts_with('.'))
+        .collect()
+}
+
+/// The tab id when `path` is a tab folder `<root>/<id>` that appeared or went
+/// away (moved in, renamed, removed): neither side's files may report a
+/// change of their own. A folder event for a tab that is still where it was
+/// (its own metadata changing) is not a change of the tab.
+fn moved_plugin_id(
+    roots: &[PathBuf],
+    folders: &Mutex<HashSet<String>>,
+    path: &Path,
+) -> Option<String> {
+    let relative = roots.iter().find_map(|root| path.strip_prefix(root).ok())?;
+    let mut components = relative.components();
+    let (Some(Component::Normal(id)), None) = (components.next(), components.next()) else {
+        return None;
+    };
+    let id = id.to_str().filter(|id| !id.starts_with('.'))?;
+    let present = path.is_dir();
+    let mut folders = folders
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let known = folders.contains(id);
+    if present == known {
+        return None;
+    }
+    if present {
+        folders.insert(id.to_string());
+    } else {
+        folders.remove(id);
+    }
+    Some(id.to_string())
 }
 
 /// The watched root as given and canonicalized: macOS reports `/private/var/…`
@@ -150,6 +198,26 @@ mod tests {
         ] {
             assert_eq!(id(path), None, "{path}");
         }
+    }
+
+    #[test]
+    fn reports_a_tab_folder_that_appears_or_goes_away() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("graph")).unwrap();
+        let roots = [root.path().to_path_buf()];
+        let folders = Mutex::new(tab_folders(root.path()));
+        let moved = |name: &str| moved_plugin_id(&roots, &folders, &root.path().join(name));
+        // Still where it was: its own metadata changing is not a tab change.
+        assert_eq!(moved("graph"), None);
+        // Renamed: the new folder appears, the old one goes away.
+        std::fs::rename(root.path().join("graph"), root.path().join("chart")).unwrap();
+        assert_eq!(moved("chart").as_deref(), Some("chart"));
+        assert_eq!(moved("graph").as_deref(), Some("graph"));
+        assert_eq!(moved("graph"), None);
+        // Deeper paths and dot-folders are not folder moves.
+        std::fs::create_dir_all(root.path().join(".trash")).unwrap();
+        assert_eq!(moved(".trash"), None);
+        assert_eq!(moved("chart/src"), None);
     }
 
     #[test]

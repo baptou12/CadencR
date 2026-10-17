@@ -65,6 +65,7 @@ function grantDeps(overrides: Partial<GrantDeps> = {}): GrantDeps {
       api_version: 1,
     })),
     revoke: vi.fn(async () => undefined),
+    reportRevokeFailure: vi.fn(),
     now: () => Date.now(),
     ...overrides,
   };

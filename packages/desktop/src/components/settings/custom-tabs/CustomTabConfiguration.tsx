@@ -69,7 +69,7 @@ export function CustomTabConfiguration({
             draftSlot={{ id: `${tab.id}:global`, version: globalKey }}
             fields={globalFields}
             stored={data.global}
-            saving={save.saving === "global"}
+            saving={save.saving.global}
             error={save.errors.global ?? null}
             onSave={(values) => save.run("global", null, values)}
           />
@@ -98,7 +98,7 @@ export function CustomTabConfiguration({
                   draftSlot={{ id: `${tab.id}:project:${projectId}`, version: projectKey }}
                   fields={projectFields}
                   stored={data.project ?? NO_VALUES}
-                  saving={save.saving === "project"}
+                  saving={save.saving.project}
                   error={save.errors.project ?? null}
                   onSave={(values) => save.run("project", projectId, values)}
                 />
@@ -126,7 +126,15 @@ function ScopeBlock({ title, children }: { title: string; children: React.ReactN
 function useSaveConfiguration(tab: PluginTabSummary) {
   const queryClient = useQueryClient();
   const { mutateAsync } = usePluginTabPutConfiguration();
-  const [saving, setSaving] = useState<Scope | null>(null);
+  // Per scope: one scope's save settling must not unlock the other's form.
+  const [saving, setSavingMap] = useState<Record<Scope, boolean>>({
+    global: false,
+    project: false,
+  });
+  const setSaving = useCallback(
+    (scope: Scope, value: boolean) => setSavingMap((previous) => ({ ...previous, [scope]: value })),
+    [],
+  );
   const [errors, setErrors] = useState<Partial<Record<Scope, string>>>({});
 
   /**
@@ -135,7 +143,7 @@ function useSaveConfiguration(tab: PluginTabSummary) {
    */
   const run = useCallback(
     async (scope: Scope, projectId: number | null, values: Record<string, unknown>) => {
-      setSaving(scope);
+      setSaving(scope, true);
       setErrors((previous) => ({ ...previous, [scope]: undefined }));
       try {
         await mutateAsync({
@@ -152,7 +160,7 @@ function useSaveConfiguration(tab: PluginTabSummary) {
         } else {
           toastError(error, `Could not save the settings of “${tab.name}”`);
         }
-        setSaving(null);
+        setSaving(scope, false);
         return false;
       }
       toast.success(`“${tab.name}” settings saved`);
@@ -162,11 +170,11 @@ function useSaveConfiguration(tab: PluginTabSummary) {
         // Saved either way; a failed reload only leaves the form showing the old values.
         toastError(error, "Saved, but the settings could not be reloaded");
       } finally {
-        setSaving(null);
+        setSaving(scope, false);
       }
       return true;
     },
-    [mutateAsync, queryClient, tab.id, tab.name],
+    [mutateAsync, queryClient, setSaving, tab.id, tab.name],
   );
 
   return useMemo(() => ({ run, saving, errors }), [errors, run, saving]);

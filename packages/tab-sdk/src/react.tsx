@@ -232,14 +232,22 @@ export function useStorage<T extends JsonValue>(key: string, initial: T): Storag
     async (next: T) => {
       const state = keyState.current;
       const current = () => keyState.current === state;
+      const order = ++state.issued;
+      state.newestFailed = false;
       state.pending += 1;
       setValue(next);
       try {
         await client.storage.set(key, next);
         state.confirmed = true;
-        state.stored = next;
+        // Writes land in the order they were made: an older one answering
+        // late does not replace a newer stored value.
+        if (order > state.storedOrder) {
+          state.stored = next;
+          state.storedOrder = order;
+        }
         if (current()) setError(null);
       } catch (failure) {
+        if (order === state.issued) state.newestFailed = true;
         // Roll back unless a newer `set` (or another key) replaced the value meanwhile.
         if (current()) setValue((shown) => (shown === next ? state.stored : shown));
         const cadencrError = toCadencrError(failure);
@@ -247,6 +255,10 @@ export function useStorage<T extends JsonValue>(key: string, initial: T): Storag
         throw cadencrError;
       } finally {
         state.pending -= 1;
+        // The last write in flight settled after the newest one failed: an
+        // older write may have been saved since that rollback, so show what
+        // is stored now.
+        if (state.pending === 0 && state.newestFailed && current()) setValue(state.stored);
       }
     },
     [client, key],
@@ -256,13 +268,24 @@ export function useStorage<T extends JsonValue>(key: string, initial: T): Storag
 }
 
 /** Per key: the last value known to be stored (a failed `set` rolls back to
- *  it), writes in flight, and whether one was confirmed. */
+ *  it) and the write that stored it, writes made and in flight, whether one
+ *  was confirmed, and whether the newest one failed. */
 interface KeyState<T> {
   stored: T;
+  storedOrder: number;
+  issued: number;
   pending: number;
   confirmed: boolean;
+  newestFailed: boolean;
 }
 
 function newKeyState<T>(initial: T): KeyState<T> {
-  return { stored: initial, pending: 0, confirmed: false };
+  return {
+    stored: initial,
+    storedOrder: 0,
+    issued: 0,
+    pending: 0,
+    confirmed: false,
+    newestFailed: false,
+  };
 }

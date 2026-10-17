@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@/test-utils";
 import type { PluginTabConfiguration } from "@/api/generated";
-import { tabFixture } from "./custom-tabs-fixtures";
+import { projectFixture, tabFixture } from "./custom-tabs-fixtures";
 import { CustomTabConfiguration } from "./CustomTabConfiguration";
 
 const mocks = vi.hoisted(() => ({
@@ -32,6 +32,11 @@ const TAB = tabFixture({
 });
 
 describe("CustomTabConfiguration", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.reloadGate = null;
+  });
+
   it("clears a replaced secret once it is saved, though the masked value is unchanged", async () => {
     mocks.stored = { fields: TAB.configuration, global: { token: { is_set: true } } };
     mocks.put.mockResolvedValue(undefined);
@@ -72,5 +77,37 @@ describe("CustomTabConfiguration", () => {
     mocks.reloadGate = null;
     await waitFor(() => expect(screen.getByText("Set")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Replace Access token" })).toBeEnabled();
+  });
+
+  it("keeps one scope locked while the other scope's save settles", async () => {
+    const tab = tabFixture({
+      configuration: [
+        { key: "team", type: "string", label: "Team", scope: "global" },
+        { key: "repo", type: "string", label: "Repository", scope: "project" },
+      ],
+    });
+    mocks.stored = { fields: tab.configuration, global: {}, project: {} };
+    mocks.reloadGate = null;
+    let finishReload: () => void = () => {};
+    mocks.put.mockImplementation(async () => {
+      mocks.reloadGate ??= new Promise<void>((resolve) => {
+        finishReload = resolve;
+      });
+    });
+    const { user } = render(
+      <CustomTabConfiguration tab={tab} projects={[projectFixture(1, "app")]} />,
+    );
+    const [saveGlobal, saveProject] = await screen.findAllByRole("button", { name: "Save" });
+    await user.type(screen.getByLabelText("Team"), "core");
+    await user.click(saveGlobal!);
+    await waitFor(() => expect(screen.getByLabelText("Team")).toBeDisabled());
+    await user.type(screen.getByLabelText("Repository"), "acme/app");
+    await user.click(saveProject!);
+    await waitFor(() => expect(mocks.put).toHaveBeenCalledTimes(2));
+    // The project save starting (or ending) does not unlock the global form.
+    expect(screen.getByLabelText("Team")).toBeDisabled();
+    finishReload();
+    mocks.reloadGate = null;
+    await waitFor(() => expect(screen.getByLabelText("Team")).toBeEnabled());
   });
 });

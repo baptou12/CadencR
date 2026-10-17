@@ -139,9 +139,13 @@ impl Subscriptions {
         self.next_id += 1;
         let subscription_id = format!("s{}", self.next_id);
         if let Some(source) = self.sources.get(&topic) {
-            lock(&source.members).push(Member::new(subscription_id.clone()));
+            // The running source emits under this lock: queue the reply and the
+            // owed resync before the new member becomes visible, so none of its
+            // events can precede them.
+            let mut members = lock(&source.members);
             self.subscribed(&envelope.id, &subscription_id);
             self.out.owe(&subscription_id, topic.name());
+            members.push(Member::new(subscription_id.clone()));
             return;
         }
         let members: Members = Arc::new(Mutex::new(vec![Member::new(subscription_id.clone())]));

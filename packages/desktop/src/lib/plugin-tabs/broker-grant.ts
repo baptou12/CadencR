@@ -1,7 +1,9 @@
+import { toast } from "sonner";
 import { z } from "zod";
 
 import { resolveApiBaseUrlSync } from "@/api/client";
 import { pluginTabCreateGrant } from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 import { BrokerError, errorFromAxios, errorFromResponse } from "./broker-errors";
 
@@ -29,6 +31,8 @@ export interface PluginGrant {
 export interface GrantDeps {
   mint: (pluginId: string, featureId: number) => Promise<unknown>;
   revoke: (token: string) => Promise<void>;
+  /** A revocation failed: the tab may already be closed, so this goes app-wide. */
+  reportRevokeFailure: (error: unknown) => void;
   now: () => number;
 }
 
@@ -41,6 +45,10 @@ const defaultGrantDeps: GrantDeps = {
     });
     if (!response.ok && response.status !== 401) throw await errorFromResponse(response);
   },
+  reportRevokeFailure: (error) =>
+    toast.error(
+      `A closed custom tab's access could not be revoked (it expires on its own): ${apiErrorMessage(error, "unknown error")}`,
+    ),
   now: () => Date.now(),
 };
 
@@ -112,11 +120,12 @@ export class GrantHolder {
   }
 
   private revoke(grant: Promise<PluginGrant> | null): void {
-    void grant
-      ?.then((value) => this.deps.revoke(value.token))
-      // Best effort: a grant that outlives its guest expires on its own within
-      // its TTL, and a closed tab has no surface left to report on.
-      .catch(() => undefined);
+    void grant?.then(
+      (value) => this.deps.revoke(value.token).catch(this.deps.reportRevokeFailure),
+      // A grant that never minted has nothing to revoke; its failure already
+      // reached whoever asked for it (`get`).
+      () => undefined,
+    );
   }
 
   private mint(): Promise<PluginGrant> {

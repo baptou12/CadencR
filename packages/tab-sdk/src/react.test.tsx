@@ -269,4 +269,57 @@ describe("hooks", () => {
     });
     expect(shown()).toBe("value-b");
   });
+
+  it("useStorage shows an older write that saved after a newer one failed", async () => {
+    host = createTestHost({ storage: { note: "stored" } });
+    const writes: Array<{ value: unknown; finish: (ok: boolean) => void }> = [];
+    host.handle(
+      "storage.set",
+      ({ value }) =>
+        new Promise((resolve, reject) => {
+          writes.push({
+            value,
+            finish: (ok) => (ok ? resolve(null) : reject(new CadencrError("HOST_ERROR", "boom"))),
+          });
+        }),
+    );
+    function Overlapping() {
+      const { value, loading, set } = useStorage<string>("note", "empty");
+      if (loading) return <p>loading</p>;
+      return (
+        <>
+          <p data-testid="value">{value}</p>
+          <button type="button" onClick={() => set("A").catch(() => undefined)}>
+            A
+          </button>
+          <button type="button" onClick={() => set("B").catch(() => undefined)}>
+            B
+          </button>
+        </>
+      );
+    }
+    render(
+      <CadencrProvider connectOptions={{ transport: host.transport }}>
+        <Overlapping />
+      </CadencrProvider>,
+    );
+    const shown = () => screen.getByTestId("value").textContent;
+    await screen.findByText("stored");
+    await act(async () => {
+      screen.getByRole("button", { name: "A" }).click();
+      screen.getByRole("button", { name: "B" }).click();
+      await flush();
+    });
+    expect(shown()).toBe("B");
+    // B fails while A is still in flight, then A is saved.
+    await act(async () => {
+      writes[1]?.finish(false);
+      await flush();
+    });
+    await act(async () => {
+      writes[0]?.finish(true);
+      await flush();
+    });
+    expect(shown()).toBe("A");
+  });
 });

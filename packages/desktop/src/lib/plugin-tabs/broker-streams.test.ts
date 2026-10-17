@@ -16,6 +16,7 @@ function setup() {
       api_version: 1,
     })),
     revoke: vi.fn(async () => undefined),
+    reportRevokeFailure: vi.fn(),
     now: () => Date.now(),
   });
   const sink: StreamSink = { event: vi.fn(), resync: vi.fn(), error: vi.fn() };
