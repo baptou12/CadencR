@@ -42,3 +42,21 @@ pub(crate) fn validate(
     }
     Ok(Some(message))
 }
+
+pub(crate) fn pack(
+    directory: &std::path::Path,
+    destination: &std::path::Path,
+) -> Result<Option<String>, crate::Diagnostic> {
+    let archive = cadencr_registry_core::pack_tab(
+        cadencr_registry_core::PackTabRequest::builder()
+            .directory(directory)
+            .output(destination)
+            .build(),
+    )
+    .map_err(|e| crate::operation_error("TAB_PACKAGING_FAILED", e))?;
+    let mut bytes = serde_json::to_vec(&serde_json::json!({"kind":"tab", "archive":archive.archive,"sha256":archive.sha256,"size":archive.size}))
+        .map_err(|e| crate::operation_error("TAB_PACKAGING_FAILED", e))?;
+    bytes.push(b'\n');
+    crate::output::write_stdout(&bytes, &mut std::io::stdout().lock())?;
+    Ok(None)
+}

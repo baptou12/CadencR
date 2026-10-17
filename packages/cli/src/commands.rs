@@ -83,6 +83,7 @@ fn run_registry(command: &RegistryCommand) -> Result<Option<String>, Diagnostic>
             output: destination,
         } => pack_provider(package, target, directory, destination),
         RegistryCommand::PackTheme { directory, output } => crate::theme::pack(directory, output),
+        RegistryCommand::PackTab { directory, output } => crate::tab::pack(directory, output),
         RegistryCommand::PlanPublication {
             submission,
             repository,

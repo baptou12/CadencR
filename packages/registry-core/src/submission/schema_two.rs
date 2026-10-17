@@ -22,8 +22,8 @@ pub(super) fn validate_schema_two(value: &Value, errors: &mut Diagnostics) {
     if crate::marketplace::kind(entry) == "provider" {
         validate_marketplace_package(content, errors);
     } else if let (Some(archive), Some(repository), Some(tag)) = (
-        content
-            .pointer("/theme/distribution/archive")
+        crate::marketplace::descriptor(entry)
+            .pointer("/distribution/archive")
             .and_then(Value::as_str),
         value.pointer("/source/repository").and_then(Value::as_str),
         value.pointer("/source/tag").and_then(Value::as_str),

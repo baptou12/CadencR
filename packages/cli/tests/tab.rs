@@ -83,3 +83,34 @@ fn actual_cli_validates_custom_tab_folders() {
         .unwrap();
     assert_eq!(with_descriptor.status.code(), Some(1));
 }
+
+#[test]
+fn actual_cli_packs_the_compiled_custom_tab_without_overwriting() {
+    let root = tempfile::tempdir().unwrap();
+    let folder = root.path().join("graph");
+    std::fs::create_dir_all(folder.join("dist")).unwrap();
+    let mut document = manifest("graph");
+    document.as_object_mut().unwrap().remove("icon");
+    std::fs::write(folder.join("tab.json"), document.to_string()).unwrap();
+    std::fs::write(folder.join("dist/index.html"), "<html>Graph</html>").unwrap();
+    let archive = root.path().join("tab.tar.gz");
+    let run = || {
+        Command::new(env!("CARGO_BIN_EXE_cadencr"))
+            .args(["--json", "registry", "pack-tab", "--directory"])
+            .arg(&folder)
+            .arg("--output")
+            .arg(&archive)
+            .output()
+            .unwrap()
+    };
+    let output = run();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(receipt["kind"], "tab");
+    assert_eq!(receipt["sha256"].as_str().unwrap().len(), 64);
+    assert!(!run().status.success());
+}

@@ -30,7 +30,7 @@ pub fn read_theme_archive_bytes(
     if decoded.len() as u64 > LIMIT || !decoder.get_ref().is_empty() {
         return Err(invalid());
     }
-    let files = read_tar(&decoded)?;
+    let files = read_tar(&decoded, 2, false)?;
     let bytes = files.get("theme.json").ok_or_else(invalid)?;
     let document = parse_distributed_document(bytes).map_err(|issues| {
         RegistryError::from_messages(issues.iter().map(|i| i.describe()).collect())
@@ -57,7 +57,11 @@ fn octal(bytes: &[u8]) -> Result<usize, RegistryError> {
         .trim_matches(['\0', ' ']);
     usize::from_str_radix(text, 8).map_err(|_| invalid())
 }
-fn read_tar(bytes: &[u8]) -> Result<BTreeMap<String, Vec<u8>>, RegistryError> {
+pub(crate) fn read_tar(
+    bytes: &[u8],
+    max_files: usize,
+    nested: bool,
+) -> Result<BTreeMap<String, Vec<u8>>, RegistryError> {
     let mut files = BTreeMap::new();
     let mut offset = 0;
     while offset + 512 <= bytes.len() {
@@ -68,7 +72,7 @@ fn read_tar(bytes: &[u8]) -> Result<BTreeMap<String, Vec<u8>>, RegistryError> {
             }
             return Ok(files);
         }
-        if files.len() >= 2
+        if files.len() >= max_files
             || &header[257..263] != b"ustar\0"
             || &header[263..265] != b"00"
             || header[156] != b'0'
@@ -76,7 +80,7 @@ fn read_tar(bytes: &[u8]) -> Result<BTreeMap<String, Vec<u8>>, RegistryError> {
             || octal(&header[108..116])? != 0
             || octal(&header[116..124])? != 0
             || header[157..257].iter().any(|b| *b != 0)
-            || header[345..500].iter().any(|b| *b != 0)
+            || !nested && header[345..500].iter().any(|b| *b != 0)
         {
             return Err(invalid());
         }
@@ -99,6 +103,13 @@ fn read_tar(bytes: &[u8]) -> Result<BTreeMap<String, Vec<u8>>, RegistryError> {
             .position(|b| *b == 0)
             .ok_or_else(invalid)?;
         let name = std::str::from_utf8(&header[..end]).map_err(|_| invalid())?;
+        let prefix_end = header[345..500].iter().position(|b| *b == 0).unwrap_or(155);
+        let prefix = std::str::from_utf8(&header[345..345 + prefix_end]).map_err(|_| invalid())?;
+        let name = if prefix.is_empty() {
+            name.to_owned()
+        } else {
+            format!("{prefix}/{name}")
+        };
         if !name.split('/').all(|s| !matches!(s, "" | "." | ".."))
             || name.contains(['\\', '\0'])
             || name.starts_with('/')

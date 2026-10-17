@@ -280,4 +280,43 @@ mod tests {
         assert!(!final_path.exists());
         assert_eq!(std::fs::read(&partial).unwrap(), b"foreign");
     }
+    #[test]
+    fn tab_publication_stages_normalized_assets_and_rejects_identity_swaps() {
+        let root = tempfile::tempdir().unwrap();
+        let stage = root.path().join("payload");
+        std::fs::create_dir_all(stage.join("dist")).unwrap();
+        std::fs::write(stage.join("tab.json"),r#"{"schema_version":1,"kind":"tab","id":"graph","name":"Graph","version":"1.0.0","api_version":1,"entry":"dist/index.html"}"#).unwrap();
+        std::fs::write(stage.join("dist/index.html"), "<html>Graph</html>").unwrap();
+        let packed = cadencr_registry_core::pack_tab(
+            cadencr_registry_core::PackTabRequest::builder()
+                .directory(&stage)
+                .output(&root.path().join("tab.tar.gz"))
+                .build(),
+        )
+        .unwrap();
+        let body = std::fs::read(&packed.archive).unwrap();
+        let downloader = FixtureDownloader {
+            bodies: HashMap::from([(packed.sha256.clone(), body)]),
+            calls: Mutex::new(Vec::new()),
+            fail_at: None,
+        };
+        let mut submission = json!({"schema_version":2,"package":{"kind":"tab","package":{"tab":{"id":"graph","name":"Graph","description":"Graph","version":"1.0.0","api_version":1,"license":"MIT","repository":"https://github.com/acme/tabs","distribution":{"archive":"https://github.com/acme/tabs/releases/download/v1.0.0/tab.tar.gz","sha256":packed.sha256}},"host":{"publisher":"acme","compatibility":{"min_app_version":"0.1.0"}}}},"source":{"repository":"https://github.com/acme/tabs","commit":"a".repeat(40),"tag":"v1.0.0"},"changelog":"Release"});
+        let receipt = stage_loaded(
+            &submission,
+            "cadencr/registry",
+            &root.path().join("first"),
+            &downloader,
+        )
+        .unwrap();
+        assert_eq!(receipt.artifacts[0].asset, "tab.tar.gz");
+        assert_eq!(receipt.plan["mirrored_package"]["kind"], "tab");
+        submission["package"]["package"]["tab"]["id"] = json!("impostor");
+        assert!(stage_loaded(
+            &submission,
+            "cadencr/registry",
+            &root.path().join("second"),
+            &downloader
+        )
+        .is_err());
+    }
 }

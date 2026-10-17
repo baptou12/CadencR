@@ -29,6 +29,16 @@ pub(crate) fn declarative_archive(
     })
 }
 
+pub(crate) fn web_archive(
+    snapshot: &Snapshot,
+    output: &Path,
+) -> Result<BuiltArchive, RegistryError> {
+    reject_output_location(snapshot, output)?;
+    archive_with(snapshot, output, |snapshot, file| {
+        write_owned_with_policy(snapshot, file, true, true)
+    })
+}
+
 fn archive_with(
     snapshot: &Snapshot,
     output: &Path,
@@ -60,12 +70,24 @@ fn write_owned_with_mode(
     file: File,
     declarative: bool,
 ) -> Result<BuiltArchive, RegistryError> {
+    write_owned_with_policy(snapshot, file, declarative, false)
+}
+
+fn write_owned_with_policy(
+    snapshot: &Snapshot,
+    file: File,
+    declarative: bool,
+    files_only: bool,
+) -> Result<BuiltArchive, RegistryError> {
     let digest = DigestWriter::new(file);
     let mut gzip = GzBuilder::new()
         .mtime(0)
         .operating_system(19)
         .write(digest, Compression::best());
     for entry in &snapshot.entries {
+        if files_only && entry.directory {
+            continue;
+        }
         append(snapshot, entry, &mut gzip, declarative)?;
     }
     gzip.write_all(&[0; BLOCK * 2]).map_err(io_error)?;
