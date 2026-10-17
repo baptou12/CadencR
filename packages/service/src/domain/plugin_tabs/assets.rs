@@ -6,8 +6,12 @@
 //!
 //!  - the path is a clean relative path whose segments never start with `.`
 //!    and are never `node_modules` (no dot-files, no `.git`, no dependencies);
-//!  - the *resolved* path (symlinks followed) must still be inside the tab
-//!    folder and pass the same segment rules, so a link cannot smuggle out
+//!  - the manifest's `entry` passes the same rules, and its folder (the web
+//!    root), symlinks followed, must stay inside the tab folder: the manifest is
+//!    read without full validation, so an `entry` of `/etc/index.html` or a
+//!    `dist` linked elsewhere must not move the web root off the tab;
+//!  - the *resolved* path (symlinks followed) must still be inside the web root
+//!    and pass the same segment rules, so a link cannot smuggle out
 //!    `.git/config` or a file elsewhere on disk;
 //!  - every response carries the CSP of `docs/CUSTOM_TABS.md` §5.2, `nosniff`
 //!    and `no-store` (the author rebuilds constantly; a cached bundle would
@@ -69,19 +73,34 @@ fn locate(dir: &Path, id: &str, path: &str) -> Result<(PathBuf, u64), AppError> 
     }
     let entry = read_tab_manifest(dir)
         .map(|manifest| manifest.entry)
-        .ok_or_else(|| {
-            AppError::coded(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "PLUGIN_TAB_INVALID",
-                format!("custom tab `{id}` has no readable tab.json"),
-            )
-        })?;
+        .ok_or_else(|| invalid_tab(id, "has no readable tab.json"))?;
+    if !is_servable(&entry) {
+        return Err(invalid_tab(id, "has an `entry` outside its folder"));
+    }
     let (web_root, entry_file) = split_entry(&entry);
     let relative = if path.is_empty() { entry_file } else { path };
     if !is_servable(relative) {
         return Err(forbidden(relative));
     }
-    resolve(&dir.join(web_root), relative)
+    resolve(&web_root_inside(dir, id, web_root, relative)?, relative)
+}
+
+/// The canonical web root, refused when (symlinks followed) it is not inside
+/// the canonical tab folder. A missing web root (the tab is not built yet) is
+/// a missing asset.
+fn web_root_inside(
+    dir: &Path,
+    id: &str,
+    web_root: &str,
+    relative: &str,
+) -> Result<PathBuf, AppError> {
+    let canonical = |path: &Path| path.canonicalize().map_err(|_| asset_not_found(relative));
+    let root = canonical(&dir.join(web_root))?;
+    if root.starts_with(canonical(dir)?) {
+        Ok(root)
+    } else {
+        Err(invalid_tab(id, "has a web root that leaves its folder"))
+    }
 }
 
 /// `dist/index.html` → (`dist`, `index.html`); `index.html` → (``, `index.html`).
@@ -97,19 +116,15 @@ pub fn is_servable(relative: &str) -> bool {
             .all(|segment| !segment.starts_with('.') && segment != "node_modules")
 }
 
-/// Canonicalize `web_root/relative` and require it to be a regular file that
-/// stays servable relative to the canonical web root. Returns it with its length.
-/// A missing web root (the tab is not built yet) is a missing asset.
-fn resolve(web_root: &Path, relative: &str) -> Result<(PathBuf, u64), AppError> {
-    let root = web_root
-        .canonicalize()
-        .map_err(|_| asset_not_found(relative))?;
+/// Canonicalize `root/relative` and require it to be a regular file that stays
+/// servable relative to the canonical web `root`. Returns it with its length.
+fn resolve(root: &Path, relative: &str) -> Result<(PathBuf, u64), AppError> {
     let file = match root.join(relative).canonicalize() {
         Ok(file) => file,
         Err(_) => return Err(asset_not_found(relative)),
     };
     let inside = file
-        .strip_prefix(&root)
+        .strip_prefix(root)
         .ok()
         .and_then(|rest| {
             rest.components()
@@ -173,6 +188,14 @@ pub fn content_type(path: &Path) -> &'static str {
         _ => crate::shared::image_file::image_or_svg_mime_for_path(path)
             .unwrap_or("application/octet-stream"),
     }
+}
+
+fn invalid_tab(id: &str, problem: &str) -> AppError {
+    AppError::coded(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "PLUGIN_TAB_INVALID",
+        format!("custom tab `{id}` {problem}"),
+    )
 }
 
 fn forbidden(relative: &str) -> AppError {
@@ -298,6 +321,47 @@ mod tests {
             code(serve("..", "x").await.unwrap_err()),
             "PLUGIN_TAB_ID_INVALID"
         );
+    }
+
+    #[tokio::test]
+    async fn an_entry_outside_the_tab_folder_serves_nothing() {
+        for entry in ["/etc/index.html", "../other/index.html", ".git/index.html"] {
+            write_tab("graph", serde_json::json!({ "entry": entry }));
+            assert_eq!(
+                code(serve("graph", "").await.unwrap_err()),
+                "PLUGIN_TAB_INVALID",
+                "{entry}"
+            );
+            assert_eq!(
+                code(serve("graph", "passwd").await.unwrap_err()),
+                "PLUGIN_TAB_INVALID",
+                "{entry}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_web_root_linked_outside_the_tab_folder_serves_nothing() {
+        use std::os::unix::fs::symlink;
+        let dir = write_tab("graph", serde_json::json!({}));
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("index.html"), "<!doctype html>").unwrap();
+        std::fs::write(outside.path().join("secret.txt"), "secret").unwrap();
+        symlink(outside.path(), dir.join("dist")).unwrap();
+        for path in ["", "secret.txt"] {
+            assert_eq!(
+                code(serve("graph", path).await.unwrap_err()),
+                "PLUGIN_TAB_INVALID",
+                "{path}"
+            );
+        }
+        // A link that stays inside the tab folder is fine.
+        std::fs::remove_file(dir.join("dist")).unwrap();
+        std::fs::create_dir_all(dir.join("build")).unwrap();
+        std::fs::write(dir.join("build/index.html"), "<!doctype html>").unwrap();
+        symlink(dir.join("build"), dir.join("dist")).unwrap();
+        assert_eq!(serve("graph", "").await.unwrap().status(), StatusCode::OK);
     }
 
     #[cfg(unix)]

@@ -206,7 +206,7 @@ async function netFetch(params: unknown, runtime: BrokerRuntime): Promise<Method
       "This tab declares no network.allowed_origins in tab.json",
     );
   }
-  const headers = request.headers ? JSON.stringify(request.headers) : undefined;
+  const headers = request.headers ? asciiJson(request.headers) : undefined;
   if (headers !== undefined && headers.length > MAX_NET_HEADERS_CHARS) {
     throw badRequest(`net.fetch headers are over ${MAX_NET_HEADERS_CHARS / 1024} KiB`);
   }
@@ -226,6 +226,18 @@ async function netFetch(params: unknown, runtime: BrokerRuntime): Promise<Method
   const head = relayedHead(response);
   const body = await response.arrayBuffer();
   return { result: { ...head, body }, transfer: [body] };
+}
+
+/**
+ * JSON that is a valid header value: `JSON.stringify` keeps non-ASCII as is,
+ * which `fetch` refuses in a header, so every code unit past `~` becomes a
+ * `\uXXXX` escape the service's JSON parser reads back.
+ */
+function asciiJson(value: unknown): string {
+  return JSON.stringify(value).replace(
+    /[\u007f-\uffff]/g,
+    (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
 }
 
 async function stateGet(_params: unknown, runtime: BrokerRuntime): Promise<MethodOutcome> {

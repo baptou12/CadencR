@@ -242,7 +242,7 @@ Request: `POST /api/plugin-tabs/self/net/fetch?url=<urlencoded absolute
 URL>&method=<GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS>` (method defaults to
 `GET`), plugin token as usual, optional header `x-cadencr-net-headers: <JSON
 object of string values>` (≤ 16 KiB, ASCII — escape anything else as
-`\uXXXX`), body = the raw upstream request body
+`\uXXXX`; the SDK does; a non-ASCII value goes upstream as UTF-8), body = the raw upstream request body
 (`application/octet-stream`, ≤ 10 MiB; empty = none).
 
 Response when the upstream answered, whatever its status: **200** with

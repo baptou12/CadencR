@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Virtuoso } from "react-virtuoso";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Plus, Puzzle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ export function CustomTabsSection(): React.JSX.Element {
   const enablement = useCustomTabEnablement();
   const opener = useOpenCustomTabProject();
   const [creating, setCreating] = useCreateFromUrl();
+  const [expanded, setExpanded] = useExpandedCards();
   // The empty state carries its own Create button; anywhere else the header does.
   const empty = !data.isLoading && !data.error && data.tabs.length === 0;
 
@@ -51,13 +53,13 @@ export function CustomTabsSection(): React.JSX.Element {
             onCreate={() => setCreating(true)}
             render={(tab) => (
               <CustomTabCard
-                key={tab.id}
                 tab={tab}
                 projects={data.projects}
                 overrides={data.overridesFor(tab.id)}
                 enablement={enablement}
                 opener={opener}
-                defaultExpanded={data.tabs.length === 1}
+                expanded={expanded.get(tab.id) ?? data.tabs.length === 1}
+                onExpandedChange={(open) => setExpanded(tab.id, open)}
               />
             )}
           />
@@ -88,7 +90,58 @@ function CustomTabsList({
     return <ErrorRow label={apiErrorMessage(data.error, "Could not load your custom tabs.")} />;
   }
   if (data.tabs.length === 0) return <CustomTabsEmptyState onCreate={onCreate} />;
-  return <div className="space-y-2">{data.tabs.map(render)}</div>;
+  return <VirtualCards tabs={data.tabs} render={render} />;
+}
+
+/**
+ * The cards, virtualized against the Settings page's own scroller: a card is
+ * as tall as its open details, so it scrolls with the page rather than in a
+ * box of its own.
+ */
+function VirtualCards({
+  tabs,
+  render,
+}: {
+  tabs: CustomTabsData["tabs"];
+  render: (tab: CustomTabsData["tabs"][number]) => React.JSX.Element;
+}): React.JSX.Element {
+  // `undefined` until the anchor mounts; `null` when nothing above it scrolls.
+  const [scroller, setScroller] = useState<HTMLElement | null | undefined>(undefined);
+  const anchor = useCallback((node: HTMLDivElement | null) => {
+    if (node) setScroller(scrollParentOf(node));
+  }, []);
+  return (
+    <div ref={anchor}>
+      {scroller === undefined ? null : (
+        <Virtuoso
+          customScrollParent={scroller ?? undefined}
+          useWindowScroll={scroller === null}
+          data={tabs}
+          computeItemKey={(_, tab) => tab.id}
+          increaseViewportBy={600}
+          itemContent={(index, tab) => <div className={index > 0 ? "pt-2" : ""}>{render(tab)}</div>}
+        />
+      )}
+    </div>
+  );
+}
+
+/** The nearest ancestor that scrolls vertically. Read once, when the list mounts. */
+function scrollParentOf(node: HTMLElement): HTMLElement | null {
+  for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+    if (/(auto|scroll)/.test(getComputedStyle(parent).overflowY)) return parent;
+  }
+  return null;
+}
+
+/** Which cards the user opened or closed; a lone tab starts open. */
+function useExpandedCards(): [ReadonlyMap<string, boolean>, (id: string, open: boolean) => void] {
+  const [expanded, setExpandedMap] = useState<ReadonlyMap<string, boolean>>(() => new Map());
+  const setExpanded = useCallback(
+    (id: string, open: boolean) => setExpandedMap((previous) => new Map(previous).set(id, open)),
+    [],
+  );
+  return [expanded, setExpanded];
 }
 
 function CustomTabsEmptyState({ onCreate }: { onCreate: () => void }): React.JSX.Element {

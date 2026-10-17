@@ -43,6 +43,20 @@ export function initialDraft(fields: TabConfigField[], stored: Record<string, un
   );
 }
 
+/**
+ * The draft for the fields declared now: an edit is kept while its field
+ * still has the same kind of value; a field declared (or retyped) since the
+ * draft started comes from `initial`.
+ */
+export function withDeclaredFields(draft: Draft, initial: Draft): Draft {
+  return Object.fromEntries(
+    Object.entries(initial).map(([key, value]) => {
+      const edit = draft[key];
+      return [key, edit !== undefined && typeof edit === typeof value ? edit : value];
+    }),
+  );
+}
+
 export interface DraftPayload {
   values: Record<string, unknown>;
   /** Field key → why its value can't be sent. */

@@ -78,4 +78,21 @@ describe("CustomTabConfigFields", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("`limit` must be a number");
     expect(screen.getByText("Default: 20")).toBeInTheDocument();
   });
+
+  it("shows a field declared while the form is open and keeps the draft", async () => {
+    const { user, rerender } = renderForm({});
+    await user.type(screen.getByLabelText("GitLab URL"), "https://gitlab.example.com");
+    const added: TabConfigField = { key: "team", type: "string", label: "Team", scope: "global" };
+    rerender(
+      <CustomTabConfigFields
+        fields={[...FIELDS, added]}
+        stored={{}}
+        saving={false}
+        error={null}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Team")).toHaveValue("");
+    expect(screen.getByLabelText("GitLab URL")).toHaveValue("https://gitlab.example.com");
+  });
 });

@@ -101,9 +101,12 @@ pub fn outbound(
             continue;
         }
         let carries_secret = !secret_keys(value).is_empty();
-        let value = HeaderValue::from_str(&substitute(value, secrets)).map_err(|_| {
-            AppError::BadRequest(format!("the value of `{name}` is not a valid header value"))
-        })?;
+        // Bytes, not `from_str`: a non-ASCII value (sent `\uXXXX`-escaped in the
+        // JSON) goes upstream as UTF-8 rather than being refused.
+        let value =
+            HeaderValue::from_bytes(substitute(value, secrets).as_bytes()).map_err(|_| {
+                AppError::BadRequest(format!("the value of `{name}` is not a valid header value"))
+            })?;
         if carries_secret {
             secret_bearing.push(name.clone());
         }
@@ -189,6 +192,8 @@ mod tests {
         assert_eq!(secret, [HeaderName::from_static("authorization")]);
         assert!(outbound(&map(&[("bad name", "x")]), &BTreeMap::new()).is_err());
         assert!(outbound(&map(&[("x", "a\nb")]), &BTreeMap::new()).is_err());
+        let (headers, _) = outbound(&map(&[("X-Name", "日本語")]), &BTreeMap::new()).unwrap();
+        assert_eq!(headers["x-name"].as_bytes(), "日本語".as_bytes());
     }
 
     #[test]

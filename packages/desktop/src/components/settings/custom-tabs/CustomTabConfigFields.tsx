@@ -8,6 +8,7 @@ import {
   defaultHint,
   draftPayload,
   initialDraft,
+  withDeclaredFields,
   type Draft,
   type DraftValue,
   type SecretDraft,
@@ -17,7 +18,9 @@ import { SuppressingSelect } from "./SuppressingSelect";
 /**
  * One scope's settings (global, or one project's) as a form with its own Save.
  * Mount it with a `key` that changes with the stored values, so a save or a
- * reload starts the draft over from what is now stored.
+ * reload starts the draft over from what is now stored. Fields the tab declares
+ * while the form is open show up from what is stored, without dropping the
+ * draft of the others.
  */
 export function CustomTabConfigFields({
   fields,
@@ -34,12 +37,13 @@ export function CustomTabConfigFields({
   onSave: (values: Record<string, unknown>) => void;
 }): React.JSX.Element {
   const initial = useMemo(() => initialDraft(fields, stored), [fields, stored]);
-  const [draft, setDraft] = useState<Draft>(initial);
+  const [edits, setEdits] = useState<Draft>(initial);
+  const draft = useMemo(() => withDeclaredFields(edits, initial), [edits, initial]);
   const payload = useMemo(() => draftPayload(fields, draft, initial), [draft, fields, initial]);
   const dirty = Object.keys(payload.values).length > 0;
   const invalid = Object.keys(payload.errors).length > 0;
   const set = (key: string, value: DraftValue): void =>
-    setDraft((previous) => ({ ...previous, [key]: value }));
+    setEdits((previous) => ({ ...previous, [key]: value }));
 
   return (
     <form
@@ -71,7 +75,7 @@ export function CustomTabConfigFields({
           size="sm"
           variant="ghost"
           disabled={!dirty || saving}
-          onClick={() => setDraft(initial)}
+          onClick={() => setEdits(initial)}
         >
           Discard
         </Button>

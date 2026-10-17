@@ -380,6 +380,28 @@ describe("PluginTabBroker storage, state and ui", () => {
     expect(new TextDecoder().decode(result.body)).toBe("pong");
   });
 
+  it("escapes non-ASCII net.fetch headers so fetch accepts them", async () => {
+    const fetch = vi.fn<FetchLike>(
+      async () =>
+        new Response("", {
+          status: 200,
+          headers: { "x-cadencr-net-status": "200", "x-cadencr-net-headers": "{}" },
+        }),
+    );
+    const guest = connect(createBroker({ fetch, origins: ["https://api.example.com"] }));
+    ok(
+      await guest.request("net.fetch", {
+        url: "https://api.example.com/x",
+        headers: { "x-name": "日本語 😀" },
+      }),
+    );
+    const [, init] = fetch.mock.calls[0] ?? [];
+    const sent = ((init?.headers ?? {}) as Record<string, string>)["x-cadencr-net-headers"] ?? "";
+    expect(sent).toMatch(/^[\x20-\x7e]+$/);
+    expect(JSON.parse(sent)).toEqual({ "x-name": "日本語 😀" });
+    expect(() => new Headers({ "x-cadencr-net-headers": sent })).not.toThrow();
+  });
+
   it("maps a net.fetch relay failure to the service's code", async () => {
     const fetch = vi.fn<FetchLike>(
       async () =>

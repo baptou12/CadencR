@@ -99,6 +99,18 @@ describe("CustomTabsSection", () => {
     );
   });
 
+  it("opens a lone tab's card and leaves several closed until clicked", async () => {
+    mocks.tabs = [tabFixture(), tabFixture({ id: "other", name: "Other" })];
+    const { user } = render(<CustomTabsSection />);
+    const graph = await screen.findByRole("button", { name: /Changed files graph/ });
+    expect(graph).toHaveAttribute("aria-expanded", "false");
+    await user.click(graph);
+    expect(graph).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: /Other/ })).toHaveAttribute("aria-expanded", "false");
+    await user.click(graph);
+    expect(graph).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("asks for consent before the global switch turns a tab on", async () => {
     mocks.tabs = [tabFixture()];
     const { user } = render(<CustomTabsSection />);

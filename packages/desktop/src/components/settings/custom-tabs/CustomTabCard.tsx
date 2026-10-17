@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId } from "react";
 import { ChevronRight, ShieldAlert } from "lucide-react";
 import type { PluginTabSummary, Project } from "@/api/generated";
 import { PluginTabIcon } from "@/components/plugin-tabs/PluginTabIcon";
@@ -20,7 +20,9 @@ export interface CustomTabCardProps {
   overrides: ReadonlyMap<number, ProjectOverride>;
   enablement: CustomTabEnablement;
   opener: OpenCustomTabProject;
-  defaultExpanded?: boolean;
+  /** Owned by the list, so a card scrolled out of the virtualized list and back keeps it. */
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }
 
 /**
@@ -29,8 +31,7 @@ export interface CustomTabCardProps {
  * tab still gets its card, with the issues that keep it from running.
  */
 export function CustomTabCard(props: CustomTabCardProps): React.JSX.Element {
-  const { tab, projects, overrides, defaultExpanded = false } = props;
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const { tab, projects, overrides, expanded, onExpandedChange } = props;
   const detailsId = useId();
   const projectIds = projects.map((project) => project.id);
   const summary = enablementSummary(tab, overrides, projectIds);
@@ -46,7 +47,7 @@ export function CustomTabCard(props: CustomTabCardProps): React.JSX.Element {
         type="button"
         aria-expanded={expanded}
         aria-controls={detailsId}
-        onClick={() => setExpanded((open) => !open)}
+        onClick={() => onExpandedChange(!expanded)}
         className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors duration-100 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted text-foreground">
