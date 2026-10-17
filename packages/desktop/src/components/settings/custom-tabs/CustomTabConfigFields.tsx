@@ -1,4 +1,5 @@
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo } from "react";
+import { useKeptDraft } from "./kept-drafts";
 import { AlertCircle, Loader2 } from "lucide-react";
 import type { TabConfigField } from "@/api/generated";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,6 @@ import {
   draftPayload,
   initialDraft,
   withDeclaredFields,
-  type Draft,
   type DraftValue,
   type SecretDraft,
 } from "./config-draft";
@@ -28,6 +28,7 @@ export function CustomTabConfigFields({
   saving,
   error,
   onSave,
+  draftKey,
 }: {
   fields: TabConfigField[];
   stored: Record<string, unknown>;
@@ -35,9 +36,11 @@ export function CustomTabConfigFields({
   /** The service's verdict on the last save (`PLUGIN_TAB_CONFIG_INVALID`). */
   error: string | null;
   onSave: (values: Record<string, unknown>) => void;
+  /** Where the unsaved draft is kept when the form unmounts (`useKeptDraft`). */
+  draftKey?: string;
 }): React.JSX.Element {
   const initial = useMemo(() => initialDraft(fields, stored), [fields, stored]);
-  const [edits, setEdits] = useState<Draft>(initial);
+  const [edits, setEdits] = useKeptDraft(draftKey, initial);
   const draft = useMemo(() => withDeclaredFields(edits, initial), [edits, initial]);
   const payload = useMemo(() => draftPayload(fields, draft, initial), [draft, fields, initial]);
   const dirty = Object.keys(payload.values).length > 0;

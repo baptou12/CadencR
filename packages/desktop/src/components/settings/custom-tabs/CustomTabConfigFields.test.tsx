@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import type { TabConfigField } from "@/api/generated";
 import { CustomTabConfigFields } from "./CustomTabConfigFields";
+import { KeptDraftsProvider } from "./kept-drafts";
 
 // The generated type models `default` as a JSON object; a manifest default is any JSON value.
 const NUMBER_DEFAULT = 20 as unknown as TabConfigField["default"];
@@ -94,5 +95,30 @@ describe("CustomTabConfigFields", () => {
     );
     expect(screen.getByLabelText("Team")).toHaveValue("");
     expect(screen.getByLabelText("GitLab URL")).toHaveValue("https://gitlab.example.com");
+  });
+
+  it("finds its unsaved draft after unmounting until the stored values change", async () => {
+    const form = (show: boolean, key: string) => (
+      <KeptDraftsProvider>
+        {show ? (
+          <CustomTabConfigFields
+            key={key}
+            fields={FIELDS}
+            stored={{}}
+            saving={false}
+            error={null}
+            onSave={vi.fn()}
+            draftKey={key}
+          />
+        ) : null}
+      </KeptDraftsProvider>
+    );
+    const { user, rerender } = render(form(true, "graph:global:{}"));
+    await user.type(screen.getByLabelText("GitLab URL"), "https://kept.example");
+    rerender(form(false, "graph:global:{}"));
+    rerender(form(true, "graph:global:{}"));
+    expect(screen.getByLabelText("GitLab URL")).toHaveValue("https://kept.example");
+    rerender(form(true, 'graph:global:{"gitlab_url":"x"}'));
+    expect(screen.getByLabelText("GitLab URL")).toHaveValue("");
   });
 });

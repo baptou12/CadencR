@@ -12,6 +12,7 @@ import { CUSTOM_TABS_SECTION_ID } from "./custom-tab-model";
 import { CreateCustomTabDialog } from "./CreateCustomTabDialog";
 import { CustomTabCard } from "./CustomTabCard";
 import { CustomTabConsentDialog } from "./CustomTabConsentDialog";
+import { KeptDraftsProvider } from "./kept-drafts";
 import { useCustomTabEnablement } from "./useCustomTabEnablement";
 import { useCustomTabsData, type CustomTabsData } from "./useCustomTabsData";
 import { useOpenCustomTabProject } from "./useOpenCustomTabProject";
@@ -90,7 +91,11 @@ function CustomTabsList({
     return <ErrorRow label={apiErrorMessage(data.error, "Could not load your custom tabs.")} />;
   }
   if (data.tabs.length === 0) return <CustomTabsEmptyState onCreate={onCreate} />;
-  return <VirtualCards tabs={data.tabs} render={render} />;
+  return (
+    <KeptDraftsProvider>
+      <VirtualCards tabs={data.tabs} render={render} />
+    </KeptDraftsProvider>
+  );
 }
 
 /**

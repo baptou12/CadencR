@@ -64,6 +64,7 @@ export function CustomTabConfiguration({
         <ScopeBlock title="All projects">
           <CustomTabConfigFields
             key={globalKey}
+            draftKey={`${tab.id}:${globalKey}`}
             fields={globalFields}
             stored={data.global}
             saving={save.saving === "global"}
@@ -92,6 +93,7 @@ export function CustomTabConfiguration({
               ) : (
                 <CustomTabConfigFields
                   key={projectKey}
+                  draftKey={`${tab.id}:${projectKey}`}
                   fields={projectFields}
                   stored={data.project ?? NO_VALUES}
                   saving={save.saving === "project"}
