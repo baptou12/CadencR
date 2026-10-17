@@ -40,7 +40,7 @@ a future desktop release. Publication is not public UI or desktop trust activati
       QA target. Anonymous archive/discovery verification cannot positively
       qualify a private repository. Use inert fixtures and QA-only signing keys;
       offline tests and source-level transport fixtures do not satisfy this gate.
-- [ ] Pin the qualified executable atomically in contribution and protected
+- [ ] Deploy the candidate qualified-executable pin in contribution and protected
       publication workflows; deploy the reviewed registry update and verify CI.
       Only then remove replaced JavaScript business implementations.
 - [ ] Harden and package the Pi draft from `plugins/providers/pi`, retaining
@@ -113,9 +113,11 @@ evidence, not outstanding failures of this newly distributed executable.
 - Scope is the isolated public QA repository and inert declarative themes. No
   production trust/key/pin/feed change, official theme/Pi publication, native Pi
   runtime certification or desktop marketplace activation is implied. Production
-  pins remain `PENDING`. Next is a reviewed atomic CLI cutover of registry
-  workflows, followed by removal of replaced JavaScript and official-plugin
-  publication gates; those remain open checklist items above.
+  registry deployment remains unchanged. The candidate template now pins this
+  qualified binary with no JavaScript fallback. Remote adoption needs a bootstrap
+  PR adding the pin/helpers while preserving validation, then a workflow cutover
+  from that merged trusted base. Deployed Rust CI and oracle migration precede
+  JavaScript removal; official-plugin publication remains a separate gate.
 
 ### Real GitHub qualification — 2026-10-15
 
@@ -309,6 +311,26 @@ no releases, no protected environments, and only the initial JavaScript
 contribution workflow. The newer monorepo template is **not deployed there**.
 Publishing mixed themes/providers therefore requires a reviewed registry update;
 the app release alone did not perform that cutover.
+
+Current cutover preparation pins the qualified development CLI in the monorepo
+**candidate template only**. The inspected remote main has no `ci/released-cli.env`
+or `scripts/ci` helpers. Only `validate-provider-metadata.yml` is active;
+privileged workflows are examples under `examples/workflows`. Do not submit a
+single cutover PR that expects its new helpers to exist in the trusted base.
+
+1. Merge a bootstrap PR adding the qualified pin and three helpers, preserving the
+   existing validation workflow.
+2. Cut over validation from that merged base and verify both required checks,
+   `inert-metadata` and `contributor-tooling`, execute the released Rust binary.
+   Retain CODEOWNER approval and last-push approval requirements.
+3. After deployed Rust CI passes and executable JS test oracles are migrated,
+   remove replaced JavaScript business code. Until then it is compatibility/oracle
+   code only, not the candidate CI runtime.
+
+The candidate publisher does not upload raw recovery state. Fresh runners
+reconstruct remote publication evidence; no recovery artifact is restored.
+This work does not activate privileged workflows, change keys/trust/feed settings,
+or expose the marketplace UI.
 
 Use GPT-6.1-Sol parallel advisors/workers and finish each wave with independent
 reuse/quality/efficiency reviews, scoped checks and a commit plan. No production

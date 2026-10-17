@@ -25,9 +25,10 @@ GitHub publication/replay, fresh-runner reconstruction, empty-delta renewal and
 controlled post-publication network interruption/resume. See the
 [current evidence](./MARKETPLACE_V1.md#qualified-distributed-cli--2026-10-17).
 This uses inert themes and QA-only trust, not production credentials or provider
-runtime certification. Reviewed production registry pins/cutover, JavaScript
-removal and official-plugin publication remain pending; desktop activation is
-still separate.
+runtime certification. The candidate template now pins the qualified executable
+without JavaScript fallback; actual remote registry deployment, JavaScript oracle
+migration/removal and official-plugin publication remain pending. Desktop
+activation is still separate.
 
 Internal QA can opt in with `VITE_INTERNAL_MARKETPLACE=true` in a DEV renderer
 only; production builds cannot expose the marketplace through that environment
@@ -217,10 +218,25 @@ not an ordinary delegated-key rotation.
 
 ## Deployment cutover still pending
 
-The standalone CLI release and isolated lifecycle QA are complete, but production
-`PENDING` binary pins, remote registry workflow cutover, official roots/feeds and
-packaged-client certification remain open. Next, review and pin the qualified
-executable atomically in registry workflows and commands, then remove replaced
-JavaScript implementations. The
-transitional JavaScript validator is not a supported substitute for schema-2 mixed
-contributions or the trust-generation publication protocol.
+The standalone CLI release and isolated lifecycle QA are complete. The candidate
+template pin is `0.13.1-dev.38974097824.1`, tag
+`cli/v0.13.1-dev.38974097824.1`, SHA-256
+`ee3516bb5ad7ed143428f255e9e4dd24d9f13003061a803c99be8f3fd8db9a7e`,
+from source `b3e3ed5ac9d2cd4580117558a218b4c809af65d5`. Its trusted
+contribution and publisher callers require Rust and have no JavaScript fallback.
+
+The actual remote registry at `24656f0f1ceb23576b0be9449c86c6d09e24f5b3`
+has no pin or helpers and only its original metadata validation workflow active.
+First merge a reviewed bootstrap PR adding the pin and three CI helpers without
+changing that workflow; then cut over validation from the merged trusted base.
+Preserve required `inert-metadata` / `contributor-tooling` checks, CODEOWNER review
+and last-push approval. Privileged workflows under `examples/workflows` are not
+deployed publishers. See the [template deployment sequence](../tooling/marketplace-registry/README.md#remote-deployment-requires-two-reviewed-changes).
+
+Remove replaced JavaScript business code only after deployed Rust CI succeeds
+and executable test oracles are migrated to immutable data/Rust coverage. It is
+compatibility/oracle code, not a supported substitute for schema-2 mixed
+contributions or trust-generation publication. Official roots/feeds, production
+publication authority and packaged-client certification remain separate gates.
+The candidate publisher uploads no raw recovery state; fresh runners reconstruct
+publication state from verified remote evidence.

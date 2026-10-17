@@ -5,10 +5,12 @@
 v0.13.0 keeps marketplace UI hidden. The next milestone prepares and publishes
 reviewed themes and Pi before a future activation release. Remote publication
 requires source ownership/provenance review and the protected Rust cutover; an
-offline validation result is not publication authority. The released v0.13.0 CLI
-is available, but full lifecycle qualification and production pins remain pending.
-The `PENDING` pin preserves schema-1
-JavaScript CI; it **does not support mixed schema-2 themes or trust generations**.
+offline validation result is not publication authority. The distributed
+`0.13.1-dev.38974097824.1` CLI is qualified in an isolated GitHub environment.
+The candidate template pins it with no JavaScript fallback, but remote registry
+CI cutover remains undeployed. See the [two-PR bootstrap sequence](README.md#remote-deployment-requires-two-reviewed-changes).
+JavaScript remains only for schema-1 compatibility/oracle coverage pending
+deployed Rust CI and oracle migration, not mixed schema-2 acceptance.
 
 ### Rust provider and theme paths
 
@@ -25,8 +27,9 @@ projects may contain files that a distributable theme must not contain.
 Packaging and local validation are not source-ownership checks or permission to
 sign/publish. Maintainers independently review contributor ownership, immutable
 source bindings, licenses, declared permissions and all platform/theme bytes.
-The legacy provider-only procedure below is retained for current templates,
-not a theme contribution route.
+The legacy provider-only npm examples below are compatibility/oracle references,
+not the supported CI runtime or a theme contribution route. Use the Rust commands
+above for new contributions; legacy executable oracles remain until migrated.
 
 ## Before opening a pull request
 
@@ -53,10 +56,10 @@ package/submission mismatches and silent publisher/source-repository changes.
 Whitespace and JSON key ordering are not version changes; metadata values are.
 Unchanged legacy entries are retained without inventing source provenance.
 
-Run the trusted checkout's contribution command against both snapshots:
+Run the qualified Rust contribution command against both snapshots:
 
 ```bash
-npm run validate:contribution -- \
+cadencr registry validate \
   --base /path/to/base-registry \
   --candidate /path/to/candidate-registry
 ```

@@ -43,7 +43,7 @@ test("offline qualification rejects unverified executables before execution or w
   assert.equal(existsSync(work), false);
 });
 
-test("qualification pins and upload boundary do not activate production or leak generated keys", () => {
+test("offline qualification uses separate pins and never uploads generated keys", () => {
   assert.equal(
     readFileSync(pins, "utf8")
       .split("\n")
@@ -51,13 +51,9 @@ test("qualification pins and upload boundary do not activate production or leak 
       .join("\n"),
     "CADENCR_RELEASE_VERSION=0.13.0\nCADENCR_RELEASE_SHA256=d3223e3b3ff74543595fd3354c3249f50fa01def65f376a624eb1fbc8072df2a",
   );
-  const production = readFileSync(
-    new URL("../tooling/marketplace-registry/ci/released-cli.env", import.meta.url),
-    "utf8",
-  );
-  assert.match(production, /CADENCR_RELEASE_VERSION=PENDING/);
-  assert.match(production, /CADENCR_RELEASE_SHA256=PENDING/);
   const yaml = readFileSync(workflow, "utf8");
+  assert.match(yaml, /scripts\/cli-qualification\.env "\$CLI_ROOT"/);
+  assert.doesNotMatch(yaml, /ci\/released-cli\.env/);
   assert.match(yaml, /runs-on: ubuntu-24\.04/);
   assert.match(yaml, /contents: read/);
   assert.match(yaml, /persist-credentials: false/);

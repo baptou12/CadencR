@@ -7,7 +7,8 @@ reviewed themes and Pi before a future desktop activation. Procedures involving
 signing, tags, feed advancement, production pins or remote writes require reviewed
 targets/inputs and protected operator authority; preparation alone is insufficient.
 Examples are syntax, not actual keys, destinations or assigned owners. No scheduler
-is deployed here, and the released CLI still needs full lifecycle qualification.
+is deployed here. The distributed `0.13.1-dev.38974097824.1` CLI passed isolated
+GitHub lifecycle qualification; that is not production deployment.
 
 | Required record before activation | Accountable role / evidence                                                             |
 | --------------------------------- | --------------------------------------------------------------------------------------- |
@@ -19,13 +20,20 @@ is deployed here, and the released CLI still needs full lifecycle qualification.
 | Runtime cutover                   | Released Rust binary independently downloaded/verified/exercised; both CI pins reviewed |
 
 The owners and live controls above remain unassigned/unverified in this template.
-Retain JavaScript until the distributed Rust binary qualifies. `PENDING` is not
-an activation flag; legacy tooling cannot process schema-2 mixed catalogs or the
-trust-generation protocol. Preparation CI artifacts are not released-binary proof.
+The candidate pin selects the qualified Rust binary with no JavaScript fallback.
+Remote registry main has no pin/helpers: first merge a bootstrap PR preserving
+its old validation workflow, then cut over the workflow from that trusted base.
+See the [deployment sequence](README.md#remote-deployment-requires-two-reviewed-changes).
+Keep legacy business code only for compatibility/oracles until deployed Rust CI
+passes and oracle migration is complete. It cannot process schema-2 mixed
+catalogs or the trust-generation protocol. No desktop trust/feed or key change
+is authorized by the candidate cutover.
 
 ## Read-only expiry and failure alert preparation
 
-Run the offline scheduling diagnostic against **local snapshots**, including the
+The retained JavaScript compatibility diagnostic below is not part of the pinned
+Rust CI/publisher runtime. Removal requires a replacement monitoring procedure;
+the Rust CLI has no equivalent expiry-monitor subcommand. Run it against **local snapshots**, including the
 catalog, provider policy and theme policy where present:
 
 ```sh

@@ -23,6 +23,7 @@ test("PR validation runs trusted base tooling against separately checked-out can
   const workflow = await readWorkflow();
   const { inert } = jobSections(workflow);
 
+  assert.match(workflow, /^  inert-metadata:$/m);
   assert.match(workflow, /^\s*pull_request:\s*$/m);
   assert.match(
     workflow,
@@ -54,20 +55,17 @@ test("PR validation stays read-only and does not acquire credentials or privileg
   assert.doesNotMatch(inert, /download-artifact|curl|wget|npm\s+(?:ci|install)|pnpm|yarn/);
 });
 
-test("released CLI pin is wholly pending or exact and cannot supply a URL", async () => {
+test("released CLI pin is the qualified atomic three-field pin", async () => {
   const config = await readFile(new URL("../ci/released-cli.env", import.meta.url), "utf8");
   const version = config.match(/^CADENCR_RELEASE_VERSION=(\S+)$/m)?.[1];
   const digest = config.match(/^CADENCR_RELEASE_SHA256=(\S+)$/m)?.[1];
-  assert.ok(
-    (version === "PENDING" && digest === "PENDING") ||
-      (/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(version ?? "") &&
-        /^[0-9a-f]{64}$/.test(digest ?? "")),
-    "release pin must be wholly pending or wholly provisioned",
-  );
+  assert.equal(version, "0.13.1-dev.38974097824.1");
+  assert.equal(digest, "ee3516bb5ad7ed143428f255e9e4dd24d9f13003061a803c99be8f3fd8db9a7e");
+  assert.match(config, /^CADENCR_RELEASE_TAG=cli\/v0\.13\.1-dev\.38974097824\.1$/m);
   assert.doesNotMatch(config, /URL|latest/);
 });
 
-test("released CLI bytes are verified before the offline fixture is executed", async (t) => {
+async function releasedCliFixture(t) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "cadencr-cli-fixture-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const tools = path.join(directory, "tools");
@@ -129,6 +127,11 @@ child.on("exit", (code) => { clearTimeout(timer); process.exit(code ?? 124); });
         },
       },
     );
+  return { directory, tools, marker, pin, requestedUrl, script, run, sha256 };
+}
+
+test("released CLI bytes and version are verified before offline execution", async (t) => {
+  const { directory, marker, pin, requestedUrl, run } = await releasedCliFixture(t);
   const valid = run(pin);
   assert.equal(valid.status, 0, valid.stderr);
   assert.equal(
@@ -166,7 +169,10 @@ child.on("exit", (code) => { clearTimeout(timer); process.exit(code ?? 124); });
   assert.match(wrongVersion.stderr, /version mismatch/);
   await assert.rejects(readFile(marker), /ENOENT/);
   await rm(requestedUrl);
+});
 
+test("tooling builds inert metadata and PENDING never executes candidate code", async (t) => {
+  const { directory, tools, marker, pin, requestedUrl, script } = await releasedCliFixture(t);
   const populatedCandidate = path.join(directory, "populated-candidate");
   await mkdir(path.join(populatedCandidate, "packages"), { recursive: true });
   await writeFile(path.join(populatedCandidate, "packages/provider.json"), "{}");
@@ -208,6 +214,25 @@ child.on("exit", (code) => { clearTimeout(timer); process.exit(code ?? 124); });
   await rm(marker);
   await rm(requestedUrl);
 
+  const pendingPin = path.join(directory, "pending.env");
+  await writeFile(pendingPin, "CADENCR_RELEASE_VERSION=PENDING\nCADENCR_RELEASE_SHA256=PENDING\n");
+  for (const mode of ["validate", "tooling"]) {
+    const pending = spawnSync(
+      "/bin/sh",
+      [script.pathname, pendingPin, "/trusted/base", populatedCandidate, mode],
+      {
+        encoding: "utf8",
+        env: { ...process.env, PATH: `${tools}:${process.env.PATH}`, RUNNER_TEMP: directory },
+      },
+    );
+    assert.notEqual(pending.status, 0);
+    await assert.rejects(readFile(marker), /ENOENT/);
+    await assert.rejects(readFile(path.join(directory, "npm-ran")), /ENOENT/);
+  }
+});
+
+test("digest mismatch and malformed release pins fail closed", async (t) => {
+  const { directory, marker, requestedUrl, run, sha256 } = await releasedCliFixture(t);
   const badPin = path.join(directory, "bad-pin.env");
   await writeFile(
     badPin,
@@ -275,7 +300,7 @@ test("all registry contribution and CI changes trigger validation", async () => 
   assert.doesNotMatch(workflow, /^\s+paths(?:-ignore)?:/m);
 });
 
-test("bootstrap bounds the fixed official download and contains both tooling paths", async () => {
+test("bootstrap bounds the fixed official download and never runs candidate code", async () => {
   const script = await readFile(
     new URL("../scripts/ci/validate-provider-contribution.sh", import.meta.url),
     "utf8",
@@ -292,6 +317,6 @@ test("bootstrap bounds the fixed official download and contains both tooling pat
   assert.match(helper, /tag="v\$version"/);
   assert.match(helper, /"\$tag" != "cli\/v\$version"/);
   assert.match(helper, /--max-filesize 134217728/);
-  assert.match(script, /npm ci --ignore-scripts --no-audit --no-fund/);
+  assert.doesNotMatch(script, /npm|validate-contribution\.mjs|cd "\$candidate"/);
   assert.match(script, /registry build-index --schema-version 2 --packages/);
 });
