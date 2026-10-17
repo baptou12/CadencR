@@ -195,26 +195,24 @@ export function useStorage<T extends JsonValue>(key: string, initial: T): Storag
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<CadencrError | null>(null);
   const initialRef = useRef(initial);
-  // Last value known to be stored: a failed `set` rolls the UI back to it.
-  const stored = useRef<T>(initial);
-  // Writes still in flight, and whether one was confirmed: a read must not
-  // replace a value a write put on screen. A write that failed (and rolled
-  // back) no longer counts, so the read still shows what is really stored.
-  const pending = useRef(0);
-  const confirmed = useRef(false);
+  // What is known about the current key. Each key gets its own, so a write
+  // still pending for the previous key never holds back (or overwrites) the
+  // new key's value.
+  const keyState = useRef<KeyState<T>>(newKeyState(initial));
 
   useEffect(() => {
     let cancelled = false;
-    confirmed.current = false;
+    const state = newKeyState(initialRef.current);
+    keyState.current = state;
     setLoading(true);
     client.storage.get<T>(key).then(
       (loaded) => {
         if (cancelled) return;
         // A confirmed write is newer than this read. While one is in flight,
         // the read is only what that write would roll back to.
-        if (!confirmed.current) {
-          stored.current = loaded ?? initialRef.current;
-          if (pending.current === 0) setValue(stored.current);
+        if (!state.confirmed) {
+          state.stored = loaded ?? initialRef.current;
+          if (state.pending === 0) setValue(state.stored);
         }
         setError(null);
         setLoading(false);
@@ -232,25 +230,39 @@ export function useStorage<T extends JsonValue>(key: string, initial: T): Storag
 
   const set = useCallback(
     async (next: T) => {
-      pending.current += 1;
+      const state = keyState.current;
+      const current = () => keyState.current === state;
+      state.pending += 1;
       setValue(next);
       try {
         await client.storage.set(key, next);
-        confirmed.current = true;
-        stored.current = next;
-        setError(null);
+        state.confirmed = true;
+        state.stored = next;
+        if (current()) setError(null);
       } catch (failure) {
-        // Roll back unless a newer `set` has replaced the value meanwhile.
-        setValue((current) => (current === next ? stored.current : current));
+        // Roll back unless a newer `set` (or another key) replaced the value meanwhile.
+        if (current()) setValue((shown) => (shown === next ? state.stored : shown));
         const cadencrError = toCadencrError(failure);
-        setError(cadencrError);
+        if (current()) setError(cadencrError);
         throw cadencrError;
       } finally {
-        pending.current -= 1;
+        state.pending -= 1;
       }
     },
     [client, key],
   );
 
   return { value, loading, error, set };
+}
+
+/** Per key: the last value known to be stored (a failed `set` rolls back to
+ *  it), writes in flight, and whether one was confirmed. */
+interface KeyState<T> {
+  stored: T;
+  pending: number;
+  confirmed: boolean;
+}
+
+function newKeyState<T>(initial: T): KeyState<T> {
+  return { stored: initial, pending: 0, confirmed: false };
 }

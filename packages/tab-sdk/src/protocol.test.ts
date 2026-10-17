@@ -25,8 +25,36 @@ describe("protocol", () => {
       isHostToGuest({ v: 1, kind: "response", id: "1", error: { code: "X", message: "m" } }),
     ).toBe(true);
     expect(isHostToGuest({ v: 1, kind: "response", id: "1" })).toBe(false);
-    expect(isHostToGuest({ v: 1, kind: "event", event: "theme.changed", payload: {} })).toBe(true);
+    expect(
+      isHostToGuest({ v: 1, kind: "event", event: "theme.changed", payload: { theme: {} } }),
+    ).toBe(true);
     expect(isHostToGuest("nope")).toBe(false);
+  });
+
+  it("refuses malformed host messages before a handler sees them", () => {
+    const event = (name: string, payload: unknown) => ({
+      v: 1,
+      kind: "event",
+      event: name,
+      payload,
+    });
+    const bad = [
+      { v: 1, kind: "response", id: "1", error: { code: 1 } },
+      { v: 1, kind: "response", id: "1", error: "boom" },
+      event("theme.changed", {}),
+      event("visibility.changed", { visible: "yes" }),
+      event("stream.event", { subscriptionId: "s", seq: "1", data: { domain: "g", action: "a" } }),
+      event("stream.error", { subscriptionId: "s", error: {} }),
+      event("context.changed", { context: { project: {} } }),
+      event("made.up", {}),
+    ];
+    for (const message of bad) expect(isHostToGuest(message), JSON.stringify(message)).toBe(false);
+    expect(
+      isHostToGuest(
+        event("stream.event", { subscriptionId: "s", seq: 1, data: { domain: "g", action: "a" } }),
+      ),
+    ).toBe(true);
+    expect(isHostToGuest(event("visibility.changed", { visible: false }))).toBe(true);
   });
 
   it("lists every method", () => {

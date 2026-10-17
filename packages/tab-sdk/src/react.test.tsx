@@ -221,4 +221,52 @@ describe("hooks", () => {
     });
     expect(button.textContent).toBe("stored");
   });
+
+  it("useStorage shows the new key's value while a write to the old key is pending", async () => {
+    host = createTestHost({ storage: { a: "value-a", b: "value-b" } });
+    let finishWrite: (() => void) | undefined;
+    host.handle(
+      "storage.set",
+      () =>
+        new Promise((resolve) => {
+          finishWrite = () => resolve(null);
+        }),
+    );
+    function Switcher() {
+      const [key, setKey] = useState("a");
+      const { value, loading, set } = useStorage<string>(key, "empty");
+      return (
+        <>
+          <p data-testid="value">{loading ? "loading" : value}</p>
+          <button type="button" onClick={() => set("chosen-a").catch(() => undefined)}>
+            write
+          </button>
+          <button type="button" onClick={() => setKey("b")}>
+            switch
+          </button>
+        </>
+      );
+    }
+    render(
+      <CadencrProvider connectOptions={{ transport: host.transport }}>
+        <Switcher />
+      </CadencrProvider>,
+    );
+    const shown = () => screen.getByTestId("value").textContent;
+    await screen.findByText("value-a");
+    await act(async () => {
+      screen.getByRole("button", { name: "write" }).click();
+      await flush();
+    });
+    await act(async () => {
+      screen.getByRole("button", { name: "switch" }).click();
+      await flush();
+    });
+    expect(shown()).toBe("value-b");
+    await act(async () => {
+      finishWrite?.();
+      await flush();
+    });
+    expect(shown()).toBe("value-b");
+  });
 });
