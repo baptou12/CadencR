@@ -19,6 +19,8 @@ function InstalledFacts({ listing }: { listing: MarketplaceListing }): React.JSX
   const facts: string[] = [];
   if (listing.kind === "provider")
     facts.push(installed.enabled ? "Starts with Cadencr" : "Disabled");
+  else if (listing.kind === "tab")
+    facts.push(installed.enabled ? "Enabled globally" : "Disabled globally");
   else if (installed.selected && !installed.active) facts.push("Saved in a theme slot");
   const installedOn = formatDay(installed.installedAt);
   if (installedOn) facts.push(`Installed ${installedOn}`);
@@ -126,13 +128,18 @@ export function MarketplaceLibrary({
     view === "updates" ? !!listing.update : !!listing.installed,
   );
   const inventoryUnavailable =
-    state.providers.inventoryQuery.isError || state.themes.inventory.isError;
+    state.providers.inventoryQuery.isError ||
+    state.themes.inventory.isError ||
+    state.tabs.inventory.isError ||
+    state.tabs.summaries.isError;
   const updatesUnknown =
     inventoryUnavailable ||
     !state.catalogUsable.provider ||
     !state.catalogUsable.theme ||
+    !state.catalogUsable.tab ||
     state.providers.catalogQuery.isError ||
-    state.themes.catalog.isError;
+    state.themes.catalog.isError ||
+    state.tabs.catalog.isError;
   if (!listings.length && hasUnfilteredResults)
     return (
       <MarketplaceEmpty
@@ -174,7 +181,7 @@ export function MarketplaceLibrary({
       <MarketplaceEmpty
         icon={PackageOpen}
         title="Nothing installed from the marketplace yet"
-        detail="Themes and providers you install show up here, with their version and history."
+        detail="Themes, providers and custom tabs you install show up here, with their version and history."
         action={
           <Button size="sm" onClick={onDiscover}>
             Discover plugins

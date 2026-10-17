@@ -325,3 +325,7 @@ html[data-animations="off"] :is(.mp-tile, .mp-stage:not([data-unpainted]) *) {
 html[data-animations="off"] .mp-spotlight-enter {
   animation: none;
 }
+
+.mp-kind-tab {
+  --mp-kind: var(--chart-3);
+}

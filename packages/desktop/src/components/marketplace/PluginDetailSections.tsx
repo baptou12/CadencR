@@ -199,12 +199,17 @@ export function FactsSection({ listing }: { listing: MarketplaceListing }): Reac
 }
 
 export function TrustSection({ listing }: { listing: MarketplaceListing }): React.JSX.Element {
-  const { providers, themes } = useMarketplaceState();
+  const { providers, themes, tabs } = useMarketplaceState();
   const inventory = providers.inventoryQuery.data;
   // Each kind is verified against its own catalog; never show the other one's dates.
   const providerCatalog = listing.kind === "provider" ? providers.catalogQuery.data : undefined;
-  const expiresAt = (listing.kind === "provider" ? providerCatalog : themes.catalog.data)?.index
-    ?.signed.expires_at;
+  const expiresAt = (
+    listing.kind === "provider"
+      ? providerCatalog
+      : listing.kind === "tab"
+        ? tabs.catalog.data
+        : themes.catalog.data
+  )?.index?.signed.expires_at;
   const policy = inventory?.process_policy;
   const unavailable = policy
     ? [
@@ -228,6 +233,12 @@ export function TrustSection({ listing }: { listing: MarketplaceListing }): Reac
             Themes are declarative: validated colors and bounded images, never executables. Signed
             revisions are immutable — duplicate one to edit it. Installing does not switch your
             theme.
+          </p>
+        ) : listing.kind === "tab" ? (
+          <p>
+            Custom tabs run their compiled web interface in the existing sandbox. Installing does
+            not enable a tab or grant permissions. Review its declared data access and network
+            origins before enabling it. Permission changes require consent again.
           </p>
         ) : (
           <>

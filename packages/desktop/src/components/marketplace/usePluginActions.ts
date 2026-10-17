@@ -10,12 +10,12 @@ interface Callbacks {
 }
 
 /**
- * Install/update dispatch for either kind. Every request carries the exact
+ * Install/update dispatch for every kind. Every request carries the exact
  * version and the untouched signed envelope; nothing changes on screen until
  * the backend confirms (inventories are refetched by the kind's own hook).
  */
 export function usePluginActions() {
-  const { providers, themes, catalogUsable } = useMarketplaceState();
+  const { providers, themes, tabs, catalogUsable } = useMarketplaceState();
   return useMemo(() => {
     const providerReady =
       catalogUsable.provider &&
@@ -24,7 +24,11 @@ export function usePluginActions() {
       providers.inventoryQuery.data.trust.status === "configured";
     const themeReady = catalogUsable.theme && themes.inventory.isSuccess;
     const mutationOf = (listing: MarketplaceListing) =>
-      listing.kind === "provider" ? providers.mutation : themes.mutation;
+      listing.kind === "provider"
+        ? providers.mutation
+        : listing.kind === "tab"
+          ? tabs.mutation
+          : themes.mutation;
 
     /** Install, or move an installed plugin to `version`. The one kind branch. */
     const send = (listing: MarketplaceListing, version: string, callbacks?: Callbacks) => {
@@ -38,13 +42,23 @@ export function usePluginActions() {
         );
       else if (listing.kind === "theme" && themeIndex)
         themes.mutation.mutate({ kind, id: listing.id, version, index: themeIndex }, callbacks);
+      else if (listing.kind === "tab" && tabs.catalog.data?.index)
+        tabs.mutation.mutate(
+          { kind, id: listing.id, version, index: tabs.catalog.data.index },
+          callbacks,
+        );
       else throw new Error(NO_CATALOG);
     };
 
     return {
       /** Whether this kind can install or update right now. */
       canInstall: (listing: MarketplaceListing) =>
-        listing.inCatalog && (listing.kind === "provider" ? providerReady : themeReady),
+        listing.inCatalog &&
+        (listing.kind === "provider"
+          ? providerReady
+          : listing.kind === "tab"
+            ? catalogUsable.tab && tabs.inventory.isSuccess
+            : themeReady),
       /** A change for this kind is in flight (one at a time per kind). */
       busy: (listing: MarketplaceListing) => mutationOf(listing).isPending,
       /** A change for this exact plugin is in flight. */
@@ -71,5 +85,5 @@ export function usePluginActions() {
         }
       },
     };
-  }, [providers, themes, catalogUsable]);
+  }, [providers, themes, tabs, catalogUsable]);
 }

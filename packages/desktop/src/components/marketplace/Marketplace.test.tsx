@@ -5,6 +5,12 @@ import {
   applyManagedTheme,
   catalog,
   getManagedThemeCatalog,
+  getManagedTabCatalog,
+  getManagedTabs,
+  pluginTabList,
+  installManagedTab,
+  updateManagedTab,
+  removeManagedTab,
   getManagedThemes,
   install,
   inventory,
@@ -14,9 +20,11 @@ import {
   type ManagedProviderInventoryEntry,
   type SignedMixedCatalog,
 } from "@/api/generated";
+import { tabFixture } from "@/components/settings/custom-tabs/custom-tabs-fixtures";
 import { MarketplaceProvider } from "./MarketplaceContext";
 import { MarketplaceHome } from "./MarketplaceHome";
 import { PluginDetail } from "./PluginDetail";
+const tabMutations = vi.hoisted(() => ({ consent: vi.fn(), enable: vi.fn() }));
 
 vi.mock("@/lib/marketplace-gate", () => ({ MARKETPLACE_ENABLED: true }));
 vi.mock("@/hooks/useTheme", () => ({
@@ -66,6 +74,15 @@ vi.mock("react-virtuoso", () => ({
   ),
 }));
 vi.mock("@/api/generated", () => ({
+  getManagedTabCatalog: vi.fn(),
+  getManagedTabs: vi.fn(),
+  pluginTabList: vi.fn(),
+  refreshManagedTabCatalog: vi.fn(),
+  installManagedTab: vi.fn(),
+  updateManagedTab: vi.fn(),
+  removeManagedTab: vi.fn(),
+  usePluginTabSetEnablement: () => ({ mutateAsync: tabMutations.enable }),
+  usePluginTabConsent: () => ({ mutateAsync: tabMutations.consent }),
   catalog: vi.fn(),
   inventory: vi.fn(),
   refreshCatalog: vi.fn(),
@@ -220,6 +237,15 @@ const inMarketplace = (ui: ReactNode) => render(<MarketplaceProvider>{ui}</Marke
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(getManagedTabCatalog).mockResolvedValue({
+    verified: true,
+    index,
+    recommended_versions: {},
+  });
+  vi.mocked(getManagedTabs).mockResolvedValue([]);
+  vi.mocked(pluginTabList).mockResolvedValue([]);
+  tabMutations.consent.mockResolvedValue({});
+  tabMutations.enable.mockResolvedValue({});
 });
 
 describe("plugin detail", () => {
@@ -408,6 +434,11 @@ describe("marketplace home", () => {
 
   it("says when no verified catalog is available, keeping installed reachable", async () => {
     stubBackend([pi]);
+    vi.mocked(getManagedTabCatalog).mockResolvedValue({
+      verified: false,
+      index: null,
+      recommended_versions: {},
+    });
     vi.mocked(catalog).mockResolvedValue({
       source_configured: false,
       cache_status: "missing",
@@ -421,5 +452,157 @@ describe("marketplace home", () => {
     inMarketplace(<MarketplaceHome view="discover" kind="all" query="" onChange={vi.fn()} />);
     expect(await screen.findByText("No verified catalog right now")).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Installed 2/ })).toBeTruthy();
+  });
+});
+
+const tabEntry = (version: string) => ({
+  kind: "tab",
+  package: {
+    tab: {
+      id: "graph",
+      name: "Files graph",
+      description: "Explore changed files",
+      version,
+      repository: "https://github.com/acme/tabs",
+      license: "MIT",
+      api_version: 1,
+      distribution: {
+        archive: `https://github.com/acme/tabs/releases/download/v${version}/tab.tar.gz`,
+        sha256: sha,
+      },
+    },
+    host: { publisher: "acme", compatibility: { min_app_version: "0.13.0" } },
+  },
+});
+function stubTabs(installed = false) {
+  stubBackend([]);
+  const tabIndex = {
+    ...index,
+    signed: { ...index.signed, packages: [tabEntry("1.0.0"), tabEntry("1.1.0")] },
+  };
+  vi.mocked(getManagedTabCatalog).mockResolvedValue({
+    index: tabIndex,
+    verified: true,
+    recommended_versions: { graph: "1.1.0" },
+  });
+  if (installed) {
+    vi.mocked(getManagedTabs).mockResolvedValue([
+      { id: "graph", name: "Files graph", version: "1.0.0", error: null },
+    ]);
+    vi.mocked(pluginTabList).mockResolvedValue([
+      tabFixture({ id: "graph", name: "Files graph", managed: true }),
+    ]);
+  }
+  return tabIndex;
+}
+describe("custom tabs in the marketplace", () => {
+  it("requires accepted consent before enabling an installed tab", async () => {
+    stubTabs(true);
+    let confirmConsent!: () => void;
+    tabMutations.consent.mockReturnValue(
+      new Promise<void>((resolve) => {
+        confirmConsent = resolve;
+      }),
+    );
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    await user.click(await screen.findByRole("button", { name: "Enable" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    );
+    expect(tabMutations.consent).not.toHaveBeenCalled();
+    expect(tabMutations.enable).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Enable" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Allow and turn on" }),
+    );
+    expect(tabMutations.consent).toHaveBeenCalledWith({
+      id: "graph",
+      data: { permissions_hash: "hash-1" },
+    });
+    expect(tabMutations.enable).not.toHaveBeenCalled();
+    confirmConsent();
+    await waitFor(() =>
+      expect(tabMutations.enable).toHaveBeenCalledWith({
+        id: "graph",
+        data: { project_id: null, enabled: true },
+      }),
+    );
+  });
+
+  it("reviews changed permissions without changing the saved enablement switch", async () => {
+    stubTabs(true);
+    vi.mocked(pluginTabList).mockResolvedValue([
+      tabFixture({
+        id: "graph",
+        name: "Files graph",
+        managed: true,
+        permissions_hash: "updated-permissions",
+        enablement: { global: true, project: null, effective: false, consent_required: true },
+      }),
+    ]);
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    await user.click(await screen.findByRole("button", { name: "Review permissions" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Allow" }),
+    );
+    await waitFor(() =>
+      expect(tabMutations.consent).toHaveBeenCalledWith({
+        id: "graph",
+        data: { permissions_hash: "updated-permissions" },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(tabMutations.enable).not.toHaveBeenCalled();
+  });
+
+  it("installs an exact tab version with its original signed catalog", async () => {
+    const tabIndex = stubTabs();
+    vi.mocked(installManagedTab).mockResolvedValue({
+      id: "graph",
+      name: "Files graph",
+      version: "1.1.0",
+      error: null,
+    });
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    await user.click(await screen.findByRole("button", { name: "Install 1.1.0" }));
+    await waitFor(() =>
+      expect(installManagedTab).toHaveBeenCalledWith({
+        tab_id: "graph",
+        version: "1.1.0",
+        index: tabIndex,
+      }),
+    );
+    expect(install).not.toHaveBeenCalled();
+    expect(await screen.findByText("graph: install confirmed by Cadencr.")).toBeInTheDocument();
+  });
+  it("updates a tab without sending it to the provider or theme endpoints", async () => {
+    const tabIndex = stubTabs(true);
+    vi.mocked(updateManagedTab).mockResolvedValue({
+      id: "graph",
+      name: "Files graph",
+      version: "1.1.0",
+      error: null,
+    });
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    await user.click(await screen.findByRole("button", { name: "Update to 1.1.0" }));
+    await waitFor(() =>
+      expect(updateManagedTab).toHaveBeenCalledWith("graph", {
+        tab_id: "graph",
+        version: "1.1.0",
+        index: tabIndex,
+      }),
+    );
+    expect(updateManagedTheme).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+  it("removes a tab only after confirmation", async () => {
+    stubTabs(true);
+    vi.mocked(removeManagedTab).mockResolvedValue(true);
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    await user.click(await screen.findByRole("button", { name: "Remove Files graph…" }));
+    expect(removeManagedTab).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(removeManagedTab).toHaveBeenCalledWith("graph"));
   });
 });

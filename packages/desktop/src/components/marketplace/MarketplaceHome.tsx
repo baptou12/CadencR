@@ -66,16 +66,12 @@ export function MarketplaceHome({
   const installed = useMemo(() => searched.filter((l) => l.installed), [searched]);
   const updates = useMemo(() => searched.filter((l) => l.update), [searched]);
   const spotlight = useMemo(() => spotlightListings(state.listings), [state.listings]);
-  const publishedAt = newestDate(
-    state.providers.catalogQuery.data?.index?.signed.generated_at,
-    state.themes.catalog.data?.index?.signed.generated_at,
-  );
-  const refreshing = state.providers.refresh.isPending || state.themes.refresh.isPending;
+  const { publishedAt, refreshing, anyCatalog } = catalogStatus(state);
   const refresh = () => {
     state.providers.refresh.mutate();
     state.themes.refresh.mutate();
+    state.tabs.refresh.mutate();
   };
-  const anyCatalog = state.catalogUsable.provider || state.catalogUsable.theme;
   return (
     <div data-feature-chrome="standard" className="flex h-full flex-col bg-background">
       <MarketplaceHeader
@@ -244,4 +240,19 @@ function Count({
       {value}
     </span>
   );
+}
+
+function catalogStatus(state: ReturnType<typeof useMarketplaceState>) {
+  const publishedAt = newestDate(
+    state.providers.catalogQuery.data?.index?.signed.generated_at,
+    state.themes.catalog.data?.index?.signed.generated_at,
+    state.tabs.catalog.data?.index?.signed.generated_at,
+  );
+  const refreshing =
+    state.providers.refresh.isPending ||
+    state.themes.refresh.isPending ||
+    state.tabs.refresh.isPending;
+  const anyCatalog =
+    state.catalogUsable.provider || state.catalogUsable.theme || state.catalogUsable.tab;
+  return { publishedAt, refreshing, anyCatalog };
 }

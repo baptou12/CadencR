@@ -181,3 +181,63 @@ private network addresses, are refused.
 - Every plugin route is `proposed`: it may still change before custom tabs can
   be published. The SDK and kit are versioned `0.x` and ship vendored inside the
   starter until they are published on npm.
+
+## Publish a custom tab to the marketplace
+
+Build the tab first (`pnpm build` in its author project). Open the project's
+settings and use **Custom tab publication preparation**, then **Prepare a custom
+tab bundle**. These sections are available in development builds with
+`VITE_INTERNAL_MARKETPLACE=true`, like the rest of the unreleased marketplace.
+
+The metadata uses the signed catalog's schema-2 `tab` kind:
+
+```json
+{
+  "kind": "tab",
+  "package": {
+    "tab": {
+      "id": "files-graph",
+      "name": "Files graph",
+      "description": "Explore changed files",
+      "version": "1.0.0",
+      "repository": "https://github.com/acme/files-graph",
+      "license": "MIT",
+      "api_version": 1,
+      "distribution": {
+        "archive": "https://github.com/acme/files-graph/releases/download/v1.0.0/tab.tar.gz",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "host": {
+      "publisher": "acme",
+      "compatibility": { "min_app_version": "0.13.1" }
+    }
+  }
+}
+```
+
+The ID, name, version and API version must match `tab.json`. Preparation replaces
+the placeholder checksum with the actual SHA-256 and captures only `tab.json`,
+the declared SVG icon and the directory containing the compiled HTML entry.
+The distributed entry must be inside a web directory such as `dist/index.html`.
+Sources, dependencies, Git history, symlinks and executable file modes are not
+distributed. Both compressed and unpacked archives are limited to 32 MiB.
+
+Review the prepared bundle, create the source release, then generate and submit
+the registry contribution through the existing publication workflow. Preparing a
+bundle alone publishes nothing; the registry still verifies and signs its catalog.
+
+For headless packaging, assemble that same distribution tree and run:
+
+```sh
+cadencr registry pack-tab --directory ./staging --output ./tab.tar.gz
+```
+
+Marketplace tabs share the mixed catalog source and signing trust already used
+by themes (`CADENCR_MANAGED_THEME_INDEX_URL`); no separate signing key is needed.
+They appear under **Custom tabs** in the marketplace and install into immutable
+revisions under `plugins/managed-tabs`, separate from editable `plugins/tabs`
+projects. Installation does not grant permissions. Enable the tab through the
+existing consent dialog; changes to its permissions or network origins require
+consent again. Updates and removal keep configuration, while installation refuses
+to overwrite a local author tab with the same ID.

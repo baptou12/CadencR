@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select";
 import { compareVersions, type MarketplaceListing } from "@/lib/marketplace-listings";
 import { useMarketplaceState } from "./MarketplaceContext";
+import { TabActivation } from "./TabActivation";
 import { usePluginActions } from "./usePluginActions";
 
 type PrimaryAction =
@@ -104,6 +105,7 @@ function SecondaryAction({ listing }: { listing: MarketplaceListing }): React.JS
   const { providers, themes, themeLoading } = useMarketplaceState();
   const installed = listing.installed;
   if (!installed) return null;
+  if (listing.kind === "tab") return <TabActivation id={listing.id} />;
   if (listing.kind === "theme")
     return (
       <Button

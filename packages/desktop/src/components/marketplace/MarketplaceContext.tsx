@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 import { useMarketplace } from "@/hooks/useMarketplace";
+import { useTabMarketplace } from "@/hooks/useTabMarketplace";
 import { useThemeMarketplace } from "@/hooks/useThemeMarketplace";
 import { useTheme } from "@/hooks/useTheme";
 import { buildListings, type MarketplaceListing } from "@/lib/marketplace-listings";
@@ -9,11 +10,12 @@ import { usableThemeCatalog } from "@/lib/theme-marketplace";
 interface MarketplaceState {
   providers: ReturnType<typeof useMarketplace>;
   themes: ReturnType<typeof useThemeMarketplace>;
+  tabs: ReturnType<typeof useTabMarketplace>;
   listings: MarketplaceListing[];
   themeLoading: boolean;
   loading: boolean;
   /** At least one kind has a current, verified catalog to install from. */
-  catalogUsable: { provider: boolean; theme: boolean };
+  catalogUsable: { provider: boolean; theme: boolean; tab: boolean };
   /** "Update all" is walking its queue (kept here so it survives navigation). */
   updatingAll: boolean;
   setUpdatingAll: (running: boolean) => void;
@@ -22,12 +24,16 @@ interface MarketplaceState {
 const MarketplaceContext = createContext<MarketplaceState | null>(null);
 
 /**
- * Owns both kinds' queries and mutations above the list and detail routes, so
+ * Owns all kinds' queries and mutations above the list and detail routes, so
  * a pending install, its result and its failure survive moving between them.
  */
 export function MarketplaceProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const providers = useMarketplace();
   const themes = useThemeMarketplace();
+  const tabs = useTabMarketplace();
+  const tabCatalog = tabs.catalog.data;
+  const tabInventory = tabs.inventory.data;
+  const tabSummaries = tabs.summaries.data;
   const { themeId, isLoading: themeLoading } = useTheme();
   const [updatingAll, setUpdatingAll] = useState(false);
   const providerCatalog = providers.catalogQuery.data;
@@ -42,24 +48,40 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
         themeCatalog,
         themeInventory,
         displayedThemeId: themeId,
+        tabCatalog,
+        tabInventory,
+        tabSummaries,
       }),
-    [providerCatalog, providerInventory, themeCatalog, themeInventory, themeId],
+    [
+      providerCatalog,
+      providerInventory,
+      themeCatalog,
+      themeInventory,
+      themeId,
+      tabCatalog,
+      tabInventory,
+      tabSummaries,
+    ],
   );
   const loading =
     providers.catalogQuery.isPending ||
     providers.inventoryQuery.isPending ||
     themes.catalog.isPending ||
-    themes.inventory.isPending;
+    themes.inventory.isPending ||
+    tabs.catalog.isPending ||
+    tabs.inventory.isPending;
   const value = useMemo(
     () => ({
       providers,
       themes,
+      tabs,
       listings,
       themeLoading,
       loading,
       catalogUsable: {
         provider: usableCatalog(providerCatalog),
         theme: usableThemeCatalog(themeCatalog),
+        tab: usableThemeCatalog(tabCatalog),
       },
       updatingAll,
       setUpdatingAll,
@@ -67,11 +89,13 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
     [
       providers,
       themes,
+      tabs,
       listings,
       themeLoading,
       loading,
       providerCatalog,
       themeCatalog,
+      tabCatalog,
       updatingAll,
     ],
   );
