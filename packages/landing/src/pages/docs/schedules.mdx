@@ -64,7 +64,7 @@ Turn on **Only send when a command fails** to gate a schedule on a shell command
 
 For example, check `pnpm test` every 15 minutes with the prompt "The test suite is failing — fix it". The timeout defaults to 300 seconds (at most 600). While the targeted conversation's agent is still working — or waiting on you for a permission or an answer — checks are skipped so the same failure isn't queued again and again. **Run now** runs the check too, and reports when it passed.
 
-Agents can create these schedules themselves with the `project_create_schedule` [MCP tool](../mcp/): ask one to "watch the build and fix it when it breaks", and it writes the command and the rule into its own conversation. Agent-created schedules appear in the list like any other.
+Agents can create these schedules themselves with the `project_create_schedule` [MCP tool](../mcp/): ask one to "watch the build and fix it when it breaks", and it writes the command and the rule into its own conversation. Agent-created schedules appear in the list like any other. The agent can also list, change, pause, or delete the schedules of its own conversation (`project_list_schedules`, `project_update_schedule`, `project_delete_schedule`) — for example, dropping the watch once the fix has landed. It can't touch schedules that deliver anywhere else.
 
 ## Pause, edit, and inspect runs
 

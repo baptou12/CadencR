@@ -7,7 +7,7 @@ pub use claim::{
     claim_due, finish_run, record_check, record_manual_run, release_claim, ClaimedSchedule,
     RunOutcome,
 };
-pub use mutations::{delete, insert, set_enabled, update};
+pub use mutations::{delete, insert, set_enabled, update, update_in_place};
 pub use reads::{get, list, ScheduleFilter};
 
 #[cfg(test)]

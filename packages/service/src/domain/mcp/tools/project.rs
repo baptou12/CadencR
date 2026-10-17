@@ -17,6 +17,7 @@ use crate::domain::mcp::tools::project_control;
 use crate::domain::mcp::tools::project_links;
 use crate::domain::mcp::tools::project_list;
 use crate::domain::mcp::tools::project_providers;
+use crate::domain::mcp::tools::project_schedules;
 use crate::domain::mcp::tools::project_search;
 use crate::domain::mcp::tools::project_status;
 use crate::domain::mcp::tools::project_tail;
@@ -71,6 +72,9 @@ pub async fn run_project_tool(
         "project_send_session_message" => project_control::send_session_message(&args, &ctx).await,
         "project_spawn_session" => project_control::spawn_session(&args, &ctx).await,
         "project_create_schedule" => project_control::create_schedule(&args, &ctx).await,
+        "project_list_schedules" => project_schedules::list_schedules(&ctx).await,
+        "project_update_schedule" => project_control::update_schedule(&args, &ctx).await,
+        "project_delete_schedule" => project_control::delete_schedule(&args, &ctx).await,
         "project_list_pending_gates" => project_control::list_pending_gates(&args, &ctx).await,
         "project_respond_gate" => project_control::respond_gate(&args, &ctx).await,
         _ => Err(format!("Unknown tool: {name}")),
@@ -101,6 +105,7 @@ fn is_project_read_tool(name: &str) -> bool {
             | "project_get_worktree_status"
             | "project_compare_sessions"
             | "project_list_agent_providers"
+            | "project_list_schedules"
     )
 }
 

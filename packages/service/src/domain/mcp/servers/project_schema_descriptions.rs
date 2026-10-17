@@ -15,7 +15,10 @@ pub(super) fn tool_description(name: &str) -> &'static str {
         "project_send_session_message" => "Send a provenance-tracked message to another current-project session. Delivery steers the active target turn by default; request next_turn explicitly only when delayed handling is intentional.",
         "project_list_pending_gates" => "Recovery only: reconcile a linked child's pending gate after a missed/stale notification. A live <cadencr-gate> already contains the complete request id, kind, options, and payload; never poll this tool.",
         "project_respond_gate" => "Answer a linked child's pending gate using the exact session id, request id, kind, and payload from the automatically delivered <cadencr-gate>.",
-        "project_create_schedule" => super::super::project_schedule_schema::DESCRIPTION,
+        "project_create_schedule"
+        | "project_list_schedules"
+        | "project_update_schedule"
+        | "project_delete_schedule" => super::super::project_schedule_schema::description(name),
         _ => "Coordinate CadencR sessions in the current project.",
     }
 }

@@ -10,13 +10,12 @@
 use axum::{extract::State, Json};
 use serde::Deserialize;
 
-use super::audit::{elapsed_ms, record_tool_audit, result_size_bytes, ToolAudit};
+use super::schedule_scope::{audit_schedule_call, notify_schedule_changed, require_conversation};
 use super::scope::{resolve_session_scope, SessionScope};
 use crate::app_state::AppState;
 use crate::domain::schedules::local_zone::local_timezone;
 use crate::domain::schedules::models::{
-    RecurrenceInput, SaveScheduleRequest, Schedule, ScheduleCondition, ScheduleRanEvent,
-    ScheduleTarget, TargetKind,
+    RecurrenceInput, SaveScheduleRequest, Schedule, ScheduleCondition, ScheduleTarget, TargetKind,
 };
 use crate::domain::schedules::repository;
 use crate::error::AppError;
@@ -42,52 +41,23 @@ pub(super) async fn create_schedule_handler(
 ) -> Result<Json<Schedule>, AppError> {
     let started_at = std::time::Instant::now();
     let source = resolve_session_scope(&state.write_pool, body.source_session_id).await?;
-    let result = if source.feature_id == body.source_feature_id {
+    let result = async {
+        require_conversation(&source, body.source_feature_id)?;
         repository::insert(&state.write_pool, save_request(&source, body)).await
-    } else {
-        Err(AppError::BadRequest(
-            "source_session_id does not belong to source_feature_id".into(),
-        ))
-    };
-    let (status, error, size) = match &result {
-        Ok(schedule) => ("ok", None, result_size_bytes(schedule)),
-        Err(error) => ("error", Some(error.to_string()), 0),
-    };
-    record_tool_audit(
-        &state.write_pool,
-        ToolAudit {
-            server_name: "cadencr-project",
-            tool_name: TOOL_NAME,
-            source_session_id: Some(source.session_id),
-            source_feature_id: Some(source.feature_id),
-            source_project_id: Some(source.project_id),
-            target_session_id: None,
-            target_feature_id: Some(source.feature_id),
-            target_project_id: Some(source.project_id),
-            status,
-            result_size_bytes: size,
-            latency_ms: elapsed_ms(started_at),
-            error: error.as_deref(),
-        },
-    )
-    .await?;
-    let schedule = result?;
-    // Every open Schedules page and composer banner refetches on this cue —
-    // without it, a schedule the agent created would stay invisible until the
-    // user happened to reload.
-    let _ = state.schedule_events_tx.send(ScheduleRanEvent {
-        schedule_id: schedule.id,
-    });
-    Ok(Json(schedule))
+    }
+    .await;
+    if let Ok(schedule) = &result {
+        notify_schedule_changed(&state, schedule.id);
+    }
+    audit_schedule_call(&state, TOOL_NAME, &source, &result, started_at).await?;
+    result.map(Json)
 }
 
 /// The target is pinned to the caller's conversation; everything else is the
 /// agent's choice, validated by the ordinary save path.
 fn save_request(source: &SessionScope, body: CreateScheduleRequest) -> SaveScheduleRequest {
     let mut recurrence = body.recurrence;
-    if recurrence.timezone.is_none() {
-        recurrence.timezone = Some(local_timezone());
-    }
+    recurrence.timezone.get_or_insert_with(local_timezone);
     SaveScheduleRequest {
         name: body.name,
         prompt: body.prompt,
@@ -113,46 +83,15 @@ fn save_request(source: &SessionScope, body: CreateScheduleRequest) -> SaveSched
 
 #[cfg(test)]
 mod tests {
-    use axum::{body::Body, http::Request, http::StatusCode};
+    use axum::http::StatusCode;
     use serde_json::{json, Value};
-    use tower::ServiceExt;
 
-    use crate::api::middleware::MCP_CONTROL_HEADER;
+    use super::super::schedule_scope::test_support::{post, session};
     use crate::app_state::AppState;
-    use crate::domain::mcp::control::control_router;
     use crate::domain::schedules::repository::test_support::fixture;
 
-    async fn post(state: AppState, body: Value) -> (StatusCode, Value) {
-        let request = Request::builder()
-            .method("POST")
-            .uri("/internal/mcp/project/create-schedule")
-            .header(MCP_CONTROL_HEADER, "test-mcp-token")
-            .header("content-type", "application/json")
-            .body(Body::from(body.to_string()))
-            .unwrap();
-        let response = control_router()
-            .with_state(state)
-            .oneshot(request)
-            .await
-            .unwrap();
-        let status = response.status();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        (
-            status,
-            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
-        )
-    }
-
-    async fn session(pool: &sqlx::SqlitePool, feature_id: i64) -> i64 {
-        sqlx::query_scalar(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (?, 'session', 'running') RETURNING id",
-        )
-        .bind(feature_id)
-        .fetch_one(pool)
-        .await
-        .unwrap()
+    async fn create(state: AppState, body: Value) -> (StatusCode, Value) {
+        post(state, "/internal/mcp/project/create-schedule", body).await
     }
 
     #[tokio::test]
@@ -162,7 +101,7 @@ mod tests {
         let state = AppState::with_pool(pool.clone());
         let mut events = state.schedule_events_tx.subscribe();
 
-        let (status, body) = post(
+        let (status, body) = create(
             state,
             json!({
                 "source_feature_id": feature_id,
@@ -208,7 +147,7 @@ mod tests {
         .unwrap();
         let foreign_session = session(&pool, other_feature).await;
 
-        let (status, _) = post(
+        let (status, _) = create(
             AppState::with_pool(pool.clone()),
             json!({
                 "source_feature_id": feature_id,
@@ -230,7 +169,7 @@ mod tests {
     async fn an_invalid_rule_is_reported_with_the_save_path_message() {
         let (pool, _, feature_id) = fixture().await;
         let session_id = session(&pool, feature_id).await;
-        let (status, body) = post(
+        let (status, body) = create(
             AppState::with_pool(pool),
             json!({
                 "source_feature_id": feature_id,

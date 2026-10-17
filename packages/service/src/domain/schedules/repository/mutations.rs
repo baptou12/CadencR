@@ -9,7 +9,7 @@ use crate::domain::schedules::models::{
 };
 use crate::domain::schedules::pins::trimmed;
 use crate::domain::schedules::planner;
-use crate::domain::schedules::recurrence::Recurrence;
+use crate::domain::schedules::recurrence::{to_storage, Recurrence};
 use crate::error::AppError;
 
 /// Validated write payload: the request with its rule parsed and its first
@@ -25,6 +25,17 @@ struct ScheduleWrite {
 
 impl ScheduleWrite {
     fn from_request(body: SaveScheduleRequest) -> Result<Self, AppError> {
+        Self::planned(body, |recurrence, run_at| {
+            planner::initial_next_run(recurrence, run_at, Utc::now())
+        })
+    }
+
+    /// `plan` resolves `next_run_at` from the parsed rule and the request's
+    /// `run_at`.
+    fn planned(
+        body: SaveScheduleRequest,
+        plan: impl FnOnce(&Recurrence, Option<&str>) -> Result<Option<String>, AppError>,
+    ) -> Result<Self, AppError> {
         let prompt = body.prompt.trim().to_string();
         if prompt.is_empty() {
             return Err(AppError::BadRequest("a prompt is required".into()));
@@ -32,7 +43,7 @@ impl ScheduleWrite {
         let target = normalize_target(body.target)?;
         let condition = condition::normalize(body.condition)?;
         let (recurrence, run_at) = body.recurrence.into_recurrence()?;
-        let next_run_at = planner::initial_next_run(&recurrence, run_at.as_deref(), Utc::now())?;
+        let next_run_at = plan(&recurrence, run_at.as_deref())?;
         Ok(Self {
             name: body
                 .name
@@ -50,6 +61,14 @@ impl ScheduleWrite {
 /// Reject a target that can't be delivered to before it is stored, rather than
 /// letting the poll loop discover it and mark the schedule failed forever.
 fn normalize_target(mut target: ScheduleTarget) -> Result<ScheduleTarget, AppError> {
+    // A blank pin means "the conversation's own setting", the same as no pin.
+    for pin in [
+        &mut target.model,
+        &mut target.thinking_level,
+        &mut target.permission_mode,
+    ] {
+        *pin = trimmed(pin.as_deref());
+    }
     match target.kind {
         TargetKind::Conversation => {
             if target.feature_id.is_none() {
@@ -174,7 +193,45 @@ pub async fn update(
     body: SaveScheduleRequest,
 ) -> Result<Schedule, AppError> {
     let enabled = body.enabled;
-    let write = ScheduleWrite::from_request(body)?;
+    write_update(pool, id, enabled, &ScheduleWrite::from_request(body)?).await
+}
+
+/// Rewrite a schedule without re-planning it: `body` carries the stored rule,
+/// and `next_run_at` stays where it was, so tweaking an hourly check's prompt
+/// doesn't push its next run back an hour and a paused one-off whose instant
+/// has passed can still be edited. Resuming re-derives it as [`set_enabled`]
+/// does.
+pub async fn update_in_place(
+    pool: &SqlitePool,
+    current: &Schedule,
+    body: SaveScheduleRequest,
+) -> Result<Schedule, AppError> {
+    let enabled = body.enabled;
+    let next_run_at = if enabled == Some(true) && !current.enabled {
+        planner::next_run_on_resume(
+            &current.recurrence,
+            current.next_run_at.as_deref(),
+            Utc::now(),
+        )
+    } else {
+        current.next_run_at.clone()
+    };
+    // The projection reads it back as ISO-8601; the poll loop compares the
+    // storage form.
+    let next_run_at = next_run_at
+        .as_deref()
+        .and_then(planner::parse_instant)
+        .map(to_storage);
+    let write = ScheduleWrite::planned(body, |_, _| Ok(next_run_at))?;
+    write_update(pool, current.id, enabled, &write).await
+}
+
+async fn write_update(
+    pool: &SqlitePool,
+    id: i64,
+    enabled: Option<bool>,
+    write: &ScheduleWrite,
+) -> Result<Schedule, AppError> {
     let rows = bind_write(
         sqlx::query(
             "UPDATE schedules SET
@@ -189,7 +246,7 @@ pub async fn update(
                 updated_at = datetime('now')
              WHERE id = ?",
         ),
-        &write,
+        write,
     )
     .bind(enabled)
     .bind(&write.next_run_at)
@@ -417,6 +474,48 @@ mod tests {
             next > Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
             "{next}"
         );
+    }
+
+    #[tokio::test]
+    async fn an_in_place_resume_re_derives_but_an_edit_keeps_the_next_run() {
+        let (pool, project_id, _) = fixture().await;
+        let created = insert(&pool, daily_new_conversation(project_id, "09:00"))
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE schedules SET next_run_at = '2000-01-01 09:00:00', enabled = 0 WHERE id = ?",
+        )
+        .bind(created.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let paused = get(&pool, created.id).await.unwrap().unwrap();
+        let mut body = daily_new_conversation(project_id, "09:00");
+        body.enabled = None;
+
+        let edited = update_in_place(&pool, &paused, body).await.unwrap();
+        assert_eq!(edited.next_run_at.as_deref(), Some("2000-01-01T09:00:00Z"));
+
+        let mut body = daily_new_conversation(project_id, "09:00");
+        body.enabled = Some(true);
+        let resumed = update_in_place(&pool, &edited, body).await.unwrap();
+        assert!(resumed.enabled);
+        let next = resumed.next_run_at.unwrap();
+        assert!(
+            next > Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            "{next}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_blank_pin_is_no_pin() {
+        let (pool, _, feature_id) = fixture().await;
+        let mut body = once_into_conversation(feature_id, "2099-01-01T09:00:00Z");
+        body.target.model = Some("  ".into());
+        body.target.permission_mode = Some(" plan ".into());
+        let created = insert(&pool, body).await.unwrap();
+        assert_eq!(created.target.model, None);
+        assert_eq!(created.target.permission_mode.as_deref(), Some("plan"));
     }
 
     #[tokio::test]

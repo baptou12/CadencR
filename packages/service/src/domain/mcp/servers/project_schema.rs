@@ -7,7 +7,7 @@ use crate::domain::agents::providers::valid_provider_ids;
 mod descriptions;
 
 use descriptions::{property_description, tool_description};
-const PROJECT_TOOL_NAMES: [&str; 14] = [
+const PROJECT_TOOL_NAMES: [&str; 17] = [
     "project_list_sessions",
     "project_read_session",
     "project_read_session_tail",
@@ -22,6 +22,9 @@ const PROJECT_TOOL_NAMES: [&str; 14] = [
     "project_list_pending_gates",
     "project_respond_gate",
     "project_create_schedule",
+    "project_list_schedules",
+    "project_update_schedule",
+    "project_delete_schedule",
 ];
 pub(super) fn tools() -> Vec<Tool> {
     PROJECT_TOOL_NAMES
@@ -109,7 +112,9 @@ fn tool_schema(name: &str) -> Value {
         "project_list_pending_gates" | "project_respond_gate" => {
             super::project_gate_schema::schema(name)
         }
-        "project_create_schedule" => super::project_schedule_schema::schema(),
+        "project_create_schedule" | "project_update_schedule" | "project_delete_schedule" => {
+            super::project_schedule_schema::schema(name)
+        }
         _ => json!({ "type": "object", "properties": {} }),
     };
     document_schema(name, schema)
@@ -298,6 +303,30 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("non-zero exit"));
+    }
+    #[test]
+    fn schedule_management_tools_take_a_schedule_id_and_a_flat_patch() {
+        let tools = tools();
+        let schema = |name: &str| {
+            let tool = tools.iter().find(|tool| tool.name == name).expect(name);
+            serde_json::to_value(&tool.input_schema).expect("schema json")
+        };
+        let update = schema("project_update_schedule");
+        assert_eq!(update["required"], serde_json::json!(["schedule_id"]));
+        assert_eq!(update["properties"]["enabled"]["type"], "boolean");
+        assert_eq!(update["properties"]["remove_condition"]["type"], "boolean");
+        assert_eq!(
+            update["properties"]["recurrence"]["properties"]["kind"]["enum"][0],
+            "once"
+        );
+        assert_eq!(
+            schema("project_delete_schedule")["required"],
+            serde_json::json!(["schedule_id"])
+        );
+        assert!(schema("project_list_schedules")["properties"]
+            .as_object()
+            .unwrap()
+            .is_empty());
     }
     #[test]
     fn project_provider_discovery_tool_is_advertised() {

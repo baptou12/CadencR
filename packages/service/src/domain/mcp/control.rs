@@ -14,12 +14,14 @@ pub(crate) mod gate_notify;
 pub(crate) mod gate_policy;
 pub(crate) mod gate_respond;
 mod generated_message;
+mod manage_schedule;
 pub mod message_queue;
 mod reply_audit;
 mod reply_envelope;
 pub(crate) mod reply_wait;
 mod reply_wait_delivery;
 mod requester_delivery;
+mod schedule_scope;
 mod scope;
 mod send_message;
 mod send_message_modes;
@@ -105,6 +107,14 @@ pub fn control_router() -> Router<AppState> {
         .route(
             "/internal/mcp/project/create-schedule",
             post(create_schedule::create_schedule_handler),
+        )
+        .route(
+            "/internal/mcp/project/update-schedule",
+            post(manage_schedule::update_schedule_handler),
+        )
+        .route(
+            "/internal/mcp/project/delete-schedule",
+            post(manage_schedule::delete_schedule_handler),
         )
         .merge(gate_respond::routes())
 }
