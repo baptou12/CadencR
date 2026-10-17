@@ -57,8 +57,14 @@ a future desktop release. Publication is not public UI or desktop trust activati
       job with independent source reconstruction and exact request confirmation.
       Author binary pins and publication policies remain `PENDING`; no environment
       or credential is provisioned and no publication is enabled.
-- [ ] Deliver and qualify the author-capable CLI binary, review its separate pin,
-      and provision the protected author environment/account before enabling the job.
+- [x] Deliver the author-capable development CLI from exact green `main`, review
+      its public assets/provenance, and exercise its credential-free commands on
+      an isolated Linux runner. This is not publication/recovery qualification.
+- [ ] Qualify original-author publication, exact retries and draft interruption
+      with the distributed binary in the approved public QA repository. A separately
+      approved user-associated QA credential is still required.
+- [ ] Review/promote the separate production author pin and provision the protected
+      author environment/account before enabling the official author job.
 - [ ] Harden and package the Pi draft from `plugins/providers/pi`, retaining
       its existing `0.4.0` candidate version unless a different initial release is
       explicitly selected. Establish source provenance, runtime prerequisites and
@@ -80,6 +86,28 @@ a future desktop release. Publication is not public UI or desktop trust activati
 - [ ] Stop with populated, verified feeds and the desktop marketplace still
       hidden. Public UI exposure and official build roots/URLs require the later
       activation release and a separate acceptance decision.
+
+### Author-capable binary — delivery and offline QA, 2026-10-17
+
+This supersedes the source-only delivery gate below, not the registry lifecycle
+qualification of the older binary. Full evidence and explicit remaining gates:
+[`docs/qa/MARKETPLACE_AUTHOR_CLI_2026_10_17.md`](./qa/MARKETPLACE_AUTHOR_CLI_2026_10_17.md).
+
+- Main `ce63c6e4d4d2060cf7b4b3d4e72c7591c37b2e7a` passed canonical CI and CodeQL.
+  [CLI-only release run](https://github.com/merkr-software/CadencR/actions/runs/39060688472)
+  published `0.13.1-dev.39060688472.1`; anonymous verification of all four assets,
+  ELF format, checksum and exact source provenance passed. No desktop release.
+- [Isolated Linux QA](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/39061002200)
+  passed real distributed-ELF theme validation/packaging, local author inspection
+  and exact wrong-confirmation rejection, without network or credentials. The
+  author-publication job was deliberately skipped, not implicitly qualified.
+- The reviewed QA harness is deployed separately in the approved public QA repo,
+  pinned to that binary and an immutable inert-theme source tag. Existing registry
+  QA code, its signing secret/pin and all seven prior releases are preserved.
+- The next gate needs an explicitly approved user-associated author QA token.
+  No authenticated author publication, retry or interruption result is claimed;
+  no user token was copied or provisioned. Production author pins/policies stay
+  `PENDING`, official themes/Pi remain unpublished and the marketplace stays hidden.
 
 ### Author CLI and guarded workflow — source implementation, 2026-10-17
 

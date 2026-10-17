@@ -27,7 +27,7 @@ Namespaced tag URLs are encoded by the shared Rust original-author engine.
 ## Closed publication gate
 
 The tag workflow remains preparation-only. A separate manual author workflow is
-implemented but closed by `PENDING` policies and its own unreleased-CLI pin.
+implemented but closed by `PENDING` policies and its own unpromoted author CLI pin.
 No author credential, protected environment or registry signing key is provisioned
 by this implementation. See the activation gates below.
 
@@ -38,7 +38,10 @@ Before enabling official publication, review:
 - [ ] Generic-host conformance and real supported-platform behavior.
 - [x] Registry CLI publication/resume/recovery/renewal qualification with the distributed
       `0.13.1-dev.38974097824.1` binary in the isolated public QA registry.
-- [ ] Deliver and qualify the original-author CLI commands; registry mirror commands
+- [x] Deliver the author-capable development CLI and verify its credential-free
+      commands with the distributed ELF on isolated Linux.
+- [ ] Qualify original-author GitHub publication/retries/draft recovery with that
+      binary and a separately approved QA user credential. Registry mirror commands
       are not an original-author publication shortcut.
 - [ ] Production CLI pin promotion and registry cutover.
 - [ ] Protected signing authority and author-publication policy.
@@ -80,9 +83,13 @@ cadencr plugin publish-release --request request.json --directory /canonical/art
 - `metadata` is bounded opaque release documentation, **not** a validated registry
   package or submission. This command grants no signing or registry authority.
 
-The previously qualified distributed CLI does **not** contain these new commands.
-Their source/fixture checks do not qualify a released binary. Keep production
-policies and the dedicated author pin `PENDING` until delivery and qualification.
+The older registry-qualified CLI does **not** contain these new commands.
+Author-capable `0.13.1-dev.39060688472.1` is now delivered from exact green main;
+its public assets/provenance and isolated credential-free Linux QA pass. GitHub
+author publication/retry/recovery remains unqualified pending the separate user
+credential. See the [evidence and remaining gates](../docs/qa/MARKETPLACE_AUTHOR_CLI_2026_10_17.md).
+Keep production policies and the dedicated author pin `PENDING` until that gate
+and the separate production pin/policy/environment review are complete.
 
 ## Protected manual author workflow
 
