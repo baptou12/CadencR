@@ -81,6 +81,8 @@ pub(super) async fn author_project(
     let target = target
         .as_deref()
         .and_then(|value| ProjectAuthoringTarget::try_from(value).ok())
+        // Custom tabs have no publication contract yet (docs/CUSTOM_TABS.md).
+        .filter(|target| *target != ProjectAuthoringTarget::Tab)
         .ok_or_else(|| {
             AppError::coded(
                 StatusCode::BAD_REQUEST,

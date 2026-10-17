@@ -1,0 +1,113 @@
+# Building a Cadencr custom tab
+
+You are working in a **custom tab**: a static web app that Cadencr shows as a
+tab on a conversation (feature) page, next to Agent, Terminal, Git, Editor and
+Browser. This folder is the whole tab. Do not modify Cadencr itself.
+
+## How it runs
+
+- Cadencr loads `dist/index.html` (the manifest's `entry`) in an isolated view
+  at `cadencr-tab://<id>/`. Build output must use relative URLs (`base: "./"`
+  in `vite.config.ts` — keep it).
+- The page has **no network access** (`connect-src 'none'`). `fetch`,
+  WebSockets, remote images, fonts and scripts from the internet all fail.
+  Everything goes through the SDK, which talks to Cadencr over a private
+  channel. Bundle every asset you need.
+- No inline `<script>`, no `eval`, no iframes, no forms that submit, no
+  `window.open`. Inline styles are allowed.
+- Cadencr watches `tab.json` and `dist/`. Run `npm run dev` (`vite build
+  --watch`) and every rebuild reloads the open tab.
+
+## Commands
+
+```sh
+npm install
+npm run dev     # rebuild dist/ on save
+npm run build   # tsc --noEmit && vite build — must pass before you finish
+```
+
+## The manifest: `tab.json`
+
+| Key | Rule |
+| --- | --- |
+| `schema_version` | `1` |
+| `kind` | `"tab"` |
+| `id` | lowercase letters, digits, inner hyphens; equals the folder name. Never change it. |
+| `name` | 1–64 characters |
+| `version` | semver, e.g. `0.1.0` |
+| `description` | optional, ≤ 280 characters |
+| `icon` | optional relative `.svg` path, ≤ 32 KiB, monochrome with `currentColor` |
+| `api_version` | `1` |
+| `entry` | `dist/index.html` |
+| `tab.label` | the tab title, 1–24 characters (defaults to `name`) |
+| `permissions` | scopes the tab needs (below); unknown scopes are errors |
+| `network` | optional `{ "allowed_origins": ["https://host"], "reasoning": "why" }` |
+| `configuration` | optional settings form (below) |
+
+Unknown keys are errors. Paths are relative, without `..` or backslashes.
+
+### Permissions (scopes)
+
+Ask only for what the tab uses. Adding a scope or origin asks the user to
+approve the tab again.
+
+| Scope | Allows |
+| --- | --- |
+| `features:read` | the current project and feature, the project's features, feature events |
+| `git:read` | status, diff, log and branches of the current feature; the `git.status` stream |
+| `forge:read` | pull/merge request status of the feature; the `forge.status` stream |
+| `files:read` | file tree and file contents of the feature's worktree; `files.changes` |
+| `agent:observe` | the feature's agent session history; `session.stream` |
+| `workspace:read` | every project and feature; `session.status` |
+
+Always available without a scope: context, theme, `state`, `storage`,
+`config`, `ui.*`.
+
+### Network
+
+To call an external service, list its origin (`https://host[:port]`, no path,
+no wildcard, at most 16) in `network.allowed_origins` with a `reasoning`, then
+use `client.net.fetch(...)`. Cadencr relays the request; the page still has no
+direct network. `http://localhost` is accepted for local development only.
+
+### Configuration
+
+Each field: `{ "key", "type", "label", "scope" }`. `type` is `string`,
+`number`, `boolean`, `select` (needs `options`) or `secret` (no `default`).
+`scope` is `global` or `project`. Keys match `^[a-z][a-z0-9_]{0,47}$`. The user
+fills the form in Settings; read values with `client.config.get()`. Secrets are
+never readable by the tab; write `{{secret:<key>}}` in a `net.fetch` header and
+Cadencr substitutes it.
+
+## The SDK: `@cadencr/tab-sdk`
+
+```tsx
+import { CadencrProvider, useCadencr, useStream, useTabContext, useTheme } from "@cadencr/tab-sdk/react";
+```
+
+- `<CadencrProvider fallback={…}>` wraps the app (see `src/main.tsx`).
+- `useTabContext()` → `{ project: { id, name, path }, feature: { id, name,
+  branch, baseBranch, worktreePath }, pullRequest | null, session | null }`.
+- `useTheme()` → `{ id, appearance: "light" | "dark", tokens }`.
+- `useCadencr()` → the client:
+  - `client.api.request({ method, path, query?, body? })` → `{ status,
+    json<T>() }` — Cadencr's HTTP API, limited to your scopes and bound to
+    the current feature (e.g. `GET /api/git/changed-files` with
+    `query: { feature_id, mode: "uncommitted" }`).
+  - `client.ui.toast({ title, description?, variant? })`.
+  - `client.storage`, `client.state`, `client.config`, `client.net`.
+- `useStream("git.status", (event) => …)` — live events; the payload is
+  `event.data.payload`. Topics: `git.status`, `files.changes`, `forge.status`,
+  `session.stream`, `feature.events`, `session.status` (each needs its scope).
+
+Handle errors visibly (a toast or inline message); never swallow them.
+
+## Design
+
+- Build the UI from `@cadencr/tab-kit` components (`Button`, `Card`,
+  `Badge`, `Input`, …) so the tab looks like the rest of Cadencr.
+- Style with the kit's Tailwind tokens (`bg-background`, `text-foreground`,
+  `text-muted-foreground`, `border-border`, …). Never hardcode colors: the
+  user's theme — light or dark, any palette — is injected for you.
+- Keep it calm and dense: small type, generous spacing, no decorative
+  gradients or shadows.

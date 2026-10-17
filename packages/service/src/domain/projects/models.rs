@@ -13,6 +13,8 @@ pub const THEME_PROJECT_KIND: &str = "theme";
 pub enum ProjectAuthoringTarget {
     Theme,
     Provider,
+    /// A custom tab (`docs/CUSTOM_TABS.md`); `plugin_id` is the tab id.
+    Tab,
 }
 
 impl ProjectAuthoringTarget {
@@ -20,6 +22,7 @@ impl ProjectAuthoringTarget {
         match self {
             Self::Theme => "theme",
             Self::Provider => "provider",
+            Self::Tab => "tab",
         }
     }
 }
@@ -31,6 +34,7 @@ impl TryFrom<&str> for ProjectAuthoringTarget {
         match value {
             "theme" => Ok(Self::Theme),
             "provider" => Ok(Self::Provider),
+            "tab" => Ok(Self::Tab),
             _ => Err(format!("unknown project authoring target {value:?}")),
         }
     }
@@ -119,6 +123,25 @@ mod tests {
         let json = serde_json::to_string(&project).unwrap();
         assert!(json.contains("Test Project"));
         assert!(json.contains("feat/"));
+    }
+
+    #[test]
+    fn authoring_targets_round_trip_through_their_column_value() {
+        for target in [
+            ProjectAuthoringTarget::Theme,
+            ProjectAuthoringTarget::Provider,
+            ProjectAuthoringTarget::Tab,
+        ] {
+            assert_eq!(
+                ProjectAuthoringTarget::try_from(target.as_str()),
+                Ok(target)
+            );
+            assert_eq!(
+                serde_json::to_value(target).unwrap(),
+                serde_json::Value::String(target.as_str().into())
+            );
+        }
+        assert!(ProjectAuthoringTarget::try_from("bogus").is_err());
     }
 
     #[test]

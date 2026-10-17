@@ -21,6 +21,12 @@ pub(super) async fn handle_app_action(
             super::app_notifications::subscribe_settings_events(sender, app_state)
         }
         "subscribe.theme_events" => handle_subscribe_theme_events(sender, app_state),
+        "subscribe.plugin_tab_events" => forward_app_events(
+            sender,
+            app_state.plugin_tab_events_tx.subscribe(),
+            "plugin_tab_changed",
+            OnLag::ResendBare,
+        ),
         "subscribe.alacritty_config_events" => {
             handle_subscribe_alacritty_config_events(sender, app_state).await
         }

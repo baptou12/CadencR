@@ -11,6 +11,7 @@ mod output;
 mod pipeline;
 mod publication;
 mod signing;
+mod tab;
 mod theme;
 mod trust;
 

@@ -55,10 +55,19 @@ pub(crate) enum PluginCommand {
         /// Temporary explicit host descriptor input; never discovered from user state.
         #[arg(long, required_if_eq("kind", "provider"))]
         descriptor: Option<PathBuf>,
-        /// Content kind; themes are pure declarative data and need no provider descriptor.
-        #[arg(long, default_value = "provider", value_parser = ["provider", "theme"])]
-        kind: String,
+        /// Content kind; themes and custom tabs are validated from their own
+        /// manifest and need no provider descriptor.
+        #[arg(long, value_enum, default_value_t = PluginKind::Provider)]
+        kind: PluginKind,
     },
+}
+
+/// What `plugin validate` inspects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum PluginKind {
+    Provider,
+    Theme,
+    Tab,
 }
 
 #[derive(Debug, Args)]

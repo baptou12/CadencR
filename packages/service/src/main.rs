@@ -256,6 +256,11 @@ async fn main() -> anyhow::Result<()> {
                 state.theme_events_tx.clone(),
             );
 
+            domain::plugin_tabs::watcher::start(
+                &domain::plugin_tabs::paths::tabs_dir(),
+                state.plugin_tab_events_tx.clone(),
+            );
+
             // A theme is built in a project named after it, and renaming a theme
             // is editing its file — so the same event that reloads the theme
             // renames the project in the sidebar.

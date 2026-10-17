@@ -47,16 +47,7 @@ pub async fn archive_project_sessions(
     project_id: i64,
 ) -> Result<ArchiveProjectSessionsResponse, AppError> {
     let mut tx = pool.begin().await?;
-    let project_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM projects WHERE id = ?)")
-            .bind(project_id)
-            .fetch_one(&mut *tx)
-            .await?;
-    if !project_exists {
-        return Err(AppError::NotFound(format!(
-            "project {project_id} not found"
-        )));
-    }
+    crate::domain::projects::service::ensure_project_exists(&mut *tx, project_id).await?;
     let archived_ids: Vec<i64> = sqlx::query_scalar(
         "SELECT id FROM features \
          WHERE project_id = ? AND status = 'active' AND is_pinned = 0 \

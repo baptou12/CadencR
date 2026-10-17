@@ -265,7 +265,7 @@ mod tests {
                 model_session TEXT,
                 agent_runtime_session TEXT,
                 kind TEXT NOT NULL DEFAULT 'user',
-                authoring_target TEXT CHECK (authoring_target IN ('theme', 'provider')),
+                authoring_target TEXT CHECK (authoring_target IN ('theme', 'provider', 'tab')),
                 plugin_id TEXT CHECK ((authoring_target IS NULL) = (plugin_id IS NULL))
             )"#,
         )

@@ -22,6 +22,7 @@ release into an existing empty or partial directory, never from author sources.
 ```text
 cadencr plugin validate <folder> --descriptor <descriptor.json>
 cadencr plugin validate <folder> --kind theme
+cadencr plugin validate <folder> --kind tab
 cadencr registry validate --base <directory> --candidate <directory>
 cadencr registry build-index --packages <directory> \
   --generated-at <timestamp> --expires-at <timestamp> \
@@ -82,8 +83,14 @@ cadencr registry publish-registry --request <reviewed-request.json> \
 Provider validation uses an explicit temporary host descriptor: the CLI does
 not discover it from the user profile or database. `--kind theme` instead uses
 the same declarative document validator as the service; no descriptor or provider
-execution is involved. Local validation does not establish publisher trust,
-publication completeness, or an installed managed version.
+execution is involved. `--kind tab` validates a custom tab folder's `tab.json`
+with the same rules the service applies before listing it (see
+`docs/CUSTOM_TABS.md` §3): the folder name must equal the manifest `id`, scopes
+must be known, origins canonical. It prints the permissions hash consent is
+recorded against; warnings (such as an `http://localhost` origin) and an entry
+that is not built yet are reported without failing. Local validation does not
+establish publisher trust, publication completeness, or an installed managed
+version.
 
 ### Declarative theme boundary
 

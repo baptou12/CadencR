@@ -13,6 +13,7 @@ pub mod git_cli;
 pub mod git_context;
 pub mod image_file;
 pub mod login_env;
+pub mod markup;
 pub mod migrate;
 pub mod security;
 pub mod setup_log;
