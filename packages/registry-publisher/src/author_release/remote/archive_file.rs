@@ -49,6 +49,21 @@ impl ArchiveFile {
             sha256,
         })
     }
+    /// Stream through the retained source without allocating an archive-sized buffer.
+    pub async fn verify(&self) -> Result<(), AppError> {
+        let source = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut file = source.file.lock().map_err(|_| invalid())?;
+            file.seek(SeekFrom::Start(0)).map_err(failed)?;
+            let (sha256, size) = hash(&mut file, source.size)?;
+            if size != source.size || sha256 != source.sha256 {
+                return Err(invalid());
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|_| invalid())?
+    }
     pub async fn bytes(&self) -> Result<bytes::Bytes, AppError> {
         let source = self.clone();
         tokio::task::spawn_blocking(move || {
@@ -117,6 +132,7 @@ mod tests {
         assert_eq!(source.bytes().await.unwrap().as_ref(), b"original");
         std::fs::write(&path, b"tampered").unwrap();
         assert!(source.bytes().await.is_err());
+        assert!(source.verify().await.is_err());
     }
     #[cfg(unix)]
     #[tokio::test]

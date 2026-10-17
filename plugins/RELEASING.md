@@ -22,13 +22,14 @@ Public output is limited to the archive, `SHA256SUMS` and `release.json`, which
 binds tag, version, source path, full source commit and archive digest/size. CLI
 receipts containing private runner paths, logs, keys and environment are excluded.
 This is preparation metadata, **not** a registry package or signed author submission.
-Namespaced tag URLs must eventually be encoded by shared registry tooling.
+Namespaced tag URLs are encoded by the shared Rust original-author engine.
 
 ## Closed publication gate
 
-No publisher job or signing secret is wired. This workflow is preparation-only.
-A future publisher must use a protected environment with required reviewers and
-restricted tag deployments; only that job may request `contents: write`.
+The tag workflow remains preparation-only. A separate manual author workflow is
+implemented but closed by `PENDING` policies and its own unreleased-CLI pin.
+No author credential, protected environment or registry signing key is provisioned
+by this implementation. See the activation gates below.
 
 Before enabling official publication, review:
 
@@ -60,11 +61,71 @@ asset. It supports namespaced tags such as `plugins/theme-graphite/v0.1.0`, with
 allowing slashes in asset names. Fixture tests cover interrupted writes, exact
 read-only retries, changed sources and safe tag URL encoding.
 
-This is not yet an original-author CLI command, a distributed CLI release, or an
-active publisher job. Next, expose a thin CLI with a portable reviewed request and
-explicit content confirmation, then qualify that executable before wiring a
-protected job. Keep `release-policy.json` at `publication: PENDING`; this library
-extraction grants no signing key, tag creation, release or registry-submit authority.
+The CLI now exposes two thin commands over that engine:
+
+```sh
+cadencr plugin inspect-release --request request.json --directory /canonical/artifacts
+cadencr plugin publish-release --request request.json --directory /canonical/artifacts \
+  --confirm-request-sha256 <reviewed-exact-request-digest>
+```
+
+- Inspection is fully local and needs no token. Its single JSON receipt contains
+  the reviewed request and its exact-byte SHA-256, never local filesystem paths.
+- Publication validates the request, content digests and confirmation before
+  reading `CADENCR_AUTHOR_GITHUB_TOKEN`. Retry the same request after an unknown
+  result; the shared engine reconciles the existing draft or published release.
+- Portable schema `1` binds repository/account/numeric repository ID, tag/source
+  commit, notes/prerelease and every asset's safe basename, byte size and digest.
+  Unknown fields, unsafe paths, symlinks, duplicate names and oversized inputs fail.
+- `metadata` is bounded opaque release documentation, **not** a validated registry
+  package or submission. This command grants no signing or registry authority.
+
+The previously qualified distributed CLI does **not** contain these new commands.
+Their source/fixture checks do not qualify a released binary. Keep production
+policies and the dedicated author pin `PENDING` until delivery and qualification.
+
+## Protected manual author workflow
+
+`official-plugin-author.yml` runs only from trusted `main`. It reads candidate
+theme Git objects as data and never executes candidate scripts or accepts artifacts
+from another run. Both jobs independently reconstruct the same source-bound request.
+
+| Dispatch input   | Meaning                                                                |
+| ---------------- | ---------------------------------------------------------------------- |
+| `source_commit`  | Exact reviewed full commit containing approved theme source/policy     |
+| `tag`            | Existing `plugins/theme-<name>/v<version>` tag at that commit          |
+| `request_sha256` | Sixty-four zeros inspect only; the emitted digest confirms a later run |
+
+Publication is conditional on the exact reconstructed digest and a separate
+`official-plugin-publication` environment. The author secret is available only to
+the final CLI step; catalog signing and registry submission are not included.
+Pi remains refused until its packaging/target/conformance gates are closed.
+
+Before activation, all of the following require explicit review:
+
+- Deliver and qualify the actual author-capable binary; set
+  `scripts/official-plugin-author-cli.env` to its exact version/tag/checksum.
+- Review `scripts/official-plugin-author-policy.json`: numeric repository ID,
+  expected author account, binary/pin digests and qualification evidence digest.
+  Add `scripts/official-plugin-author-qualification.json` only after real binary
+  qualification; its exact-byte digest and CLI version/checksum must match the
+  policy. This reviewed summary is an attestation, not an automated certification.
+- Approve both that policy and `plugins/release-policy.json`. `APPROVED` is an
+  explicit future decision, not a state set by preparation or workflow dispatch.
+- Provision the protected environment with reviewers, no self-approval or admin
+  bypass, and `main`-only deployment rules; the workflow must not create it.
+  Pin its numeric `environment_id` and explicitly review
+  `admin_bypass_reviewed_disabled`. Runtime checks verify the existing environment,
+  reviewers and branch rules. GitHub's documented response omits the admin-bypass
+  setting, so its absence requires this reviewed attestation bound to that ID;
+  an explicit API value enabling bypass is always rejected.
+- Store a separately scoped user/bot credential matching the pinned account as
+  `CADENCR_AUTHOR_GITHUB_TOKEN`. The engine authenticates via `GET /user`; the
+  automatic Actions installation token is not a substitute. See
+  [GitHub's supported user-token types](https://docs.github.com/en/rest/users/users#get-the-authenticated-user).
+
+No tags, official releases, registry entries, desktop trust roots or marketplace
+visibility are changed by landing this code.
 
 ## Offline qualification preparation
 

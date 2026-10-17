@@ -32,6 +32,22 @@ pub(crate) struct PluginArgs {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum PluginCommand {
+    /// Inspect a content-bound author release locally only (no network or credentials).
+    InspectRelease {
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        directory: PathBuf,
+    },
+    /// Publish the exact reviewed original-author request using the author token.
+    PublishRelease {
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        directory: PathBuf,
+        #[arg(long)]
+        confirm_request_sha256: String,
+    },
     /// Validate a provider plugin folder against an explicit descriptor.
     Validate {
         /// Provider workspace containing the existing bin/provider entrypoint.
@@ -208,7 +224,10 @@ impl Cli {
     pub(crate) fn writes_index_to_stdout(&self) -> bool {
         matches!(
             &self.command,
-            Command::Registry(RegistryArgs {
+            Command::Plugin(PluginArgs {
+                command: PluginCommand::InspectRelease { .. }
+                    | PluginCommand::PublishRelease { .. }
+            }) | Command::Registry(RegistryArgs {
                 command: RegistryCommand::BuildIndex { output: None, .. }
             }) | Command::Registry(RegistryArgs {
                 command: RegistryCommand::PackProvider { .. } | RegistryCommand::PackTheme { .. }

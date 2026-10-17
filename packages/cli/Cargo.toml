@@ -16,6 +16,7 @@ cadencr-registry-publisher = { path = "../registry-publisher" }
 clap = { version = "4", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
+tokio = { version = "1", features = ["rt", "net", "time"] }
 
 [dev-dependencies]
 flate2 = "1"

@@ -3,6 +3,10 @@
 #[cfg(test)]
 mod fixture;
 mod inspect;
+mod portable;
+pub use portable::{
+    prepare_author_release, AuthorReleaseAsset, AuthorReleaseRequest, PreparedAuthorRelease,
+};
 mod listing;
 mod models;
 mod state;
