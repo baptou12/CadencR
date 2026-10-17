@@ -1,11 +1,13 @@
-# Original-author CLI — delivery and offline qualification
+# Original-author CLI — delivery and GitHub qualification
 
 ## Status
 
 - Delivered and independently verified: author-capable Linux development CLI.
 - Passed: real credential-free distributed-binary QA in a network-isolated runner.
-- Pending: authenticated author publication, immutable retries and interrupted
-  draft recovery. No claim of full author-publication qualification.
+- Passed: authenticated inert-theme publication, immutable retries, observed
+  empty-draft interruption/recovery and separate fresh-runner reconciliation.
+- Not exercised: arbitrary mutation-response loss, Pi runtime or production
+  signing/publication. The QA result does not authorize those operations.
 - Unchanged: production pins/policies, signing authority, official plugin releases
   and hidden desktop marketplace. No desktop release or canonical monorepo `main`
   push by this work.
@@ -64,6 +66,51 @@ The downloaded allowlisted proof was independently checked:
 }
 ```
 
+## Authenticated publication and separate fresh-runner replay
+
+The user explicitly provisioned the dedicated `QA_AUTHOR_GITHUB_TOKEN` secret.
+Its value was never read or copied locally. It was exposed only to each author
+job's final QA step, not to offline validation or artifact collection.
+
+| Evidence                     | Value                                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Publication/interruption run | [`39061810127`](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/39061810127) — success |
+| Publication proof SHA-256    | `55351ff37637cdac2cd7589fb33a7fd029289c5aeefb46680249599b783c03b2`                                        |
+| Separate fresh-runner run    | [`39061940386`](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/39061940386) — success |
+| Fresh-runner proof SHA-256   | `c4d443d82d4bc4a657e7bb738b28cbcc6aa9ac5e42d7ccb47cc9dde0f312ca0d`                                        |
+| Same QA release ID           | `416010044`                                                                                               |
+
+Both runs independently fetched the exact pinned distributed ELF and used the
+same reviewed workflow/candidate commit, request digest, source commit and tag
+recorded above. The first run held the upload connection, independently observed
+an empty content-bound draft, terminated only its owned CLI child, then resumed
+the same request into the **same release ID**. It exercised two completed retries,
+including a fresh scratch/HOME. This is draft interruption/recovery, not a claim
+of arbitrary lost-response recovery.
+
+The second workflow ran on new GitHub-hosted Linux runners without prior local
+state. It reconciled the existing published release. Both runs rejected changed
+archive bytes and changed request bytes with exact expected diagnostics, then
+independently verified unchanged public inventory.
+
+The parent independently downloaded both public assets anonymously, verified
+digests and sizes, and inspected the archive without extracting it. The archive
+contains only the exact tracked inert `theme.json`; metadata is the opaque QA
+document, not a registry package or submission.
+
+| Asset           | GitHub ID   | Bytes  | SHA-256                                                            |
+| --------------- | ----------- | ------ | ------------------------------------------------------------------ |
+| `metadata.json` | `651358652` | `41`   | `5989f766d1884b4b88f88edcaea1ebab1ac261f72f9e9669bf595e86cc3520cc` |
+| `theme.tar.gz`  | `651358539` | `1115` | `a7ba859dfa2579d17a168c4cdfc016189750f58a5ee142f4c0fd622ffcabe500` |
+
+[Public inert release](https://github.com/merkr-software/cadencr-registry-qa/releases/tag/qa-author-cli/ce63c6e4-39060688472).
+Its exact notes/binding, prerelease state, source tag and commit were verified.
+All seven older releases remained unchanged. Comparing the eight release/asset
+IDs, contents and mutation timestamps before/after the separate replay found no
+changes; download counters were deliberately excluded from that comparison.
+The QA repository's main commit and existing registry workflows/pins remained
+unchanged. No production secret or registry signing operation was used.
+
 ## Harness review and limits
 
 - Three independent reviewers completed reuse, quality and efficiency reviews.
@@ -80,15 +127,11 @@ The downloaded allowlisted proof was independently checked:
 
 ## Remaining gates
 
-1. Approve/provision a user-associated `QA_AUTHOR_GITHUB_TOKEN` matching the
-   candidate account, or review a new candidate for a dedicated bot account.
-   The Actions installation token is not a substitute. No existing user token
-   has been copied to the QA repository.
-2. Run inert author publication with controlled empty-draft interruption; require
-   same-release recovery, exact same-state/fresh-scratch retries, anonymous asset
-   hashes and unchanged inventory after content/request tampering.
-3. Only after that evidence passes, separately review production pin/policy and
+1. Separately review production pin/policy and
    protected-environment activation. This QA evidence is not the production
    `official-plugin-author-qualification.json` attestation and grants no authority.
-4. Continue official themes/Pi readiness, reviewed author releases and registry
+2. Continue official themes/Pi readiness, reviewed author releases and registry
    submissions before a later marketplace activation release.
+3. Revoke the temporary QA token after these completed QA runs; it is still
+   stored as a repository secret. Secret deletion and token revocation are distinct,
+   and neither was claimed or performed by this qualification.

@@ -60,9 +60,10 @@ a future desktop release. Publication is not public UI or desktop trust activati
 - [x] Deliver the author-capable development CLI from exact green `main`, review
       its public assets/provenance, and exercise its credential-free commands on
       an isolated Linux runner. This is not publication/recovery qualification.
-- [ ] Qualify original-author publication, exact retries and draft interruption
-      with the distributed binary in the approved public QA repository. A separately
-      approved user-associated QA credential is still required.
+- [x] Qualify original-author publication, exact retries and draft interruption,
+      plus reconciliation on a separate fresh runner, with the distributed binary in
+      the approved public QA repository. Inert theme fixtures only; no official
+      plugin or production publication authority.
 - [ ] Review/promote the separate production author pin and provision the protected
       author environment/account before enabling the official author job.
 - [ ] Harden and package the Pi draft from `plugins/providers/pi`, retaining
@@ -87,7 +88,7 @@ a future desktop release. Publication is not public UI or desktop trust activati
       hidden. Public UI exposure and official build roots/URLs require the later
       activation release and a separate acceptance decision.
 
-### Author-capable binary — delivery and offline QA, 2026-10-17
+### Author-capable binary — delivery and GitHub QA, 2026-10-17
 
 This supersedes the source-only delivery gate below, not the registry lifecycle
 qualification of the older binary. Full evidence and explicit remaining gates:
@@ -104,10 +105,16 @@ qualification of the older binary. Full evidence and explicit remaining gates:
 - The reviewed QA harness is deployed separately in the approved public QA repo,
   pinned to that binary and an immutable inert-theme source tag. Existing registry
   QA code, its signing secret/pin and all seven prior releases are preserved.
-- The next gate needs an explicitly approved user-associated author QA token.
-  No authenticated author publication, retry or interruption result is claimed;
-  no user token was copied or provisioned. Production author pins/policies stay
-  `PENDING`, official themes/Pi remain unpublished and the marketplace stays hidden.
+- With the dedicated QA user token provisioned by the user,
+  [publication/interruption run](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/39061810127)
+  and [separate fresh-runner replay](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/39061940386)
+  passed. An observed empty draft resumed into the same release; immutable
+  same-state/fresh-scratch retries and changed-content/request rejection passed.
+  Anonymous downloads contain only the exact inert theme and opaque QA metadata.
+  Replay preserved all eight release/asset IDs, contents and mutation timestamps.
+- The next gates are separate production pin/policy/environment review and
+  official theme/Pi readiness. Production author pins/policies stay `PENDING`,
+  official themes/Pi remain unpublished and the marketplace stays hidden.
 
 ### Author CLI and guarded workflow — source implementation, 2026-10-17
 

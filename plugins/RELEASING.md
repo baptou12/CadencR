@@ -40,9 +40,9 @@ Before enabling official publication, review:
       `0.13.1-dev.38974097824.1` binary in the isolated public QA registry.
 - [x] Deliver the author-capable development CLI and verify its credential-free
       commands with the distributed ELF on isolated Linux.
-- [ ] Qualify original-author GitHub publication/retries/draft recovery with that
-      binary and a separately approved QA user credential. Registry mirror commands
-      are not an original-author publication shortcut.
+- [x] Qualify original-author GitHub publication/retries/draft recovery with that
+      binary and the dedicated QA user credential, including a separate fresh-runner
+      replay. Inert QA theme only; registry mirror qualification remains distinct.
 - [ ] Production CLI pin promotion and registry cutover.
 - [ ] Protected signing authority and author-publication policy.
 
@@ -85,11 +85,14 @@ cadencr plugin publish-release --request request.json --directory /canonical/art
 
 The older registry-qualified CLI does **not** contain these new commands.
 Author-capable `0.13.1-dev.39060688472.1` is now delivered from exact green main;
-its public assets/provenance and isolated credential-free Linux QA pass. GitHub
-author publication/retry/recovery remains unqualified pending the separate user
-credential. See the [evidence and remaining gates](../docs/qa/MARKETPLACE_AUTHOR_CLI_2026_10_17.md).
-Keep production policies and the dedicated author pin `PENDING` until that gate
-and the separate production pin/policy/environment review are complete.
+its public assets/provenance, isolated credential-free Linux QA and real GitHub
+author publication/retry/draft recovery pass with inert theme fixtures in the
+public QA repository. A separate fresh Linux runner reconciled the same release
+without changing IDs, contents or mutation timestamps. This does not qualify Pi's
+runtime or official package metadata. See the
+[evidence and remaining gates](../docs/qa/MARKETPLACE_AUTHOR_CLI_2026_10_17.md).
+Keep production policies and the dedicated author pin `PENDING` until the separate
+production pin/policy/environment review is complete.
 
 ## Protected manual author workflow
 
