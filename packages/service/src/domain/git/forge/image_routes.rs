@@ -115,11 +115,7 @@ async fn fetch_image(
             client.get(url.as_str()).header(ACCEPT, "image/*"),
             is_forge_owned_origin(&forge.context.remote, forge.kind, &url),
         )?;
-        let response = request.send().await.map_err(|error| {
-            forge_to_app_error(ForgeError::Http(format!(
-                "forge image request failed: {error}"
-            )))
-        })?;
+        let response = request.send().await.map_err(image_request_failed)?;
         match redirect_target(&response, &url)? {
             Some(next) => {
                 // Never drain an untrusted redirect body: it can be chunked and
@@ -194,6 +190,19 @@ fn authenticate(
         }
         GitHost::Other => builder,
     })
+}
+
+/// Described by its kind, never its text: the request carried the forge
+/// credentials, and what the error says is not kept apart from them.
+fn image_request_failed(error: reqwest::Error) -> AppError {
+    let reason = if error.is_timeout() {
+        "forge image request timed out"
+    } else if error.is_connect() {
+        "could not connect to the image host"
+    } else {
+        "forge image request failed"
+    };
+    forge_to_app_error(ForgeError::Http(reason.into()))
 }
 
 fn redirect_target(response: &reqwest::Response, current: &Url) -> Result<Option<Url>, AppError> {
@@ -281,6 +290,25 @@ mod tests {
             )),
             "image/png"
         );
+    }
+
+    #[tokio::test]
+    async fn a_failed_request_is_described_by_its_kind_alone() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let error = reqwest::Client::new()
+            .get(format!("http://127.0.0.1:{port}/a.png"))
+            .basic_auth("someone@example.com", Some("s3cret"))
+            .send()
+            .await
+            .expect_err("nothing listens there");
+        let message = image_request_failed(error).to_string();
+        assert!(
+            message.contains("could not connect to the image host"),
+            "{message}"
+        );
+        assert!(!message.contains("127.0.0.1"), "{message}");
     }
 
     #[test]
