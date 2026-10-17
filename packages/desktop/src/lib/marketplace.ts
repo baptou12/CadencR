@@ -124,14 +124,6 @@ export function installedRevision(entry?: ManagedProviderInventoryEntry): boolea
   return !!entry?.version && !!entry.digest;
 }
 
-/** Installed revisions remain selected: any version change is an explicit choice. */
-export function defaultMarketplaceVersion(
-  recommendation?: string,
-  installed?: ManagedProviderInventoryEntry,
-): string {
-  return installedRevision(installed) ? installed!.version! : (recommendation ?? "");
-}
-
 /** Display only the service's stable error shape; never arbitrary provider output. */
 export function marketplaceError(error: unknown): string | null {
   if (!error) return null;
