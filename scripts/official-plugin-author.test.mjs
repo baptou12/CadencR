@@ -65,7 +65,11 @@ function fixture() {
       `#!/bin/sh\ncase "$3" in\nls-tree) echo '100644 blob hash' ;;\nshow) cat '${releasePath}' ;;\nrev-parse) printf '%s\\n' '${sha}' ;;\n*) exit 1 ;;\nesac\n`,
       { mode: 0o700 },
     );
-    writeFileSync(join(root, "py/urllib/__init__.py"), "");
+    // Only request is mocked; pathlib also needs the real urllib.parse on Python 3.12.
+    writeFileSync(
+      join(root, "py/urllib/__init__.py"),
+      "from pkgutil import extend_path\n__path__ = extend_path(__path__, __name__)\n",
+    );
     writeFileSync(
       join(root, "py/urllib/request.py"),
       `import io,json,os
@@ -103,6 +107,23 @@ def build_opener(*a): return Opener()
     ]);
   return { root, env, approve, run, stage, policyPath };
 }
+test("HTTP mock preserves standard-library urllib submodules", () => {
+  const f = fixture();
+  f.approve();
+  const result = spawnSync(
+    "python3",
+    [
+      "-c",
+      `import pathlib, sys, urllib.parse, urllib.request
+assert urllib.parse.urlparse('https://example.test/path').hostname == 'example.test'
+assert pathlib.Path(urllib.request.__file__).resolve() == pathlib.Path(sys.argv[1])
+`,
+      join(f.root, "py/urllib/request.py"),
+    ],
+    { env: f.env, encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+});
 test("current author pin and policy fail before candidate access", () => {
   const f = fixture();
   const r = f.stage();
