@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactElement, type ReactNode, type RefObject } fro
 import type { Components } from "streamdown";
 import { CodeBlockShell } from "@/components/CodeBlockShell";
 import { MarkdownImg } from "@/components/markdown-image";
+import type { HastNode } from "@/components/markdown/agent-file-href-sanitize";
 import { highlightCode } from "@/components/markdown/highlight-cache";
 import { MarkdownLink } from "@/components/markdown/markdown-link";
 import { LargeCodeBlock, isLargeCodeBlock } from "@/components/markdown/LargeCodeBlock";
@@ -18,6 +19,23 @@ function extractText(children: ReactNode): string {
     return extractText(element.props.children);
   }
   return "";
+}
+
+/**
+ * Whether a link's label is images and nothing else: a badge. An icon beside
+ * words (`<img> Open in X`) is still a text link and keeps its external mark.
+ */
+function isImageOnlyLabel(node: HastNode | undefined): boolean {
+  const content = (node?.children ?? []).filter(
+    (child) => child.type !== "text" || child.value?.trim(),
+  );
+  return (
+    content.length > 0 &&
+    content.every(
+      (child) =>
+        child.type === "element" && (child.tagName === "img" || child.tagName === "picture"),
+    )
+  );
 }
 
 function isFenceClosed(
@@ -137,10 +155,22 @@ export function buildMarkdownComponents({
       cacheHighlights,
     }),
     pre: ({ children }) => <>{children}</>,
-    a: ({ href, children }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
+    a: ({ href, children, node }) => (
+      <MarkdownLink href={href} wrapsImage={isImageOnlyLabel(node)}>
+        {children}
+      </MarkdownLink>
+    ),
     img: ({ src, alt, title, width, height }) => (
       <MarkdownImg src={src} alt={alt} title={title} width={width} height={height} />
     ),
+    // A `<source srcset>` would make the browser load its remote URL and skip
+    // the `<img>` — which the CSP blocks, and which `MarkdownImg` may route
+    // through a proxy. Unwrap `<picture>` so only the `img` override loads.
+    picture: ({ children }) => <>{children}</>,
+    source: () => null,
+    // Streamdown sets `text-sm` on these, undoing preflight's smaller size.
+    sub: ({ children }) => <sub className="text-[0.8em]">{children}</sub>,
+    sup: ({ children }) => <sup className="text-[0.8em]">{children}</sup>,
     table: ({ children }) => (
       <div className="my-2 overflow-x-auto">
         <table className="min-w-full border-collapse text-xs">{children}</table>

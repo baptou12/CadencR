@@ -32,7 +32,10 @@ export function isDirectSource(src: string): boolean {
   return src.startsWith("data:") || src.startsWith("blob:");
 }
 
-/** A plain, overflow-safe `<img>` — the shared presentation for markdown images. */
+/**
+ * A plain, overflow-safe `<img>` — the shared presentation for markdown images.
+ * Inline and middle-aligned: badges share a text line with headings and prose.
+ */
 export function PlainMarkdownImage({
   src,
   alt,
@@ -50,10 +53,14 @@ export function PlainMarkdownImage({
       height={height}
       onError={onError}
       loading="lazy"
-      className="my-2 h-auto max-w-full rounded"
+      className="inline-block h-auto max-w-full rounded align-middle"
     />
   );
 }
+
+/** The inline chip's shell, shared with the forge's "Load image" button. */
+export const MARKDOWN_IMAGE_NOTICE_CLASS =
+  "inline-flex max-w-full items-center gap-1.5 rounded border border-border bg-muted px-2 py-1 align-middle text-xs text-muted-foreground";
 
 /**
  * Inline chip standing in for a proxied image that is loading, deferred, or
@@ -69,10 +76,7 @@ export function MarkdownImageNotice({
   title?: string;
 }): ReactElement {
   return (
-    <span
-      title={title}
-      className="my-2 inline-flex max-w-full items-center gap-1.5 rounded border border-border bg-muted px-2 py-1 text-xs text-muted-foreground"
-    >
+    <span title={title} className={MARKDOWN_IMAGE_NOTICE_CLASS}>
       {children}
       <span className="truncate">{label}</span>
     </span>

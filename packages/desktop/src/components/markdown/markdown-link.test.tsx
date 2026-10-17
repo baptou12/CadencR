@@ -85,6 +85,25 @@ describe("MarkdownLink", () => {
     expect(link.querySelector("svg")).not.toBeNull();
   });
 
+  it("joins the external mark to the label so it never wraps alone", () => {
+    renderRouted("https://example.com/docs");
+    const link = screen.getByRole("link", { name: "the docs" });
+    const mark = link.querySelector("svg")?.parentElement;
+    expect(mark?.textContent).toBe("\u2060");
+    expect(mark?.firstChild?.nodeType).toBe(Node.TEXT_NODE);
+  });
+
+  it("leaves a web link that wraps an image unmarked", () => {
+    render(
+      <MarkdownLink href="https://example.com/retrigger" wrapsImage>
+        <img alt="Retrigger" src="data:image/png;base64,AA==" />
+      </MarkdownLink>,
+    );
+    const link = screen.getByRole("link", { name: "Retrigger" });
+    expect(link).toHaveAttribute("title", "https://example.com/retrigger");
+    expect(link.querySelector("svg")).toBeNull();
+  });
+
   it("leaves non-web links unmarked", () => {
     renderRouted("mailto:team@example.com");
     const link = screen.getByRole("link", { name: "the docs" });
