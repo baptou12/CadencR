@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { render, screen, waitFor } from "@/test-utils";
 import type { PluginTabConfiguration } from "@/api/generated";
 import { projectFixture, tabFixture } from "./custom-tabs-fixtures";
 import { CustomTabConfiguration } from "./CustomTabConfiguration";
+import { KeptDraftsProvider } from "./kept-drafts";
 
 const mocks = vi.hoisted(() => ({
   stored: { global: {} } as PluginTabConfiguration,
@@ -109,5 +111,50 @@ describe("CustomTabConfiguration", () => {
     finishReload();
     mocks.reloadGate = null;
     await waitFor(() => expect(screen.getByLabelText("Team")).toBeEnabled());
+  });
+  it("comes back locked when the card remounts while its save is pending", async () => {
+    const tab = tabFixture({
+      configuration: [{ key: "team", type: "string", label: "Review team", scope: "global" }],
+    });
+    mocks.stored = { fields: tab.configuration, global: { team: "core" } };
+    let finishPut: () => void = () => {};
+    mocks.put.mockImplementation(
+      (variables: { data: { values: Record<string, unknown> } }) =>
+        new Promise<void>((resolve) => {
+          finishPut = () => {
+            mocks.stored = { ...mocks.stored, global: variables.data.values };
+            resolve();
+          };
+        }),
+    );
+    // Stands in for the virtualized list scrolling the card out and back.
+    function Scrollable() {
+      const [shown, setShown] = useState(true);
+      return (
+        <KeptDraftsProvider>
+          <button type="button" onClick={() => setShown((value) => !value)}>
+            Scroll
+          </button>
+          {shown ? <CustomTabConfiguration tab={tab} projects={[]} /> : null}
+        </KeptDraftsProvider>
+      );
+    }
+    const { user } = render(<Scrollable />);
+    const field = await screen.findByLabelText("Review team");
+    await user.clear(field);
+    await user.type(field, "First save");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mocks.put).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: "Scroll" }));
+    expect(screen.queryByLabelText("Review team")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Scroll" }));
+    // Still saving: nothing can be typed that the save's reload would discard.
+    expect(await screen.findByDisplayValue("First save")).toBeDisabled();
+
+    finishPut();
+    await waitFor(() => expect(screen.getByLabelText("Review team")).toBeEnabled());
+    expect(screen.getByLabelText("Review team")).toHaveValue("First save");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 });

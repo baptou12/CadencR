@@ -12,9 +12,9 @@ import { ErrorRow, LoadingRow } from "@/components/settings/SettingsStateRows";
 import { apiErrorCode, apiErrorMessage, toastError } from "@/lib/api-errors";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { CustomTabConfigFields } from "./CustomTabConfigFields";
+import { useKeptSaves } from "./kept-drafts";
 import { SuppressingSelect } from "./SuppressingSelect";
 
-type Scope = "global" | "project";
 const NO_VALUES: Record<string, unknown> = {};
 
 /**
@@ -59,6 +59,8 @@ export function CustomTabConfiguration({
   // when the masked answer is unchanged (a replaced secret).
   const globalKey = `global:${JSON.stringify(data.global)}`;
   const projectKey = `project:${projectId}:${JSON.stringify(data.project ?? null)}`;
+  const globalSlot = `${tab.id}:global`;
+  const projectSlot = `${tab.id}:project:${projectId}`;
 
   return (
     <div className="space-y-5">
@@ -66,12 +68,12 @@ export function CustomTabConfiguration({
         <ScopeBlock title="All projects">
           <CustomTabConfigFields
             key={globalKey}
-            draftSlot={{ id: `${tab.id}:global`, version: globalKey }}
+            draftSlot={{ id: globalSlot, version: globalKey }}
             fields={globalFields}
             stored={data.global}
-            saving={save.saving.global}
-            error={save.errors.global ?? null}
-            onSave={(values) => save.run("global", null, values)}
+            saving={save.of(globalSlot).saving}
+            error={save.of(globalSlot).error}
+            onSave={(values) => save.run(globalSlot, null, values)}
           />
         </ScopeBlock>
       ) : null}
@@ -95,12 +97,12 @@ export function CustomTabConfiguration({
               ) : (
                 <CustomTabConfigFields
                   key={projectKey}
-                  draftSlot={{ id: `${tab.id}:project:${projectId}`, version: projectKey }}
+                  draftSlot={{ id: projectSlot, version: projectKey }}
                   fields={projectFields}
                   stored={data.project ?? NO_VALUES}
-                  saving={save.saving.project}
-                  error={save.errors.project ?? null}
-                  onSave={(values) => save.run("project", projectId, values)}
+                  saving={save.of(projectSlot).saving}
+                  error={save.of(projectSlot).error}
+                  onSave={(values) => save.run(projectSlot, projectId, values)}
                 />
               )}
             </div>
@@ -122,29 +124,23 @@ function ScopeBlock({ title, children }: { title: string; children: React.ReactN
   );
 }
 
-/** PUT one scope; the service's validation message stays inline, anything else is a toast. */
+/**
+ * PUT one slot (a scope, or one project of it); the service's validation
+ * message stays inline, anything else is a toast. Each slot's save is its
+ * own: one settling must not unlock another's form.
+ */
 function useSaveConfiguration(tab: PluginTabSummary) {
   const queryClient = useQueryClient();
   const { mutateAsync } = usePluginTabPutConfiguration();
-  // Per scope: one scope's save settling must not unlock the other's form.
-  const [saving, setSavingMap] = useState<Record<Scope, boolean>>({
-    global: false,
-    project: false,
-  });
-  const setSaving = useCallback(
-    (scope: Scope, value: boolean) => setSavingMap((previous) => ({ ...previous, [scope]: value })),
-    [],
-  );
-  const [errors, setErrors] = useState<Partial<Record<Scope, string>>>({});
+  const { of, update } = useKeptSaves();
 
   /**
    * `true` once saved and reloaded. `saving` lasts until then, so the form
    * stays locked and no edit made meanwhile is reset with the saved draft.
    */
   const run = useCallback(
-    async (scope: Scope, projectId: number | null, values: Record<string, unknown>) => {
-      setSaving(scope, true);
-      setErrors((previous) => ({ ...previous, [scope]: undefined }));
+    async (slot: string, projectId: number | null, values: Record<string, unknown>) => {
+      update(slot, { saving: true, error: null });
       try {
         await mutateAsync({
           id: tab.id,
@@ -153,14 +149,11 @@ function useSaveConfiguration(tab: PluginTabSummary) {
         });
       } catch (error: unknown) {
         if (apiErrorCode(error) === "PLUGIN_TAB_CONFIG_INVALID") {
-          setErrors((previous) => ({
-            ...previous,
-            [scope]: apiErrorMessage(error, "Invalid value."),
-          }));
+          update(slot, { error: apiErrorMessage(error, "Invalid value.") });
         } else {
           toastError(error, `Could not save the settings of “${tab.name}”`);
         }
-        setSaving(scope, false);
+        update(slot, { saving: false });
         return false;
       }
       toast.success(`“${tab.name}” settings saved`);
@@ -170,12 +163,12 @@ function useSaveConfiguration(tab: PluginTabSummary) {
         // Saved either way; a failed reload only leaves the form showing the old values.
         toastError(error, "Saved, but the settings could not be reloaded");
       } finally {
-        setSaving(scope, false);
+        update(slot, { saving: false });
       }
       return true;
     },
-    [mutateAsync, queryClient, setSaving, tab.id, tab.name],
+    [mutateAsync, queryClient, tab.id, tab.name, update],
   );
 
-  return useMemo(() => ({ run, saving, errors }), [errors, run, saving]);
+  return useMemo(() => ({ run, of }), [of, run]);
 }

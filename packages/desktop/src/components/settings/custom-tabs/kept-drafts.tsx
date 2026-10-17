@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -25,9 +26,58 @@ interface KeptDraft {
 
 const KeptDraftsContext = createContext<Map<string, KeptDraft> | null>(null);
 
+/** A slot's save in flight and its last inline error. */
+interface SlotSave {
+  saving: boolean;
+  error: string | null;
+}
+
+const IDLE: SlotSave = { saving: false, error: null };
+
+interface SaveStore {
+  saves: Record<string, SlotSave>;
+  update: (id: string, change: Partial<SlotSave>) => void;
+}
+
+const KeptSavesContext = createContext<SaveStore | null>(null);
+
+function useSaveStore(): SaveStore {
+  const [saves, setSaves] = useState<Record<string, SlotSave>>({});
+  const update = useCallback(
+    (id: string, change: Partial<SlotSave>) =>
+      setSaves((previous) => ({ ...previous, [id]: { ...(previous[id] ?? IDLE), ...change } })),
+    [],
+  );
+  return useMemo(() => ({ saves, update }), [saves, update]);
+}
+
 export function KeptDraftsProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const [drafts] = useState(() => new Map<string, KeptDraft>());
-  return <KeptDraftsContext.Provider value={drafts}>{children}</KeptDraftsContext.Provider>;
+  const saves = useSaveStore();
+  return (
+    <KeptDraftsContext.Provider value={drafts}>
+      <KeptSavesContext.Provider value={saves}>{children}</KeptSavesContext.Provider>
+    </KeptDraftsContext.Provider>
+  );
+}
+
+/**
+ * Saves per slot, held with the drafts while a provider is mounted above (in
+ * the component otherwise): a card scrolled out of the list and back while
+ * its save runs must come back locked, or an edit made meanwhile would be
+ * reset when that save reloads.
+ */
+export function useKeptSaves(): {
+  of: (id: string) => SlotSave;
+  update: SaveStore["update"];
+} {
+  const kept = useContext(KeptSavesContext);
+  const local = useSaveStore();
+  const store = kept ?? local;
+  return useMemo(
+    () => ({ of: (id: string) => store.saves[id] ?? IDLE, update: store.update }),
+    [store],
+  );
 }
 
 /**
