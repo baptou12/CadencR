@@ -42,10 +42,11 @@ pnpm --filter @cadencr/service <script>
 Cargo targets are intentionally isolated per Git worktree. The main checkout
 uses `./target/`; each linked worktree uses its own `<worktree>/target/`.
 Repository scripts deliberately do not use `sccache`: it did not produce cache
-hits between Cadencr worktrees, while forcing Cargo incremental compilation off
-and consuming another large machine-wide cache. The development and test
-profiles keep Cargo's own incremental cache instead, which accelerates repeated
-builds inside each active worktree.
+hits between Cadencr worktrees and consumed another large machine-wide cache.
+Incremental compilation is also disabled in the development and test profiles
+to save disk space. The Cargo wrapper enforces `CARGO_INCREMENTAL=0`, including
+when an inherited environment variable would otherwise enable it. Rebuilds
+after source changes may take longer.
 
 Do not set `CARGO_TARGET_DIR` to `.shared-cargo-target` or another shared path.
 Sharing Cargo targets can mix branch artifacts, create lock contention, and
@@ -60,11 +61,11 @@ pnpm rust -- test -p cadencr-service shared::migrate
 pnpm rust -- check -p opencode-sdk-rs
 ```
 
-The default development and test profiles omit debug information to keep
-every worktree's Cargo target small; incremental state is the bulk of what
-remains, and `pnpm rust:clean` / `pnpm rust:prune` below reclaim it. Omitting
-debug information does not disable application logs. For a debugger-oriented
-test run with line tables, use:
+The default development and test profiles also omit debug information to keep
+every worktree's Cargo target small. Existing incremental caches are not removed
+automatically; `pnpm rust:clean` / `pnpm rust:prune` below can reclaim old build
+artifacts. Omitting debug information does not disable application logs. For a
+debugger-oriented test run with line tables, use:
 
 ```bash
 pnpm rust -- test --profile test-debug -p cadencr-service <test-name>

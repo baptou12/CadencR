@@ -35,8 +35,7 @@ jobs:
       # pnpm's implicit install-before-run so this job never installs
       # node_modules.
       pnpm_config_verify_deps_before_run: "false"
-      # The profiles enable incremental compilation for local rebuilds; a
-      # one-shot CI build only pays its overhead (and bloats the cache).
+      # Keep CI artifacts free of incremental build state, as in local builds.
       CARGO_INCREMENTAL: "0"
     steps:
       # actions/checkout@v7.0.1
