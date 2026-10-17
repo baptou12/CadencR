@@ -5,9 +5,9 @@ use reqwest::{Method, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use super::super::remote::GitHubReleaseClient;
 use super::API_VERSION;
-use crate::error::AppError;
+use crate::author_release::remote::GitHubReleaseClient;
+use crate::author_release::Error as AppError;
 
 const MAX_JSON_BYTES: usize = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -85,7 +85,7 @@ impl Transport {
         repository: &str,
         release_id: u64,
         name: &str,
-        bytes: &axum::body::Bytes,
+        bytes: &bytes::Bytes,
     ) -> Result<super::models::Asset, AppError> {
         let mut url = reqwest::Url::parse(&format!(
             "{}/repos/{repository}/releases/{release_id}/assets",

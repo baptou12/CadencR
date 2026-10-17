@@ -1,6 +1,8 @@
-//! Network acquisition and immutable local staging for registry publications.
+//! Original-author releases and registry artifact acquisition, staging and publication.
+//! Author release authority is separate from registry-owned mirrors and signed catalogs.
 
 mod artifact;
+pub mod author_release;
 mod binding;
 mod catalog;
 mod catalog_discovery;

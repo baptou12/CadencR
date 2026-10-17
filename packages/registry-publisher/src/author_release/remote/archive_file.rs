@@ -1,5 +1,5 @@
 //! Open-handle archive sources: previews hash without retaining archive buffers.
-use crate::error::AppError;
+use crate::author_release::Error as AppError;
 use sha2::{Digest as _, Sha256};
 use std::{
     fs::File,
@@ -9,7 +9,7 @@ use std::{
 };
 
 #[derive(Clone)]
-pub(crate) struct ArchiveFile {
+pub struct ArchiveFile {
     file: Arc<Mutex<File>>,
     pub size: u64,
     pub sha256: String,
@@ -49,7 +49,7 @@ impl ArchiveFile {
             sha256,
         })
     }
-    pub async fn bytes(&self) -> Result<axum::body::Bytes, AppError> {
+    pub async fn bytes(&self) -> Result<bytes::Bytes, AppError> {
         let source = self.clone();
         tokio::task::spawn_blocking(move || {
             let mut file = source.file.lock().map_err(|_| invalid())?;
@@ -60,7 +60,7 @@ impl ArchiveFile {
                 .read_to_end(&mut bytes)
                 .map_err(failed)?;
             if bytes.len() as u64 != source.size
-                || super::super::local::digest(&bytes) != source.sha256
+                || crate::author_release::digest(&bytes) != source.sha256
             {
                 return Err(invalid());
             }
@@ -95,7 +95,7 @@ fn hash(file: &mut File, limit: u64) -> Result<(String, u64), AppError> {
 }
 fn invalid() -> AppError {
     AppError::coded(
-        axum::http::StatusCode::BAD_REQUEST,
+        reqwest::StatusCode::BAD_REQUEST,
         "PUBLICATION_RELEASE_INVALID",
         "publication archive is not a bounded regular file or changed since preview",
     )

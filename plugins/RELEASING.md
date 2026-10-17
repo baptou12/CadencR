@@ -30,18 +30,41 @@ No publisher job or signing secret is wired. This workflow is preparation-only.
 A future publisher must use a protected environment with required reviewers and
 restricted tag deployments; only that job may request `contents: write`.
 
-Before implementing publication, review:
+Before enabling official publication, review:
 
 - [ ] Source licenses and Pi artwork provenance.
 - [ ] Pi supported native targets and canonical registry package metadata.
 - [ ] Generic-host conformance and real supported-platform behavior.
-- [ ] Distributed CLI publication/resume/recovery/renewal qualification.
+- [x] Registry CLI publication/resume/recovery/renewal qualification with the distributed
+      `0.13.1-dev.38974097824.1` binary in the isolated public QA registry.
+- [ ] Deliver and qualify the original-author CLI commands; registry mirror commands
+      are not an original-author publication shortcut.
 - [ ] Production CLI pin promotion and registry cutover.
 - [ ] Protected signing authority and author-publication policy.
 
 Environment approval alone cannot resolve these decisions. Future signing and
 publication must use the shared released Rust CLI and revalidate the exact artifact
 and source binding; do not introduce an alternate JavaScript publication path.
+
+## Shared original-author engine
+
+`cadencr-registry-publisher::author_release` now owns the original-author GitHub
+inspection, content-bound draft publication and reconciliation state machine.
+The desktop service delegates to this same library while retaining credentials,
+project/database access, confirmation and operation journaling in the service.
+Registry mirrors and signed catalog publication remain distinct operations.
+
+The shared engine preserves the connected account, numeric repository identity,
+exact source-tag commit, notes, binding digest and every expected archive/metadata
+asset. It supports namespaced tags such as `plugins/theme-graphite/v0.1.0`, without
+allowing slashes in asset names. Fixture tests cover interrupted writes, exact
+read-only retries, changed sources and safe tag URL encoding.
+
+This is not yet an original-author CLI command, a distributed CLI release, or an
+active publisher job. Next, expose a thin CLI with a portable reviewed request and
+explicit content confirmation, then qualify that executable before wiring a
+protected job. Keep `release-policy.json` at `publication: PENDING`; this library
+extraction grants no signing key, tag creation, release or registry-submit authority.
 
 ## Offline qualification preparation
 

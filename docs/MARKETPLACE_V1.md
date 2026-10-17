@@ -43,6 +43,15 @@ a future desktop release. Publication is not public UI or desktop trust activati
 - [ ] Deploy the candidate qualified-executable pin in contribution and protected
       publication workflows; deploy the reviewed registry update and verify CI.
       Only then remove replaced JavaScript business implementations.
+- [x] Migrate CLI contribution, packaging, signing and registry-core/publisher
+      compatibility oracles to native Rust tests or frozen legacy data; retain
+      independent Node built-in cryptography. The cross-language pipeline handoff
+      actor still executes legacy business code and remains a removal prerequisite.
+- [x] Extract the original-author release engine into `cadencr-registry-publisher`
+      and make the service delegate to it; distinguish safe namespaced release
+      tags from asset names. This does not expose an author CLI or enable a job.
+- [ ] Expose and qualify thin original-author CLI commands with a portable,
+      content-confirmed request before enabling protected official publication.
 - [ ] Harden and package the Pi draft from `plugins/providers/pi`, retaining
       its existing `0.4.0` candidate version unless a different initial release is
       explicitly selected. Establish source provenance, runtime prerequisites and
@@ -118,6 +127,37 @@ evidence, not outstanding failures of this newly distributed executable.
   PR adding the pin/helpers while preserving validation, then a workflow cutover
   from that merged trusted base. Deployed Rust CI and oracle migration precede
   JavaScript removal; official-plugin publication remains a separate gate.
+
+### Rust decoupling and original-author engine — 2026-10-17
+
+- Legacy wire expectations are frozen data with source commits, capture inputs
+  and SHA-256 provenance, not Rust-regenerated expectations. Dynamic freshness,
+  signature, recovery and negative cases remain exercised separately. The CLI's
+  eight contribution safety suites are native Rust integration tests now.
+- Service signature interoperability uses Node built-in cryptography over the
+  existing exact legacy canonical fixture; no test private key is persisted.
+  Publication-package API coverage uses the shared Rust package validator and
+  also rejects a malformed exported digest.
+- Original-author inspection/publication/reconciliation lives in the shared Rust
+  publisher library; the service keeps its authentication, database, confirmation
+  and durable operation boundaries. Service status/code mapping is preserved.
+  Namespaced release-tag validation and encoded GitHub paths have focused coverage.
+- This does not delete the legacy implementation yet. The cross-language pipeline
+  handoff helper still executes it, and actual registry CI cutover remains pending
+  the bootstrap merge. No production key, workflow activation, plugin release,
+  official feed or desktop exposure is part of this wave.
+- Validation: 4,221 workspace Rust tests passed (one pre-existing ignored test),
+  219 root script tests passed, and all 16 shared author-release HTTP fixture tests
+  passed. The running isolated debug backend passed health, authentication,
+  missing-project and explicit-confirmation HTTP probes without GitHub writes.
+  It used a newly created QA database/settings directory; existing databases were
+  untouched, the owned process was stopped and the QA database was preserved.
+  Explicit debug-server CLI paths were used instead of the generic dev launcher,
+  whose package `.env` overrides parent environment values.
+- The currently distributed CLI does not expose the newly extracted author engine.
+  A thin CLI adapter, reviewed portable request and subsequent distributed-binary
+  qualification are still needed for original-author CI publication. The existing
+  qualified binary remains sufficient for the registry CI cutover.
 
 ### Real GitHub qualification — 2026-10-15
 
