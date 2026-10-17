@@ -45,13 +45,20 @@ a future desktop release. Publication is not public UI or desktop trust activati
       Only then remove replaced JavaScript business implementations.
 - [x] Migrate CLI contribution, packaging, signing and registry-core/publisher
       compatibility oracles to native Rust tests or frozen legacy data; retain
-      independent Node built-in cryptography. The cross-language pipeline handoff
-      actor still executes legacy business code and remains a removal prerequisite.
+      independent Node built-in cryptography. Pipeline recovery now consumes
+      independently captured legacy state with an explicit test-only date rebase;
+      no Rust test executes the legacy publisher or downloader.
 - [x] Extract the original-author release engine into `cadencr-registry-publisher`
       and make the service delegate to it; distinguish safe namespaced release
       tags from asset names. This does not expose an author CLI or enable a job.
-- [ ] Expose and qualify thin original-author CLI commands with a portable,
-      content-confirmed request before enabling protected official publication.
+- [x] Expose thin original-author CLI commands with a portable, content-confirmed
+      request and reuse the same release/reconciliation engine as the service.
+- [x] Implement a manually dispatched, protected official-theme author-release
+      job with independent source reconstruction and exact request confirmation.
+      Author binary pins and publication policies remain `PENDING`; no environment
+      or credential is provisioned and no publication is enabled.
+- [ ] Deliver and qualify the author-capable CLI binary, review its separate pin,
+      and provision the protected author environment/account before enabling the job.
 - [ ] Harden and package the Pi draft from `plugins/providers/pi`, retaining
       its existing `0.4.0` candidate version unless a different initial release is
       explicitly selected. Establish source provenance, runtime prerequisites and
@@ -60,9 +67,9 @@ a future desktop release. Publication is not public UI or desktop trust activati
       their live previews, and publish source-pinned immutable author releases.
       Names/version/repository are candidates until reviewed; no placeholder digest
       or invented provenance may enter the registry.
-- [ ] Implement protected author publication and final provider/theme registry
-      package metadata after readiness and trust decisions. The current independent
-      release workflow only prepares artifacts; it does not sign, release or submit.
+- [ ] Activate the protected author job only after its delivery/readiness gates;
+      finish provider/theme registry package metadata and reviewed submissions.
+      The author job does not sign catalogs or grant registry-submit authority.
 - [ ] Provision the reviewed signing/trust profile, protected publication
       environment, renewal/revocation owners and monitoring before signed feeds
       become operational. Never treat test keys or an unprotected workflow as
@@ -73,6 +80,45 @@ a future desktop release. Publication is not public UI or desktop trust activati
 - [ ] Stop with populated, verified feeds and the desktop marketplace still
       hidden. Public UI exposure and official build roots/URLs require the later
       activation release and a separate acceptance decision.
+
+### Author CLI and guarded workflow — source implementation, 2026-10-17
+
+This update supersedes the source-only CLI/handoff follow-ups in the preceding
+delivery notes; it does not change the qualified distributed binary below.
+
+- `plugin inspect-release` locally validates a versioned portable request and
+  returns its exact-byte SHA-256. `plugin publish-release` requires that digest
+  before accessing the separate author credential, then calls the shared engine.
+  Open archive handles, streaming revalidation, bounded content, safe diagnostics
+  and namespaced tags are covered. Metadata is opaque release documentation,
+  never implicit registry package/signing authority.
+- The manual official-theme job reads candidate Git blobs through trusted-main
+  scripts, reconstructs both jobs independently, and accepts no uploaded-run
+  artifacts. The final CLI step alone receives the author user/bot credential.
+  Current publication policies, author binary pins and environment/account IDs
+  remain `PENDING`; no environment or credential was created.
+- The existing protected environment must be verified before its job is exposed:
+  numeric ID, reviewers, self-review prevention and exact `main` branch rule.
+  Because the documented API omits admin-bypass visibility, an explicit reviewed
+  no-bypass attestation is bound to that ID; an exposed bypass-enabled value fails.
+- The last Rust→legacy-business runtime dependency is removed. Pipeline recovery
+  consumes independently captured legacy inputs/disk/remote state, with exact
+  hashes, original signature checks and an explicit test-only date rebase.
+  Historical reverse-language observations are data, not a claim of live parity.
+  Legacy production tooling is retained until the real registry CI cutover passes.
+- Validation: 4,235 Rust tests passed (one pre-existing ignored), 221 root script
+  tests passed, official `pnpm lint`, workspace Clippy and desktop `ts-check` passed.
+  Three independent review agents closed the request-limit and real-script
+  integration coverage gaps. Seven local CLI QA probes used real Graphite source
+  and canonical packaging, with no credentials or remote publication.
+- Old duplicate incremental caches in this worktree were cleaned after checking
+  build ownership: about 17.9 GiB logical, keeping the newest two per crate.
+  Source, compiled binaries, databases/backups and other worktrees were preserved.
+- Next delivery gate: merge to `main`, publish a CLI-only development binary,
+  then qualify its author-publication/retry behavior against the approved isolated
+  QA target. Only subsequent reviewed pin/policy/environment promotion may enable
+  official themes; Pi still needs its native-target and ACP lifecycle qualification.
+  Marketplace visibility, production trust roots and registry signing remain unchanged.
 
 ### Qualified distributed CLI — 2026-10-17
 
