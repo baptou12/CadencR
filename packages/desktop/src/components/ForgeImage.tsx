@@ -26,6 +26,7 @@ import { ImageIcon, ImageOffIcon, Loader2Icon } from "lucide-react";
 import type { ForgeUser } from "@/api/generated";
 import {
   isDirectSource,
+  MARKDOWN_IMAGE_NOTICE_CLASS,
   MarkdownImageNotice,
   MarkdownImageProvider,
   PlainMarkdownImage,
@@ -163,7 +164,10 @@ function DeferredForgeMarkdownImage({
         <button
           type="button"
           onClick={() => setManualLoad(true)}
-          className="my-2 inline-flex max-w-full items-center gap-1.5 rounded border border-border bg-muted px-2 py-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+          className={cn(
+            MARKDOWN_IMAGE_NOTICE_CLASS,
+            "hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary",
+          )}
         >
           <ImageIcon className="size-3.5 shrink-0" aria-hidden />
           <span className="truncate">Load {label}</span>

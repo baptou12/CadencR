@@ -5,7 +5,10 @@ import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { cn } from "@/lib/utils";
 import type { SidebarBlockId } from "@/stores/sidebar-surface-store";
 
-/** The sidebar's section label type: blocks and the Projects header. */
+/**
+ * The design system's `eyebrow` (DESIGN.md): the sidebar's blocks and Projects
+ * header, and the PR pane's section labels (Description, Review threads).
+ */
 export const EYEBROW_TEXT_CLASS =
   "text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/65";
 
