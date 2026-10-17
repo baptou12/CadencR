@@ -130,6 +130,12 @@ npm scripts. Preserve both required check names: `inert-metadata` and
 `contributor-tooling`. Missing, pending or invalid pins fail closed in these
 callers; there is no JavaScript fallback.
 
+The contribution helper prints its private execution-scratch path before
+bootstrapping and retains that directory on success or failure. Do not upload it
+or recursively remove it: unexpected CLI-created database/state files must be
+preserved. GitHub-hosted runners provide the disposable execution environment;
+the helper does not delete execution output itself.
+
 ### Remote deployment requires two reviewed changes
 
 The inspected remote registry main at
@@ -140,6 +146,8 @@ Only `validate-provider-metadata.yml` is active; privileged workflows live under
 1. Merge a bootstrap PR adding `ci/released-cli.env` and all three
    `scripts/ci/*.sh` helpers while preserving the existing validation workflow.
    Its trusted base cannot invoke helpers that exist only in the candidate PR.
+   The existing bootstrap PR must first receive the reviewed scratch-retention
+   correction; its older green JavaScript checks do not verify that local fix.
 2. From that merged base, review the validation workflow cutover and verify the
    actual remote required checks use the pinned Rust executable. Preserve
    CODEOWNER review, last-push approval and the two required checks.

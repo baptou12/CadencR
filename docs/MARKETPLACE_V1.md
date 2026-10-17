@@ -40,6 +40,10 @@ a future desktop release. Publication is not public UI or desktop trust activati
       QA target. Anonymous archive/discovery verification cannot positively
       qualify a private repository. Use inert fixtures and QA-only signing keys;
       offline tests and source-level transport fixtures do not satisfy this gate.
+- [x] Prepare the Rust-only contribution/publisher runtime with trusted-base
+      helpers, a registry-lifecycle-qualified executable pin and fail-closed tests.
+      Contribution execution scratch is retained, including unexpected CLI state;
+      local preparation is not evidence of a deployed Rust contribution check.
 - [ ] Deploy the candidate qualified-executable pin in contribution and protected
       publication workflows; deploy the reviewed registry update and verify CI.
       Only then remove replaced JavaScript business implementations.
@@ -57,8 +61,15 @@ a future desktop release. Publication is not public UI or desktop trust activati
       job with independent source reconstruction and exact request confirmation.
       Author binary pins and publication policies remain `PENDING`; no environment
       or credential is provisioned and no publication is enabled.
-- [ ] Deliver and qualify the author-capable CLI binary, review its separate pin,
-      and provision the protected author environment/account before enabling the job.
+- [x] Deliver the author-capable development CLI from exact green `main`, review
+      its public assets/provenance, and exercise its credential-free commands on
+      an isolated Linux runner. This is not publication/recovery qualification.
+- [x] Qualify original-author publication, exact retries and draft interruption,
+      plus reconciliation on a separate fresh runner, with the distributed binary in
+      the approved public QA repository. Inert theme fixtures only; no official
+      plugin or production publication authority.
+- [ ] Review/promote the separate production author pin and provision the protected
+      author environment/account before enabling the official author job.
 - [ ] Harden and package the Pi draft from `plugins/providers/pi`, retaining
       its existing `0.4.0` candidate version unless a different initial release is
       explicitly selected. Establish source provenance, runtime prerequisites and
@@ -80,6 +91,34 @@ a future desktop release. Publication is not public UI or desktop trust activati
 - [ ] Stop with populated, verified feeds and the desktop marketplace still
       hidden. Public UI exposure and official build roots/URLs require the later
       activation release and a separate acceptance decision.
+
+### Author-capable binary — delivery and GitHub QA, 2026-10-17
+
+This supersedes the source-only delivery gate below, not the registry lifecycle
+qualification of the older binary. Full evidence and explicit remaining gates:
+[`docs/qa/MARKETPLACE_AUTHOR_CLI_2026_10_17.md`](./qa/MARKETPLACE_AUTHOR_CLI_2026_10_17.md).
+
+- Main `ce63c6e4d4d2060cf7b4b3d4e72c7591c37b2e7a` passed canonical CI and CodeQL.
+  [CLI-only release run](https://github.com/merkr-software/CadencR/actions/runs/39060688472)
+  published `0.13.1-dev.39060688472.1`; anonymous verification of all four assets,
+  ELF format, checksum and exact source provenance passed. No desktop release.
+- [Isolated Linux QA](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/39061002200)
+  passed real distributed-ELF theme validation/packaging, local author inspection
+  and exact wrong-confirmation rejection, without network or credentials. The
+  author-publication job was deliberately skipped, not implicitly qualified.
+- The reviewed QA harness is deployed separately in the approved public QA repo,
+  pinned to that binary and an immutable inert-theme source tag. Existing registry
+  QA code, its signing secret/pin and all seven prior releases are preserved.
+- With the dedicated QA user token provisioned by the user,
+  [publication/interruption run](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/39061810127)
+  and [separate fresh-runner replay](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/39061940386)
+  passed. An observed empty draft resumed into the same release; immutable
+  same-state/fresh-scratch retries and changed-content/request rejection passed.
+  Anonymous downloads contain only the exact inert theme and opaque QA metadata.
+  Replay preserved all eight release/asset IDs, contents and mutation timestamps.
+- The next gates are separate production pin/policy/environment review and
+  official theme/Pi readiness. Production author pins/policies stay `PENDING`,
+  official themes/Pi remain unpublished and the marketplace stays hidden.
 
 ### Author CLI and guarded workflow — source implementation, 2026-10-17
 
@@ -428,6 +467,24 @@ its author/last pusher is also the sole current CODEOWNER. No protection was
 changed or bypassed. The local candidate suite passed 271 tests; the downloaded
 Linux CLI also validated an inert theme contribution and built its schema-2 index
 through the final helper, with a PENDING pin rejected.
+
+The 2026-10-17 pre-commit review confirmed that the Rust-only cutover code is
+already prepared; no new publication engine or pin replacement is needed. The
+registry keeps its lifecycle-qualified CLI pin, separate from the newer binary's
+author-only qualification. Review found two local corrections:
+
+- Contribution validation must retain its execution scratch rather than
+  recursively deleting unexpected CLI-created state/database files. The helper
+  correction is not in bootstrap PR #1 yet.
+- The monorepo's nested registry test runner must remove inherited
+  `NODE_TEST_CONTEXT`; otherwise Node can skip all nested tests while returning
+  success. A regression now proves real execution and failure propagation. An
+  earlier green root wrapper alone was not proof that registry tests executed.
+
+After the local changes are approved/committed, refresh the bootstrap PR with the
+helper correction, obtain independent approval and merge it before the second
+trusted-base workflow cutover. Do not remove JavaScript before the deployed Rust
+checks pass; retain the expiry diagnostic and test fixtures afterward.
 
 Use GPT-6.1-Sol parallel advisors/workers and finish each wave with independent
 reuse/quality/efficiency reviews, scoped checks and a commit plan. No production
