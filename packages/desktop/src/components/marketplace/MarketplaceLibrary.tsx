@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, Loader2, PackageOpen, PartyPopper } from "lucide-react";
+import { ChevronRight, CloudOff, Loader2, PackageOpen, Search } from "lucide-react";
 import { Virtuoso } from "react-virtuoso";
 import { Button } from "@/components/ui/button";
 import type { MarketplaceListing } from "@/lib/marketplace-listings";
@@ -121,10 +121,51 @@ export function MarketplaceLibrary({
   onDiscover: () => void;
 }): React.JSX.Element {
   const actions = usePluginActions();
+  const state = useMarketplaceState();
+  const hasUnfilteredResults = state.listings.some((listing) =>
+    view === "updates" ? !!listing.update : !!listing.installed,
+  );
+  const inventoryUnavailable =
+    state.providers.inventoryQuery.isError || state.themes.inventory.isError;
+  const updatesUnknown =
+    inventoryUnavailable ||
+    !state.catalogUsable.provider ||
+    !state.catalogUsable.theme ||
+    state.providers.catalogQuery.isError ||
+    state.themes.catalog.isError;
+  if (!listings.length && hasUnfilteredResults)
+    return (
+      <MarketplaceEmpty
+        icon={Search}
+        title={
+          view === "updates"
+            ? "No updates match your search"
+            : "No installed plugins match your search"
+        }
+        detail="Try another search or clear it to see all results."
+      />
+    );
+  if (!listings.length && (view === "updates" ? updatesUnknown : inventoryUnavailable))
+    return (
+      <MarketplaceEmpty
+        icon={CloudOff}
+        title={
+          view === "updates"
+            ? "Updates could not be determined"
+            : "Installed plugins could not be loaded"
+        }
+        detail="Check the notices above and try again. Installed plugins remain manageable when their inventory is available."
+        action={
+          !inventoryUnavailable && (
+            <CheckCatalogButton refreshing={refreshing} onRefresh={onRefresh} label="Try again" />
+          )
+        }
+      />
+    );
   if (!listings.length)
     return view === "updates" ? (
       <MarketplaceEmpty
-        icon={PartyPopper}
+        icon={PackageOpen}
         title="Everything is up to date"
         detail={`Updates are never automatic: each one installs the exact version shown.${publishedAt ? ` Catalog published ${formatAgo(publishedAt)}.` : ""}`}
         action={<CheckCatalogButton refreshing={refreshing} onRefresh={onRefresh} />}

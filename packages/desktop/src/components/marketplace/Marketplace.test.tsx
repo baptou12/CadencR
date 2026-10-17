@@ -294,6 +294,66 @@ describe("plugin detail", () => {
 });
 
 describe("marketplace home", () => {
+  it.each(["installed", "updates"] as const)(
+    "does not mistake filtered %s for an empty library",
+    async (view) => {
+      stubBackend([{ ...pi, version: "1.0.0" }], "2.0.0");
+      inMarketplace(
+        <MarketplaceHome view={view} kind="all" query="no-match-at-all" onChange={vi.fn()} />,
+      );
+      expect(
+        await screen.findByText(
+          view === "updates"
+            ? "No updates match your search"
+            : "No installed plugins match your search",
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByText("Everything is up to date")).toBeNull();
+      expect(screen.queryByText("Nothing installed from the marketplace yet")).toBeNull();
+    },
+  );
+
+  it("confirms no updates only with verified catalogs", async () => {
+    stubBackend([pi], "2.0.0");
+    vi.mocked(getManagedThemes).mockResolvedValue([graphiteEntry("0.2.0")] as never);
+    inMarketplace(<MarketplaceHome view="updates" kind="all" query="" onChange={vi.fn()} />);
+    expect(await screen.findByText("Everything is up to date")).toBeTruthy();
+  });
+
+  it("does not claim nothing is installed when an inventory fails", async () => {
+    stubBackend([]);
+    vi.mocked(getManagedThemes).mockRejectedValue(new Error("Inventory unavailable"));
+    inMarketplace(<MarketplaceHome view="installed" kind="all" query="" onChange={vi.fn()} />);
+    expect(await screen.findByText("Installed plugins could not be loaded")).toBeTruthy();
+    expect(screen.queryByText("Nothing installed from the marketplace yet")).toBeNull();
+  });
+
+  it("does not claim updates are current without configured catalogs", async () => {
+    stubBackend([]);
+    vi.mocked(catalog).mockResolvedValue({
+      source_configured: false,
+      cache_status: "missing",
+      refreshed: false,
+      used_cached_verified_catalog: false,
+    });
+    vi.mocked(getManagedThemeCatalog).mockResolvedValue({
+      verified: false,
+      recommended_versions: {},
+    });
+    inMarketplace(<MarketplaceHome view="updates" kind="all" query="" onChange={vi.fn()} />);
+    expect(await screen.findByText("Updates could not be determined")).toBeTruthy();
+    expect(screen.queryByText("Everything is up to date")).toBeNull();
+  });
+
+  it("does not claim updates are current when a catalog request fails", async () => {
+    stubBackend([pi], "2.0.0");
+    vi.mocked(getManagedThemes).mockResolvedValue([graphiteEntry("0.2.0")] as never);
+    vi.mocked(catalog).mockRejectedValue(new Error("Catalog unavailable"));
+    inMarketplace(<MarketplaceHome view="updates" kind="all" query="" onChange={vi.fn()} />);
+    expect(await screen.findByText("Updates could not be determined")).toBeTruthy();
+    expect(screen.queryByText("Everything is up to date")).toBeNull();
+  });
+
   it("counts updates and lists them with a direct exact-version update", async () => {
     stubBackend([{ ...pi, version: "1.0.0" }], "2.0.0");
     const onChange = vi.fn();
