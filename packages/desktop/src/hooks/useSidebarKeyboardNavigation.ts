@@ -83,6 +83,8 @@ function activateSidebarItem(
     });
   } else if (type === "project" && id) {
     focused.click();
+  } else if (type === "marketplace") {
+    void navigate({ to: "/marketplace" });
   } else if (type === "agents") {
     void navigate({ to: "/agents" });
   } else if (type === "schedules") {
