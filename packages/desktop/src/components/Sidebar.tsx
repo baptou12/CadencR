@@ -48,6 +48,7 @@ import { useRouteFeatureIds } from "@/hooks/useRouteFeatureIds";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { useSidebarKeyboardNavigation } from "@/hooks/useSidebarKeyboardNavigation";
 import { useBrowserActivityBridge } from "@/hooks/useFeatureActivityCounts";
+import { useToastAnchor } from "@/hooks/useToastAnchor";
 import {
   useSidebarDisplayAttributes,
   useSidebarHighlightAttribute,
@@ -141,7 +142,7 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
               </SidebarRowActionsProvider>
             </div>
           </SidebarSampleProvider>
-          <SidebarFooter />
+          <SidebarFooter anchorsToasts={!isMobile && !collapsed} />
           <SidebarRenameDialog />
         </aside>
       </ShortcutHintsProvider>
@@ -349,14 +350,16 @@ function AddToHomeScreenDialog(): ReactElement {
   );
 }
 
-function SidebarFooter(): ReactElement {
+function SidebarFooter({ anchorsToasts }: { anchorsToasts: boolean }): ReactElement {
+  const settingsRowRef = useRef<HTMLDivElement>(null);
+  useToastAnchor(settingsRowRef, anchorsToasts);
   return (
     <div className="flex flex-col items-center gap-1 py-2">
       <SidebarFullscreenButton />
       <SidebarPushButton />
       <SidebarUpdateButton />
       <StorageMaintenanceProgress />
-      <div className="flex w-[90%] items-center gap-1.5">
+      <div ref={settingsRowRef} className="flex w-[90%] items-center gap-1.5">
         <Link
           to="/settings"
           data-nav-item

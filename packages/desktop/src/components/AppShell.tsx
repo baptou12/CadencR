@@ -6,17 +6,8 @@ import { MobileDrawer } from "@/components/MobileDrawer";
 import { SidebarAttentionProvider } from "@/components/SidebarAttentionProvider";
 import { SidebarRail } from "@/components/SidebarRail";
 import { useIsResizing } from "@/hooks/useIsResizing";
+import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from "@/lib/sidebar-width";
 import { cn } from "@/lib/utils";
-
-/**
- * Resize bounds for the global left sidebar, shared with `__root.tsx` so the
- * persisted width can be clamped to the same range on load. The minimum is kept
- * close to DESIGN.md's 268px sidebar width — dragging much narrower leaves the
- * project/feature rows cramped and unreadable.
- */
-export const SIDEBAR_MIN_WIDTH = 220;
-export const SIDEBAR_MAX_WIDTH = 400;
-export const SIDEBAR_DEFAULT_WIDTH = 256;
 
 interface AppShellProps {
   isMobile: boolean;

@@ -1,13 +1,19 @@
 import { CircleAlert, CircleCheck, Info, LoaderCircle, TriangleAlert, X } from "lucide-react";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
-import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
+import { useToastAnchorStore, type ToastAnchor } from "@/stores/toast-anchor-store";
 
-// Toasts stack top-right under the workspace chrome (why: DESIGN.md "Toasts").
-// The feature header matches the sidebar header (h-16, h-18 beside the macOS
-// traffic lights); the pane tab strip sits under it.
-const FEATURE_HEADER_HEIGHT = HAS_MAC_WINDOW_CONTROLS ? 72 : 64;
-const PANE_TAB_STRIP_HEIGHT = 38;
-const TOP_OFFSET = FEATURE_HEADER_HEIGHT + PANE_TAB_STRIP_HEIGHT + 8;
+// Toasts stack in the sidebar, above its footer (why: DESIGN.md "Toasts");
+// without an expanded desktop sidebar they fall back to top-center.
+const FALLBACK_WIDTH = 380;
+
+function placement(anchor: ToastAnchor | null): Pick<ToasterProps, "position" | "offset"> {
+  if (anchor === null) {
+    // In an iOS standalone PWA the UI runs under the status bar
+    // (black-translucent + viewport-fit=cover); the inset is 0 elsewhere.
+    return { position: "top-center", offset: { top: "calc(env(safe-area-inset-top) + 16px)" } };
+  }
+  return { position: "bottom-left", offset: { bottom: anchor.bottom, left: anchor.left } };
+}
 
 const TOAST_ICONS: ToasterProps["icons"] = {
   success: <CircleCheck />,
@@ -25,20 +31,19 @@ const TOAST_ICONS: ToasterProps["icons"] = {
  * the call site are forbidden — extend the styles there instead.
  */
 function Toaster(props: ToasterProps) {
+  const anchor = useToastAnchorStore((s) => s.anchor);
   return (
     <Sonner
-      position="top-right"
+      {...placement(anchor)}
       closeButton
       gap={8}
       icons={TOAST_ICONS}
-      offset={{ top: TOP_OFFSET, right: 16 }}
-      // Below 600px Sonner spans the toasts full-width at the top. In an iOS
-      // standalone PWA the UI runs under the status bar (black-translucent +
-      // viewport-fit=cover), so pad by the safe-area inset (0 elsewhere).
+      // Below 600px Sonner spans the toasts full-width at the top, under the
+      // same safe-area inset.
       mobileOffset={{ top: "calc(env(safe-area-inset-top) + 12px)" }}
       style={
         {
-          "--width": "380px",
+          "--width": `${anchor?.width ?? FALLBACK_WIDTH}px`,
           "--normal-bg": "var(--popover)",
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "var(--border)",
