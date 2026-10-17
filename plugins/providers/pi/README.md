@@ -256,3 +256,27 @@ CADENCR_PI_CANDIDATE_TEST_CLI=/absolute/reviewed/cadencr \
 Without that variable, credential-free refusal tests still run; real canonical
 archive cases are explicitly skipped. These packaging tests do not execute Pi,
 access credentials, qualify macOS behavior, or replace managed-host live QA.
+
+## Native protocol QA with a local model fixture
+
+The opt-in test below executes the supplied connector and actual Pi `0.85.1`
+against a scripted HTTP model bound to `127.0.0.1`. It checks text streaming,
+usage, context retained after connector restart/resume, and held-stream
+cancellation. It does not contact a real model provider or use personal Pi auth.
+
+```sh
+CADENCR_PI_NATIVE_TEST_COMMAND=/absolute/reviewed/pi \
+CADENCR_PI_NATIVE_TEST_PROVIDER=/absolute/extracted/bin/provider \
+  node --test plugins/providers/pi/test/native-loopback.test.mjs
+```
+
+Both executable paths must be explicit and absolute. Without either variable the
+native case is skipped; partial opt-in or invalid executables fail. The test
+uses an allowlisted child environment, isolated configuration/workspace/session
+storage, and inert local model metadata. It retains scratch, never recursively
+deletes unexpected database state, and stops its owned children and fixture.
+The fixture's unit tests run normally without Pi, credentials or external APIs.
+
+This is protocol evidence, not external-model authentication, tool-permission,
+managed installation, x86_64, or publication approval. See the
+[native and generic-service evidence](../../../docs/qa/MARKETPLACE_PI_LOOPBACK_2026_10_18.md).

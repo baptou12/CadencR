@@ -85,9 +85,17 @@ a future desktop release. Publication is not public UI or desktop trust activati
       supported targets; validate the extracted payload and generic ACP host path.
       Native arm64 packaging/extraction and prompt-free ACP lifecycle now pass
       with real Pi and synthetic model configuration; generic service admission
-      and catalog discovery pass. Authenticated turns, generic-host ACP runtime
-      lifecycle, managed installation and x86_64 remain unqualified; see
-      [native evidence](./qa/MARKETPLACE_PI_NATIVE_2026_10_17.md).
+      and catalog discovery pass. Authenticated turns, managed installation and
+      x86_64 remain unqualified; the bounded generic-host runtime follow-up is
+      recorded below. See the
+      [initial native evidence](./qa/MARKETPLACE_PI_NATIVE_2026_10_17.md).
+- [x] Exercise the extracted Pi connector and real Pi against a credential-free
+      loopback model: direct ACP streaming/usage, durable connector restart/resume
+      context and cancellation pass. The actual service's generic adapter also
+      passes text streaming, interruption and a follow-up turn through API/WS.
+      This closes that bounded local runtime check, not authenticated models,
+      tool permissions, signed-feed/managed installation or x86_64; see
+      [loopback protocol evidence](./qa/MARKETPLACE_PI_LOOPBACK_2026_10_18.md).
 - [x] Validate Graphite and Ember dark themes plus Fjord light and exercise their
       local live previews, activation, navigation persistence and invalid-creation
       rejection in an isolated current-source dev app. See
