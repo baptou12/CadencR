@@ -12,7 +12,10 @@ use super::models::{
     PluginTabSummary, PluginTabWorkspace, PutPluginTabConfigurationRequest,
     SetPluginTabEnablementRequest,
 };
-use super::{assets, authoring, config, consent, enablement, registry, summary, workspace};
+use super::{
+    assets, authoring, config, consent, enablement, registry, summary, workspace,
+    PluginTabChangedEvent,
+};
 use crate::app_state::AppState;
 use crate::error::AppError;
 
@@ -89,7 +92,8 @@ pub async fn plugin_tab_get_handler(
 
 /// Set or clear the global switch or a project override. Turning a tab on
 /// requires a valid manifest (422 `PLUGIN_TAB_INVALID`) and a current consent
-/// (409 `PLUGIN_TAB_CONSENT_REQUIRED`).
+/// (409 `PLUGIN_TAB_CONSENT_REQUIRED`). Anything but `enabled: true` revokes
+/// the tab's live grants.
 #[utoipa::path(
     put,
     path = "/api/plugin-tabs/{id}/enablement",
@@ -106,11 +110,25 @@ pub async fn plugin_tab_set_enablement_handler(
     let tab = registry::get(&id).await?;
     require_project(pool, body.project_id).await?;
     enablement::set(pool, &tab, body.project_id, body.enabled).await?;
+    if body.enabled != Some(true) {
+        // Off or cleared may disable it somewhere: revoke the grants of every
+        // project where it no longer runs (their instances re-mint or stop).
+        for project_id in state.plugin_tab_grants.projects_of(&id) {
+            if !enablement::resolve(pool, &tab, Some(project_id))
+                .await?
+                .effective
+            {
+                state.plugin_tab_grants.revoke_project(&id, project_id);
+            }
+        }
+    }
+    announce_change(&state, &id);
     Ok(Json(summary::from_tab(pool, tab, body.project_id).await?))
 }
 
 /// Accept the tab's current permissions. 409 `PLUGIN_TAB_CONSENT_STALE` when
-/// `permissions_hash` is not the current one.
+/// `permissions_hash` is not the current one. A changed consent revokes the
+/// tab's live grants.
 #[utoipa::path(
     put,
     path = "/api/plugin-tabs/{id}/consent",
@@ -128,8 +146,22 @@ pub async fn plugin_tab_consent_handler(
     let tab = registry::get(&id).await?;
     let (_, current) = tab.require_valid()?;
     consent::require_current(&id, &current, &body.permissions_hash)?;
+    let previous = consent::consented_hash(pool, &id).await?;
     consent::record(pool, &id, &current).await?;
+    if previous.as_deref() != Some(current.as_str()) {
+        state.plugin_tab_grants.revoke_plugin(&id);
+        announce_change(&state, &id);
+    }
     Ok(Json(summary::from_tab(pool, tab, query.project_id).await?))
+}
+
+/// Tell every client (other windows included) that the tab's availability
+/// changed, exactly like a folder change does, so open tab views re-read it.
+fn announce_change(state: &AppState, id: &str) {
+    // `send` only fails when no client is subscribed — nobody to tell.
+    let _ = state.plugin_tab_events_tx.send(PluginTabChangedEvent {
+        plugin_id: id.to_string(),
+    });
 }
 
 #[utoipa::path(

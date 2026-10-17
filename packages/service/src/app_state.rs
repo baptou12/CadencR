@@ -124,6 +124,8 @@ pub struct AppState {
     /// Broadcast when a custom tab's `tab.json`, icon or `dist/` changes on
     /// disk. Drives live reload of open tab instances.
     pub plugin_tab_events_tx: broadcast::Sender<crate::domain::plugin_tabs::PluginTabChangedEvent>,
+    /// In-memory plugin tokens of live custom tab instances (never persisted).
+    pub plugin_tab_grants: crate::domain::plugin_tabs::grants::GrantStore,
     /// Broadcast when `alacritty.toml` changes on disk. Drives the frontend
     /// to re-fetch `GET /api/terminal/alacritty-config` live.
     pub alacritty_config_events_tx:
@@ -310,6 +312,7 @@ impl AppState {
             settings_events_tx,
             theme_events_tx,
             plugin_tab_events_tx,
+            plugin_tab_grants: Default::default(),
             alacritty_config_events_tx,
             remote_events_tx,
             storage_maintenance_events_tx,
@@ -398,6 +401,7 @@ impl AppState {
             settings_events_tx,
             theme_events_tx,
             plugin_tab_events_tx,
+            plugin_tab_grants: Default::default(),
             alacritty_config_events_tx,
             remote_events_tx,
             storage_maintenance_events_tx,

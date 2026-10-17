@@ -130,13 +130,36 @@ components that already read them. `applyTheme`, `themeVariables` and
 | `useStream(topic, handler, { params?, onResync?, onError?, enabled? })` | One subscription for the component's lifetime; inline callbacks are fine.                                     |
 | `useStorage(key, initial)`                                              | `{ value, loading, error, set(value) }` for one storage key.                                                  |
 
-### Typed API client
+### Typed API client (`@cadencr/tab-sdk/api`)
 
-`pluginFetch<T>(url, init)` (and `createPluginFetch(client)`) adapt the client
-to an orval `fetch` mutator: it takes a service URL (`/api/…?query`) and a
-`RequestInit` with a JSON string body, and resolves the parsed body or throws a
-`CadencrError`. A generated, typed client of the plugin surface will be built
-on it.
+One function per route a custom tab may call, with request and response types,
+generated from the service's plugin surface (its policy table). Call
+`connect()` first; every function resolves the parsed body and throws a
+`CadencrError` (`PLUGIN_SCOPE_DENIED`, `PLUGIN_BINDING_DENIED`, …) on non-2xx.
+
+```ts
+import { connect } from "@cadencr/tab-sdk";
+import { getFeature, getGitStatus, listFeatures } from "@cadencr/tab-sdk/api";
+
+const cadencr = await connect();
+const { feature, project } = cadencr.context;
+const current = await getFeature(feature.id); // features:read
+const status = await getGitStatus({ feature_id: feature.id }); // git:read
+const siblings = await listFeatures({ project_id: project.id });
+```
+
+Calls are bound to the tab's own feature and project: `getFeature(otherId)`
+fails with `PLUGIN_BINDING_DENIED`. Every scoped route is generated, whatever
+your manifest asks for; one outside the tab's `permissions` fails with
+`PLUGIN_SCOPE_DENIED`. Each operation in `openapi.plugin.json` carries its
+`x-cadencr-scope` and `x-cadencr-tier` (`proposed` routes may still change).
+`client.api.request` stays available as the untyped escape hatch.
+
+Maintainers regenerate it with `pnpm --filter @cadencr/tab-sdk generate:api`
+(dumps the surface with `dump-openapi --plugin-surface`, then runs orval).
+`pluginFetch<T>(url, init)` (and `createPluginFetch(client)`) is the orval
+mutator underneath: a service URL (`/api/…?query`) and a `RequestInit` with a
+JSON string body in, the parsed body or a `CadencrError` out.
 
 ## Testing
 

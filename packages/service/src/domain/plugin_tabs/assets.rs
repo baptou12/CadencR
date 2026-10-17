@@ -38,19 +38,14 @@ frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 /// A single asset larger than this is not a tab bundle file.
 const MAX_ASSET_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Serve `path` from tab `id`; an empty path serves the manifest's `entry`.
+/// Serve `path` from tab `id`'s web root — the directory holding the
+/// manifest's `entry` — so the bundle's relative URLs (`./assets/…`) resolve
+/// the way they do on any static host. An empty path serves the entry itself.
+/// Nothing outside the web root (sources, `tab.json`) is reachable.
 pub async fn serve(id: &str, path: &str) -> Result<Response, AppError> {
     let dir = paths::plugin_dir(id)?;
-    let relative = if path.is_empty() {
-        entry_of(id).await?
-    } else {
-        path.to_string()
-    };
-    if !is_servable(&relative) {
-        return Err(forbidden(&relative));
-    }
-    let owned_id = id.to_string();
-    let (file, length) = tokio::task::spawn_blocking(move || resolve(&dir, &owned_id, &relative))
+    let (id, path) = (id.to_string(), path.to_string());
+    let (file, length) = tokio::task::spawn_blocking(move || locate(&dir, &id, &path))
         .await
         .map_err(|error| {
             AppError::Internal(format!("custom tab asset lookup failed: {error}"))
@@ -65,27 +60,33 @@ pub async fn serve(id: &str, path: &str) -> Result<Response, AppError> {
     ))
 }
 
-/// The manifest's `entry`, read without the full folder inspection: this runs
-/// on every mount and every live reload.
-async fn entry_of(id: &str) -> Result<String, AppError> {
-    let dir = paths::plugin_dir(id)?;
-    let owned_id = id.to_string();
-    let manifest = tokio::task::spawn_blocking(move || {
-        if dir.is_dir() {
-            Ok(read_tab_manifest(&dir))
-        } else {
-            Err(registry::not_found(&owned_id))
-        }
-    })
-    .await
-    .map_err(|error| AppError::Internal(format!("custom tab read failed: {error}")))??;
-    manifest.map(|manifest| manifest.entry).ok_or_else(|| {
-        AppError::coded(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "PLUGIN_TAB_INVALID",
-            format!("custom tab `{id}` has no readable tab.json"),
-        )
-    })
+/// The file `path` names under the tab's web root, in one blocking hop: the
+/// manifest's `entry` is read without the full folder inspection (this runs
+/// for every asset of every mount and live reload), then the path resolved.
+fn locate(dir: &Path, id: &str, path: &str) -> Result<(PathBuf, u64), AppError> {
+    if !dir.is_dir() {
+        return Err(registry::not_found(id));
+    }
+    let entry = read_tab_manifest(dir)
+        .map(|manifest| manifest.entry)
+        .ok_or_else(|| {
+            AppError::coded(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "PLUGIN_TAB_INVALID",
+                format!("custom tab `{id}` has no readable tab.json"),
+            )
+        })?;
+    let (web_root, entry_file) = split_entry(&entry);
+    let relative = if path.is_empty() { entry_file } else { path };
+    if !is_servable(relative) {
+        return Err(forbidden(relative));
+    }
+    resolve(&dir.join(web_root), relative)
+}
+
+/// `dist/index.html` → (`dist`, `index.html`); `index.html` → (``, `index.html`).
+fn split_entry(entry: &str) -> (&str, &str) {
+    entry.rsplit_once('/').unwrap_or(("", entry))
 }
 
 /// A clean relative path with no dot-segment and no `node_modules` segment.
@@ -96,10 +97,13 @@ pub fn is_servable(relative: &str) -> bool {
             .all(|segment| !segment.starts_with('.') && segment != "node_modules")
 }
 
-/// Canonicalize `dir/relative` and require it to be a regular file that stays
-/// servable relative to the canonical tab folder. Returns it with its length.
-fn resolve(dir: &Path, id: &str, relative: &str) -> Result<(PathBuf, u64), AppError> {
-    let root = dir.canonicalize().map_err(|_| registry::not_found(id))?;
+/// Canonicalize `web_root/relative` and require it to be a regular file that
+/// stays servable relative to the canonical web root. Returns it with its length.
+/// A missing web root (the tab is not built yet) is a missing asset.
+fn resolve(web_root: &Path, relative: &str) -> Result<(PathBuf, u64), AppError> {
+    let root = web_root
+        .canonicalize()
+        .map_err(|_| asset_not_found(relative))?;
     let file = match root.join(relative).canonicalize() {
         Ok(file) => file,
         Err(_) => return Err(asset_not_found(relative)),
@@ -241,7 +245,7 @@ mod tests {
             headers[header::CONTENT_SECURITY_POLICY],
             CONTENT_SECURITY_POLICY
         );
-        let script = serve("graph", "dist/assets/app.js").await.unwrap();
+        let script = serve("graph", "assets/app.js").await.unwrap();
         assert_eq!(
             script.headers()[header::CONTENT_TYPE],
             "text/javascript; charset=utf-8"
@@ -269,11 +273,21 @@ mod tests {
             "PLUGIN_TAB_ASSET_FORBIDDEN"
         );
         assert_eq!(
-            code(serve("graph", "dist/missing.js").await.unwrap_err()),
+            code(serve("graph", "missing.js").await.unwrap_err()),
             "PLUGIN_TAB_ASSET_NOT_FOUND"
         );
         assert_eq!(
-            code(serve("graph", "dist").await.unwrap_err()),
+            code(serve("graph", "assets").await.unwrap_err()),
+            "PLUGIN_TAB_ASSET_NOT_FOUND"
+        );
+        // The web root is the entry's folder: sources and the manifest stay out.
+        assert_eq!(
+            code(serve("graph", "tab.json").await.unwrap_err()),
+            "PLUGIN_TAB_ASSET_NOT_FOUND"
+        );
+        std::fs::remove_dir_all(dir.join("dist")).unwrap();
+        assert_eq!(
+            code(serve("graph", "").await.unwrap_err()),
             "PLUGIN_TAB_ASSET_NOT_FOUND"
         );
         assert_eq!(
@@ -299,15 +313,15 @@ mod tests {
         symlink(dir.join(".git/config"), dir.join("dist/config.txt")).unwrap();
         symlink(dir.join("dist/index.html"), dir.join("dist/alias.html")).unwrap();
         assert_eq!(
-            code(serve("graph", "dist/leak.txt").await.unwrap_err()),
+            code(serve("graph", "leak.txt").await.unwrap_err()),
             "PLUGIN_TAB_ASSET_FORBIDDEN"
         );
         assert_eq!(
-            code(serve("graph", "dist/config.txt").await.unwrap_err()),
+            code(serve("graph", "config.txt").await.unwrap_err()),
             "PLUGIN_TAB_ASSET_FORBIDDEN"
         );
         assert_eq!(
-            serve("graph", "dist/alias.html").await.unwrap().status(),
+            serve("graph", "alias.html").await.unwrap().status(),
             StatusCode::OK
         );
     }

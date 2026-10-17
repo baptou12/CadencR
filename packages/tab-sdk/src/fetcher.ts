@@ -13,16 +13,26 @@ export type PluginFetch = <T>(url: string, init?: RequestInit) => Promise<T>;
 
 const HTTP_METHODS: readonly HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
-let defaultClient: Pick<CadencrClient, "call"> | null = null;
+type CallClient = Pick<CadencrClient, "call">;
+
+/**
+ * Open clients, most recently connected last. `pluginFetch` serves through the
+ * last one; closing it falls back to the previous one still open. A single
+ * slot would break under React StrictMode, whose double mount connects twice
+ * and then closes the *first* client — possibly after the second one won.
+ */
+const openClients: CallClient[] = [];
 
 /** @internal `connect()` registers its client for `pluginFetch`. */
-export function setDefaultClient(client: Pick<CadencrClient, "call">): void {
-  defaultClient = client;
+export function setDefaultClient(client: CallClient): void {
+  releaseDefaultClient(client);
+  openClients.push(client);
 }
 
 /** @internal A closed client stops serving `pluginFetch`. */
-export function releaseDefaultClient(client: Pick<CadencrClient, "call">): void {
-  if (defaultClient === client) defaultClient = null;
+export function releaseDefaultClient(client: CallClient): void {
+  const index = openClients.indexOf(client);
+  if (index !== -1) openClients.splice(index, 1);
 }
 
 function bodyText(body: RequestInit["body"]): string | undefined {
@@ -32,7 +42,7 @@ function bodyText(body: RequestInit["body"]): string | undefined {
 }
 
 /** Builds a `PluginFetch` bound to one client. */
-export function createPluginFetch(client: Pick<CadencrClient, "call">): PluginFetch {
+export function createPluginFetch(client: CallClient): PluginFetch {
   return async <T>(url: string, init: RequestInit = {}): Promise<T> => {
     const parsed = new URL(url, "http://cadencr.invalid");
     const method = (init.method ?? "GET").toUpperCase() as HttpMethod;
@@ -51,8 +61,9 @@ export function createPluginFetch(client: Pick<CadencrClient, "call">): PluginFe
 
 /** `PluginFetch` bound to the client of the latest successful `connect()`. */
 export const pluginFetch: PluginFetch = async <T>(url: string, init?: RequestInit) => {
-  if (!defaultClient) {
+  const client = openClients.at(-1);
+  if (!client) {
     throw new CadencrError("DISCONNECTED", "Call connect() before using the plugin API client");
   }
-  return createPluginFetch(defaultClient)<T>(url, init);
+  return createPluginFetch(client)<T>(url, init);
 };

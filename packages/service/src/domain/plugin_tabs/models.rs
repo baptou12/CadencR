@@ -122,3 +122,34 @@ pub struct PluginTabWorkspace {
     /// The tab folder — the project root and the agent's cwd.
     pub dir: String,
 }
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreatePluginTabGrantRequest {
+    /// The feature the tab instance is shown in; the grant binds to it and
+    /// its project.
+    pub feature_id: i64,
+}
+
+/// A plugin token for one tab instance. Opaque; send it as
+/// `x-cadencr-plugin-token` (HTTP) or the `cadencr-plugin.<token>`
+/// subprotocol (`/api/plugin-tabs/ws`). In memory only, never persisted.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PluginTabGrant {
+    pub token: String,
+    /// RFC 3339; mint a new grant before then.
+    pub expires_at: String,
+    /// The consented scopes (§6) the token carries.
+    pub scopes: Vec<String>,
+    pub api_version: u32,
+}
+
+/// `POST /api/plugin-tabs/self/net/fetch` (§4.5). The request body is the
+/// raw upstream body; outbound headers ride in `x-cadencr-net-headers`.
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct PluginNetFetchQuery {
+    /// Absolute URL whose origin is in the manifest's `network.allowed_origins`.
+    pub url: String,
+    /// HTTP method, `GET` when omitted.
+    pub method: Option<String>,
+}

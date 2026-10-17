@@ -18,24 +18,23 @@
 
 mod target;
 
-use std::net::IpAddr;
 use std::time::Duration;
 
 use axum::extract::{Query, State};
 use axum::response::Response;
-use futures::StreamExt;
-use reqwest::header::{ACCEPT, CONTENT_TYPE, LOCATION};
+use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use reqwest::{RequestBuilder, StatusCode, Url};
 use serde::Deserialize;
 use tokio::sync::Semaphore;
 
-use self::target::{ensure_fetchable, ensure_public_ip, is_forge_owned_origin, resolve_image_url};
+use self::target::{ensure_fetchable, is_forge_owned_origin, resolve_image_url};
 use super::auth::forge_to_app_error;
 use super::provider::ForgeError;
 use super::repository::{feature_forge_context, FeatureForge};
 use crate::app_state::AppState;
 use crate::domain::git::host::GitHost;
 use crate::error::AppError;
+use crate::shared::http_relay::{self, PinError, ReadError};
 use crate::shared::image_file::image_response;
 
 /// Avatars are tiny and attachments are screenshots; anything past this is a
@@ -140,35 +139,27 @@ async fn fetch_image(
 /// addresses into a fresh client. Reqwest therefore cannot perform a second,
 /// unconstrained lookup after validation (the DNS-rebinding TOCTOU).
 async fn pinned_image_client(url: &Url) -> Result<reqwest::Client, AppError> {
-    let host = url
-        .host_str()
-        .ok_or_else(|| AppError::BadRequest("Image URL is missing a host".into()))?;
-    let mut builder = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .no_proxy()
+    let builder = reqwest::Client::builder()
         .user_agent(concat!("Cadencr/", env!("CARGO_PKG_VERSION")))
         .timeout(Duration::from_secs(20));
-    if host.parse::<IpAddr>().is_err() {
-        let port = url.port_or_known_default().unwrap_or(443);
-        let addresses = tokio::net::lookup_host((host, port))
-            .await
-            .map_err(|error| {
+    let host = url.host_str().unwrap_or_default();
+    http_relay::pinned_client(builder, url, false)
+        .await
+        .map_err(|error| match error {
+            PinError::MissingHost => AppError::BadRequest("Image URL is missing a host".into()),
+            PinError::Resolve(error) => {
                 AppError::BadRequest(format!("Could not resolve image host {host}: {error}"))
-            })?
-            .collect::<Vec<_>>();
-        if addresses.is_empty() {
-            return Err(AppError::BadRequest(format!(
-                "Image host {host} did not resolve to an address"
-            )));
-        }
-        for address in &addresses {
-            ensure_public_ip(address.ip(), host)?;
-        }
-        builder = builder.resolve_to_addrs(host, &addresses);
-    }
-    builder
-        .build()
-        .map_err(|error| AppError::Internal(format!("Image client setup failed: {error}")))
+            }
+            PinError::NoAddress => {
+                AppError::BadRequest(format!("Image host {host} did not resolve to an address"))
+            }
+            PinError::Private(_) => AppError::BadRequest(format!(
+                "Images are only loaded from public hosts, and {host} resolves to a private address"
+            )),
+            PinError::Build(error) => {
+                AppError::Internal(format!("Image client setup failed: {error}"))
+            }
+        })
 }
 
 /// Attach the forge credentials, in the header shape that forge expects.
@@ -206,20 +197,8 @@ fn authenticate(
 }
 
 fn redirect_target(response: &reqwest::Response, current: &Url) -> Result<Option<Url>, AppError> {
-    if !response.status().is_redirection() {
-        return Ok(None);
-    }
-    let location = response
-        .headers()
-        .get(LOCATION)
-        .and_then(|value| value.to_str().ok())
-        .ok_or_else(|| {
-            AppError::BadRequest("The forge redirected this image without saying where".into())
-        })?;
-    current
-        .join(location)
-        .map(Some)
-        .map_err(|error| AppError::BadRequest(format!("Unreadable image redirect: {error}")))
+    http_relay::redirect_target(response, current)
+        .map_err(|reason| AppError::BadRequest(format!("The forge image {reason}")))
 }
 
 async fn read_image(
@@ -237,24 +216,17 @@ async fn read_image(
             "That address answered with {described} rather than an image"
         )));
     }
-    if response
-        .content_length()
-        .is_some_and(|length| length > max_bytes as u64)
-    {
-        return Err(too_large(max_bytes));
-    }
-    // Streamed rather than `bytes()`: a response with no `content-length` would
-    // otherwise be buffered whole before anyone could object to its size.
-    let mut bytes = Vec::new();
-    let mut chunks = response.bytes_stream();
-    while let Some(chunk) = chunks.next().await {
-        let chunk =
-            chunk.map_err(|error| AppError::Internal(format!("Image download failed: {error}")))?;
-        if bytes.len() + chunk.len() > max_bytes {
-            return Err(too_large(max_bytes));
-        }
-        bytes.extend_from_slice(&chunk);
-    }
+    // Streamed under the cap rather than `bytes()`: a response with no
+    // `content-length` would otherwise be buffered whole first.
+    let bytes =
+        http_relay::read_capped(response, max_bytes)
+            .await
+            .map_err(|error| match error {
+                ReadError::TooLarge => too_large(max_bytes),
+                ReadError::Body(error) => {
+                    AppError::Internal(format!("Image download failed: {error}"))
+                }
+            })?;
     Ok((bytes, mime))
 }
 
@@ -309,34 +281,6 @@ mod tests {
             )),
             "image/png"
         );
-    }
-
-    #[test]
-    fn a_relative_redirect_is_resolved_against_the_hop_it_came_from() {
-        let current = Url::parse("https://github.com/acme/repo/blob/main/a.png").unwrap();
-        let next = redirect_target(
-            &response(302, &[("location", "/user-attachments/assets/1")]),
-            &current,
-        )
-        .expect("redirect resolves")
-        .expect("redirect present");
-
-        assert_eq!(
-            next.as_str(),
-            "https://github.com/user-attachments/assets/1"
-        );
-        assert!(redirect_target(&response(200, &[]), &current)
-            .expect("terminal response")
-            .is_none());
-    }
-
-    #[test]
-    fn a_redirect_without_a_location_is_refused_rather_than_looped() {
-        assert!(redirect_target(
-            &response(302, &[]),
-            &Url::parse("https://github.com/a.png").unwrap()
-        )
-        .is_err());
     }
 
     #[test]

@@ -228,7 +228,7 @@ async fn assets(app: &Router) {
     let script = send(
         &app,
         Method::GET,
-        "/api/plugin-tabs/graph/assets/dist/assets/app.js",
+        "/api/plugin-tabs/graph/assets/assets/app.js",
         None,
     )
     .await;
@@ -248,7 +248,7 @@ async fn assets(app: &Router) {
             StatusCode::FORBIDDEN,
         ),
         (
-            "/api/plugin-tabs/graph/assets/dist/%2e%2e%2f%2e%2e%2foutside.txt",
+            "/api/plugin-tabs/graph/assets/%2e%2e%2f%2e%2e%2foutside.txt",
             StatusCode::FORBIDDEN,
         ),
         (
@@ -261,7 +261,7 @@ async fn assets(app: &Router) {
             StatusCode::FORBIDDEN,
         ),
         (
-            "/api/plugin-tabs/graph/assets/dist/missing.js",
+            "/api/plugin-tabs/graph/assets/missing.js",
             StatusCode::NOT_FOUND,
         ),
         (

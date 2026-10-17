@@ -14,8 +14,9 @@ pub const MAX_DESCRIPTION_CHARS: usize = 280;
 pub const MAX_LABEL_CHARS: usize = 24;
 pub const MAX_ID_LEN: usize = 64;
 
-/// Ids that would collide with the host's own `/api/plugin-tabs/<segment>` routes.
-pub const RESERVED_IDS: [&str; 3] = ["authoring", "self", "ws"];
+/// Ids that would collide with the host's own `/api/plugin-tabs/<segment>` routes
+/// (every static second segment the service registers there).
+pub const RESERVED_IDS: [&str; 4] = ["authoring", "grants", "self", "ws"];
 
 /// Validate every manifest rule that does not need the folder.
 pub fn validate_manifest(manifest: &TabManifest) -> TabFindings {
@@ -201,10 +202,13 @@ mod tests {
             codes(&validate_manifest(&manifest(json!({"id": "Bad"}))).errors),
             ["ID_INVALID"]
         );
-        assert_eq!(
-            codes(&validate_manifest(&manifest(json!({"id": "self"}))).errors),
-            ["ID_RESERVED"]
-        );
+        for reserved in RESERVED_IDS {
+            assert_eq!(
+                codes(&validate_manifest(&manifest(json!({"id": reserved}))).errors),
+                ["ID_RESERVED"],
+                "{reserved}"
+            );
+        }
     }
 
     #[test]

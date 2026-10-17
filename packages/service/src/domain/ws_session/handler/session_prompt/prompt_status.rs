@@ -288,6 +288,7 @@ pub(crate) async fn publish_user_message(
         }
         return Ok(());
     }
+    feature_senders.notify_observers(feature_id, &ws_message);
     for sender in feature_senders.get_senders(feature_id).await {
         if sender.send(ws_message.clone()).is_err() {
             feature_senders.unregister_sender(&sender).await;

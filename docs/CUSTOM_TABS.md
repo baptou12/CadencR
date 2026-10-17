@@ -155,6 +155,17 @@ never both. With a plugin token it:
    requires nothing more (403 `PLUGIN_BINDING_DENIED`);
 5. inserts a `PluginPrincipal` request extension.
 
+Bindings read parameters with axum's own decoders (`RawPathParams`, `Query`) —
+exactly what the handler will see. Every occurrence of a repeated `feature_id`
+/ `project_id` must match, and an undecodable path or query binds nothing.
+Plugin-token traffic is rate-limited per plugin (1200 requests/min, its own
+bucket). The `self/configuration` and `self/net/fetch` routes re-check the
+tab's current permissions hash against the one the grant was consented under;
+a mismatch (e.g. a widened `allowed_origins` the watcher has not acted on yet)
+revokes the grant on the spot (401 `PLUGIN_TOKEN_INVALID`). Tab ids that equal
+a static `/api/plugin-tabs/<segment>` (`authoring`, `grants`, `self`, `ws`) are
+reserved.
+
 Plugin-only routes (`binding = SelfPlugin`, no scope required):
 
 | Method & path | Purpose |
@@ -201,15 +212,60 @@ starting at 1; `envelope` is the internal event, forwarded unchanged.
 A plugin socket never accepts session-control actions (prompt, permission,
 interrupt…). Outbound envelopes not matching a live subscription are dropped.
 
+- The `subscribed` reply always precedes the subscription's first event.
+- One source per topic per socket: a repeated `subscribe` to a topic gets its
+  own `subscription_id` and `seq` but shares the source, and receives a
+  `resync` before its first event (it missed the snapshot). The source stops
+  when its last subscription leaves (≤ 32 subscriptions per socket).
+- `{domain:"plugin", action:"resync", payload:{subscription_id, topic}}` means
+  events were lost: refetch. Outbound frames queue on a bounded queue (256);
+  when it is full, events are dropped and their subscription is owed a
+  `resync`, delivered before its next event or as soon as the queue drains. A
+  client that leaves even replies unread is closed with 1008.
+- `session.stream` is filtered at the source (only the read-only session
+  actions, never replies) and buffered per subscription up to 256 frames; a
+  subscription that falls behind drops its backlog and gets a `resync`. The
+  agent stream never waits on a plugin.
+- Inbound frames are ≤ 16 KiB and ≤ 20/s; past that they are dropped unread
+  with one `RATE_LIMITED` error per second, and 5 seconds over budget in a row
+  close the socket with 1008.
+
 ### 4.5 Egress relay
 
-`POST /api/plugin-tabs/self/net/fetch` `{url, method, headers?, body_base64?}` →
-`{status, headers, body_base64}`. The URL's origin must be in
-`network.allowed_origins` (403 `PLUGIN_NETWORK_DENIED`). Redirects are followed
-only within allowed origins (max 5). Timeout 30 s, response ≤ 10 MiB.
-`{{secret:<key>}}` placeholders in header values are replaced server-side with
-the plugin's secret config values; unknown secrets are a 400. Hop-by-hop and
-`cookie` headers are stripped from both directions.
+Bytes travel raw both ways; nobody base64-encodes or JSON-parses a payload.
+
+Request: `POST /api/plugin-tabs/self/net/fetch?url=<urlencoded absolute
+URL>&method=<GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS>` (method defaults to
+`GET`), plugin token as usual, optional header `x-cadencr-net-headers: <JSON
+object of string values>` (≤ 16 KiB, ASCII — escape anything else as
+`\uXXXX`), body = the raw upstream request body
+(`application/octet-stream`, ≤ 10 MiB; empty = none).
+
+Response when the upstream answered, whatever its status: **200** with
+`x-cadencr-net-status: <upstream status>`, `x-cadencr-net-headers: <JSON
+object of the filtered upstream headers>` (lowercase names, repeated headers
+joined with `, `), body = the raw upstream body. Relay failures keep the
+normal `{error, code}` JSON with a non-200 status and **no**
+`x-cadencr-net-status`: 403 `PLUGIN_NETWORK_DENIED`, 400
+`PLUGIN_TAB_SECRET_UNKNOWN` / `BAD_REQUEST`, 429 `PLUGIN_NETWORK_BUSY`, 504
+`PLUGIN_NETWORK_TIMEOUT`, 502 `PLUGIN_NETWORK_FAILED` /
+`PLUGIN_NETWORK_TOO_MANY_REDIRECTS` / `PLUGIN_NETWORK_RESPONSE_TOO_LARGE`. CORS
+allows the request header and exposes both response headers.
+
+- The URL's origin must be in `network.allowed_origins` (403
+  `PLUGIN_NETWORK_DENIED`); URLs carrying credentials are refused.
+- Every hop's host is resolved once and the answers pinned for that hop's
+  connection; a loopback, private, link-local or otherwise non-public address
+  is refused (403 `PLUGIN_NETWORK_DENIED`) unless the origin's host is
+  literally `localhost` or `127.0.0.1`. This closes DNS rebinding; an IP
+  literal origin is held to the same rule. No proxy is used.
+- Redirects are followed by hand, only within allowed origins (max 5), each
+  hop re-checked; 303 (and 301/302 after a POST) become a body-less GET, and
+  `Authorization` and secret-bearing headers never cross to another origin.
+- Timeout 30 s, response ≤ 10 MiB, at most 4 requests in flight per plugin.
+- `{{secret:<key>}}` placeholders in header values are replaced server-side
+  with the plugin's secret config values; unknown secrets are a 400.
+  Hop-by-hop and `cookie` headers are stripped from both directions.
 
 ## 5. Electron host
 
@@ -257,8 +313,10 @@ Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval
   form-action 'none'
 ```
 
-Paths resolve under the plugin folder with realpath containment; dot-files and
-`node_modules` are never served.
+Paths resolve under the **web root** — the directory holding `entry` (usually
+`dist/`) — with realpath containment, so a bundle's relative URLs work and
+sources or `tab.json` are never reachable; dot-files and `node_modules` are
+never served.
 
 ### 5.3 Port bootstrap
 
@@ -287,7 +345,66 @@ instance and waits for `hello`.
 Always available, no scope: context, theme, `state`, `storage`, `config`,
 `ui.*`. `net.fetch` requires `network.allowed_origins`.
 
+### 6.1 Policy table (v1)
+
+The entries of `domain/plugin_tabs/policy.rs`, in order; every one is tier
+`proposed`. A route listed twice passes when either entry holds. On any bound
+entry, every `feature_id` / `project_id` query parameter present must also
+name the grant's.
+
+| Method | Path                                         | Scope            | Binding                  |
+| ------ | -------------------------------------------- | ---------------- | ------------------------ |
+| GET    | `/api/features/{id}`                         | `features:read`  | FeaturePath(id)          |
+| GET    | `/api/features/{id}/working-dir`             | `features:read`  | FeaturePath(id)          |
+| GET    | `/api/features`                              | `features:read`  | ProjectQuery(project_id) |
+| GET    | `/api/features/activity`                     | `features:read`  | ProjectQuery(project_id) |
+| GET    | `/api/git/status`                            | `git:read`       | FeatureQuery(feature_id) |
+| GET    | `/api/git/diff`                              | `git:read`       | FeatureQuery(feature_id) |
+| GET    | `/api/git/file-diff`                         | `git:read`       | FeatureQuery(feature_id) |
+| GET    | `/api/git/changed-files`                     | `git:read`       | FeatureQuery(feature_id) |
+| GET    | `/api/git/uncommitted-files`                 | `git:read`       | FeatureQuery(feature_id) |
+| GET    | `/api/git/stats`                             | `git:read`       | FeatureQuery(feature_id) |
+| GET    | `/api/git/commit-log`                        | `git:read`       | FeatureQuery(feature_id) |
+| GET    | `/api/git/commit-graph`                      | `git:read`       | FeatureQuery(feature_id) |
+| GET    | `/api/git/file-content`                      | `git:read`       | FeatureQuery(feature_id) |
+| GET    | `/api/git/blame`                             | `git:read`       | FeatureQuery(feature_id) |
+| GET    | `/api/git/branches`                          | `git:read`       | ProjectQuery(project_id) |
+| GET    | `/api/git/branch`                            | `git:read`       | ProjectQuery(project_id) |
+| GET    | `/api/git/pr`                                | `forge:read`     | FeatureQuery(feature_id) |
+| GET    | `/api/git/pr/comments`                       | `forge:read`     | FeatureQuery(feature_id) |
+| GET    | `/api/editor/root`                           | `files:read`     | FeatureQuery(feature_id) |
+| GET    | `/api/editor/tree`                           | `files:read`     | FeatureQuery(feature_id) |
+| GET    | `/api/editor/tree-all`                       | `files:read`     | FeatureQuery(feature_id) |
+| GET    | `/api/editor/tree-count`                     | `files:read`     | FeatureQuery(feature_id) |
+| GET    | `/api/editor/read`                           | `files:read`     | FeatureQuery(feature_id) |
+| GET    | `/api/editor/search`                         | `files:read`     | FeatureQuery(feature_id) |
+| GET    | `/api/editor/content-search`                 | `files:read`     | FeatureQuery(feature_id) |
+| GET    | `/api/features/{feature_id}/sessions`        | `agent:observe`  | FeaturePath(feature_id)  |
+| GET    | `/api/features/{feature_id}/agent-state`     | `agent:observe`  | FeaturePath(feature_id)  |
+| GET    | `/api/features/{feature_id}/message-preview` | `agent:observe`  | FeaturePath(feature_id)  |
+| GET    | `/api/features/{feature_id}/row-summary`     | `agent:observe`  | FeaturePath(feature_id)  |
+| GET    | `/api/features/{id}/pending-gate`            | `agent:observe`  | FeaturePath(id)          |
+| GET    | `/api/projects`                              | `workspace:read` | Unbound                  |
+| GET    | `/api/features`                              | `workspace:read` | Unbound                  |
+| GET    | `/api/features/activity`                     | `workspace:read` | Unbound                  |
+| GET    | `/api/features/recent`                       | `workspace:read` | Unbound                  |
+| GET    | `/api/features/active`                       | `workspace:read` | Unbound                  |
+| GET    | `/api/features/pinned`                       | `workspace:read` | Unbound                  |
+| GET    | `/api/plugin-tabs/self/configuration`        | —                | SelfPlugin               |
+| GET    | `/api/plugin-tabs/self/storage`              | —                | SelfPlugin               |
+| GET    | `/api/plugin-tabs/self/storage/{key}`        | —                | SelfPlugin               |
+| PUT    | `/api/plugin-tabs/self/storage/{key}`        | —                | SelfPlugin               |
+| DELETE | `/api/plugin-tabs/self/storage/{key}`        | —                | SelfPlugin               |
+| POST   | `/api/plugin-tabs/self/net/fetch`            | —                | SelfPlugin               |
+| DELETE | `/api/plugin-tabs/grants/current`            | —                | SelfPlugin               |
+
 ## 7. Wire protocol (guest ⇄ broker)
+
+The broker mints a grant when a guest says `hello`, replaces it lazily when it
+is within two minutes of expiry (grants live 15 minutes), re-mints once after a
+401, and releases it when the guest is recycled, crashes or closes. It caps
+`api.request` and `net.fetch` bodies at 2 MiB and never parses plugin payloads:
+response bodies travel as transferred `ArrayBuffer`s.
 
 Structured-clone objects over the `MessagePort`, `v: 1`.
 

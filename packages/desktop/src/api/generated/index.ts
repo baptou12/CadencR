@@ -1223,6 +1223,14 @@ export interface CreateFolderResponse {
   path: string;
 }
 
+export interface CreatePluginTabGrantRequest {
+  /**
+   * The feature the tab instance is shown in; the grant binds to it and
+   * its project.
+   */
+  feature_id: number;
+}
+
 export interface CreatePluginTabRequest {
   /** @nullable */
   description?: string | null;
@@ -3461,6 +3469,21 @@ export interface PluginTabEnablement {
    * @nullable
    */
   project?: boolean | null;
+}
+
+/**
+ * A plugin token for one tab instance. Opaque; send it as
+ * `x-cadencr-plugin-token` (HTTP) or the `cadencr-plugin.<token>`
+ * subprotocol (`/api/plugin-tabs/ws`). In memory only, never persisted.
+ */
+export interface PluginTabGrant {
+  /** @minimum 0 */
+  api_version: number;
+  /** RFC 3339; mint a new grant before then. */
+  expires_at: string;
+  /** The consented scopes (§6) the token carries. */
+  scopes: string[];
+  token: string;
 }
 
 export interface PluginTabNetwork {
@@ -5921,6 +5944,19 @@ export type LspRootParams = {
 
 export type PluginTabListParams = {
   project_id?: number;
+};
+
+export type PluginTabSelfConfiguration200 = { [key: string]: unknown };
+
+export type PluginTabSelfNetFetchParams = {
+  /**
+   * Absolute URL whose origin is in the manifest's `network.allowed_origins`.
+   */
+  url: string;
+  /**
+   * HTTP method, `GET` when omitted.
+   */
+  method?: string;
 };
 
 export type PluginTabGetParams = {
@@ -21345,6 +21381,686 @@ export const usePluginTabAuthoring = <TError = ErrorType<unknown>, TContext = un
   return useMutation(getPluginTabAuthoringMutationOptions(options), queryClient);
 };
 
+/**
+ * @summary Revoke the presenting grant (plugin token). The instance is going away.
+ */
+export const pluginTabRevokeCurrentGrant = (signal?: AbortSignal) => {
+  return customInstance<void>({ url: `/api/plugin-tabs/grants/current`, method: "DELETE", signal });
+};
+
+export const getPluginTabRevokeCurrentGrantMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabRevokeCurrentGrant>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabRevokeCurrentGrant>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["pluginTabRevokeCurrentGrant"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabRevokeCurrentGrant>>,
+    void
+  > = () => {
+    return pluginTabRevokeCurrentGrant();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabRevokeCurrentGrantMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabRevokeCurrentGrant>>
+>;
+
+export type PluginTabRevokeCurrentGrantMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Revoke the presenting grant (plugin token). The instance is going away.
+ */
+export const usePluginTabRevokeCurrentGrant = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabRevokeCurrentGrant>>,
+      TError,
+      void,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabRevokeCurrentGrant>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getPluginTabRevokeCurrentGrantMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary The tab's non-secret settings for its project: project values over global
+over declared defaults (plugin token).
+ */
+export const pluginTabSelfConfiguration = (signal?: AbortSignal) => {
+  return customInstance<PluginTabSelfConfiguration200>({
+    url: `/api/plugin-tabs/self/configuration`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getPluginTabSelfConfigurationQueryKey = () => {
+  return [`/api/plugin-tabs/self/configuration`] as const;
+};
+
+export const getPluginTabSelfConfigurationQueryOptions = <
+  TData = Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfConfiguration>>, TError, TData>
+  >;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPluginTabSelfConfigurationQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof pluginTabSelfConfiguration>>> = ({
+    signal,
+  }) => pluginTabSelfConfiguration(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PluginTabSelfConfigurationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfConfiguration>>
+>;
+export type PluginTabSelfConfigurationQueryError = ErrorType<unknown>;
+
+export function usePluginTabSelfConfiguration<
+  TData = Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfConfiguration>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabSelfConfiguration>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabSelfConfiguration<
+  TData = Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfConfiguration>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabSelfConfiguration>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabSelfConfiguration<
+  TData = Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfConfiguration>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary The tab's non-secret settings for its project: project values over global
+over declared defaults (plugin token).
+ */
+
+export function usePluginTabSelfConfiguration<
+  TData = Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfConfiguration>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPluginTabSelfConfigurationQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary The egress relay (§4.5, plugin token). The body is sent upstream as is;
+outbound headers ride in `x-cadencr-net-headers` (a JSON object whose
+values may hold `{{secret:<key>}}`). Whatever the upstream answers comes
+back as a 200 whose body is the upstream body, with
+`x-cadencr-net-status` and `x-cadencr-net-headers`. Relay failures are
+plain errors: 403 `PLUGIN_NETWORK_DENIED` (origin not allowed, or a
+non-public address), 400 `PLUGIN_TAB_SECRET_UNKNOWN`, 429
+`PLUGIN_NETWORK_BUSY`, 504 `PLUGIN_NETWORK_TIMEOUT`, 502 `PLUGIN_NETWORK_*`.
+ */
+export const pluginTabSelfNetFetch = (
+  pluginTabSelfNetFetchBody: Blob,
+  params: PluginTabSelfNetFetchParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<Blob>({
+    url: `/api/plugin-tabs/self/net/fetch`,
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    data: pluginTabSelfNetFetchBody,
+    params,
+    responseType: "blob",
+    signal,
+  });
+};
+
+export const getPluginTabSelfNetFetchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabSelfNetFetch>>,
+    TError,
+    PluginTabSelfNetFetchMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabSelfNetFetch>>,
+  TError,
+  PluginTabSelfNetFetchMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabSelfNetFetch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabSelfNetFetch>>,
+    PluginTabSelfNetFetchMutationVariables
+  > = (props) => {
+    const { data, params } = props ?? {};
+
+    return pluginTabSelfNetFetch(data, params);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabSelfNetFetchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfNetFetch>>
+>;
+export type PluginTabSelfNetFetchMutationBody = Blob;
+export type PluginTabSelfNetFetchMutationError = ErrorType<unknown>;
+export type PluginTabSelfNetFetchMutationVariables = {
+  data: Blob;
+  params: PluginTabSelfNetFetchParams;
+};
+
+/**
+ * @summary The egress relay (§4.5, plugin token). The body is sent upstream as is;
+outbound headers ride in `x-cadencr-net-headers` (a JSON object whose
+values may hold `{{secret:<key>}}`). Whatever the upstream answers comes
+back as a 200 whose body is the upstream body, with
+`x-cadencr-net-status` and `x-cadencr-net-headers`. Relay failures are
+plain errors: 403 `PLUGIN_NETWORK_DENIED` (origin not allowed, or a
+non-public address), 400 `PLUGIN_TAB_SECRET_UNKNOWN`, 429
+`PLUGIN_NETWORK_BUSY`, 504 `PLUGIN_NETWORK_TIMEOUT`, 502 `PLUGIN_NETWORK_*`.
+ */
+export const usePluginTabSelfNetFetch = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabSelfNetFetch>>,
+      TError,
+      PluginTabSelfNetFetchMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabSelfNetFetch>>,
+  TError,
+  PluginTabSelfNetFetchMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabSelfNetFetchMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Every key in the tab's store for its project, sorted (plugin token).
+ */
+export const pluginTabSelfStorageList = (signal?: AbortSignal) => {
+  return customInstance<string[]>({ url: `/api/plugin-tabs/self/storage`, method: "GET", signal });
+};
+
+export const getPluginTabSelfStorageListQueryKey = () => {
+  return [`/api/plugin-tabs/self/storage`] as const;
+};
+
+export const getPluginTabSelfStorageListQueryOptions = <
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageList>>, TError, TData>
+  >;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPluginTabSelfStorageListQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof pluginTabSelfStorageList>>> = ({
+    signal,
+  }) => pluginTabSelfStorageList(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PluginTabSelfStorageListQueryResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfStorageList>>
+>;
+export type PluginTabSelfStorageListQueryError = ErrorType<unknown>;
+
+export function usePluginTabSelfStorageList<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageList>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabSelfStorageList>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabSelfStorageList<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageList>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabSelfStorageList>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabSelfStorageList<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageList>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Every key in the tab's store for its project, sorted (plugin token).
+ */
+
+export function usePluginTabSelfStorageList<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageList>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPluginTabSelfStorageListQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary One stored JSON value; 404 `PLUGIN_TAB_STORAGE_NOT_FOUND` (plugin token).
+ */
+export const pluginTabSelfStorageGet = (key: string, signal?: AbortSignal) => {
+  return customInstance<unknown>({
+    url: `/api/plugin-tabs/self/storage/${key}`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getPluginTabSelfStorageGetQueryKey = (key: string) => {
+  return [`/api/plugin-tabs/self/storage/${key}`] as const;
+};
+
+export const getPluginTabSelfStorageGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+  TError = ErrorType<unknown>,
+>(
+  key: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>, TError, TData>
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPluginTabSelfStorageGetQueryKey(key);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>> = ({
+    signal,
+  }) => pluginTabSelfStorageGet(key, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: key !== null && key !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type PluginTabSelfStorageGetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfStorageGet>>
+>;
+export type PluginTabSelfStorageGetQueryError = ErrorType<unknown>;
+
+export function usePluginTabSelfStorageGet<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+  TError = ErrorType<unknown>,
+>(
+  key: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabSelfStorageGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabSelfStorageGet<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+  TError = ErrorType<unknown>,
+>(
+  key: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabSelfStorageGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabSelfStorageGet<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+  TError = ErrorType<unknown>,
+>(
+  key: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary One stored JSON value; 404 `PLUGIN_TAB_STORAGE_NOT_FOUND` (plugin token).
+ */
+
+export function usePluginTabSelfStorageGet<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+  TError = ErrorType<unknown>,
+>(
+  key: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPluginTabSelfStorageGetQueryOptions(key, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Store any JSON value (≤ 256 KiB, ≤ 500 keys) under `key` (plugin token).
+ */
+export const pluginTabSelfStoragePut = (
+  key: string,
+  pluginTabSelfStoragePutBody: unknown,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/api/plugin-tabs/self/storage/${key}`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: pluginTabSelfStoragePutBody,
+    signal,
+  });
+};
+
+export const getPluginTabSelfStoragePutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabSelfStoragePut>>,
+    TError,
+    PluginTabSelfStoragePutMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabSelfStoragePut>>,
+  TError,
+  PluginTabSelfStoragePutMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabSelfStoragePut"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabSelfStoragePut>>,
+    PluginTabSelfStoragePutMutationVariables
+  > = (props) => {
+    const { key, data } = props ?? {};
+
+    return pluginTabSelfStoragePut(key, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabSelfStoragePutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfStoragePut>>
+>;
+export type PluginTabSelfStoragePutMutationBody = unknown;
+export type PluginTabSelfStoragePutMutationError = ErrorType<unknown>;
+export type PluginTabSelfStoragePutMutationVariables = { key: string; data: unknown };
+
+/**
+ * @summary Store any JSON value (≤ 256 KiB, ≤ 500 keys) under `key` (plugin token).
+ */
+export const usePluginTabSelfStoragePut = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabSelfStoragePut>>,
+      TError,
+      PluginTabSelfStoragePutMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabSelfStoragePut>>,
+  TError,
+  PluginTabSelfStoragePutMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabSelfStoragePutMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Remove `key`; absent keys succeed too (plugin token).
+ */
+export const pluginTabSelfStorageDelete = (key: string, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/api/plugin-tabs/self/storage/${key}`,
+    method: "DELETE",
+    signal,
+  });
+};
+
+export const getPluginTabSelfStorageDeleteMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabSelfStorageDelete>>,
+    TError,
+    PluginTabSelfStorageDeleteMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabSelfStorageDelete>>,
+  TError,
+  PluginTabSelfStorageDeleteMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabSelfStorageDelete"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabSelfStorageDelete>>,
+    PluginTabSelfStorageDeleteMutationVariables
+  > = (props) => {
+    const { key } = props ?? {};
+
+    return pluginTabSelfStorageDelete(key);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabSelfStorageDeleteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfStorageDelete>>
+>;
+
+export type PluginTabSelfStorageDeleteMutationError = ErrorType<unknown>;
+export type PluginTabSelfStorageDeleteMutationVariables = { key: string };
+
+/**
+ * @summary Remove `key`; absent keys succeed too (plugin token).
+ */
+export const usePluginTabSelfStorageDelete = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabSelfStorageDelete>>,
+      TError,
+      PluginTabSelfStorageDeleteMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabSelfStorageDelete>>,
+  TError,
+  PluginTabSelfStorageDeleteMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabSelfStorageDeleteMutationOptions(options), queryClient);
+};
+
 export const pluginTabGet = (id: string, params?: PluginTabGetParams, signal?: AbortSignal) => {
   return customInstance<PluginTabSummary>({
     url: `/api/plugin-tabs/${id}`,
@@ -21682,7 +22398,8 @@ export const usePluginTabPutConfiguration = <TError = ErrorType<unknown>, TConte
 
 /**
  * @summary Accept the tab's current permissions. 409 `PLUGIN_TAB_CONSENT_STALE` when
-`permissions_hash` is not the current one.
+`permissions_hash` is not the current one. A changed consent revokes the
+tab's live grants.
  */
 export const pluginTabConsent = (
   id: string,
@@ -21748,7 +22465,8 @@ export type PluginTabConsentMutationVariables = {
 
 /**
  * @summary Accept the tab's current permissions. 409 `PLUGIN_TAB_CONSENT_STALE` when
-`permissions_hash` is not the current one.
+`permissions_hash` is not the current one. A changed consent revokes the
+tab's live grants.
  */
 export const usePluginTabConsent = <TError = ErrorType<unknown>, TContext = unknown>(
   options?: {
@@ -21772,7 +22490,8 @@ export const usePluginTabConsent = <TError = ErrorType<unknown>, TContext = unkn
 /**
  * @summary Set or clear the global switch or a project override. Turning a tab on
 requires a valid manifest (422 `PLUGIN_TAB_INVALID`) and a current consent
-(409 `PLUGIN_TAB_CONSENT_REQUIRED`).
+(409 `PLUGIN_TAB_CONSENT_REQUIRED`). Anything but `enabled: true` revokes
+the tab's live grants.
  */
 export const pluginTabSetEnablement = (
   id: string,
@@ -21836,7 +22555,8 @@ export type PluginTabSetEnablementMutationVariables = {
 /**
  * @summary Set or clear the global switch or a project override. Turning a tab on
 requires a valid manifest (422 `PLUGIN_TAB_INVALID`) and a current consent
-(409 `PLUGIN_TAB_CONSENT_REQUIRED`).
+(409 `PLUGIN_TAB_CONSENT_REQUIRED`). Anything but `enabled: true` revokes
+the tab's live grants.
  */
 export const usePluginTabSetEnablement = <TError = ErrorType<unknown>, TContext = unknown>(
   options?: {
@@ -21855,6 +22575,96 @@ export const usePluginTabSetEnablement = <TError = ErrorType<unknown>, TContext 
   TContext
 > => {
   return useMutation(getPluginTabSetEnablementMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Mint a plugin token for one tab instance in `feature_id`. 404 when the tab
+or feature does not exist, 422 `PLUGIN_TAB_INVALID` for an invalid
+manifest, 403 `PLUGIN_TAB_DISABLED` unless the tab is effective for the
+feature's project.
+ */
+export const pluginTabCreateGrant = (
+  id: string,
+  createPluginTabGrantRequest: CreatePluginTabGrantRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<PluginTabGrant>({
+    url: `/api/plugin-tabs/${id}/grants`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: createPluginTabGrantRequest,
+    signal,
+  });
+};
+
+export const getPluginTabCreateGrantMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabCreateGrant>>,
+    TError,
+    PluginTabCreateGrantMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabCreateGrant>>,
+  TError,
+  PluginTabCreateGrantMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabCreateGrant"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabCreateGrant>>,
+    PluginTabCreateGrantMutationVariables
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return pluginTabCreateGrant(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabCreateGrantMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabCreateGrant>>
+>;
+export type PluginTabCreateGrantMutationBody = CreatePluginTabGrantRequest;
+export type PluginTabCreateGrantMutationError = ErrorType<unknown>;
+export type PluginTabCreateGrantMutationVariables = {
+  id: string;
+  data: CreatePluginTabGrantRequest;
+};
+
+/**
+ * @summary Mint a plugin token for one tab instance in `feature_id`. 404 when the tab
+or feature does not exist, 422 `PLUGIN_TAB_INVALID` for an invalid
+manifest, 403 `PLUGIN_TAB_DISABLED` unless the tab is effective for the
+feature's project.
+ */
+export const usePluginTabCreateGrant = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabCreateGrant>>,
+      TError,
+      PluginTabCreateGrantMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabCreateGrant>>,
+  TError,
+  PluginTabCreateGrantMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabCreateGrantMutationOptions(options), queryClient);
 };
 
 /**

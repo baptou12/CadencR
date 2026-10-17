@@ -25,6 +25,7 @@
         "**/*.spec.js",
         "**/*.spec.jsx",
         "**/api/generated/**",
+        "packages/tab-sdk/src/generated/**",
         "**/routeTree.gen.ts"
       ],
       "rules": {

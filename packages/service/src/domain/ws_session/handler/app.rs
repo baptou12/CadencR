@@ -120,7 +120,7 @@ async fn handle_unsubscribe_git_status(
 /// (re)connecting client anchors its elapsed timer to the same instant the
 /// host did. The DB has no per-turn start column, so this is the only place
 /// the snapshot picks the timestamp up.
-async fn session_status_snapshot_with_timers(
+pub(crate) async fn session_status_snapshot_with_timers(
     app_state: &AppState,
 ) -> std::collections::HashMap<String, crate::domain::sessions::models::SessionStatusSnapshotEntry>
 {

@@ -23,6 +23,10 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     },
+    "./api": {
+      "types": "./src/plugin-api.ts",
+      "import": "./src/plugin-api.ts"
+    },
     "./react": {
       "types": "./src/react.tsx",
       "import": "./src/react.tsx"
@@ -44,6 +48,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
+      },
+      "./api": {
+        "types": "./dist/plugin-api.d.ts",
+        "import": "./dist/plugin-api.js"
       },
       "./react": {
         "types": "./dist/react.d.ts",
@@ -69,7 +77,8 @@
     "format": "oxfmt src/ scripts/ README.md",
     "format:check": "oxfmt --check src/ scripts/ README.md",
     "knip": "knip",
-    "vendor": "node ../../scripts/vendor-tab-packages.mjs"
+    "vendor": "node ../../scripts/vendor-tab-packages.mjs",
+    "generate:api": "node ../../scripts/cargo-env.mjs cargo run --quiet --manifest-path ../service/Cargo.toml --bin dump-openapi -- --plugin-surface openapi.plugin.json && orval --config ./orval.config.ts && oxfmt src/generated/"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -90,6 +99,7 @@
     "@types/react-dom": "^19.2.3",
     "happy-dom": "20.14.5",
     "knip": "^6.22.0",
+    "orval": "8.26.0",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",
     "react": "^19.2.7",

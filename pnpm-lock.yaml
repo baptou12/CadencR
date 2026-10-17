@@ -92,6 +92,9 @@ importers:
       '@cadencr/brand':
         specifier: workspace:*
         version: link:../brand
+      '@cadencr/tab-sdk':
+        specifier: workspace:*
+        version: link:../tab-sdk
       '@codemirror/autocomplete':
         specifier: ^6.20.3
         version: 6.20.3
@@ -554,6 +557,9 @@ importers:
       knip:
         specifier: ^6.22.0
         version: 6.22.0
+      orval:
+        specifier: 8.26.0
+        version: 8.26.0(prettier@3.8.4)(typescript@5.9.3)
       oxfmt:
         specifier: ^0.56.0
         version: 0.56.0
