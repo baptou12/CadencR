@@ -66,7 +66,8 @@ function toArrayBuffer(body: NetFetchInit["body"]): ArrayBuffer | undefined {
 function oneWriteAtATimePerKey(): (key: string, write: () => Promise<void>) => Promise<void> {
   const last = new Map<string, Promise<void>>();
   return (key, write) => {
-    const run = (last.get(key) ?? Promise.resolve()).then(write);
+    const previous = last.get(key);
+    const run = previous ? previous.then(write) : write();
     const settled = run.then(
       () => undefined,
       () => undefined,
@@ -84,10 +85,23 @@ export function createStorage(send: Requester): CadencrStorage {
   return {
     get: async <T extends JsonValue>(key: string) =>
       ((await send("storage.get", { key })) ?? null) as T | null,
-    set: (key, value) =>
-      write(key, async () => {
-        await send("storage.set", { key, value });
-      }),
+    set: (key, value) => {
+      // Copied now: a queued write saves the value as it was when `set` was
+      // called, not as the caller changed it while the write waited.
+      let copy: JsonValue;
+      try {
+        copy = structuredClone(value);
+      } catch (error) {
+        return Promise.reject(
+          new CadencrError("BAD_REQUEST", `storage.set params cannot be sent: ${String(error)}`, {
+            cause: error,
+          }),
+        );
+      }
+      return write(key, async () => {
+        await send("storage.set", { key, value: copy });
+      });
+    },
     delete: (key) =>
       write(key, async () => {
         await send("storage.delete", { key });

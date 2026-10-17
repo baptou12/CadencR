@@ -54,6 +54,30 @@ describe("requests", () => {
     host.close();
   });
 
+  it("saves a queued storage write as it was when set was called", async () => {
+    const { host, client } = await connected();
+    const saved: unknown[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    host.handle("storage.set", async ({ value }) => {
+      saved.push(value);
+      if (saved.length === 1) await gate;
+      return null;
+    });
+    const first = client.storage.set("prefs", { theme: "dark" });
+    const prefs = { theme: "light" };
+    const second = client.storage.set("prefs", prefs);
+    prefs.theme = "changed later";
+    release();
+    await Promise.all([first, second]);
+    expect(saved).toEqual([{ theme: "dark" }, { theme: "light" }]);
+    await expect(client.storage.set("prefs", { run: () => 1 } as never)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    client.close();
+    host.close();
+  });
+
   it("times out one request without breaking the connection", async () => {
     const { host, client } = await connected({}, { requestTimeoutMs: 30 });
     host.handle("config.get", () => new Promise(() => {}));
