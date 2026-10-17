@@ -10,8 +10,10 @@
 //!
 //! The folder outlives a failure in steps 2–4: the error names the retry
 //! (`POST /api/plugin-tabs/{id}/workspace`, [`open`]) instead of pretending
-//! the whole setup is atomic. Consent comes first so the retry can tell an
-//! interrupted creation from a folder copied in by hand.
+//! the whole setup is atomic. Step 2 marks the setup pending until step 4 (or
+//! any later availability choice) settles it, so the retry can tell an
+//! interrupted creation from a folder copied in by hand or a tab the user
+//! switched back to Inherit.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -115,7 +117,7 @@ async fn discard(dir: &Path, error: AppError) -> AppError {
 async fn finish(pool: &SqlitePool, id: &str) -> Result<PluginTabWorkspace, AppError> {
     let tab = registry::get(id).await?;
     let (_, hash) = tab.require_valid()?;
-    consent::record(pool, id, &hash).await?;
+    consent::record_for_setup(pool, id, &hash).await?;
     let workspace = workspace::ensure_for(pool, &tab).await?;
     enablement::set(pool, &tab, Some(workspace.project_id), Some(true)).await?;
     Ok(workspace)
@@ -123,17 +125,17 @@ async fn finish(pool: &SqlitePool, id: &str) -> Result<PluginTabWorkspace, AppEr
 
 /// The tab's authoring project, created if missing ("Open project"), and the
 /// retry of a creation that failed after consent ("Retry setup"): a tab whose
-/// current permissions are consented but that was never switched on or off
-/// anywhere is turned on in its project, as creation would have. A folder
-/// copied in by hand has no consent, so opening it enables nothing.
+/// setup is still pending at its current permissions is turned on in its
+/// project, as creation would have. A folder copied in by hand never had a
+/// pending setup, and one the user already chose for keeps that choice, so
+/// opening either enables nothing.
 pub async fn open(pool: &SqlitePool, id: &str) -> Result<PluginTabWorkspace, AppError> {
     let tab = registry::get(id).await?;
     let workspace = workspace::ensure_for(pool, &tab).await?;
     let Ok((_, hash)) = tab.require_valid() else {
         return Ok(workspace);
     };
-    let consented = consent::consented_hash(pool, id).await?.as_deref() == Some(hash.as_str());
-    if consented && !enablement::any_stored(pool, id).await? {
+    if consent::setup_pending(pool, id, &hash).await? {
         enablement::set(pool, &tab, Some(workspace.project_id), Some(true)).await?;
     }
     Ok(workspace)
@@ -238,7 +240,7 @@ mod tests {
         // Creation consented, then failed before its project existed.
         write_tab("half", serde_json::json!({}));
         let half = registry::get("half").await.unwrap();
-        consent::record(&pool, "half", &half.require_valid().unwrap().1)
+        consent::record_for_setup(&pool, "half", &half.require_valid().unwrap().1)
             .await
             .unwrap();
         let workspace = open(&pool, "half").await.unwrap();
@@ -248,10 +250,35 @@ mod tests {
         // A folder copied in by hand: its project opens, the tab stays off.
         write_tab("copied", serde_json::json!({}));
         let copied = open(&pool, "copied").await.unwrap();
-        assert!(!enablement::any_stored(&pool, "copied").await.unwrap());
         assert!(!enablement::effective(&pool, "copied", copied.project_id)
             .await
             .unwrap());
+        // Consented by hand later: still not a creation to finish.
+        let copied_tab = registry::get("copied").await.unwrap();
+        consent::record(&pool, "copied", &copied_tab.require_valid().unwrap().1)
+            .await
+            .unwrap();
+        open(&pool, "copied").await.unwrap();
+        assert!(!enablement::effective(&pool, "copied", copied.project_id)
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn opening_keeps_an_inherit_choice_made_after_creation() {
+        let pool = pool().await;
+        let workspace = create(&pool, &request("Inherited")).await.unwrap();
+        let tab = registry::get("inherited").await.unwrap();
+        // Inherit with no global switch: the last enablement row goes away.
+        enablement::set(&pool, &tab, Some(workspace.project_id), None)
+            .await
+            .unwrap();
+        open(&pool, "inherited").await.unwrap();
+        let resolved = enablement::resolve(&pool, &tab, Some(workspace.project_id))
+            .await
+            .unwrap();
+        assert_eq!((resolved.global, resolved.project), (None, None));
+        assert!(!resolved.effective);
     }
 
     #[tokio::test]

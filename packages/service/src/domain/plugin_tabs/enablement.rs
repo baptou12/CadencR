@@ -38,16 +38,6 @@ pub async fn stored(
     Ok(group(rows).remove(plugin_id).unwrap_or_default())
 }
 
-/// Whether any switch, global or per project, was ever stored for `plugin_id`.
-pub async fn any_stored(pool: &SqlitePool, plugin_id: &str) -> Result<bool, AppError> {
-    Ok(sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM plugin_tab_enablements WHERE plugin_id = ?)",
-    )
-    .bind(plugin_id)
-    .fetch_one(pool)
-    .await?)
-}
-
 /// [`stored`] for every plugin at once, keyed by plugin id.
 pub async fn stored_all(
     pool: &SqlitePool,
@@ -122,7 +112,8 @@ pub async fn effective(
 
 /// Set (`Some`) or clear (`None`) the global switch (`project_id = None`) or a
 /// project override. Turning a tab on requires a valid manifest and a current
-/// consent; turning it off or clearing never does.
+/// consent; turning it off or clearing never does. Any stored choice settles a
+/// pending creation ([`consent::settle_setup`]).
 pub async fn set(
     pool: &SqlitePool,
     tab: &LocalTab,
@@ -144,9 +135,10 @@ pub async fn set(
         }
     }
     match enabled {
-        None => clear(pool, &tab.id, project_id).await,
-        Some(enabled) => write(pool, &tab.id, project_id, enabled).await,
+        None => clear(pool, &tab.id, project_id).await?,
+        Some(enabled) => write(pool, &tab.id, project_id, enabled).await?,
     }
+    consent::settle_setup(pool, &tab.id).await
 }
 
 async fn clear(

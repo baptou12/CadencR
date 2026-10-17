@@ -55,7 +55,8 @@ pub async fn write(
     project_id: Option<i64>,
     values: &Values,
 ) -> Result<(), AppError> {
-    let mut rows = Vec::with_capacity(values.len());
+    // Not `with_capacity(values.len())`: the map is request-sized.
+    let mut rows = Vec::new();
     for (key, value) in values {
         let field = declared(manifest, key)?;
         check_scope(field, project_id)?;

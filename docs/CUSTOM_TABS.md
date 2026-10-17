@@ -111,7 +111,9 @@ against this hash; a widened manifest requires a new consent.
   `project_id IS NULL` is the global row. Unique per `(plugin_id)` for global and
   per `(plugin_id, project_id)` for project rows.
 - `plugin_tab_consents(plugin_id TEXT PRIMARY KEY, permissions_hash TEXT NOT
-  NULL, consented_at TEXT NOT NULL)`.
+  NULL, consented_at TEXT NOT NULL, setup_pending INTEGER NOT NULL)`.
+  `setup_pending` is set by the creation's consent (§8) and cleared by the
+  first stored enablement choice.
 - `plugin_tab_config(plugin_id, project_id NULL, key, value TEXT, is_secret,
   updated_at)` — global and project values; secrets live here too and are
   never returned. `is_secret` is kept with the value, so a manifest that
@@ -468,15 +470,16 @@ interface ThemeSnapshot {
 
 1. derives the id (`slugify`, unique), creates `~/.cadencr/plugins/tabs/<id>/`,
    `git init`, writes the scaffold, commits;
-2. records consent for the scaffold's permissions;
+2. records consent for the scaffold's permissions and marks the setup pending;
 3. creates a project (`authoring_target='tab'`, `plugin_id=<id>`), a feature
    with `worktree_mode=skip`, and a conversation;
-4. enables the tab for that project.
+4. enables the tab for that project, which settles the pending setup.
 
 If steps 2–4 fail, the folder stays and `POST /api/plugin-tabs/{id}/workspace`
-("Retry setup") finishes them: it opens the project and, for a tab whose
-current permissions are consented but that was never switched on or off,
-enables it there. A folder copied in by hand has no consent and stays off.
+("Retry setup") finishes them: it opens the project and, for a tab whose setup
+is still pending at its current permissions, enables it there. Any on, off or
+Inherit choice settles the setup, so opening the project later never overrides
+it. A folder copied in by hand never had a pending setup and stays off.
 
 The scaffold is a Vite + React + Tailwind v4 app depending on
 `@cadencr/tab-sdk` and `@cadencr/tab-kit` (vendored tarballs under `vendor/`
