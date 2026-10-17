@@ -260,6 +260,11 @@ jobs:
           sh tooling/marketplace-registry/scripts/ci/fetch-released-cli.sh \
             scripts/cli-qualification.env "$RUNNER_TEMP/official-plugin-cli"
 
+      - name: Canonical Pi candidate preparation
+        run: |
+          CADENCR_PI_CANDIDATE_TEST_CLI="$RUNNER_TEMP/official-plugin-cli/cadencr" \
+            node --test plugins/providers/pi/test/candidate-package.test.mjs
+
       - name: Canonical theme validation and deterministic packaging
         run: |
           cli="$RUNNER_TEMP/official-plugin-cli/cadencr"

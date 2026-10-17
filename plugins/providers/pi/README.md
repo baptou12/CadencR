@@ -181,3 +181,78 @@ Packaging refuses an existing payload directory, including symlinks. Use
 `pnpm --filter @cadencr/pi-provider package:plugin --directory /absolute/new/payload` for a fresh target. The sorted
 manifest is written beside it as `payload.SHA256SUMS`. No existing payload is
 removed or replaced.
+
+## Source-bound portable candidate preparation
+
+The optional local adapter below delegates validation and both archive builds to
+`cadencr registry pack-provider` (the shared Rust engine). It does not implement
+another archive writer, sign, publish, approve artwork/licenses, or qualify a
+platform. The official Pi release workflow still refuses publication.
+
+```sh
+node plugins/providers/pi/scripts/prepare-candidate.mjs \
+  --source-commit <full-clean-HEAD-commit> \
+  --candidate-target darwin-aarch64 \
+  --runtime external-node-pi \
+  --package /absolute/operator-supplied-candidate.json \
+  --cli /absolute/reviewed/cadencr \
+  --cli-sha256 <exact-reviewed-binary-sha256> \
+  --directory /absolute/existing-parent/new-candidate
+```
+
+- Every option is required. Only explicit `darwin-aarch64` or `darwin-x86_64`
+  **candidate** targets are accepted; neither is thereby supported or qualified.
+  Linux remains a CI host, not an application target. Windows is not prepared.
+- `external-node-pi` preserves the current launcher, Node range and separately
+  installed Pi `0.85.1` prerequisites; it does not select or approve a future
+  native/self-contained distribution policy.
+- Source must be the exact clean `HEAD`, with no untracked plugin source or
+  tracked symlinks. Metadata is bounded to 64 KiB before reading; CLI/archive
+  reads are bounded to 128 MiB through checked, non-following file descriptors.
+  Runtime modules/assets are snapshotted from those Git objects,
+  not shared `bin/` output. Input paths and output ancestors must be symlink-free.
+- The supplied legacy provider package object has exactly `agent` and `host`.
+  `agent` must use `id: "pi"`, `name: "Pi"`, version `0.4.0`, this package's exact
+  description, repository `https://github.com/merkr-software/CadencR`, license
+  `Apache-2.0`, and only the selected `distribution.binary` target. That target
+  has only `archive`, `cmd: "bin/provider"`, and an initial 64-zero `sha256`.
+  `archive` is an operator-supplied credential-free HTTPS URL ending in
+  `/pi-0.4.0-<candidate-target>.tar.gz`; no URL/query credentials are accepted.
+- `host` supplies the operator's candidate `publisher`, explicit compatibility
+  versions, and `assets: {"icon":"icon.svg","readme":"README.md","license":"LICENSE"}`.
+  No publisher, minimum app version or public hosting destination is invented.
+  These candidate inputs do not constitute production approval. Additional
+  fields, command arguments, environment values and multiple targets are refused;
+  canonical schema validation remains owned by the Rust CLI. Input must be exact
+  `JSON.stringify(value, null, 2)` bytes plus one newline, refusing ambiguous
+  duplicate-key or alternate-format documents before invoking the CLI.
+
+The receipt rechecks its Node range against committed `package.json` and its Pi
+pin against the committed README install command and pinned upstream documentation.
+A prerequisite change requires explicit candidate-contract review; it cannot
+silently retain an obsolete runtime claim.
+
+The new directory retains the payload snapshot, private preparation inputs,
+`package.json` with the computed archive digest, two byte-identical canonical
+archives, and `candidate.json`. The receipt binds source commit/path, version,
+explicit candidate target, runtime prerequisites, CLI checksum, metadata checksum,
+and archive digest/size. Its publication and qualification gates remain `PENDING`.
+The repository namespace is expected provenance, not verified remote authority;
+the receipt explicitly records `unverified-local-checkout`. It contains no runner paths. No whole-directory upload is intended: inspect only
+`candidate.json`, `package.json` and the primary archive; retain private scratch
+locally. Existing outputs are refused, never removed or replaced. Failures retain
+partial preparation for private inspection and grant no publication authority.
+Scratch is deliberately not recursively cleaned: a CLI might create an unexpected
+database, and database deletion is prohibited. Errors identify the failed preparation stage and a safe validation/I/O reason or
+child exit status, without forwarding arbitrary child stderr, paths or environment.
+
+Focused real-engine tests require an explicit locally reviewed CLI:
+
+```sh
+CADENCR_PI_CANDIDATE_TEST_CLI=/absolute/reviewed/cadencr \
+  node --test plugins/providers/pi/test/candidate-package.test.mjs
+```
+
+Without that variable, credential-free refusal tests still run; real canonical
+archive cases are explicitly skipped. These packaging tests do not execute Pi,
+access credentials, qualify macOS behavior, or replace managed-host live QA.
