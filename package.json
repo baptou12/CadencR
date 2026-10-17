@@ -22,6 +22,7 @@
     "test:plugins": "pnpm run test:plugin:pi && pnpm run test:plugin:themes",
     "lint": "pnpm run check:provider-boundaries && node scripts/cargo-env.mjs turbo run lint",
     "check:provider-boundaries": "node scripts/check-provider-boundaries.mjs",
+    "vendor:tab-packages": "node scripts/vendor-tab-packages.mjs",
     "test:release-scripts": "env -u BASH_ENV bash scripts/release-notes.test.sh && env -u BASH_ENV bash scripts/update-homebrew-cask.test.sh && env -u BASH_ENV bash scripts/desktop-release-workflow.test.sh && env -u BASH_ENV bash scripts/package-cli-release.test.sh",
     "format": "turbo run format",
     "format:check": "turbo run format:check",

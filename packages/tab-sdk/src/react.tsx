@@ -1,0 +1,200 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+import type { CadencrClient } from "./client.js";
+import { connect, type ConnectOptions } from "./connect.js";
+import { toCadencrError, type CadencrError } from "./errors.js";
+import type { JsonValue, StreamTopic, TabContext, ThemeSnapshot } from "./protocol.js";
+import type { StreamEvent, SubscribeOptions } from "./streams.js";
+
+const ClientContext = createContext<CadencrClient | null>(null);
+
+type ConnectState =
+  | { status: "connecting" }
+  | { status: "ready"; client: CadencrClient }
+  | { status: "error"; error: CadencrError };
+
+export interface CadencrProviderProps {
+  children: ReactNode;
+  /** Rendered while connecting. */
+  fallback?: ReactNode;
+  /** Rendered when the connection fails. Without it the error is thrown
+   *  during render, for the nearest error boundary. */
+  errorFallback?: ReactNode | ((error: CadencrError) => ReactNode);
+  /** Read once, on mount. */
+  connectOptions?: ConnectOptions;
+}
+
+/** Connects on mount, closes on unmount, and provides the client to hooks. */
+export function CadencrProvider({
+  children,
+  fallback = null,
+  errorFallback,
+  connectOptions,
+}: CadencrProviderProps): ReactNode {
+  const [state, setState] = useState<ConnectState>({ status: "connecting" });
+  const options = useRef(connectOptions);
+
+  useEffect(() => {
+    let cancelled = false;
+    let client: CadencrClient | null = null;
+    connect(options.current).then(
+      (connected) => {
+        if (cancelled) {
+          connected.close();
+          return;
+        }
+        client = connected;
+        setState({ status: "ready", client: connected });
+      },
+      (error: unknown) => {
+        if (!cancelled) setState({ status: "error", error: toCadencrError(error) });
+      },
+    );
+    return () => {
+      cancelled = true;
+      client?.close();
+    };
+  }, []);
+
+  if (state.status === "connecting") return fallback;
+  if (state.status === "error") {
+    if (errorFallback === undefined) throw state.error;
+    return typeof errorFallback === "function" ? errorFallback(state.error) : errorFallback;
+  }
+  return <ClientContext.Provider value={state.client}>{children}</ClientContext.Provider>;
+}
+
+/** The connected client. Must be called under `<CadencrProvider>`. */
+export function useCadencr(): CadencrClient {
+  const client = useContext(ClientContext);
+  if (!client) throw new Error("useCadencr() must be called inside <CadencrProvider>");
+  return client;
+}
+
+export function useTabContext(): TabContext {
+  const client = useCadencr();
+  const subscribe = useCallback((notify: () => void) => client.onContextChange(notify), [client]);
+  return useSyncExternalStore(subscribe, () => client.context);
+}
+
+export function useTheme(): ThemeSnapshot {
+  const client = useCadencr();
+  const subscribe = useCallback((notify: () => void) => client.onThemeChange(notify), [client]);
+  return useSyncExternalStore(subscribe, () => client.theme);
+}
+
+/** Whether the tab is currently shown. */
+export function useVisibility(): boolean {
+  const client = useCadencr();
+  const subscribe = useCallback(
+    (notify: () => void) => client.onVisibilityChange(notify),
+    [client],
+  );
+  return useSyncExternalStore(subscribe, () => client.visible);
+}
+
+export interface UseStreamOptions extends SubscribeOptions {
+  /** `false` keeps the subscription closed. Default `true`. */
+  enabled?: boolean;
+}
+
+/**
+ * Subscribes for the component's lifetime. The subscription is re-opened only
+ * when `topic`, `params` (compared as JSON) or `enabled` change; `handler`,
+ * `onResync` and `onError` may be inline closures.
+ */
+export function useStream(
+  topic: StreamTopic | (string & {}),
+  handler: (event: StreamEvent) => void,
+  options: UseStreamOptions = {},
+): void {
+  const client = useCadencr();
+  const latest = useRef({ handler, options });
+  useEffect(() => {
+    latest.current = { handler, options };
+  });
+  const paramsKey = JSON.stringify(options.params ?? null);
+  const enabled = options.enabled ?? true;
+
+  useEffect(() => {
+    if (!enabled) return;
+    const subscription = client.streams.subscribe(topic, (event) => latest.current.handler(event), {
+      params: JSON.parse(paramsKey) ?? undefined,
+      onResync: () => latest.current.options.onResync?.(),
+      onError: latest.current.options.onError
+        ? (error) => latest.current.options.onError?.(error)
+        : undefined,
+    });
+    return () => subscription.unsubscribe();
+  }, [client, topic, paramsKey, enabled]);
+}
+
+export interface StorageState<T> {
+  value: T;
+  loading: boolean;
+  error: CadencrError | null;
+  /** Writes through to `storage.set`; the value updates optimistically and
+   *  rolls back to the stored value if the write fails. */
+  set(value: T): Promise<void>;
+}
+
+/** One key of the plugin's storage, `initial` until loaded or when missing. */
+export function useStorage<T extends JsonValue>(key: string, initial: T): StorageState<T> {
+  const client = useCadencr();
+  const [value, setValue] = useState<T>(initial);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<CadencrError | null>(null);
+  const initialRef = useRef(initial);
+  // Last value known to be stored: a failed `set` rolls the UI back to it.
+  const stored = useRef<T>(initial);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    client.storage.get<T>(key).then(
+      (loaded) => {
+        if (cancelled) return;
+        stored.current = loaded ?? initialRef.current;
+        setValue(stored.current);
+        setError(null);
+        setLoading(false);
+      },
+      (failure: unknown) => {
+        if (cancelled) return;
+        setError(toCadencrError(failure));
+        setLoading(false);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [client, key]);
+
+  const set = useCallback(
+    async (next: T) => {
+      setValue(next);
+      try {
+        await client.storage.set(key, next);
+        stored.current = next;
+        setError(null);
+      } catch (failure) {
+        // Roll back unless a newer `set` has replaced the value meanwhile.
+        setValue((current) => (current === next ? stored.current : current));
+        const cadencrError = toCadencrError(failure);
+        setError(cadencrError);
+        throw cadencrError;
+      }
+    },
+    [client, key],
+  );
+
+  return { value, loading, error, set };
+}

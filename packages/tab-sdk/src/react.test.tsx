@@ -1,0 +1,136 @@
+import { StrictMode, useState } from "react";
+import { act, cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  CadencrProvider,
+  useCadencr,
+  useStorage,
+  useStream,
+  useTabContext,
+  useTheme,
+  useVisibility,
+} from "./react.js";
+import { flush } from "./test-utils.js";
+import { createTestHost, type TestHost } from "./testing/index.js";
+
+let host: TestHost;
+
+afterEach(() => {
+  cleanup();
+  host?.close();
+});
+
+function Info() {
+  const context = useTabContext();
+  const theme = useTheme();
+  const visible = useVisibility();
+  return (
+    <p data-testid="info">
+      {context.feature.name}|{theme.appearance}|{visible ? "shown" : "hidden"}
+    </p>
+  );
+}
+
+describe("CadencrProvider", () => {
+  it("renders the fallback, then children wired to live context", async () => {
+    host = createTestHost();
+    render(
+      <StrictMode>
+        <CadencrProvider
+          fallback={<p>connecting</p>}
+          connectOptions={{ transport: host.transport }}
+        >
+          <Info />
+        </CadencrProvider>
+      </StrictMode>,
+    );
+    expect(screen.getByText("connecting")).toBeTruthy();
+    expect((await screen.findByTestId("info")).textContent).toBe("Demo feature|dark|shown");
+    await act(async () => {
+      host.setContext({ ...host.context, feature: { ...host.context.feature, name: "Next" } });
+      host.setTheme({ ...host.theme, appearance: "light" });
+      host.setVisible(false);
+      await flush();
+    });
+    expect(screen.getByTestId("info").textContent).toBe("Next|light|hidden");
+  });
+
+  it("renders errorFallback when the connection fails", async () => {
+    host = createTestHost({ apiVersions: [9, 9] });
+    render(
+      <CadencrProvider
+        connectOptions={{ transport: host.transport }}
+        errorFallback={(error) => <p>failed: {error.code}</p>}
+      >
+        <Info />
+      </CadencrProvider>,
+    );
+    expect(await screen.findByText("failed: PLUGIN_API_UNSUPPORTED")).toBeTruthy();
+  });
+});
+
+function Counter() {
+  const [count, setCount] = useState(0);
+  const [, rerender] = useState(0);
+  useStream("git.status", () => setCount((n) => n + 1));
+  const client = useCadencr();
+  return (
+    <button type="button" onClick={() => rerender((n) => n + 1)}>
+      {count}:{client.instanceId}
+    </button>
+  );
+}
+
+function Notes() {
+  const { value, loading, set } = useStorage<string>("note", "empty");
+  if (loading) return <p>loading</p>;
+  return (
+    <button type="button" onClick={() => void set("saved")}>
+      {value}
+    </button>
+  );
+}
+
+describe("hooks", () => {
+  it("useStream keeps one subscription across renders", async () => {
+    host = createTestHost();
+    render(
+      <CadencrProvider connectOptions={{ transport: host.transport }}>
+        <Counter />
+      </CadencrProvider>,
+    );
+    const button = await screen.findByRole("button");
+    await act(async () => {
+      button.click();
+      button.click();
+      await flush();
+    });
+    expect(host.subscriptions.size).toBe(1);
+    await act(async () => {
+      host.pushStream("git.status", { domain: "git", action: "status", payload: {} });
+      host.pushStream("git.status", { domain: "git", action: "status", payload: {} });
+      await flush();
+    });
+    expect(button.textContent).toBe("2:test-instance");
+    cleanup();
+    await flush();
+    expect(host.subscriptions.size).toBe(0);
+  });
+
+  it("useStorage loads and writes through", async () => {
+    host = createTestHost({ storage: { note: "hello" } });
+    render(
+      <CadencrProvider connectOptions={{ transport: host.transport }}>
+        <Notes />
+      </CadencrProvider>,
+    );
+    const button = await screen.findByRole("button");
+    expect(button.textContent).toBe("hello");
+    await act(async () => {
+      button.click();
+      await flush();
+    });
+    expect(button.textContent).toBe("saved");
+    expect(host.storage.get("note")).toBe("saved");
+  });
+});
