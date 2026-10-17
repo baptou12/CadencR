@@ -564,6 +564,13 @@ The "Notch" notification destination: transparent, click-through windows managed
 - **Rows.** Provider silhouette tile with a status badge, title + project, then one line: the last tool action in mono (with a sweeping mask shimmer while working) or a two-line plain-text preview of the last reply when done.
 - **Snooze & close.** The panel's footer carries `Snooze` + 5m · 30m · 1h · 1h30 · 2h chips (muted pills on `--n-wash`); while snoozed it reads "Snoozed until <time>" with a `Resume` chip. A snooze tucks the compact island away and drops peeks (the Settings preview still shows); hovering the notch still opens the list. A peek held under the pointer grows a close button beside its title and the same chips under its body — closing drops that peek without opening the conversation. Snoozing or closing lets go of the island at once.
 
+### Toasts (Sonner, `components/ui/sonner.tsx` + `toast.css`)
+
+- **Placement.** Top-right, stacked under the workspace chrome: the feature header (64px, 72px beside the macOS traffic lights, as the rail chassis sizes it) plus the 38px pane tab strip and an 8px gap, 16px from the right edge. Never top-center: that covers the conversation title, Push and the pane tabs. Never bottom: the composer, the newest agent output and the terminal prompt live there. Below 600px they span the width at the top, under the safe-area inset.
+- **Anatomy.** 380px `--popover` card, hairline `--border`, `--radius`, a soft offset shadow (`--glass-shadow-overlay` in the CadencR pair, glass overlay material in Frost). A 24px icon well carries the variant: the Lucide glyph in the tone over a 14% wash of it — success `--acc-green`, error `--acc-red`, warning `--acc-yellow`, info `--acc-cyan`, loading muted. Errors and warnings also tint the rim (40% tone). No colored side stripe. Title 13px semibold; description 12.5px in `--muted-foreground`.
+- **Buttons.** Action is the `raised` button, cancel a ghost; 24px tall. A toast with a description or a cancel button moves its buttons to a right-aligned footer row (primary last); a one-line toast keeps its button inline.
+- **Close.** Sonner's corner badge, shown on hover or focus; always shown (24px) where there is no hover.
+
 ### Status dot
 
 A 7–9px circle with a 2–3px halo (`box-shadow` 0 0 0 spread). Three legal slots:

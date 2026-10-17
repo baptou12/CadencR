@@ -82,7 +82,7 @@ export function RootOverlays({
       <UnifiedAgentsShortcut />
       <SchedulesShortcut />
       <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
-      <Toaster position="top-center" />
+      <Toaster />
       <PostUpdateChangelogDialog />
       <ThemeDrawer />
       <ImageLightboxHost />
