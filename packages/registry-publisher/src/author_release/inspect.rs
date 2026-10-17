@@ -1,7 +1,7 @@
 use super::models::{AnnotatedTag, GitReference};
 use super::state::{conflict, is_sha};
 use super::transport::Transport;
-use crate::error::AppError;
+use crate::author_release::Error as AppError;
 
 const MAX_TAG_DEPTH: usize = 8;
 

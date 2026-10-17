@@ -79,7 +79,11 @@ case "$1" in */cli-qualification.env) printf '%s\\n' '${root}/cli';; *) echo 'Re
       "sh",
       [
         join(root, "scripts/official-plugin-release.sh"),
-        ...(qualification ? ["--qualification"] : []),
+        ...(qualification === "author-approved"
+          ? ["--author-approved"]
+          : qualification
+            ? ["--qualification"]
+            : []),
         root,
         commit,
         tag,
@@ -260,4 +264,24 @@ test("shallow namespaced tag fetch preserves lightweight and annotated source bi
     assert.equal(git(checkout, ["rev-list", "--count", expected]), "1");
     assert.equal(readFileSync(join(checkout, ".git/shallow"), "utf8").trim(), expected);
   }
+});
+
+test("approved author preparation requires reviewed policy and main dispatch", () => {
+  const { run, root } = fixture();
+  const file = join(root, "files.json");
+  const files = JSON.parse(readFileSync(file, "utf8"));
+  const context = { GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REF: "refs/heads/main" };
+  assert.match(run(undefined, context, "author-approved").stderr, /unreviewed release policy/);
+  files["plugins/release-policy.json"].publication = "APPROVED";
+  writeFileSync(file, JSON.stringify(files));
+  assert.match(run(undefined, {}, "author-approved").stderr, /trusted main dispatch/);
+  writeFileSync(
+    join(root, "tooling/marketplace-registry/scripts/ci/fetch-released-cli.sh"),
+    `#!/bin/sh\nprintf '%s\\n' '${root}/cli'\n`,
+  );
+  const result = run(undefined, context, "author-approved");
+  assert.equal(result.status, 0, result.stderr);
+  const metadata = JSON.parse(readFileSync(join(result.output, "release.json"), "utf8"));
+  assert.equal(metadata.authority, "author-approved");
+  assert.equal(metadata.publication, "APPROVED");
 });

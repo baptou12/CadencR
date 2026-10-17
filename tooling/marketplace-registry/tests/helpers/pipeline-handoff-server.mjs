@@ -1,13 +1,8 @@
-// Test-only persistent remote: both language implementations use the same fixture.
+// Test-only HTTP fake; archived legacy evidence replaces executable legacy publishing.
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { startGitHubFixture } from "./github-server.mjs";
-import { runRegistryPublisher } from "../../scripts/publish-registry.mjs";
-import {
-  downloadVerifiedArchive,
-  downloadVerifiedDiscovery,
-} from "../../scripts/publication/download.mjs";
+import { loadCapture } from "../../../../packages/registry-publisher/src/pipeline/handoff/rebase.mjs";
 
 const cleanup = [];
 const { state, url } = await startGitHubFixture(
@@ -24,50 +19,24 @@ state.sourceArchives.set(
   "/public/acme/provider/releases/download/v1/provider.tgz",
   Buffer.from("archive"),
 );
-const routes = {
-  "github.com": "/public",
-  "api.github.com": "/api",
-  "uploads.github.com": "/uploads",
-  "raw.githubusercontent.com": "/raw",
-  "release-assets.githubusercontent.com": "/cdn",
-};
-async function fixtureFetch(input, options) {
-  const target = new URL(input);
-  if (!routes[target.hostname]) throw new Error("unknown handoff destination");
-  return fetch(
-    url + routes[target.hostname] + target.pathname + target.search,
-    options,
-  );
-}
 async function control(input) {
   if (input.action === "configure") {
     state.publicUnavailable = input.publicUnavailable ?? false;
     state.rawUnavailable = input.rawUnavailable ?? false;
     if (input.retireSources) state.sourceArchives.clear();
   }
-  if (input.action === "run") {
-    const request = await readFile(input.request);
-    try {
-      await runRegistryPublisher(
-        {
-          request: input.request,
-          directory: input.directory,
-          repository: "cadencr/registry",
-          "registry-commit": "b".repeat(40),
-          "private-key": input.privateKey,
-          "confirm-request-sha256": createHash("sha256").update(request).digest("hex"),
-        },
-        {
-          token: "handoff-token",
-          fetchImpl: fixtureFetch,
-          download: (args) => downloadVerifiedArchive(args, { fetchImpl: fixtureFetch }),
-          downloadDiscovery: (args) => downloadVerifiedDiscovery(args, { fetchImpl: fixtureFetch }),
-        },
-      );
-      return { ok: true };
-    } catch (error) {
-      return { ok: false, error: error.message };
-    }
+  if (input.action === "load") {
+    const { remote: captured, result } = await loadCapture(input);
+    const revive = (bytes) => (Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes.data));
+    delete captured.release; // Derived getter, not independent state.
+    Object.assign(state, captured);
+    state.tags = new Map(captured.tags);
+    state.sourceArchives = new Map(
+      captured.sourceArchives.map(([key, bytes]) => [key, revive(bytes)]),
+    );
+    state.assets = captured.assets.map((asset) => ({ ...asset, bytes: revive(asset.bytes) }));
+    if (state.discovery) state.discovery.bytes = revive(state.discovery.bytes);
+    return result;
   }
   return {
     writes: state.requests.filter((entry) => entry.method !== "GET").length,

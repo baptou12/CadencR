@@ -32,17 +32,33 @@ a future desktop release. Publication is not public UI or desktop trust activati
       implementation, not evidence of a published or qualified new binary.
 - [x] Merge and push the CLI workflow to `main`, publish a development CLI from
       its exact green commit, and review its public binary/checksum/provenance.
-      CLI `0.13.1-dev.38947325650.1` is published from `cafc7d0a2d705e9fff29cdad6674e81f3764e530`;
+      CLI `0.13.1-dev.38974097824.1` is published from `b3e3ed5ac9d2cd4580117558a218b4c809af65d5`;
       anonymous bytes/checksum/provenance and isolated Linux `--version` pass.
-      This does not qualify registry publication; no desktop release was triggered.
-- [ ] Qualify real GitHub publication, interruption/resume, fresh-runner recovery
+      Its isolated GitHub lifecycle qualification is recorded below; no desktop release was triggered.
+- [x] Qualify real GitHub publication, interruption/resume, fresh-runner recovery
       and empty-delta renewal against an explicitly reviewed isolated **public**
       QA target. Anonymous archive/discovery verification cannot positively
       qualify a private repository. Use inert fixtures and QA-only signing keys;
       offline tests and source-level transport fixtures do not satisfy this gate.
-- [ ] Pin the qualified executable atomically in contribution and protected
+- [ ] Deploy the candidate qualified-executable pin in contribution and protected
       publication workflows; deploy the reviewed registry update and verify CI.
       Only then remove replaced JavaScript business implementations.
+- [x] Migrate CLI contribution, packaging, signing and registry-core/publisher
+      compatibility oracles to native Rust tests or frozen legacy data; retain
+      independent Node built-in cryptography. Pipeline recovery now consumes
+      independently captured legacy state with an explicit test-only date rebase;
+      no Rust test executes the legacy publisher or downloader.
+- [x] Extract the original-author release engine into `cadencr-registry-publisher`
+      and make the service delegate to it; distinguish safe namespaced release
+      tags from asset names. This does not expose an author CLI or enable a job.
+- [x] Expose thin original-author CLI commands with a portable, content-confirmed
+      request and reuse the same release/reconciliation engine as the service.
+- [x] Implement a manually dispatched, protected official-theme author-release
+      job with independent source reconstruction and exact request confirmation.
+      Author binary pins and publication policies remain `PENDING`; no environment
+      or credential is provisioned and no publication is enabled.
+- [ ] Deliver and qualify the author-capable CLI binary, review its separate pin,
+      and provision the protected author environment/account before enabling the job.
 - [ ] Harden and package the Pi draft from `plugins/providers/pi`, retaining
       its existing `0.4.0` candidate version unless a different initial release is
       explicitly selected. Establish source provenance, runtime prerequisites and
@@ -51,9 +67,9 @@ a future desktop release. Publication is not public UI or desktop trust activati
       their live previews, and publish source-pinned immutable author releases.
       Names/version/repository are candidates until reviewed; no placeholder digest
       or invented provenance may enter the registry.
-- [ ] Implement protected author publication and final provider/theme registry
-      package metadata after readiness and trust decisions. The current independent
-      release workflow only prepares artifacts; it does not sign, release or submit.
+- [ ] Activate the protected author job only after its delivery/readiness gates;
+      finish provider/theme registry package metadata and reviewed submissions.
+      The author job does not sign catalogs or grant registry-submit authority.
 - [ ] Provision the reviewed signing/trust profile, protected publication
       environment, renewal/revocation owners and monitoring before signed feeds
       become operational. Never treat test keys or an unprotected workflow as
@@ -64,6 +80,130 @@ a future desktop release. Publication is not public UI or desktop trust activati
 - [ ] Stop with populated, verified feeds and the desktop marketplace still
       hidden. Public UI exposure and official build roots/URLs require the later
       activation release and a separate acceptance decision.
+
+### Author CLI and guarded workflow — source implementation, 2026-10-17
+
+This update supersedes the source-only CLI/handoff follow-ups in the preceding
+delivery notes; it does not change the qualified distributed binary below.
+
+- `plugin inspect-release` locally validates a versioned portable request and
+  returns its exact-byte SHA-256. `plugin publish-release` requires that digest
+  before accessing the separate author credential, then calls the shared engine.
+  Open archive handles, streaming revalidation, bounded content, safe diagnostics
+  and namespaced tags are covered. Metadata is opaque release documentation,
+  never implicit registry package/signing authority.
+- The manual official-theme job reads candidate Git blobs through trusted-main
+  scripts, reconstructs both jobs independently, and accepts no uploaded-run
+  artifacts. The final CLI step alone receives the author user/bot credential.
+  Current publication policies, author binary pins and environment/account IDs
+  remain `PENDING`; no environment or credential was created.
+- The existing protected environment must be verified before its job is exposed:
+  numeric ID, reviewers, self-review prevention and exact `main` branch rule.
+  Because the documented API omits admin-bypass visibility, an explicit reviewed
+  no-bypass attestation is bound to that ID; an exposed bypass-enabled value fails.
+- The last Rust→legacy-business runtime dependency is removed. Pipeline recovery
+  consumes independently captured legacy inputs/disk/remote state, with exact
+  hashes, original signature checks and an explicit test-only date rebase.
+  Historical reverse-language observations are data, not a claim of live parity.
+  Legacy production tooling is retained until the real registry CI cutover passes.
+- Validation: 4,235 Rust tests passed (one pre-existing ignored), 221 root script
+  tests passed, official `pnpm lint`, workspace Clippy and desktop `ts-check` passed.
+  Three independent review agents closed the request-limit and real-script
+  integration coverage gaps. Seven local CLI QA probes used real Graphite source
+  and canonical packaging, with no credentials or remote publication.
+- Old duplicate incremental caches in this worktree were cleaned after checking
+  build ownership: about 17.9 GiB logical, keeping the newest two per crate.
+  Source, compiled binaries, databases/backups and other worktrees were preserved.
+- Next delivery gate: merge to `main`, publish a CLI-only development binary,
+  then qualify its author-publication/retry behavior against the approved isolated
+  QA target. Only subsequent reviewed pin/policy/environment promotion may enable
+  official themes; Pi still needs its native-target and ACP lifecycle qualification.
+  Marketplace visibility, production trust roots and registry signing remain unchanged.
+
+### Qualified distributed CLI — 2026-10-17
+
+This is the current delivery status; the dated failures below remain historical
+evidence, not outstanding failures of this newly distributed executable.
+
+- Main `b3e3ed5ac9d2cd4580117558a218b4c809af65d5` contains the asset `Accept`
+  correction. [CI](https://github.com/merkr-software/CadencR/actions/runs/38972301362),
+  [CodeQL](https://github.com/merkr-software/CadencR/actions/runs/38972301364) and
+  dependency audit passed before the explicit CLI-only release.
+- [CLI delivery](https://github.com/merkr-software/CadencR/actions/runs/38974097824)
+  published `0.13.1-dev.38974097824.1` with SHA-256
+  `ee3516bb5ad7ed143428f255e9e4dd24d9f13003061a803c99be8f3fd8db9a7e`.
+  Anonymous downloads verify binary, checksum, source provenance and candidate pin;
+  the actual ELF runs in network-disabled Ubuntu. Latest desktop stays `v0.13.1`.
+- [Publication/replay/fresh runner](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/38975839952)
+  passed on attempt 2. Initial publication retained draft `413501761` and archive
+  `642988641`, added the required public provenance, and published signed catalog
+  `2ec54e90993787afa7f1d7d97c95438b699fb9aac566f30a4aafaf25e1f4d9be`.
+- [Empty-delta renewal](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/38977770141)
+  passed on attempt 2, preserving the exact signed package set. Its catalog is
+  `36f07d142360b5d170c4f2c4e245d3992d559538c0fe471662385cc2a13f0353`.
+  Initial failed harness checks saw stale anonymous API inventories, not CLI
+  failures. Remote IDs/bytes were reconciled before exact-input reruns; no object
+  was deleted, replaced or pre-published to manufacture a pass.
+- [Controlled network interruption](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/38980267765)
+  passed on attempt 1 using inert theme `0.0.2`. The actual distributed ELF first
+  proved proxy traversal, then an independent observer saw managed release
+  `415453212` public before the TLS-blind proxy closed its tunnels. The CLI exited
+  normally with code `1` and released its owned lock. Same-request, same-state
+  resume retained archive `648905530` and provenance `648905637`, then completed
+  catalog/discovery. A separate clean runner reconstructed remotely without
+  restored pipeline state. This proves post-publication network interruption,
+  **not** loss of a specific HTTP mutation response or hard-kill recovery.
+- Each scenario's four successful publish/replay observations have identical
+  catalog bytes and remote inventories. Final catalog
+  `81c757faac2d2c83a3587001f70116f1f268162577b25b5d97d3bb5bc45158cd`
+  contains the unchanged original theme plus `0.0.2`. Public archive bytes and
+  provenance match the reviewed fixture/offline plan; the actual released ELF
+  independently verifies catalog signatures in network-disabled Ubuntu.
+- The QA harness now bounds inventory reads with shared deadlines, binds an
+  observed discovery head to the CLI receipt's blob, and passes only a public
+  inventory digest between jobs as an assertion. No CLI state is seeded from it.
+  API identity reads use the ephemeral QA job token; catalog acquisition remains
+  anonymous. Eighteen harness checks and three independent review passes cover
+  the delivered QA code; only allowlisted public evidence is retained.
+- Scope is the isolated public QA repository and inert declarative themes. No
+  production trust/key/pin/feed change, official theme/Pi publication, native Pi
+  runtime certification or desktop marketplace activation is implied. Production
+  registry deployment remains unchanged. The candidate template now pins this
+  qualified binary with no JavaScript fallback. Remote adoption needs a bootstrap
+  PR adding the pin/helpers while preserving validation, then a workflow cutover
+  from that merged trusted base. Deployed Rust CI and oracle migration precede
+  JavaScript removal; official-plugin publication remains a separate gate.
+
+### Rust decoupling and original-author engine — 2026-10-17
+
+- Legacy wire expectations are frozen data with source commits, capture inputs
+  and SHA-256 provenance, not Rust-regenerated expectations. Dynamic freshness,
+  signature, recovery and negative cases remain exercised separately. The CLI's
+  eight contribution safety suites are native Rust integration tests now.
+- Service signature interoperability uses Node built-in cryptography over the
+  existing exact legacy canonical fixture; no test private key is persisted.
+  Publication-package API coverage uses the shared Rust package validator and
+  also rejects a malformed exported digest.
+- Original-author inspection/publication/reconciliation lives in the shared Rust
+  publisher library; the service keeps its authentication, database, confirmation
+  and durable operation boundaries. Service status/code mapping is preserved.
+  Namespaced release-tag validation and encoded GitHub paths have focused coverage.
+- This does not delete the legacy implementation yet. The cross-language pipeline
+  handoff helper still executes it, and actual registry CI cutover remains pending
+  the bootstrap merge. No production key, workflow activation, plugin release,
+  official feed or desktop exposure is part of this wave.
+- Validation: 4,221 workspace Rust tests passed (one pre-existing ignored test),
+  219 root script tests passed, and all 16 shared author-release HTTP fixture tests
+  passed. The running isolated debug backend passed health, authentication,
+  missing-project and explicit-confirmation HTTP probes without GitHub writes.
+  It used a newly created QA database/settings directory; existing databases were
+  untouched, the owned process was stopped and the QA database was preserved.
+  Explicit debug-server CLI paths were used instead of the generic dev launcher,
+  whose package `.env` overrides parent environment values.
+- The currently distributed CLI does not expose the newly extracted author engine.
+  A thin CLI adapter, reviewed portable request and subsequent distributed-binary
+  qualification are still needed for original-author CI publication. The existing
+  qualified binary remains sufficient for the registry CI cutover.
 
 ### Real GitHub qualification — 2026-10-15
 
@@ -141,12 +281,10 @@ The generated pin is a candidate for review, **not** permission to activate the
 production registry. Existing qualification pins keep identifying the actual
 `v0.13.0` binary until a separate reviewed update selects a new executable.
 
-The first development CLI is now published and independently checked; its real
-GitHub QA exposed the asset content-negotiation defect documented above. Next:
-ship the transport correction in a new development CLI, verify and pin that
-binary, then repeat the retained scenario and remaining lifecycle gates. Only
-that qualification can unblock production pinning/JavaScript cutover. A successful
-CLI build/release does not certify plugin publication or desktop QA.
+The corrected development CLI is now published and independently qualified in
+the isolated public QA repository; see the 2026-10-17 evidence above. Production
+pinning/JavaScript cutover remains a distinct reviewed delivery step. CLI lifecycle
+qualification does not certify official plugins, provider runtime or desktop QA.
 
 ### Official source location decision — 2026-10-14
 
@@ -259,6 +397,37 @@ no releases, no protected environments, and only the initial JavaScript
 contribution workflow. The newer monorepo template is **not deployed there**.
 Publishing mixed themes/providers therefore requires a reviewed registry update;
 the app release alone did not perform that cutover.
+
+Current cutover preparation pins the qualified development CLI in the monorepo
+**candidate template only**. The inspected remote main has no `ci/released-cli.env`
+or `scripts/ci` helpers. Only `validate-provider-metadata.yml` is active;
+privileged workflows are examples under `examples/workflows`. Do not submit a
+single cutover PR that expects its new helpers to exist in the trusted base.
+
+1. Merge a bootstrap PR adding the qualified pin and three helpers, preserving the
+   existing validation workflow.
+2. Cut over validation from that merged base and verify both required checks,
+   `inert-metadata` and `contributor-tooling`, execute the released Rust binary.
+   Retain CODEOWNER approval and last-push approval requirements.
+3. After deployed Rust CI passes and executable JS test oracles are migrated,
+   remove replaced JavaScript business code. Until then it is compatibility/oracle
+   code only, not the candidate CI runtime.
+
+The candidate publisher does not upload raw recovery state. Fresh runners
+reconstruct remote publication evidence; no recovery artifact is restored.
+This work does not activate privileged workflows, change keys/trust/feed settings,
+or expose the marketplace UI.
+
+Bootstrap [registry PR #1](https://github.com/merkr-software/cadencr-registry/pull/1)
+now proposes only the pin, three helpers and source provenance at
+`93e00587ac4dfc6d10f9bd8c6aa649bd41b31821`. Both existing required checks passed
+in [run 39023006407](https://github.com/merkr-software/cadencr-registry/actions/runs/39023006407).
+These checks still execute the original JavaScript gate; they do not qualify the
+future workflow cutover. The PR is unmerged and requires independent approval:
+its author/last pusher is also the sole current CODEOWNER. No protection was
+changed or bypassed. The local candidate suite passed 271 tests; the downloaded
+Linux CLI also validated an inert theme contribution and built its schema-2 index
+through the final helper, with a PENDING pin rejected.
 
 Use GPT-6.1-Sol parallel advisors/workers and finish each wave with independent
 reuse/quality/efficiency reviews, scoped checks and a commit plan. No production

@@ -785,6 +785,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -838,18 +839,23 @@ dependencies = [
 name = "cadencr-registry-publisher"
 version = "0.13.1"
 dependencies = [
+ "axum",
  "base64 0.23.1",
  "bon",
+ "bytes 1.11.1",
  "cadencr-plugin-core",
  "cadencr-registry-core",
  "chrono",
+ "futures 0.3.32",
  "libc",
+ "percent-encoding",
  "reqwest",
  "serde",
  "serde_json",
  "sha1 0.11.0",
  "sha2 0.11.0",
  "tempfile",
+ "tokio",
  "url",
 ]
 
@@ -868,6 +874,7 @@ dependencies = [
  "bzip2",
  "cadencr-plugin-core",
  "cadencr-registry-core",
+ "cadencr-registry-publisher",
  "chrono",
  "chrono-tz",
  "clap",

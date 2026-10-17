@@ -5,6 +5,7 @@ use clap::Parser as _;
 use serde_json::json;
 
 mod args;
+mod author_release;
 mod commands;
 mod output;
 mod pipeline;

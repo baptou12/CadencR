@@ -1,4 +1,5 @@
-//! Real JS and Rust orchestration switch ownership of exact disk state and one remote.
+//! Archived legacy-produced state, explicitly timestamp-rebased, resumes in Rust.
+//! This is independent compatibility evidence, not live reverse-language parity.
 use super::fixture::{Fixture, REPOSITORY};
 use super::*;
 use crate::github::discovery::{DiscoveryHead, SetDiscoveryRequest};
@@ -9,6 +10,9 @@ use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
+
+mod assertions;
+use assertions::*;
 
 struct Remote {
     _process: OwnedProcess,
@@ -90,8 +94,26 @@ impl Remote {
         )
         .unwrap()
     }
-    fn js(&self, fixture: &Fixture) -> Value {
-        self.control(json!({"action":"run", "request":fixture.request,"directory":fixture.state,"privateKey":fixture.private}))
+    fn legacy(&self, fixture: &Fixture, interruption: &str) -> bool {
+        let capture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/legacy-v1/pipeline")
+            .join(format!("{interruption}.json.gz"));
+        let hashes: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/legacy-v1/pipeline/hashes.json"
+        ))
+        .unwrap();
+        let result = self.control(json!({"action":"load", "capture":capture,
+            "hashes":hashes[format!("{interruption}.json.gz")],
+            "directory":fixture.request.parent().unwrap()}));
+        let ok = result["ok"].as_bool().unwrap();
+        assert_eq!(ok, interruption == "none", "archived legacy outcome");
+        if !ok {
+            assert_eq!(
+                result["error"],
+                "archive download: server returned an unexpected status"
+            );
+        }
+        ok
     }
     fn rust(&self, fixture: &Fixture) -> Result<PipelineReceipt, PublisherError> {
         run(&fixture.prepare()?, self, self, self)
@@ -185,176 +207,22 @@ impl Downloader for Remote {
         self.mapped(request, &path, false)
     }
 }
-fn assert_managed_only_trace(remote: &Remote, previous: &Value) {
-    let current = remote.control(json!({"action":"stats"}));
-    let offset = previous["requests"].as_array().unwrap().len();
-    for release in previous["releaseRecords"].as_array().unwrap() {
-        let retained = current["releaseRecords"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|entry| entry["id"] == release["id"]);
-        assert_eq!(retained, Some(release), "existing release record changed");
-    }
-    let providers: Vec<u64> = previous["releaseRecords"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|release| {
-            !release["tag_name"]
-                .as_str()
-                .unwrap()
-                .starts_with("catalog-")
-        })
-        .map(|release| release["id"].as_u64().unwrap())
-        .collect();
-    assert!(
-        !providers.is_empty(),
-        "existing provider release must be retained"
-    );
-    for request in &current["requests"].as_array().unwrap()[offset..] {
-        let path = request["path"].as_str().unwrap();
-        assert!(
-            !path.starts_with("/public/acme/provider/"),
-            "author download after retirement: {request}"
-        );
-        if request["method"] != "GET" {
-            for id in &providers {
-                let resource = format!("/releases/{id}");
-                assert!(
-                    !path.ends_with(&resource) && !path.contains(&format!("{resource}/")),
-                    "existing provider release mutated: {request}"
-                );
-            }
-        }
-    }
-}
-fn assert_resume_mutations(remote: &Remote, previous: &Value, interruption: &str) {
-    let current = remote.control(json!({"action":"stats"}));
-    let offset = previous["requests"].as_array().unwrap().len();
-    let mutations: Vec<Value> = current["requests"].as_array().unwrap()[offset..]
-        .iter()
-        .filter(|request| request["method"] != "GET")
-        .map(|request| json!([request["method"], request["path"]]))
-        .collect();
-    if interruption != "provider" {
-        assert!(
-            mutations.is_empty(),
-            "completed remote state must not be rewritten: {mutations:?}"
-        );
-        assert_eq!(current["discovery"], previous["discovery"]);
-        return;
-    }
-    let catalog = current["releaseRecords"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|release| {
-            release["tag_name"]
-                .as_str()
-                .unwrap()
-                .starts_with("catalog-")
-        })
-        .expect("only the catalog is created after interrupted provider verification");
-    let id = catalog["id"].as_u64().unwrap();
-    let expected = vec![
-        json!(["POST", "/api/repos/acme/registry/git/refs"]),
-        json!(["POST", "/api/repos/acme/registry/releases"]),
-        json!([
-            "POST",
-            format!("/uploads/repos/acme/registry/releases/{id}/assets")
-        ]),
-        json!(["PATCH", format!("/api/repos/acme/registry/releases/{id}")]),
-        json!([
-            "PUT",
-            "/api/repos/acme/registry/contents/managed-index.json"
-        ]),
-    ];
-    assert_eq!(
-        mutations, expected,
-        "only five ordered catalog/discovery mutations are permitted"
-    );
-    assert_eq!(
-        current["releaseRecords"].as_array().unwrap().len(),
-        previous["releaseRecords"].as_array().unwrap().len() + 1
-    );
-}
-fn snapshot(directory: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    fn visit(root: &Path, dir: &Path, result: &mut BTreeMap<PathBuf, Vec<u8>>) {
-        for entry in std::fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                visit(root, &path, result);
-            } else {
-                result.insert(
-                    path.strip_prefix(root).unwrap().into(),
-                    std::fs::read(path).unwrap(),
-                );
-            }
-        }
-    }
-    let mut result = BTreeMap::new();
-    visit(directory, directory, &mut result);
-    result
-}
-fn assert_preserved(before: &BTreeMap<PathBuf, Vec<u8>>, state: &Path) {
-    let after = snapshot(state);
-    let transient: std::collections::BTreeSet<PathBuf> = before
-        .iter()
-        .filter(|(path, _)| path.ends_with("staging-receipt.json"))
-        .flat_map(|(path, bytes)| {
-            let receipt: crate::StageReceipt = serde_json::from_slice(bytes).unwrap();
-            receipt
-                .artifacts
-                .into_iter()
-                .map(|artifact| path.parent().unwrap().join(artifact.asset))
-                .collect::<Vec<_>>()
-        })
-        .collect();
-    for (path, bytes) in before {
-        if transient.contains(path) {
-            continue;
-        }
-        assert_eq!(after.get(path), Some(bytes), "preserve {}", path.display());
-    }
-}
-fn assert_complete(state: &Path) {
-    let files = snapshot(state);
-    for suffix in [
-        "pipeline-request.json",
-        "publication-manifest.json",
-        "staging-receipt.json",
-        "mirror-receipt.json",
-        "publication-receipt.json",
-        "managed-index.json",
-        "catalog-publication-receipt.json",
-        "discovery-receipt.json",
-    ] {
-        assert!(
-            files.keys().any(|path| path.ends_with(suffix)),
-            "missing {suffix}: {:?}",
-            files.keys()
-        );
-    }
-    assert!(!state.join(".pipeline.lock").exists());
-}
 #[test]
-fn cross_language_completed_replay_and_interrupted_resume_preserve_protected_state() {
-    for js_first in [true, false] {
+fn archived_legacy_and_rust_resume_preserve_protected_state() {
+    for legacy_first in [true, false] {
         for interruption in ["none", "provider", "discovery"] {
             let fixture = Fixture::new();
             let remote = Remote::new();
-            let reviewed_request = std::fs::read(&fixture.request).unwrap();
             remote.control(json!({"action":"configure", "publicUnavailable":interruption=="provider", "rawUnavailable":interruption=="discovery"}));
-            let ok = if js_first {
-                remote.js(&fixture)["ok"] == true
+            let ok = if legacy_first {
+                remote.legacy(&fixture, interruption)
             } else {
                 remote.rust(&fixture).is_ok()
             };
             assert_eq!(
                 ok,
                 interruption == "none",
-                "first implementation {js_first}/{interruption}"
+                "first implementation {legacy_first}/{interruption}"
             );
             if interruption == "provider" {
                 assert!(!fixture.state.join("managed-index.json").exists());
@@ -364,6 +232,7 @@ fn cross_language_completed_replay_and_interrupted_resume_preserve_protected_sta
                 assert!(fixture.state.join("managed-index.json").exists());
                 assert!(!fixture.state.join("discovery-receipt.json").exists());
             }
+            let reviewed_request = std::fs::read(&fixture.request).unwrap();
             let prepared = fixture.prepare().unwrap();
             let plan_file = prepared.entries[0].directory.join("publication-plan.json");
             std::fs::write(
@@ -375,12 +244,7 @@ fn cross_language_completed_replay_and_interrupted_resume_preserve_protected_sta
             let writes = remote.writes();
             let trace = remote.control(json!({"action":"stats"}));
             remote.control(json!({"action":"configure", "retireSources":true}));
-            if js_first {
-                remote.rust(&fixture).unwrap();
-            } else {
-                let result = remote.js(&fixture);
-                assert_eq!(result["ok"], true, "{result}");
-            }
+            remote.rust(&fixture).unwrap();
             assert_managed_only_trace(&remote, &trace);
             assert_resume_mutations(&remote, &trace, interruption);
             assert_preserved(&before, &fixture.state);
@@ -391,8 +255,6 @@ fn cross_language_completed_replay_and_interrupted_resume_preserve_protected_sta
             let complete = snapshot(&fixture.state);
             let writes = remote.writes();
             remote.rust(&fixture).unwrap();
-            let result = remote.js(&fixture);
-            assert_eq!(result["ok"], true, "{result}");
             assert_eq!(snapshot(&fixture.state), complete);
             assert_eq!(std::fs::read(&fixture.request).unwrap(), reviewed_request);
             assert_eq!(remote.writes(), writes);
@@ -401,13 +263,12 @@ fn cross_language_completed_replay_and_interrupted_resume_preserve_protected_sta
     }
 }
 #[test]
-fn cross_language_fresh_managed_recovery_and_tampered_receipt_fail_closed() {
-    for js_first in [true, false] {
+fn archived_legacy_and_rust_fresh_managed_recovery_and_tamper_fail_closed() {
+    for legacy_first in [true, false] {
         let mut fixture = Fixture::new();
         let remote = Remote::new();
-        if js_first {
-            let result = remote.js(&fixture);
-            assert_eq!(result["ok"], true, "{result}");
+        if legacy_first {
+            assert!(remote.legacy(&fixture, "none"));
         } else {
             remote.rust(&fixture).unwrap();
         }
@@ -416,12 +277,7 @@ fn cross_language_fresh_managed_recovery_and_tampered_receipt_fail_closed() {
         remote.control(json!({"action":"configure", "retireSources":true}));
         fixture.state = fixture.state.parent().unwrap().join("fresh-state");
         let writes = remote.writes();
-        if js_first {
-            remote.rust(&fixture).unwrap();
-        } else {
-            let result = remote.js(&fixture);
-            assert_eq!(result["ok"], true, "{result}");
-        }
+        remote.rust(&fixture).unwrap();
         assert_managed_only_trace(&remote, &trace);
         assert_complete(&fixture.state);
         assert_eq!(
@@ -435,8 +291,6 @@ fn cross_language_fresh_managed_recovery_and_tampered_receipt_fail_closed() {
             std::fs::write(&file, b"{}").unwrap();
             let before = snapshot(&fixture.state);
             assert!(remote.rust(&fixture).is_err());
-            let result = remote.js(&fixture);
-            assert_eq!(result["ok"], false, "{result}");
             assert_eq!(remote.writes(), writes);
             assert_eq!(snapshot(&fixture.state), before);
             // Restore only this test-owned tamper probe, not repository work.
@@ -446,7 +300,7 @@ fn cross_language_fresh_managed_recovery_and_tampered_receipt_fail_closed() {
 }
 
 #[test]
-fn noncanonical_manifest_documents_stricter_js_boundary_without_writes() {
+fn noncanonical_manifest_is_preserved_without_writes() {
     let fixture = Fixture::new();
     let remote = Remote::new();
     remote.rust(&fixture).unwrap();
@@ -458,12 +312,42 @@ fn noncanonical_manifest_documents_stricter_js_boundary_without_writes() {
     remote.rust(&fixture).unwrap();
     assert_eq!(snapshot(&fixture.state), before);
     assert_eq!(remote.writes(), writes);
-    let result = remote.js(&fixture);
-    assert_eq!(result["ok"], false, "{result}");
-    assert!(result["error"]
-        .as_str()
-        .unwrap()
-        .contains("existing publication manifest conflicts"));
-    assert_eq!(snapshot(&fixture.state), before);
-    assert_eq!(remote.writes(), writes);
+}
+
+#[test]
+fn archived_legacy_boundary_observations_are_pinned() {
+    use sha2::{Digest as _, Sha256};
+    let bytes = include_bytes!("../../tests/fixtures/legacy-v1/pipeline/observations.json");
+    let hashes: Value = serde_json::from_str(include_str!(
+        "../../tests/fixtures/legacy-v1/pipeline/hashes.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        crate::hex(&Sha256::digest(bytes)),
+        hashes["observations.json"]
+    );
+    let evidence: Value = serde_json::from_slice(bytes).unwrap();
+    for name in ["initial", "replay", "fresh"] {
+        assert_eq!(evidence[name]["ok"], true);
+    }
+    assert_eq!(evidence["writes_before"], evidence["writes_after"]);
+    for (file, error) in [
+        (
+            "catalog-publication-receipt.json",
+            "existing catalog receipt conflicts",
+        ),
+        (
+            "discovery-receipt.json",
+            "existing discovery receipt conflicts",
+        ),
+    ] {
+        assert_eq!(evidence["tamper"][file]["result"]["ok"], false);
+        assert_eq!(evidence["tamper"][file]["result"]["error"], error);
+        assert_eq!(evidence["tamper"][file]["unchanged_disk"], true);
+    }
+    assert_eq!(evidence["noncanonical"]["ok"], false);
+    assert_eq!(
+        evidence["noncanonical"]["error"],
+        "existing publication manifest conflicts"
+    );
 }

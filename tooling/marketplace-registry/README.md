@@ -4,9 +4,12 @@
 
 Marketplace UI stays hidden after v0.13.0; the next milestone populates reviewed
 themes and Pi before a later desktop activation. This template is not a deployed
-public registry. The CLI is released in v0.13.0, but lifecycle qualification and
-registry cutover remain pending. CLI pins stay `PENDING`; JavaScript is retained for schema-1
-provider compatibility, **not** mixed schema-2/theme or trust-generation support.
+public registry. The distributed `0.13.1-dev.38974097824.1` CLI has passed isolated
+GitHub lifecycle qualification. This candidate template pins that executable and
+requires Rust in contribution and protected publication paths, without JavaScript
+fallback. The remote registry has not adopted this cutover. JavaScript remains
+only as schema-1 compatibility/oracle code pending deployed Rust CI and oracle
+migration; it does not support mixed schema-2/themes or trust generations.
 Use the [contributor paths](CONTRIBUTING.md) and [operator runbook](OPERATIONS.md)
 for preparation. Remote-write examples require reviewed targets, inputs and
 protected publication authority; local/offline qualification does not grant it.
@@ -17,17 +20,23 @@ no production URL, trust key, credential, or remote resource.
 
 ## Repository layout
 
-| Path                                | Purpose                                                        | Trust domain                           |
-| ----------------------------------- | -------------------------------------------------------------- | -------------------------------------- |
-| `packages/*.json`                   | One reviewed `ManagedProviderPackage` per provider version     | Contributor PR input                   |
-| `submissions/*.json`                | Source-pinned submission matching each new package version     | Contributor PR input                   |
-| `schemas/`                          | JSON Schema documents for package and signed-index shape       | Public validation                      |
-| `scripts/validate.mjs`              | Dependency-free semantic validation matching managed index v1  | Unprivileged CI                        |
-| `scripts/build-index.mjs`           | Deterministic sort and canonical unsigned index creation       | Unprivileged CI or protected publisher |
-| `scripts/assemble-signed-index.mjs` | Joins a detached signature to the exact canonical payload      | Protected publisher only               |
-| `.github/`                          | PR form and example workflows to copy to a registry repository | Repository bootstrap                   |
+| Path                                | Purpose                                                          | Trust domain         |
+| ----------------------------------- | ---------------------------------------------------------------- | -------------------- |
+| `packages/*.json`                   | One reviewed `ManagedProviderPackage` per provider version       | Contributor PR input |
+| `submissions/*.json`                | Source-pinned submission matching each new package version       | Contributor PR input |
+| `schemas/`                          | JSON Schema documents for package and signed-index shape         | Public validation    |
+| `scripts/validate.mjs`              | Retained schema-1 semantic validator (compatibility/oracle)      | Legacy test coverage |
+| `scripts/build-index.mjs`           | Retained schema-1 canonical index builder (compatibility/oracle) | Legacy test coverage |
+| `scripts/assemble-signed-index.mjs` | Retained detached-signature assembler (compatibility/oracle)     | Legacy test coverage |
+| `.github/`                          | PR form and example workflows to copy to a registry repository   | Repository bootstrap |
 
-## Local checks
+## Legacy compatibility and oracle checks
+
+The npm examples below exercise retained schema-1 compatibility/oracle code,
+not the supported contribution or publisher runtime. For current commands use
+`cadencr registry …` and the [CLI contract](../../packages/cli/README.md).
+JavaScript removal waits for deployed Rust CI and replacement of executable
+cross-language test oracles with immutable expectations.
 
 Requires Node `>=22.19.0 <23.0.0`.
 
@@ -104,63 +113,55 @@ base SHA and applies it to a separate candidate checkout. It has read-only
 permissions, receives no secrets, and never runs candidate scripts or provider
 archives.
 
-The workflow is prepared to run the released Rust CLI from the official
-`merkr-software/CadencR` GitHub release path. `ci/released-cli.env`
-deliberately uses `PENDING` pins until the actual distributed binary passes
-publication, interrupted recovery and renewal qualification. Provisioning
-requires a reviewed exact version and lowercase SHA-256 for the raw
-`cadencr-v<VERSION>-x86_64-unknown-linux-gnu` asset. The trusted helper constructs
-the release URL itself, restricts redirects, verifies SHA-256 before execution,
-and checks `cadencr --version` before invoking any registry command.
+The candidate template uses the official `merkr-software/CadencR` release asset:
 
-Development CLI prereleases use the same asset naming with an explicit third
-pin field, `CADENCR_RELEASE_TAG=cli/v<VERSION>`. This is accepted only when the
-exact version is `<base>-dev.<run-id>.<attempt>` with canonical numeric parts;
-the tag must match that version. Legacy two-field pins still download from
-`v<VERSION>`. Arbitrary URLs, repositories, refs and mismatched tags are refused.
-The main-only manual CLI release workflow emits a candidate pin file but never
-edits this registry's pin or grants it production authority.
+| Pin     | Reviewed value                                                     |
+| ------- | ------------------------------------------------------------------ |
+| Version | `0.13.1-dev.38974097824.1`                                         |
+| Tag     | `cli/v0.13.1-dev.38974097824.1`                                    |
+| SHA-256 | `ee3516bb5ad7ed143428f255e9e4dd24d9f13003061a803c99be8f3fd8db9a7e` |
+| Source  | `b3e3ed5ac9d2cd4580117558a218b4c809af65d5`                         |
 
-Do not accept a contributor-controlled version, digest, or download URL. While
-both pins are `PENDING`, the helper executes the existing trusted JavaScript gate.
-Replacing both pins atomically cuts the same job over to the Rust CLI without
-executing candidate code in that trusted gate. Preserve the `inert-metadata`
-job/check name so branch-protection requirements do not silently disappear.
+The trusted bootstrap constructs the official URL, restricts redirects, checks
+SHA-256 before execution and checks the exact version. Both contribution jobs
+use base-checkout helpers and treat candidate metadata as inert. The
+`contributor-tooling` job builds a schema-2 unsigned index with Rust, not candidate
+npm scripts. Preserve both required check names: `inert-metadata` and
+`contributor-tooling`. Missing, pending or invalid pins fail closed in these
+callers; there is no JavaScript fallback.
 
-The existing `contributor-tooling` check name is preserved too. In `PENDING`
-mode it runs the legacy candidate tests; once pinned, the trusted helper instead
-uses the released CLI to build the throwaway candidate index and never runs
-candidate scripts. No additional code change is required for that cutover.
+### Remote deployment requires two reviewed changes
+
+The inspected remote registry main at
+`24656f0f1ceb23576b0be9449c86c6d09e24f5b3` has no released-CLI pin or CI helpers.
+Only `validate-provider-metadata.yml` is active; privileged workflows live under
+`examples/workflows`, not active workflow paths. This template is not deployed.
+
+1. Merge a bootstrap PR adding `ci/released-cli.env` and all three
+   `scripts/ci/*.sh` helpers while preserving the existing validation workflow.
+   Its trusted base cannot invoke helpers that exist only in the candidate PR.
+2. From that merged base, review the validation workflow cutover and verify the
+   actual remote required checks use the pinned Rust executable. Preserve
+   CODEOWNER review, last-push approval and the two required checks.
+3. Only after deployed Rust CI passes and Rust test oracles no longer execute
+   legacy business code, remove the replaced JavaScript implementation.
+
+Privileged workflows remain examples until separately authorized deployment with
+protected environments, reviewed inputs and secrets. No step here activates
+marketplace UI, provisions keys, or grants publication authority.
 
 ## Protected publisher runtime selection
 
-The protected workflow uses the same `ci/released-cli.env` as contribution CI.
-Shared `scripts/ci/fetch-released-cli.sh` accepts only trusted pin data and a new
-caller-owned output directory. It returns the verified executable path; exit `3`
-means both legacy values are explicitly `PENDING` and no release tag is supplied.
-Every other failure stops the job.
+The candidate protected workflow uses the same exact pin and independently
+verifies the download on each isolated runner. It checks
+`registry publish-registry --help` before materializing its signing key and runs
+only `cadencr registry publish-registry`; bootstrap failure stops the job.
+Raw recovery state is not uploaded or restored. Fresh runners reconstruct state
+from authenticated remote publication evidence as described below.
 
-Each isolated runner verifies the download independently. The protected job also
-checks `registry publish-registry --help` before materializing its signing key.
-Pending pins retain `node scripts/publish-registry.mjs`; provisioned pins select
-`cadencr registry publish-registry` with the same six reviewed arguments. No
-recovery artifact supplies executable code, and output text is not a receipt.
-
-Provisioning this shared pin now affects **both contribution checks and protected
-publication**. Before doing so, review the actual released Linux asset and prove
-cross-implementation canonical state handoff and interrupted/replayed publication
-without duplicate writes. Keep omitted/exact-string publication commits and
-canonical manifests: both implementations reject explicit optional commit `null`,
-but Rust accepts semantically equivalent manifests that JavaScript rejects.
-Preserve Rust's stricter historical
-publication and signing checks rather than weakening them for superficial parity.
-
-The pin remains `PENDING`; this preparation neither deploys the template nor
-publishes a CLI release. Superseded JavaScript stays until delivery/parity gates
-pass. Independent development CLI releases use the explicitly bound `cli/v…`
-namespace; stable application releases retain their `vX.Y.Z` namespace. See
-[`packages/cli/README.md`](../../packages/cli/README.md#manual-development-cli-releases)
-for manual delivery and the separate qualification/pinning gates.
+The npm publication examples that follow are retained schema-1 compatibility and
+oracle references only, not instructions to select a production runtime. See the
+[CLI contract](../../packages/cli/README.md) for supported Rust arguments.
 
 ## Verified local archive staging
 
@@ -542,9 +543,9 @@ non-cancelling publication lane. It does not run contributor code or package
 installation scripts. No official repository, protection or secret is provisioned
 by this template.
 
-The workflow preserves non-secret publication state as a run/attempt-specific
-artifact. The signing key is stored separately and cleaned up. A fresh runner can
-now reconstruct published provider receipts from the exact reviewed release:
+The candidate workflow does not upload raw publication recovery state. The
+signing key is stored separately and cleaned up. A fresh runner reconstructs
+published provider receipts from the exact reviewed release:
 
 1. Stage missing bytes from the official mirrored URLs and verify their approved
    SHA-256 digests, without contacting the original author release.
@@ -574,6 +575,5 @@ baseline file, and choose a strictly newer valid publication window. Old publish
 providers can be rehydrated from their official mirrors; only new providers need
 author archive availability. Repository protections, reviewer approval and actual
 GitHub/Actions deployment remain external gates, not something local fixture tests
-prove. Inspect retained artifacts only as operator diagnostics; do not treat their
-contents as publication authority. Verify artifact access/retention against your
-operating policy before deployment.
+prove. Retain only explicitly reviewed, allowlisted diagnostic evidence; raw
+recovery state is not an Actions artifact or publication authority.

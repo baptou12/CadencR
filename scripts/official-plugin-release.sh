@@ -2,9 +2,13 @@
 # Preparation only. No source CLI fallback, signing keys, or publication authority.
 set -eu
 mode=production
-if [ "${1:-}" = --qualification ]; then mode=qualification; shift; fi
+case "${1:-}" in
+  --qualification) mode=qualification; shift ;;
+  --author-approved) mode=author-approved; shift ;;
+esac
+case "${1:-}" in --*) echo 'preparation modes are mutually exclusive' >&2; exit 2 ;; esac
 export mode
-[ "$#" -eq 4 ] || { echo 'usage: official-plugin-release.sh [--qualification] <source-repo> <commit> <tag> <new-output>' >&2; exit 2; }
+[ "$#" -eq 4 ] || { echo 'usage: official-plugin-release.sh [--qualification|--author-approved] <source-repo> <commit> <tag> <new-output>' >&2; exit 2; }
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
 export ROOT
 python3 - "$@" <<'PY'
@@ -17,6 +21,8 @@ if not re.fullmatch('[0-9a-f]{40}', commit): fail('full source commit required')
 repository = 'merkr-software/CadencR'
 origin = git('remote', 'get-url', 'origin').decode().strip()
 if origin not in ('https://github.com/' + repository, 'https://github.com/' + repository + '.git', 'git@github.com:' + repository + '.git'): fail('unexpected source repository')
+if os.environ['mode'] == 'author-approved':
+    if os.environ.get('GITHUB_REPOSITORY') != repository or os.environ.get('GITHUB_EVENT_NAME') != 'workflow_dispatch' or os.environ.get('GITHUB_REF') != 'refs/heads/main': fail('author preparation requires trusted main dispatch')
 if os.environ['mode'] == 'production':
     if os.environ.get('GITHUB_REPOSITORY') != repository or os.environ.get('GITHUB_SHA') != commit or os.environ.get('GITHUB_REF') != 'refs/tags/' + tag: fail('production requires matching authoritative GitHub tag context')
 match = re.fullmatch(r'plugins/(provider-pi|theme-(graphite|ember|fjord))/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag)
@@ -31,7 +37,7 @@ def source(path):
     if mode != '100644': fail('source must be regular tracked file')
     return git('show', commit + ':' + path)
 policy = json.loads(source('plugins/release-policy.json'))
-if policy.get('schema_version') != 1 or policy.get('publication') != 'PENDING': fail('unreviewed release policy')
+if policy.get('schema_version') != 1 or policy.get('publication') != ('APPROVED' if os.environ['mode'] == 'author-approved' else 'PENDING'): fail('unreviewed release policy')
 if theme:
     path = 'plugins/themes/' + theme
     if policy.get('themes', {}).get(theme) != version: fail('source theme version mismatch')
@@ -67,7 +73,7 @@ if receipts[0] != receipts[1]: fail('nondeterministic canonical packaging')
 name = plugin + '-' + version + '.tar.gz'
 digest = hashlib.sha256(receipts[0]).hexdigest()
 # Public payload is built from an allowlist, never CLI logs/paths or environment.
-metadata = {'schema_version':1,'plugin':plugin,'version':version,'source_repository':repository,'source_commit':commit,'source_path':path,'tag':tag,'archive':name,'sha256':digest,'size':len(receipts[0]),'publication':'PENDING','authority':os.environ['mode']}
+metadata = {'schema_version':1,'plugin':plugin,'version':version,'source_repository':repository,'source_commit':commit,'source_path':path,'tag':tag,'archive':name,'sha256':digest,'size':len(receipts[0]),'publication':policy['publication'],'authority':os.environ['mode']}
 out.mkdir(mode=0o700)
 (out/name).write_bytes(receipts[0])
 (out/'SHA256SUMS').write_text(digest + '  ' + name + '\n')

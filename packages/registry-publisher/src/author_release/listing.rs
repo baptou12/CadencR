@@ -1,7 +1,7 @@
 use super::models::{Asset, Release};
 use super::state::conflict;
 use super::transport::Transport;
-use crate::error::AppError;
+use crate::author_release::Error as AppError;
 
 const MAX_PAGES: u8 = 10;
 const PAGE_SIZE: usize = 100;

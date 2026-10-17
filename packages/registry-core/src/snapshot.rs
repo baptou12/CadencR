@@ -128,7 +128,6 @@ mod tests {
     use ed25519_dalek::pkcs8::DecodePrivateKey as _;
     use ed25519_dalek::{Signer as _, SigningKey};
     use serde_json::json;
-    use std::process::Command;
 
     const PRIVATE_KEY: &str = "-----BEGIN PRIVATE KEY-----\n\
         MC4CAQAwBQYDK2VwBCIEIAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH\n\
@@ -193,7 +192,56 @@ mod tests {
     }
 
     #[test]
-    fn exact_binding_matches_node_oracle_and_hashes_raw_previous_bytes() {
+    fn frozen_legacy_snapshot_preserves_canonical_wire_binding() {
+        let envelope: Value = serde_json::from_slice(include_bytes!(
+            "../tests/fixtures/legacy-v1/snapshot-candidate.json"
+        ))
+        .unwrap();
+        let previous = base64::prelude::BASE64_STANDARD
+            .decode(include_str!("../tests/fixtures/legacy-v1/snapshot-previous.base64").trim_end())
+            .unwrap();
+        let oracle: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/legacy-v1/snapshot.json"))
+                .unwrap();
+        assert_eq!(
+            PUBLIC_KEY,
+            include_str!("../tests/fixtures/legacy-v1/snapshot-public.pem")
+        );
+        assert_eq!(
+            envelope["signed"]["packages"],
+            json!([package("0.0.1"), package("0.1.0")])
+        );
+        let now = chrono::DateTime::parse_from_rfc3339("2026-01-01T00:02:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let key = parse_public_key(PUBLIC_KEY.as_bytes()).unwrap();
+        let payload = verify_envelope_at(&envelope, &key, "release-2026", false, now).unwrap();
+        let baseline: Value = serde_json::from_slice(&previous).unwrap();
+        verify_envelope_at(&baseline, &key, "release-2026", true, now).unwrap();
+        validate_continuity(&baseline["signed"], &envelope["signed"]).unwrap();
+        let snapshot = output::assemble_snapshot(
+            envelope.clone(),
+            payload,
+            Some(digest(&previous)),
+            "cadencr/registry",
+            &"a".repeat(40),
+        )
+        .unwrap();
+        assert_eq!(oracle["previousSha256"], digest(&previous));
+        assert_eq!(
+            base64::prelude::BASE64_STANDARD
+                .decode(oracle["bytes"].as_str().unwrap())
+                .unwrap(),
+            snapshot.canonical_envelope()
+        );
+        assert_eq!(oracle["sha"], snapshot.sha256());
+        assert_eq!(oracle["tag"], snapshot.tag());
+        assert_eq!(oracle["body"], snapshot.body());
+        assert_eq!(oracle["url"], snapshot.expected_url());
+    }
+
+    #[test]
+    fn fresh_binding_hashes_raw_previous_bytes() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("public.pem"), PUBLIC_KEY).unwrap();
         let generated =
@@ -234,35 +282,6 @@ mod tests {
         assert_eq!(snapshot.repository(), "cadencr/registry");
         assert_eq!(snapshot.registry_commit(), "a".repeat(40));
         snapshot.revalidate_freshness().unwrap();
-
-        let script = r#"import{prepareCatalogSnapshot}from'../../tooling/marketplace-registry/scripts/publication/snapshot.mjs';let r=await prepareCatalogSnapshot({catalogFile:process.argv[1],previousIndex:process.argv[2],publicKeyFile:process.argv[3],keyId:'release-2026',repository:'cadencr/registry',registryCommit:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'});console.log(JSON.stringify({bytes:r.bytes.toString('base64'),sha:r.sha256,tag:r.tag,body:r.body,url:r.expectedUrl}))"#;
-        let output = Command::new("node")
-            .args([
-                "--input-type=module",
-                "-e",
-                script,
-                root.path().join("candidate.json").to_str().unwrap(),
-                root.path().join("previous.json").to_str().unwrap(),
-                root.path().join("public.pem").to_str().unwrap(),
-            ])
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let oracle: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(
-            base64::prelude::BASE64_STANDARD
-                .decode(oracle["bytes"].as_str().unwrap())
-                .unwrap(),
-            snapshot.canonical_envelope()
-        );
-        assert_eq!(oracle["sha"], snapshot.sha256());
-        assert_eq!(oracle["tag"], snapshot.tag());
-        assert_eq!(oracle["body"], snapshot.body());
-        assert_eq!(oracle["url"], snapshot.expected_url());
     }
 
     #[test]

@@ -132,14 +132,11 @@ jobs:
           CADENCR_REGISTRY_GITHUB_TOKEN: ${{ secrets.CADENCR_REGISTRY_GITHUB_TOKEN }}
           CONFIRM_REQUEST_SHA256: ${{ inputs.confirm-request-sha256 }}
           PRIVATE_KEY_FILE: ${{ steps.materialize_key.outputs.private_key_file }}
-          PUBLISHER_MODE: ${{ steps.publisher_runtime.outputs.mode }}
           VERIFIED_CLI: ${{ steps.publisher_runtime.outputs.cli_file }}
         run: |
           node <<'NODE'
           const { spawnSync } = require("node:child_process");
           const { join } = require("node:path");
-          const mode = process.env.PUBLISHER_MODE;
-          if (mode !== "legacy" && mode !== "released") throw new Error("missing verified runtime");
           const args = [
             "--request", "publication-request.json",
             "--directory", join(process.env.RUNNER_TEMP, "marketplace-publication-state"),
@@ -148,8 +145,8 @@ jobs:
             "--private-key", process.env.PRIVATE_KEY_FILE,
             "--confirm-request-sha256", process.env.CONFIRM_REQUEST_SHA256,
           ];
-          const command = mode === "legacy" ? process.execPath : process.env.VERIFIED_CLI;
-          const prefix = mode === "legacy" ? ["scripts/publish-registry.mjs"] : ["registry", "publish-registry"];
+          const command = process.env.VERIFIED_CLI;
+          const prefix = ["registry", "publish-registry"];
           if (!command) throw new Error("missing verified CLI");
           const result = spawnSync(command, [...prefix, ...args], { stdio: "inherit" });
           if (result.error) throw result.error;
@@ -184,18 +181,9 @@ jobs:
             if (error?.code !== "ENOENT") throw error;
           }
           NODE
-      - name: Preserve publication recovery state
-        if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: marketplace-publication-state-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/marketplace-publication-state/
-          if-no-files-found: warn
-          retention-days: 7
-          include-hidden-files: true
       # Fresh runners reconstruct published provider state only after tag,
       # binding, public provenance and archive verification. No Actions artifact
       # is restored or executed. Reruns retain the original reviewed commit,
       # request and publication window; expiry still fails closed. Unpublished
       # drafts require source archives when no local staging state survives.
-      # Recovery artifacts remain optional operator diagnostics, not authority.
+      # Raw recovery state is not uploaded: it is not publication authority.

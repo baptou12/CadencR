@@ -9,6 +9,17 @@ use crate::{operation_error, output, signing, Diagnostic};
 pub(crate) fn run(cli: &Cli) -> Result<Option<String>, Diagnostic> {
     match &cli.command {
         Command::Plugin(PluginArgs {
+            command: PluginCommand::InspectRelease { request, directory },
+        }) => crate::author_release::run(request, directory, None),
+        Command::Plugin(PluginArgs {
+            command:
+                PluginCommand::PublishRelease {
+                    request,
+                    directory,
+                    confirm_request_sha256,
+                },
+        }) => crate::author_release::run(request, directory, Some(confirm_request_sha256)),
+        Command::Plugin(PluginArgs {
             command:
                 PluginCommand::Validate {
                     folder,

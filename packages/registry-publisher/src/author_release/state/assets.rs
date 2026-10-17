@@ -1,5 +1,5 @@
 use super::{conflict, Asset, GitHubReleaseExpectation};
-use crate::error::AppError;
+use crate::author_release::Error as AppError;
 use std::collections::HashMap;
 
 pub(super) struct ExpectedAsset<'a> {
@@ -66,7 +66,7 @@ pub(super) fn expected_assets(request: &GitHubReleaseExpectation) -> Vec<Expecte
     assets
 }
 
-pub(in crate::domain::projects::publication_release::github) fn is_sha(value: &str) -> bool {
+pub(in crate::author_release) fn is_sha(value: &str) -> bool {
     (value.len() == 40
         && value
             .bytes()

@@ -2,7 +2,7 @@ use super::listing::find_release;
 use super::state::{conflict, exact_published, validate_release, validate_request};
 use super::transport::Transport;
 use super::{binding_body, GitHubPublishedRelease, GitHubReleaseExpectation};
-use crate::error::AppError;
+use crate::author_release::Error as AppError;
 
 pub(super) async fn published(
     transport: &Transport,

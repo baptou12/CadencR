@@ -1,119 +1,51 @@
-mod archive_file;
 use crate::error::AppError;
-pub(crate) use archive_file::ArchiveFile;
+use cadencr_registry_publisher::author_release::Error;
+pub(crate) use cadencr_registry_publisher::author_release::{
+    ArchiveFile, GitHubArchive, GitHubPublishRequest, GitHubPublishedRelease,
+    GitHubReleaseExpectation, GitHubReleaseInspection,
+};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct GitHubReleaseInspection {
-    pub account: String,
-    pub repository_id: u64,
-    pub tag_commit: String,
-}
-
-pub(crate) struct GitHubArchive {
-    pub name: String,
-    pub sha256: String,
-    pub file: ArchiveFile,
-}
-
-pub(crate) struct GitHubArchiveExpectation {
-    pub name: String,
-    pub sha256: String,
-    pub size: u64,
-}
-
-#[derive(bon::Builder)]
-pub(crate) struct GitHubPublishRequest<'a> {
-    pub repository: &'a str,
-    pub tag: &'a str,
-    pub source_commit: &'a str,
-    pub release_notes: &'a str,
-    pub prerelease: bool,
-    #[builder(default = &[])]
-    pub additional_archives: &'a [GitHubArchive],
-    pub archive_name: &'a str,
-    pub archive: Option<&'a axum::body::Bytes>,
-    pub archive_file: Option<&'a ArchiveFile>,
-    pub archive_sha256: &'a str,
-    pub metadata_name: &'a str,
-    pub metadata: &'a axum::body::Bytes,
-    pub metadata_sha256: &'a str,
-    pub expected_repository_id: u64,
-    pub expected_account: &'a str,
-    pub binding_sha256: &'a str,
-}
-
-pub(crate) struct GitHubReleaseExpectation {
-    pub repository: String,
-    pub tag: String,
-    pub source_commit: String,
-    pub release_notes: String,
-    pub prerelease: bool,
-    pub additional_archives: Vec<GitHubArchiveExpectation>,
-    pub archive_name: String,
-    pub archive_size: u64,
-    pub archive_sha256: String,
-    pub metadata_name: String,
-    pub metadata_size: u64,
-    pub metadata_sha256: String,
-    pub expected_repository_id: u64,
-    pub expected_account: String,
-    pub binding_sha256: String,
-}
-
-impl GitHubReleaseExpectation {
-    pub fn from_request(request: &GitHubPublishRequest<'_>) -> Self {
-        Self {
-            repository: request.repository.into(),
-            tag: request.tag.into(),
-            source_commit: request.source_commit.into(),
-            release_notes: request.release_notes.into(),
-            prerelease: request.prerelease,
-            additional_archives: request
-                .additional_archives
-                .iter()
-                .map(|archive| GitHubArchiveExpectation {
-                    name: archive.name.clone(),
-                    sha256: archive.sha256.clone(),
-                    size: archive.file.size,
-                })
-                .collect(),
-            archive_name: request.archive_name.into(),
-            archive_size: request.archive_file.map_or(
-                request.archive.map_or(0, |bytes| bytes.len() as u64),
-                |file| file.size,
-            ),
-            archive_sha256: request.archive_sha256.into(),
-            metadata_name: request.metadata_name.into(),
-            metadata_size: request.metadata.len() as u64,
-            metadata_sha256: request.metadata_sha256.into(),
-            expected_repository_id: request.expected_repository_id,
-            expected_account: request.expected_account.into(),
-            binding_sha256: request.binding_sha256.into(),
+impl From<Error> for AppError {
+    fn from(error: Error) -> Self {
+        match error {
+            Error::BadRequest(message) => Self::BadRequest(message),
+            Error::Internal(message) => Self::Internal(message),
+            Error::Coded {
+                status,
+                code,
+                message,
+            } => Self::coded(status, code, message),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct GitHubPublishedRelease {
-    pub release_url: String,
-    pub already_published: bool,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse as _;
 
-#[derive(Clone)]
-pub(crate) struct GitHubReleaseClient {
-    http: reqwest::Client,
-}
-
-impl GitHubReleaseClient {
-    pub fn new() -> Result<Self, AppError> {
-        let http = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|error| AppError::Internal(format!("build GitHub release client: {error}")))?;
-        Ok(Self { http })
-    }
-
-    pub(super) fn http(&self) -> &reqwest::Client {
-        &self.http
+    #[test]
+    fn shared_errors_preserve_service_display_status_and_codes() {
+        let invalid: AppError = Error::BadRequest("invalid source".into()).into();
+        assert_eq!(invalid.to_string(), "Bad request: invalid source");
+        assert_eq!(invalid.into_response().status(), StatusCode::BAD_REQUEST);
+        let internal: AppError = Error::Internal("read failed".into()).into();
+        assert_eq!(internal.to_string(), "Internal error: read failed");
+        assert_eq!(
+            internal.into_response().status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let coded: AppError = Error::Coded {
+            status: StatusCode::CONFLICT,
+            code: "PUBLICATION_RELEASE_CONFLICT",
+            message: "binding changed".into(),
+        }
+        .into();
+        assert!(matches!(coded, AppError::Coded {
+            status: StatusCode::CONFLICT, code: "PUBLICATION_RELEASE_CONFLICT", ref message,
+        } if message == "binding changed"));
+        assert_eq!(coded.to_string(), "binding changed");
+        assert_eq!(coded.into_response().status(), StatusCode::CONFLICT);
     }
 }

@@ -2,10 +2,10 @@ use super::listing::{find_release, get_release, list_assets};
 use super::models::{Asset, CreateRelease, PublishRelease, Release};
 use super::transport::Transport;
 use super::{binding_body, inspect_with, validate_segment};
-use crate::domain::projects::publication_release::remote::{
+use crate::author_release::remote::{
     GitHubPublishRequest, GitHubPublishedRelease, GitHubReleaseExpectation,
 };
-use crate::error::AppError;
+use crate::author_release::Error as AppError;
 mod assets;
 pub(super) use assets::is_sha;
 use assets::{expected_assets, validate_assets, ExpectedAsset};
@@ -68,8 +68,8 @@ pub(super) async fn publish(
 }
 
 pub(super) fn validate_request(request: &GitHubReleaseExpectation) -> Result<(), AppError> {
+    super::validate_tag(&request.tag)?;
     for (value, label) in [
-        (request.tag.as_str(), "release tag"),
         (request.archive_name.as_str(), "archive asset name"),
         (request.metadata_name.as_str(), "metadata asset name"),
     ] {
@@ -311,7 +311,8 @@ pub(super) async fn exact_published(
     Ok(GitHubPublishedRelease {
         release_url: format!(
             "https://github.com/{}/releases/tag/{}",
-            request.repository, request.tag
+            request.repository,
+            percent_encoding::utf8_percent_encode(&request.tag, percent_encoding::NON_ALPHANUMERIC)
         ),
         already_published,
     })
@@ -337,7 +338,7 @@ pub(super) fn validate_release(
 
 pub(super) fn conflict(message: &str) -> AppError {
     AppError::coded(
-        axum::http::StatusCode::CONFLICT,
+        reqwest::StatusCode::CONFLICT,
         "PUBLICATION_RELEASE_CONFLICT",
         message,
     )

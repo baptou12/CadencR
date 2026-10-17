@@ -9,8 +9,8 @@ use axum::Router;
 use serde_json::{json, Value};
 
 use super::binding_body;
+use super::digest;
 use super::transport::Transport;
-use crate::domain::projects::publication_release::local::digest;
 
 const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const BINDING: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -27,6 +27,7 @@ pub(super) struct FixtureOptions {
     pub promote_on_second_release_list: bool,
     pub extra_asset: bool,
     pub tag_drift: bool,
+    pub tag: Option<String>,
 }
 
 struct Data {
@@ -41,6 +42,7 @@ struct Data {
 
 #[derive(Clone)]
 struct Release {
+    tag: String,
     draft: bool,
     body: String,
 }
@@ -59,6 +61,7 @@ impl Fixture {
         };
         let release = (options.foreign_body || options.published || options.complete_assets)
             .then_some(Release {
+                tag: options.tag.clone().unwrap_or_else(|| "v1.0.0".into()),
                 draft: !options.published,
                 body,
             });
@@ -120,13 +123,15 @@ async fn handle(State(data): State<Arc<Mutex<Data>>>, request: Request<Body>) ->
     if method == "GET" && path == "/repos/acme/provider" {
         return response(json!({"id":42,"private":false,"permissions":{"push":true}}));
     }
-    if method == "GET"
-        && matches!(
-            path,
-            "/repos/acme/provider/git/ref/tags/v1%2E0%2E0"
-                | "/repos/acme/provider/git/ref/tags/v1.0.0"
-        )
-    {
+    let tag = data
+        .lock()
+        .unwrap()
+        .options
+        .tag
+        .clone()
+        .unwrap_or_else(|| "v1.0.0".into());
+    let encoded = percent_encoding::utf8_percent_encode(&tag, percent_encoding::NON_ALPHANUMERIC);
+    if method == "GET" && path == format!("/repos/acme/provider/git/ref/tags/{encoded}") {
         let commit = if data.lock().unwrap().options.tag_drift {
             "cccccccccccccccccccccccccccccccccccccccc"
         } else {
@@ -157,6 +162,7 @@ async fn handle(State(data): State<Arc<Mutex<Data>>>, request: Request<Body>) ->
         let mut guard = data.lock().unwrap();
         guard.writes += 1;
         let release = Release {
+            tag: payload["tag_name"].as_str().unwrap().into(),
             draft: true,
             body: payload["body"].as_str().unwrap().into(),
         };
@@ -244,7 +250,7 @@ fn assets_response(data: &Arc<Mutex<Data>>) -> Response<Body> {
 
 fn release_json(release: Release) -> Value {
     json!({
-        "id":7,"tag_name":"v1.0.0","target_commitish":COMMIT,"name":"v1.0.0",
+        "id":7,"tag_name":release.tag,"target_commitish":COMMIT,"name":release.tag,
         "body":release.body,"draft":release.draft,"prerelease":false,
         "html_url":"https://github.com/acme/provider/releases/tag/v1.0.0"
     })
