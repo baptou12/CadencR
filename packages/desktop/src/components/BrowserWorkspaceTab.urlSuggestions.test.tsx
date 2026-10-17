@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@/test-utils";
 import {
   clearDesktopBridgeOverrideForTests,
+  noopPluginTabs,
   setDesktopBridgeOverrideForTests,
   type BrowserStateSnapshot,
   type CadencrBrowserBridge,
@@ -168,6 +169,7 @@ function bridge(): CadencrBrowserBridge {
     fetchChangelog: vi.fn(),
     fetchChangelogImage: vi.fn(),
     onUpdateEvent: vi.fn(() => () => undefined),
+    pluginTabs: noopPluginTabs,
   };
 }
 

@@ -104,4 +104,51 @@ describe("TabContentRegistry", () => {
     );
     expect(mountedTabs()).toEqual(["agent"]);
   });
+
+  it("creates a plugin tab's mount while it is defined and placed, and removes it after", () => {
+    const GRAPH = "plugin:graph" as const;
+    const withGraph: FeatureTabs = {
+      ...tabs,
+      [GRAPH]: {
+        label: "Graph",
+        Icon: GlobeIcon,
+        content: <span>graph-body</span>,
+        closable: true,
+      },
+    };
+    const placed = flatLayoutState("agent", [GRAPH]);
+    const graphMount = (): Element | null => document.querySelector(`[data-tab-mount="${GRAPH}"]`);
+
+    const view = render(
+      <TabContentRegistry featureId={FEATURE_ID} tabs={tabs} layoutState={placed} />,
+    );
+    expect(graphMount()).toBeNull();
+
+    // Defined but not placed: the mount exists but stays empty and detached.
+    view.rerender(
+      <TabContentRegistry
+        featureId={FEATURE_ID}
+        tabs={withGraph}
+        layoutState={flatLayoutState("agent")}
+      />,
+    );
+    expect(mountedTabs()).not.toContain(GRAPH);
+
+    view.rerender(
+      <TabContentRegistry featureId={FEATURE_ID} tabs={withGraph} layoutState={placed} />,
+    );
+    const mount = graphMount();
+    expect(mount?.textContent).toBe("graph-body");
+
+    // Same mount across re-renders with a fresh `tabs` object.
+    view.rerender(
+      <TabContentRegistry featureId={FEATURE_ID} tabs={{ ...withGraph }} layoutState={placed} />,
+    );
+    expect(graphMount()).toBe(mount);
+
+    view.rerender(<TabContentRegistry featureId={FEATURE_ID} tabs={tabs} layoutState={placed} />);
+    expect(graphMount()).toBeNull();
+    expect(mount?.isConnected).toBe(false);
+    expect(mountedTabs().sort()).toEqual(["agent", "browser", "editor", "git", "terminal"]);
+  });
 });

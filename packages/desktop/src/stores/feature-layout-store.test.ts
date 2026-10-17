@@ -261,4 +261,75 @@ describe("feature-layout-store", () => {
     const gitLeaf = getLeaves(getState().splitRoot).find((l) => l.tabIds.includes("git"))!;
     expect(gitLeaf.activeTabId).toBe("git");
   });
+
+  describe("addTab / removeTab", () => {
+    const GRAPH = "plugin:graph" as const;
+
+    function store() {
+      return useFeatureLayoutStore.getState();
+    }
+
+    it("appends a new tab to the focused pane and activates it", () => {
+      store().splitTabAt(FEATURE, "terminal", ROOT_LEAF_ID, "right");
+      const pane = findPaneContaining(getState().splitRoot, "terminal");
+      store().addTab(FEATURE, GRAPH);
+      const state = getState();
+      const host = findPaneContaining(state.splitRoot, GRAPH);
+      expect(host?.id).toBe(pane?.id);
+      expect(host?.tabIds).toEqual(["terminal", GRAPH]);
+      expect(host?.activeTabId).toBe(GRAPH);
+      expect(state.focusedPaneId).toBe(pane?.id);
+    });
+
+    it("honors an existing paneId and falls back to root when it is unknown", () => {
+      store().splitTabAt(FEATURE, "terminal", ROOT_LEAF_ID, "right");
+      store().addTab(FEATURE, GRAPH, { paneId: ROOT_LEAF_ID });
+      expect(findHostFor(getState(), GRAPH)).toBe(ROOT_LEAF_ID);
+
+      reset();
+      store().addTab(FEATURE, GRAPH, { paneId: "missing" });
+      expect(findHostFor(getState(), GRAPH)).toBe(ROOT_LEAF_ID);
+    });
+
+    it("can place without activating", () => {
+      store().addTab(FEATURE, GRAPH, { activate: false });
+      const root = findLeafById(getState().splitRoot, ROOT_LEAF_ID);
+      expect(root?.tabIds.at(-1)).toBe(GRAPH);
+      expect(root?.activeTabId).toBe("agent");
+    });
+
+    it("only activates a tab that is already placed, without duplicating it", () => {
+      store().addTab(FEATURE, GRAPH);
+      store().splitTabAt(FEATURE, GRAPH, ROOT_LEAF_ID, "bottom");
+      const hostId = findHostFor(getState(), GRAPH);
+      store().setPaneActiveTab(FEATURE, ROOT_LEAF_ID, "git");
+
+      store().addTab(FEATURE, GRAPH, { paneId: ROOT_LEAF_ID });
+      const state = getState();
+      expect(getLeaves(state.splitRoot).flatMap((l) => l.tabIds)).toHaveLength(6);
+      expect(findHostFor(state, GRAPH)).toBe(hostId);
+      expect(state.focusedPaneId).toBe(hostId);
+      expect(isTabVisible(state, GRAPH)).toBe(true);
+
+      const before = useFeatureLayoutStore.getState().features;
+      store().addTab(FEATURE, GRAPH);
+      // Already active and focused: no-op keeps the features map identity.
+      expect(useFeatureLayoutStore.getState().features).toBe(before);
+    });
+
+    it("removes a plugin tab, collapsing its pane, and ignores built-ins", () => {
+      store().addTab(FEATURE, GRAPH);
+      store().splitTabAt(FEATURE, GRAPH, ROOT_LEAF_ID, "right");
+      store().removeTab(FEATURE, GRAPH);
+      const state = getState();
+      expect(state.splitRoot).toMatchObject({ type: "leaf", id: ROOT_LEAF_ID });
+      expect(findHostFor(state, GRAPH)).toBeNull();
+      expect(state.focusedPaneId).toBe(ROOT_LEAF_ID);
+
+      const before = useFeatureLayoutStore.getState().features;
+      store().removeTab(FEATURE, "terminal");
+      store().removeTab(FEATURE, GRAPH);
+      expect(useFeatureLayoutStore.getState().features).toBe(before);
+    });
+  });
 });

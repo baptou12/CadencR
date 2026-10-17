@@ -277,6 +277,16 @@ export type BrowserShortcut =
   | "navigate-back"
   | "navigate-forward";
 
+/** The feature-pane switches (⌘⇧A/T/G/E/B): the only chords a custom-tab guest relays. */
+export const PANE_SHORTCUTS = [
+  "pane-agent",
+  "pane-terminal",
+  "pane-git",
+  "pane-editor",
+  "pane-browser",
+] as const satisfies readonly BrowserShortcut[];
+export type PaneShortcut = (typeof PANE_SHORTCUTS)[number];
+
 export interface BrowserBounds {
   x: number;
   y: number;

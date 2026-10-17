@@ -150,6 +150,7 @@ const electronBundleContracts = {
     processName: "preload",
     entryFileName: "index.js",
     externalizationSentinels: ["electron"],
+    sandboxedEntryFileNames: ["notch.js", "plugin-tab.js"],
   },
 } as const satisfies Record<"main" | "preload", ElectronBundleContract>;
 
@@ -179,6 +180,9 @@ export default defineConfig(({ mode }) => {
             index: path.resolve(__dirname, "electron/preload/index.ts"),
             // The notch island's own, minimal preload (see electron/preload/notch.ts).
             notch: path.resolve(__dirname, "electron/preload/notch.ts"),
+            // A custom-tab guest's preload: theme CSS + port forwarding only
+            // (see electron/preload/plugin-tab.ts).
+            "plugin-tab": path.resolve(__dirname, "electron/preload/plugin-tab.ts"),
           },
         },
       },

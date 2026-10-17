@@ -15,6 +15,7 @@ import type {
   BrowserTabMetadata,
 } from "./browser-types";
 import { DEFAULT_BROWSER_RESPONSIVE_STATE } from "../../src/shared/browser-responsive";
+import { sendToWindow } from "./safe-send";
 
 const DEFAULT_URL = "about:blank";
 
@@ -77,6 +78,22 @@ export function reclaimFocusForShortcut(
   shortcut: BrowserShortcut,
 ): void {
   if (win && RENDERER_FOCUS_SHORTCUTS.has(shortcut)) win.webContents.focus();
+}
+
+/**
+ * Hand the renderer a chord a focused guest view swallowed (the renderer
+ * listens on `browser:shortcut`). `alwaysReclaimFocus` is for guests whose every
+ * relayed chord switches away from them (custom tabs); a Browser guest reclaims
+ * focus only for chords that land on renderer chrome.
+ */
+export function relayGuestShortcut(
+  win: BrowserWindow | null,
+  shortcut: BrowserShortcut,
+  options: { alwaysReclaimFocus?: boolean } = {},
+): void {
+  if (options.alwaysReclaimFocus) win?.webContents.focus();
+  else reclaimFocusForShortcut(win, shortcut);
+  sendToWindow(win, "browser:shortcut", shortcut);
 }
 
 export function tabDiagnostics(

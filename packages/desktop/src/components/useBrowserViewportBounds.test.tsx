@@ -4,6 +4,7 @@ import { useCallback, type ReactElement } from "react";
 import { useBrowserViewportBounds } from "./useBrowserViewportBounds";
 import {
   clearDesktopBridgeOverrideForTests,
+  noopPluginTabs,
   setDesktopBridgeOverrideForTests,
   type CadencrBrowserBridge,
 } from "@/lib/desktop-bridge";
@@ -146,6 +147,7 @@ function bridge(): CadencrBrowserBridge {
     fetchChangelog: vi.fn(),
     fetchChangelogImage: vi.fn(),
     onUpdateEvent: vi.fn(() => () => undefined),
+    pluginTabs: noopPluginTabs,
   };
 }
 

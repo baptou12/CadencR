@@ -1,8 +1,11 @@
 import {
-  ROOT_LEAF_ID,
+  filterLayoutTabs,
+  isPluginTabKind,
+  type FeatureLayoutState,
   type LayoutLeaf,
   type LayoutNode,
   type LayoutSplit,
+  type PluginTabKind,
   type SplitOrientation,
   type TabKind,
 } from "./feature-layout-schema";
@@ -24,6 +27,25 @@ export function getLeaves(node: LayoutNode): LayoutLeaf[] {
 export function findLeafById(node: LayoutNode, leafId: string): LayoutLeaf | null {
   if (node.type === "leaf") return node.id === leafId ? node : null;
   return findLeafById(node.children[0], leafId) ?? findLeafById(node.children[1], leafId);
+}
+
+/** `focusedPaneId` when that leaf still exists in `root`, otherwise `fallback`. */
+export function survivingFocus<F extends string | null>(
+  root: LayoutNode,
+  focusedPaneId: string | null,
+  fallback: F,
+): string | F {
+  return focusedPaneId !== null && findLeafById(root, focusedPaneId) ? focusedPaneId : fallback;
+}
+
+/** `state` with a new tree, focusing `paneId` only when `focus` is set. */
+export function withFocus(
+  state: FeatureLayoutState,
+  splitRoot: LayoutNode,
+  paneId: string,
+  focus: boolean,
+): FeatureLayoutState {
+  return { ...state, splitRoot, focusedPaneId: focus ? paneId : state.focusedPaneId };
 }
 
 export function findPaneContaining(node: LayoutNode, tab: TabKind): LayoutLeaf | null {
@@ -71,25 +93,6 @@ export function splitLeafAt(
   const newB = splitLeafAt(b, targetLeafId, edge, newLeaf, newLeafShare);
   if (newB !== b) return { ...node, children: [a, newB] };
   return node;
-}
-
-/**
- * Remove a leaf by id; collapses parent split when one side empties.
- * The root leaf is *kept* even when empty — caller code must not pass it
- * as a removal target.
- */
-export function removeLeafById(node: LayoutNode, leafId: string): LayoutNode {
-  if (node.type === "leaf") {
-    // We never reach here with the root id (caller guards), but be defensive.
-    return node;
-  }
-  const [a, b] = node.children;
-  if (a.type === "leaf" && a.id === leafId) return b;
-  if (b.type === "leaf" && b.id === leafId) return a;
-  const newA = removeLeafById(a, leafId);
-  const newB = removeLeafById(b, leafId);
-  if (newA === a && newB === b) return node;
-  return { ...node, children: [newA, newB] };
 }
 
 export function mapLeaf(
@@ -140,19 +143,37 @@ export function makeLeaf(tabs: TabKind[], active: TabKind): LayoutLeaf {
  * The root leaf stays (possibly empty).
  */
 export function pluckTab(root: LayoutNode, tab: TabKind): LayoutNode {
-  const containing = findPaneContaining(root, tab);
-  if (containing === null) return root;
-  const remainingTabs = containing.tabIds.filter((t) => t !== tab);
-  if (remainingTabs.length === 0 && containing.id !== ROOT_LEAF_ID) {
-    return removeLeafById(root, containing.id);
-  }
-  return mapLeaf(root, containing.id, (leaf) => {
-    const nextActive: TabKind | null =
-      leaf.activeTabId === tab ? (remainingTabs[0] ?? null) : leaf.activeTabId;
-    return { ...leaf, tabIds: remainingTabs, activeTabId: nextActive };
-  });
+  // A tree always holds the root leaf, so the filter never collapses it all.
+  return filterLayoutTabs(root, (t) => t !== tab) ?? root;
 }
 
 export function getFirstLeafId(node: LayoutNode): string {
   return node.type === "leaf" ? node.id : getFirstLeafId(node.children[0]);
+}
+
+/** Plugin tabs placed anywhere in the tree, in tree order. */
+export function getPluginTabs(node: LayoutNode): PluginTabKind[] {
+  return getLeaves(node).flatMap((leaf) => leaf.tabIds.filter(isPluginTabKind));
+}
+
+/**
+ * View of `state` limited to the tabs that can render right now — a layout
+ * keeps the placement of a plugin tab whose plugin is disabled or uninstalled
+ * so re-enabling it restores the tab where it was. Unavailable tabs vanish,
+ * active tabs fall back to the leaf's first remaining tab and emptied non-root
+ * leaves collapse. Returns `state` itself when nothing is hidden: renderers
+ * memoize on it (see the #185 notes in `FeatureLayoutShell`/`TabContentRegistry`).
+ * Never write the result back to the store.
+ */
+export function restrictLayoutToTabs(
+  state: FeatureLayoutState,
+  availableTabIds: ReadonlySet<string>,
+): FeatureLayoutState {
+  const splitRoot = filterLayoutTabs(state.splitRoot, (tab) => availableTabIds.has(tab));
+  if (splitRoot === null || splitRoot === state.splitRoot) return state;
+  return {
+    ...state,
+    splitRoot,
+    focusedPaneId: survivingFocus(splitRoot, state.focusedPaneId, null),
+  };
 }

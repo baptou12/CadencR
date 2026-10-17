@@ -23,6 +23,11 @@ import { assertTrustedSender } from "./ipc";
 
 interface BrowserIpcOptions {
   getMainWindow: () => BrowserWindow | null;
+  /**
+   * Other native views a React overlay must uncover too (custom-tab guests):
+   * `useSuppressBrowserView` drives them all through `browser:set-suppressed`.
+   */
+  onSuppressed?: (value: boolean) => void;
 }
 
 const sitePermissionSchema = z.enum(BROWSER_SITE_PERMISSIONS);
@@ -45,10 +50,8 @@ const siteOriginSchema = z.url().refine((value) => {
   return (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.origin === value;
 }, "Expected an HTTP(S) origin without a path.");
 
-function registerTabIpc(
-  manager: BrowserManager,
-  getMainWindow: BrowserIpcOptions["getMainWindow"],
-): void {
+function registerTabIpc(manager: BrowserManager, options: BrowserIpcOptions): void {
+  const { getMainWindow } = options;
   ipcMain.handle(
     "browser:create-tab",
     async (event, rawUrl: unknown, profileId: unknown, scopeId: unknown) => {
@@ -129,6 +132,7 @@ function registerTabIpc(
   ipcMain.handle("browser:set-suppressed", (event, value: unknown) => {
     assertTrustedSender(event, getMainWindow);
     manager.setSuppressed(value === true);
+    options.onSuppressed?.(value === true);
   });
 }
 
@@ -381,7 +385,7 @@ function registerLibraryIpc(
 export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
   const manager = new BrowserManager(options.getMainWindow);
   const profiles = new BrowserProfileController();
-  registerTabIpc(manager, options.getMainWindow);
+  registerTabIpc(manager, options);
   registerPopupIpc(manager, options.getMainWindow);
   registerProfileIpc(profiles, options.getMainWindow);
   registerNavigationIpc(manager, options.getMainWindow);
