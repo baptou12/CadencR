@@ -8,7 +8,7 @@ type Line = { tone: "error" | "info" | "done" | "busy"; text: string };
 const ICONS = { error: CircleAlert, info: Info, done: CheckCircle2, busy: Loader2 } as const;
 
 function useActivityLines(): Line[] {
-  const { providers, themes } = useMarketplaceState();
+  const { providers, themes, tabs } = useMarketplaceState();
   const lines: Line[] = [];
   const error = (label: string, value: unknown) => {
     const message = marketplaceError(value);
@@ -17,6 +17,7 @@ function useActivityLines(): Line[] {
   for (const [label, kind] of [
     ["Providers", providers],
     ["Themes", themes],
+    ["Custom tabs", tabs],
   ] as const) {
     if (kind.mutation.isPending)
       lines.push({ tone: "busy", text: `Applying ${kind.mutation.variables?.id} change…` });
@@ -27,6 +28,10 @@ function useActivityLines(): Line[] {
   error("Installed providers", providers.inventoryQuery.error);
   error("Theme catalog", themes.catalog.error ?? themes.refresh.error);
   error("Installed themes", themes.inventory.error ?? themes.recovery.error);
+  error("Tab catalog", tabs.catalog.error ?? tabs.refresh.error);
+  error("Installed tabs", tabs.inventory.error ?? tabs.summaries.error ?? tabs.recovery.error);
+  if (tabs.catalog.data?.error)
+    lines.push({ tone: "info", text: `Tab catalog: ${tabs.catalog.data.error}` });
   const providerCatalog = providers.catalogQuery.data;
   if (providerCatalog?.error)
     lines.push(
@@ -49,10 +54,15 @@ function useActivityLines(): Line[] {
  * pending changes, confirmed results, and failures with their stable codes.
  */
 export function MarketplaceActivity(): React.JSX.Element | null {
-  const { providers, themes } = useMarketplaceState();
+  const { providers, themes, tabs } = useMarketplaceState();
   const lines = useActivityLines();
   const queryFailed =
-    providers.catalogQuery.isError || providers.inventoryQuery.isError || themes.catalog.isError;
+    providers.catalogQuery.isError ||
+    providers.inventoryQuery.isError ||
+    themes.catalog.isError ||
+    tabs.catalog.isError ||
+    tabs.inventory.isError ||
+    tabs.summaries.isError;
   const themeStateFailed = themes.inventory.isError || themes.mutation.isError;
   if (!lines.length) return null;
   return (
@@ -89,12 +99,17 @@ export function MarketplaceActivity(): React.JSX.Element | null {
               disabled={
                 providers.catalogQuery.isFetching ||
                 providers.inventoryQuery.isFetching ||
-                themes.catalog.isFetching
+                themes.catalog.isFetching ||
+                tabs.catalog.isFetching ||
+                tabs.inventory.isFetching
               }
               onClick={() => {
                 void providers.catalogQuery.refetch();
                 void providers.inventoryQuery.refetch();
                 void themes.catalog.refetch();
+                void tabs.catalog.refetch();
+                void tabs.inventory.refetch();
+                void tabs.summaries.refetch();
               }}
             >
               Retry loading

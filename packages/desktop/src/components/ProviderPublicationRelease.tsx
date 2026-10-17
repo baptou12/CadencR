@@ -26,7 +26,7 @@ export function ProviderPublicationRelease({
 }: {
   projectId: number;
   initialBundleId?: string;
-  pluginKind?: "provider" | "theme";
+  pluginKind?: "provider" | "theme" | "tab";
 }): React.JSX.Element {
   const [registryOperationId, setRegistryOperationId] = useState<string>();
   const {
@@ -206,7 +206,7 @@ function ReleaseInputs({
   onBundleIdChange,
   onReleaseNotesChange,
 }: {
-  pluginKind: "provider" | "theme";
+  pluginKind: "provider" | "theme" | "tab";
   additionalBundles: string;
   onAdditionalBundlesChange: (value: string) => void;
   bundleId: string;
@@ -290,7 +290,7 @@ function PublicationPreview({
     ["Archive file", preview.archive_name],
     ["Archive size", `${preview.archive_size.toLocaleString()} bytes`],
     ["Metadata SHA-256", preview.metadata_sha256],
-    ["Content", preview.target || "Platform-independent declarative theme"],
+    ["Content", preview.target || "Platform-independent package"],
     ["Version", preview.version],
     ["Release channel", preview.prerelease ? "Prerelease" : "Stable"],
   ];
@@ -306,7 +306,7 @@ function PublicationPreview({
       </dl>
       {preview.archives?.map((archive) => (
         <div key={archive.bundle_id} className="rounded border p-2 text-xs font-mono break-all">
-          {archive.target || "Theme data"} · {archive.archive_name} ·{" "}
+          {archive.target || "Platform-independent package"} · {archive.archive_name} ·{" "}
           {archive.archive_size.toLocaleString()} bytes
           <div>SHA-256: {archive.archive_sha256}</div>
         </div>

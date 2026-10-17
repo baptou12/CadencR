@@ -118,6 +118,13 @@ pub(crate) enum RegistryCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Build a deterministic, platform-independent custom tab archive.
+    PackTab {
+        #[arg(long)]
+        directory: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Build a deterministic local publication plan without network access.
     PlanPublication {
         #[arg(long)]
@@ -239,7 +246,9 @@ impl Cli {
             }) | Command::Registry(RegistryArgs {
                 command: RegistryCommand::BuildIndex { output: None, .. }
             }) | Command::Registry(RegistryArgs {
-                command: RegistryCommand::PackProvider { .. } | RegistryCommand::PackTheme { .. }
+                command: RegistryCommand::PackProvider { .. }
+                    | RegistryCommand::PackTheme { .. }
+                    | RegistryCommand::PackTab { .. }
             })
         )
     }

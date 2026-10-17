@@ -59,16 +59,58 @@ impl LocalTab {
 /// is a directory is listed, valid or not, so a broken tab is visible.
 pub async fn list() -> Result<Vec<LocalTab>, AppError> {
     let root = paths::tabs_dir();
-    tokio::task::spawn_blocking(move || scan(&root))
-        .await
-        .map_err(|error| AppError::Internal(format!("custom tab scan failed: {error}")))?
+    let managed_root = super::managed::storage::root();
+    tokio::task::spawn_blocking(move || {
+        let mut tabs = scan(&root)?;
+        for id in super::managed::storage::ids(&managed_root)? {
+            if tabs.iter().any(|tab| tab.id == id) {
+                continue;
+            }
+            let report = match super::managed::storage::directory(&managed_root, &id) {
+                Ok(None) => continue,
+                Ok(Some(dir)) => match super::managed::storage::read(&managed_root, &id) {
+                    Ok(_) => inspect_tab_folder(&dir),
+                    Err(error) => unavailable_report(dir, error),
+                },
+                Err(error) => {
+                    unavailable_report(super::managed::storage::owner(&managed_root, &id)?, error)
+                }
+            };
+            tabs.push(LocalTab { id, report });
+        }
+        tabs.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(tabs)
+    })
+    .await
+    .map_err(|error| AppError::Internal(format!("custom tab scan failed: {error}")))?
+}
+
+fn unavailable_report(directory: std::path::PathBuf, error: AppError) -> TabFolderReport {
+    use cadencr_plugin_core::tab::{TabFindings, TabIssue, TabIssueCode};
+    TabFolderReport {
+        directory,
+        manifest: None,
+        icon_svg: None,
+        entry_present: false,
+        findings: TabFindings {
+            errors: vec![TabIssue::document(
+                TabIssueCode::ManifestUnreadable,
+                error.to_string(),
+            )],
+            warnings: Vec::new(),
+        },
+    }
 }
 
 /// One tab by id; `PLUGIN_TAB_NOT_FOUND` when its folder does not exist.
 pub async fn get(id: &str) -> Result<LocalTab, AppError> {
     let dir = paths::plugin_dir(id)?;
+    let managed_root = super::managed::storage::root();
     let id = id.to_string();
     tokio::task::spawn_blocking(move || {
+        if dir.starts_with(&managed_root) {
+            super::managed::storage::read(&managed_root, &id)?;
+        }
         if !dir.is_dir() {
             return Err(not_found(&id));
         }
@@ -161,5 +203,28 @@ mod tests {
                 ..
             })
         ));
+    }
+    #[tokio::test]
+    async fn a_broken_marketplace_revision_does_not_hide_local_tabs() {
+        write_tab("local", serde_json::json!({}));
+        let root = super::super::managed::storage::root();
+        let owner = super::super::managed::storage::owner(&root, "broken").unwrap();
+        super::super::managed::storage::secure(&root, &owner).unwrap();
+        super::super::managed::storage::write_file(
+            &owner.join("active.json"),
+            br#""invalid-revision""#,
+        )
+        .unwrap();
+        let tabs = list().await.unwrap();
+        assert_eq!(tabs.len(), 2);
+        assert!(tabs
+            .iter()
+            .find(|tab| tab.id == "local")
+            .unwrap()
+            .valid_manifest()
+            .is_some());
+        let broken = tabs.iter().find(|tab| tab.id == "broken").unwrap();
+        assert!(broken.valid_manifest().is_none());
+        assert!(!broken.report.findings.errors.is_empty());
     }
 }

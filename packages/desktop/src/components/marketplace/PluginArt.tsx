@@ -1,4 +1,4 @@
-import { Loader2, Paintbrush } from "lucide-react";
+import { Loader2, Paintbrush, PanelTop } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useThemeArt } from "@/hooks/useThemePreview";
 import { marketplaceError } from "@/lib/marketplace";
@@ -22,6 +22,7 @@ export function PluginArt({
   variant: Variant;
   version?: string;
 }): React.JSX.Element {
+  if (listing.kind === "tab") return <TabArt listing={listing} />;
   if (listing.kind === "provider")
     return <ProviderStage listing={listing} compact={variant === "tile"} />;
   return <ThemeArt key={version} listing={listing} variant={variant} version={version} />;
@@ -95,5 +96,23 @@ function ThemeArt({
         </div>
       )}
     </>
+  );
+}
+
+function TabArt({ listing }: { listing: MarketplaceListing }): React.JSX.Element {
+  return (
+    <div
+      className="mp-kind-tab flex h-full w-full flex-col bg-card p-4"
+      aria-label="Custom workspace tab"
+    >
+      <div className="flex items-center gap-2 border-b border-border pb-2 text-xs font-medium text-[var(--mp-kind)]">
+        <PanelTop className="size-3.5" aria-hidden />
+        {listing.name}
+      </div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
+        <PanelTop className="size-8" aria-hidden />
+        <span className="text-xs">Custom workspace tab</span>
+      </div>
+    </div>
   );
 }

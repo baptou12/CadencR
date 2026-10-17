@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { providerPackageSchema } from "./marketplace-provider-package";
+import { tabPackageSchema } from "./marketplace-tab-package";
 import type { ManagedThemeCatalogResponse } from "@/api/generated";
 import { THEME_TOKEN_KEYS, THEME_OPTIONAL_TOKEN_KEYS } from "./themes/tokens";
 import { toThemeDefinition } from "./themes/user-theme";
@@ -209,6 +210,7 @@ const themePackageSchema = z
 const mixedEntrySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("theme"), package: themePackageSchema }).strict(),
   z.object({ kind: z.literal("provider"), package: providerPackageSchema }).strict(),
+  z.object({ kind: z.literal("tab"), package: tabPackageSchema }).strict(),
 ]);
 export const signedMixedCatalogSchema = z
   .object({

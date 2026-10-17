@@ -87,14 +87,18 @@ export function ProjectSettingsDialog({
                 <ProviderPublicationPreparation projectId={projectId} enabled={open} />
                 <ProviderPublicationPackagePreparation projectId={projectId} enabled={open} />
               </>
-            ) : authoringTarget === "theme" ? (
+            ) : authoringTarget === "theme" || authoringTarget === "tab" ? (
               <>
                 <ProviderPublicationPreparation
                   projectId={projectId}
                   enabled={open}
-                  pluginKind="theme"
+                  pluginKind={authoringTarget}
                 />
-                <ThemePublicationPackagePreparation projectId={projectId} enabled={open} />
+                <ThemePublicationPackagePreparation
+                  projectId={projectId}
+                  enabled={open}
+                  pluginKind={authoringTarget}
+                />
               </>
             ) : null)}
           <IdentitySection

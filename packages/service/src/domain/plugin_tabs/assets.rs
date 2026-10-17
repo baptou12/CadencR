@@ -48,12 +48,17 @@ const MAX_ASSET_BYTES: u64 = 64 * 1024 * 1024;
 /// Nothing outside the web root (sources, `tab.json`) is reachable.
 pub async fn serve(id: &str, path: &str) -> Result<Response, AppError> {
     let dir = paths::plugin_dir(id)?;
+    let managed_root = super::managed::storage::root();
     let (id, path) = (id.to_string(), path.to_string());
-    let (file, length) = tokio::task::spawn_blocking(move || locate(&dir, &id, &path))
-        .await
-        .map_err(|error| {
-            AppError::Internal(format!("custom tab asset lookup failed: {error}"))
-        })??;
+    let (file, length) = tokio::task::spawn_blocking(move || {
+        let located = locate(&dir, &id, &path)?;
+        if dir.starts_with(&managed_root) {
+            super::managed::storage::verify_asset(&managed_root, &id, &located.0)?;
+        }
+        Ok::<_, AppError>(located)
+    })
+    .await
+    .map_err(|error| AppError::Internal(format!("custom tab asset lookup failed: {error}")))??;
     let opened = tokio::fs::File::open(&file)
         .await
         .map_err(|error| AppError::Internal(format!("cannot read custom tab asset: {error}")))?;

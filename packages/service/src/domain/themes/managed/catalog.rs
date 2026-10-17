@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 mod acquisition;
-pub use acquisition::acquire;
+pub use acquisition::{acquire, acquire_catalog};
 
 pub fn verify(
     index: &SignedMixedCatalog,
@@ -43,14 +43,22 @@ pub fn verify(
     Ok(())
 }
 pub fn resolve(index: &SignedMixedCatalog, id: &str, version: &str) -> Result<Value, AppError> {
+    resolve_kind(index, id, version, "theme")
+}
+pub fn resolve_kind(
+    index: &SignedMixedCatalog,
+    id: &str,
+    version: &str,
+    kind: &str,
+) -> Result<Value, AppError> {
     let entry = index
         .signed
         .packages
         .iter()
         .find(|entry| {
-            entry["kind"] == "theme"
-                && entry["package"]["theme"]["id"] == id
-                && entry["package"]["theme"]["version"] == version
+            entry["kind"] == kind
+                && entry["package"][kind]["id"] == id
+                && entry["package"][kind]["version"] == version
         })
         .ok_or_else(|| invalid("theme version is absent from signed catalog"))?;
     ensure_compatible(&entry["package"])?;
@@ -82,7 +90,10 @@ fn cache() -> std::path::PathBuf {
 pub fn ingest(index: &SignedMixedCatalog) -> Result<(), AppError> {
     ingest_trusted(index, &pinned_index_trust_store())
 }
-fn ingest_trusted(index: &SignedMixedCatalog, trust: &ManagedTrustStore) -> Result<(), AppError> {
+pub(crate) fn ingest_trusted(
+    index: &SignedMixedCatalog,
+    trust: &ManagedTrustStore,
+) -> Result<(), AppError> {
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _guard = LOCK
         .lock()
@@ -136,15 +147,15 @@ fn ingest_trusted(index: &SignedMixedCatalog, trust: &ManagedTrustStore) -> Resu
         &serde_json::to_string(index).map_err(invalid)?,
     )
 }
-fn recommended_versions(index: &SignedMixedCatalog) -> BTreeMap<String, String> {
+pub fn recommended_for(index: &SignedMixedCatalog, kind: &str) -> BTreeMap<String, String> {
     let mut recommended: BTreeMap<&str, (&str, semver::Version)> = BTreeMap::new();
     for entry in &index.signed.packages {
-        if entry["kind"] != "theme" || ensure_compatible(&entry["package"]).is_err() {
+        if entry["kind"] != kind || ensure_compatible(&entry["package"]).is_err() {
             continue;
         }
         let (Some(id), Some(version)) = (
-            entry["package"]["theme"]["id"].as_str(),
-            entry["package"]["theme"]["version"].as_str(),
+            entry["package"][kind]["id"].as_str(),
+            entry["package"][kind]["version"].as_str(),
         ) else {
             continue;
         };
@@ -162,6 +173,9 @@ fn recommended_versions(index: &SignedMixedCatalog) -> BTreeMap<String, String> 
         .into_iter()
         .map(|(id, (version, _))| (id.into(), version.into()))
         .collect()
+}
+fn recommended_versions(index: &SignedMixedCatalog) -> BTreeMap<String, String> {
+    recommended_for(index, "theme")
 }
 pub use super::download::{download, download_archive};
 

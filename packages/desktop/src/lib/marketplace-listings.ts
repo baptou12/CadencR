@@ -3,8 +3,11 @@ import type {
   ManagedProviderInventoryEntry,
   ManagedProviderPackage,
   ManagedThemeCatalogResponse,
+  ManagedTabInventoryEntry,
+  PluginTabSummary,
 } from "@/api/generated";
-import type { z } from "zod";
+import { tabPackageSchema, type TabMarketplacePackage } from "./marketplace-tab-package";
+import { z } from "zod";
 import { groupPackages, installedRevision, providerCatalogPackages } from "./marketplace";
 import { matchesSidebarFilter } from "./sidebar-filter";
 import {
@@ -14,7 +17,7 @@ import {
 } from "./theme-marketplace";
 
 /** What a marketplace package adds to Cadencr — the kinds the signed catalog serves today. */
-export const PLUGIN_KINDS = ["theme", "provider"] as const;
+export const PLUGIN_KINDS = ["theme", "provider", "tab"] as const;
 export type PluginKind = (typeof PLUGIN_KINDS)[number];
 type ManagedThemeEntry = z.infer<typeof managedThemeEntrySchema>;
 
@@ -26,7 +29,7 @@ interface ListingVersion {
   version: string;
   minApp: string;
   maxApp?: string | null;
-  /** Provider binary targets (`darwin-aarch64`, …); empty for themes. */
+  /** Provider binary targets (`darwin-aarch64`, …); empty for themes and custom tabs. */
   platforms: string[];
   /** Theme archive digest — keys verified previews to this exact archive. */
   sha256?: string;
@@ -38,7 +41,7 @@ interface InstalledState {
   active: boolean;
   /** Theme: the installed document validated and can be applied. Provider: always. */
   usable: boolean;
-  /** Provider only: whether it starts with the next launch. */
+  /** Provider startup selection, or a custom tab’s global enablement switch. */
   enabled?: boolean;
   /** Theme only: a saved light/dark/manual selection references it. */
   selected?: boolean;
@@ -250,12 +253,65 @@ function themeListing(
   };
 }
 
+function tabListings(sources: ListingSources): MarketplaceListing[] {
+  const groups = new Map<string, TabMarketplacePackage[]>();
+  for (const raw of sources.tabCatalog?.index?.signed.packages ?? []) {
+    const entry = z.object({ kind: z.string(), package: z.unknown() }).parse(raw);
+    if (entry.kind !== "tab") continue;
+    const item = tabPackageSchema.parse(entry.package);
+    const versions = groups.get(item.tab.id);
+    if (versions) versions.push(item);
+    else groups.set(item.tab.id, [item]);
+  }
+  const entries = new Map((sources.tabInventory ?? []).map((item) => [item.id, item]));
+  return [...new Set([...groups.keys(), ...entries.keys()])].map((id) => {
+    const versions = groups.get(id) ?? [];
+    const installed = entries.get(id);
+    const runtime = sources.tabSummaries?.find((item) => item.id === id);
+    const recommended = sources.tabCatalog?.recommended_versions[id];
+    const meta = pickMeta(versions, (item) => item.tab.version, recommended);
+    return {
+      ...baseListing(
+        "tab",
+        id,
+        versions.map((item) => ({
+          version: item.tab.version,
+          minApp: item.host.compatibility.min_app_version,
+          maxApp: item.host.compatibility.max_app_version,
+          platforms: [],
+          sha256: item.tab.distribution.sha256,
+        })),
+        recommended,
+        installed
+          ? {
+              version: installed.version,
+              active: runtime?.enablement.effective ?? false,
+              enabled: runtime?.enablement.global ?? false,
+              usable: !installed.error && runtime?.status === "valid",
+              restartRequired: false,
+              error: installed.error,
+            }
+          : undefined,
+      ),
+      name: meta?.tab.name ?? installed?.name ?? id,
+      description: meta?.tab.description ?? "",
+      publisher: meta?.host.publisher,
+      repository: meta?.tab.repository,
+      license: meta?.tab.license,
+      authors: [],
+    };
+  });
+}
+
 interface ListingSources {
   providerCatalog?: ManagedCatalogResponse;
   providerInventory?: ManagedProviderInventoryEntry[];
   themeCatalog?: ManagedThemeCatalogResponse;
   themeInventory?: ManagedThemeEntry[];
   displayedThemeId?: string;
+  tabCatalog?: ManagedThemeCatalogResponse;
+  tabInventory?: ManagedTabInventoryEntry[];
+  tabSummaries?: PluginTabSummary[];
 }
 
 /** One list across kinds: every catalog package plus anything installed but no longer listed. */
@@ -274,6 +330,7 @@ export function buildListings(sources: ListingSources): MarketplaceListing[] {
   const providerIds = new Set([...providerGroups.keys(), ...providerEntries.keys()]);
   const themeIds = new Set([...themeGroups.keys(), ...themeEntries.keys()]);
   const listings = [
+    ...tabListings(sources),
     ...[...providerIds].map((id) =>
       providerListing(
         id,

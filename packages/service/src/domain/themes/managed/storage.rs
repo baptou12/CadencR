@@ -20,7 +20,7 @@ thread_local! {
     static ROOT_OVERRIDE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
 }
 /// Carry the request's resolved storage directory into a blocking worker.
-pub(super) fn with_root<T>(root: PathBuf, operation: impl FnOnce() -> T) -> T {
+pub(crate) fn with_root<T>(root: PathBuf, operation: impl FnOnce() -> T) -> T {
     struct Restore(Option<PathBuf>);
     impl Drop for Restore {
         fn drop(&mut self) {

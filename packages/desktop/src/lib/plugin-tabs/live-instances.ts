@@ -32,7 +32,7 @@ export function reloadLivePluginTab(instanceId: string): boolean {
 
 /** Refetch every plugin-tab read: the list, one tab, its configuration. */
 export function refreshPluginTabReads(): Promise<void> {
-  return invalidateByUrlPrefix(queryClient, "/api/plugin-tabs");
+  return invalidateByUrlPrefix(queryClient, ["/api/plugin-tabs", "/api/marketplace/tabs"]);
 }
 
 /** `refreshPluginTabReads` for a user's "Reload": a failure is a toast. */

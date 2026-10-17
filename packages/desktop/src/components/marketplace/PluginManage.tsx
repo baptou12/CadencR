@@ -7,17 +7,22 @@ import type { MarketplaceListing } from "@/lib/marketplace-listings";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useMarketplaceState } from "./MarketplaceContext";
 
-/** Removal (both kinds) and, for themes, duplicating into an editable author project. */
+/** Removal across kinds and, for themes, duplicating into an editable author project. */
 export function PluginManage({
   listing,
 }: {
   listing: MarketplaceListing;
 }): React.JSX.Element | null {
-  const { providers, themes } = useMarketplaceState();
+  const { providers, themes, tabs } = useMarketplaceState();
   const [confirming, setConfirming] = useState(false);
   const [label, setLabel] = useState("");
   if (!listing.installed) return null;
-  const mutation = listing.kind === "provider" ? providers.mutation : themes.mutation;
+  const mutation =
+    listing.kind === "provider"
+      ? providers.mutation
+      : listing.kind === "tab"
+        ? tabs.mutation
+        : themes.mutation;
   // The kind's mutation is shared; only this plugin's removal failure belongs in the dialog.
   const removalError =
     mutation.variables?.kind === "remove" && mutation.variables.id === listing.id
@@ -29,6 +34,8 @@ export function PluginManage({
       const callbacks = { onSuccess: () => resolve(true), onError: () => resolve(false) };
       if (listing.kind === "provider")
         providers.mutation.mutate({ kind: "remove", id: listing.id }, callbacks);
+      else if (listing.kind === "tab")
+        tabs.mutation.mutate({ kind: "remove", id: listing.id }, callbacks);
       else
         themes.mutation.mutate(
           { kind: "remove", id: listing.id, confirmFallback: true },
@@ -84,11 +91,7 @@ export function PluginManage({
         open={confirming}
         onOpenChange={setConfirming}
         title={`Remove ${listing.name}?`}
-        description={
-          listing.kind === "provider"
-            ? "The provider is disabled and dropped from the next startup. Existing conversations are kept."
-            : "Any light, dark or manual selection using this theme returns to a built-in theme."
-        }
+        description={removalDescription(listing)}
         variant="destructive"
         confirmText={mutation.isPending ? "Removing…" : "Remove"}
         busy={mutation.isPending}
@@ -102,4 +105,12 @@ export function PluginManage({
       </ConfirmDialog>
     </section>
   );
+}
+
+function removalDescription(listing: MarketplaceListing): string {
+  if (listing.kind === "provider")
+    return "The provider is disabled and dropped from the next startup. Existing conversations are kept.";
+  if (listing.kind === "tab")
+    return "The tab is removed from the workspace. Its configuration and retained revisions are kept.";
+  return "Any light, dark or manual selection using this theme returns to a built-in theme.";
 }

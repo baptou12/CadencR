@@ -1,4 +1,4 @@
-import { Bot, Palette, type LucideIcon } from "lucide-react";
+import { Bot, Palette, PanelTop, type LucideIcon } from "lucide-react";
 import { PLUGIN_KINDS, type PluginKind } from "@/lib/marketplace-listings";
 
 interface KindMeta {
@@ -15,6 +15,13 @@ interface KindMeta {
 export const KIND_ORDER = PLUGIN_KINDS;
 
 export const KINDS: Record<PluginKind, KindMeta> = {
+  tab: {
+    label: "Custom tab",
+    plural: "Custom tabs",
+    icon: PanelTop,
+    tone: "mp-kind-tab",
+    pitch: "Add a workspace tab with a sandboxed web interface and permissions you control.",
+  },
   theme: {
     label: "Theme",
     plural: "Themes",
