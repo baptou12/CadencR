@@ -143,7 +143,7 @@ describe("parseLayoutState", () => {
     expect(parsed?.splitRoot).toEqual({
       type: "leaf",
       id: "root",
-      tabIds: ["agent", "terminal", "git", "editor", "browser"],
+      tabIds: ["agent", "terminal", "git", "editor", "browser", "preview"],
       activeTabId: "agent",
     });
   });
@@ -226,7 +226,13 @@ describe("parseLayoutState", () => {
       orientation: "vertical",
       sizes: [70, 30],
       children: [
-        { type: "leaf", id: "root", tabIds: ["agent", "git", "editor"], activeTabId: "agent" },
+        // A built-in missing from the stored layout joins the root strip.
+        {
+          type: "leaf",
+          id: "root",
+          tabIds: ["agent", "git", "editor", "preview"],
+          activeTabId: "agent",
+        },
         { type: "leaf", id: "b", tabIds: ["terminal", "browser"], activeTabId: "terminal" },
       ],
     });
@@ -298,7 +304,7 @@ describe("parseLayoutState", () => {
 
 describe("tab kinds", () => {
   it("recognizes built-in and well-formed plugin tabs only", () => {
-    expect(BUILTIN_TAB_KINDS).toEqual(["agent", "terminal", "git", "editor", "browser"]);
+    expect(BUILTIN_TAB_KINDS).toEqual(["agent", "terminal", "git", "editor", "browser", "preview"]);
     expect(Object.isFrozen(BUILTIN_TAB_KINDS)).toBe(true);
     expect(isTabKind("agent")).toBe(true);
     expect(isTabKind("plugin:changed-files-graph")).toBe(true);

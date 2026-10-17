@@ -10,7 +10,7 @@ import {
   selectFeatureLayout,
   useFeatureLayoutStore,
 } from "./feature-layout-store";
-import { flatLayoutState, ROOT_LEAF_ID } from "./feature-layout-schema";
+import { BUILTIN_TAB_KINDS, flatLayoutState, ROOT_LEAF_ID } from "./feature-layout-schema";
 
 const FEATURE = 42;
 
@@ -306,7 +306,10 @@ describe("feature-layout-store", () => {
 
       store().addTab(FEATURE, GRAPH, { paneId: ROOT_LEAF_ID });
       const state = getState();
-      expect(getLeaves(state.splitRoot).flatMap((l) => l.tabIds)).toHaveLength(6);
+      // The built-ins plus the graph, once.
+      expect(getLeaves(state.splitRoot).flatMap((l) => l.tabIds)).toHaveLength(
+        BUILTIN_TAB_KINDS.length + 1,
+      );
       expect(findHostFor(state, GRAPH)).toBe(hostId);
       expect(state.focusedPaneId).toBe(hostId);
       expect(isTabVisible(state, GRAPH)).toBe(true);

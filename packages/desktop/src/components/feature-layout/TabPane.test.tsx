@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import { noteUserLayoutChange } from "@/lib/auto-layout/auto-layout-controller";
-import { ROOT_LEAF_ID, type LayoutLeaf } from "@/stores/feature-layout-schema";
+import { BUILTIN_TAB_KINDS, ROOT_LEAF_ID, type LayoutLeaf } from "@/stores/feature-layout-schema";
 import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 import { makeTabHostKey, useTabHostRegistry } from "@/stores/tab-host-registry";
 
@@ -308,7 +308,7 @@ describe("TabPane", () => {
 
       expect(noteUserLayoutChange).toHaveBeenCalledWith(FEATURE_ID, { structural: true });
       const stored = useFeatureLayoutStore.getState().features[FEATURE_ID];
-      expect(stored?.splitRoot).toMatchObject({ tabIds: leaf.tabIds });
+      expect(stored?.splitRoot).toMatchObject({ tabIds: [...BUILTIN_TAB_KINDS] });
     });
 
     it("closes rather than docks from a floating pane", () => {

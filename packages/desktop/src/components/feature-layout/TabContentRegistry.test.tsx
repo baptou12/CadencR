@@ -149,6 +149,13 @@ describe("TabContentRegistry", () => {
     view.rerender(<TabContentRegistry featureId={FEATURE_ID} tabs={tabs} layoutState={placed} />);
     expect(graphMount()).toBeNull();
     expect(mount?.isConnected).toBe(false);
-    expect(mountedTabs().sort()).toEqual(["agent", "browser", "editor", "git", "terminal"]);
+    expect(mountedTabs().sort()).toEqual([
+      "agent",
+      "browser",
+      "editor",
+      "git",
+      "preview",
+      "terminal",
+    ]);
   });
 });

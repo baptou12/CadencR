@@ -166,11 +166,12 @@ async fn files_changes(
     .map_err(|error| ("BAD_REQUEST", error.to_string()))?;
     let (tx, mut rx) = broadcast::channel(16);
     let runtime = tokio::runtime::Handle::current();
+    let feature_id = grant.feature_id;
     let watcher = tokio::task::spawn_blocking(move || {
         let _runtime = runtime.enter();
         let mut watcher = FileWatcher::new();
         watcher
-            .start(&root.to_string_lossy(), tx)
+            .start(&root.to_string_lossy(), Some(feature_id), tx)
             .map(|()| WatcherGuard(watcher))
     })
     .await
