@@ -28,7 +28,7 @@ export function CustomTabConfigFields({
   saving,
   error,
   onSave,
-  draftKey,
+  draftSlot,
 }: {
   fields: TabConfigField[];
   stored: Record<string, unknown>;
@@ -37,10 +37,10 @@ export function CustomTabConfigFields({
   error: string | null;
   onSave: (values: Record<string, unknown>) => void;
   /** Where the unsaved draft is kept when the form unmounts (`useKeptDraft`). */
-  draftKey?: string;
+  draftSlot?: { id: string; version: string };
 }): React.JSX.Element {
   const initial = useMemo(() => initialDraft(fields, stored), [fields, stored]);
-  const [edits, setEdits] = useKeptDraft(draftKey, initial);
+  const [edits, setEdits] = useKeptDraft(draftSlot, initial);
   const draft = useMemo(() => withDeclaredFields(edits, initial), [edits, initial]);
   const payload = useMemo(() => draftPayload(fields, draft, initial), [draft, fields, initial]);
   const dirty = Object.keys(payload.values).length > 0;

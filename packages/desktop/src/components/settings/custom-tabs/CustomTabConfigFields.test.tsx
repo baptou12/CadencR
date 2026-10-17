@@ -98,27 +98,36 @@ describe("CustomTabConfigFields", () => {
   });
 
   it("finds its unsaved draft after unmounting until the stored values change", async () => {
-    const form = (show: boolean, key: string) => (
-      <KeptDraftsProvider>
-        {show ? (
-          <CustomTabConfigFields
-            key={key}
-            fields={FIELDS}
-            stored={{}}
-            saving={false}
-            error={null}
-            onSave={vi.fn()}
-            draftKey={key}
-          />
-        ) : null}
-      </KeptDraftsProvider>
-    );
-    const { user, rerender } = render(form(true, "graph:global:{}"));
-    await user.type(screen.getByLabelText("GitLab URL"), "https://kept.example");
-    rerender(form(false, "graph:global:{}"));
-    rerender(form(true, "graph:global:{}"));
-    expect(screen.getByLabelText("GitLab URL")).toHaveValue("https://kept.example");
-    rerender(form(true, 'graph:global:{"gitlab_url":"x"}'));
-    expect(screen.getByLabelText("GitLab URL")).toHaveValue("");
+    const form = (show: boolean, stored: Record<string, unknown>) => {
+      const version = JSON.stringify(stored);
+      return (
+        <KeptDraftsProvider>
+          {show ? (
+            <CustomTabConfigFields
+              key={version}
+              fields={FIELDS}
+              stored={stored}
+              saving={false}
+              error={null}
+              onSave={vi.fn()}
+              draftSlot={{ id: "graph:global", version }}
+            />
+          ) : null}
+        </KeptDraftsProvider>
+      );
+    };
+    const url = () => screen.getByLabelText("GitLab URL");
+    const { user, rerender } = render(form(true, { gitlab_url: "A" }));
+    await user.clear(url());
+    await user.type(url(), "B");
+    rerender(form(false, { gitlab_url: "A" }));
+    rerender(form(true, { gitlab_url: "A" }));
+    expect(url()).toHaveValue("B");
+    // Saved as B, then back to A: the old draft is retired, not revived.
+    rerender(form(true, { gitlab_url: "B" }));
+    expect(url()).toHaveValue("B");
+    rerender(form(true, { gitlab_url: "A" }));
+    expect(url()).toHaveValue("A");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 });

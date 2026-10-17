@@ -11,27 +11,39 @@ import type { Draft } from "./config-draft";
 /**
  * Unsaved settings drafts, held above the virtualized card list: a card
  * scrolled out of it unmounts its form, and must find its draft on the way
- * back. Keys name the tab, the scope and what is stored, so a save (new
- * stored values) starts over from them, as a remount would.
+ * back. One draft per slot (a tab's scope, or one project of it), tagged with
+ * the stored values it was started from: once those change (a save, an edit
+ * elsewhere), the draft is retired and the form starts over from them.
  */
-const KeptDraftsContext = createContext<Map<string, Draft> | null>(null);
+interface KeptDraft {
+  version: string;
+  draft: Draft;
+}
+
+const KeptDraftsContext = createContext<Map<string, KeptDraft> | null>(null);
 
 export function KeptDraftsProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
-  const [drafts] = useState(() => new Map<string, Draft>());
+  const [drafts] = useState(() => new Map<string, KeptDraft>());
   return <KeptDraftsContext.Provider value={drafts}>{children}</KeptDraftsContext.Provider>;
 }
 
-/** `useState(initial)`, kept under `key` while a provider is mounted above. */
+/**
+ * `useState(initial)`, kept in `slot` while a provider is mounted above, for as
+ * long as the stored values are still `version`.
+ */
 export function useKeptDraft(
-  key: string | undefined,
+  slot: { id: string; version: string } | undefined,
   initial: Draft,
 ): [Draft, Dispatch<SetStateAction<Draft>>] {
   const drafts = useContext(KeptDraftsContext);
-  const [draft, setDraft] = useState<Draft>(
-    () => (key === undefined ? undefined : drafts?.get(key)) ?? initial,
-  );
+  const [draft, setDraft] = useState<Draft>(() => {
+    const kept = slot ? drafts?.get(slot.id) : undefined;
+    return kept && kept.version === slot?.version ? kept.draft : initial;
+  });
+  const id = slot?.id;
+  const version = slot?.version;
   useEffect(() => {
-    if (drafts && key !== undefined) drafts.set(key, draft);
-  }, [drafts, key, draft]);
+    if (drafts && id !== undefined && version !== undefined) drafts.set(id, { version, draft });
+  }, [drafts, id, version, draft]);
   return [draft, setDraft];
 }
