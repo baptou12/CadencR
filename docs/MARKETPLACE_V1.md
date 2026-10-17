@@ -44,9 +44,18 @@ a future desktop release. Publication is not public UI or desktop trust activati
       helpers, a registry-lifecycle-qualified executable pin and fail-closed tests.
       Contribution execution scratch is retained, including unexpected CLI state;
       local preparation is not evidence of a deployed Rust contribution check.
-- [ ] Deploy the candidate qualified-executable pin in contribution and protected
-      publication workflows; deploy the reviewed registry update and verify CI.
-      Only then remove replaced JavaScript business implementations.
+- [ ] Deliver the qualified-executable bootstrap to public registry `main`.
+      [Registry PR #1](https://github.com/merkr-software/cadencr-registry/pull/1)
+      has green required checks and a signed local merge. Non-linear history is
+      now allowed; independent approval remains required before delivery.
+- [ ] Deploy the separately prepared Rust contribution-workflow cutover after
+      that bootstrap is public; verify the real hosted contribution checks.
+- [ ] Deploy the protected Rust publisher separately, with its reviewed authority
+      and production readiness gates; verify its real execution before removing
+      replaced publication code.
+- [ ] Remove replaced JavaScript business implementations only after their
+      corresponding deployed Rust gates pass. Retain independent crypto oracles,
+      frozen legacy fixtures, transport-test helpers and metadata-expiry tooling.
 - [x] Migrate CLI contribution, packaging, signing and registry-core/publisher
       compatibility oracles to native Rust tests or frozen legacy data; retain
       independent Node built-in cryptography. Pipeline recovery now consumes
@@ -91,6 +100,19 @@ a future desktop release. Publication is not public UI or desktop trust activati
 - [ ] Stop with populated, verified feeds and the desktop marketplace still
       hidden. Public UI exposure and official build roots/URLs require the later
       activation release and a separate acceptance decision.
+
+### Current preparation checkpoint — 2026-10-17
+
+| Area                 | Prepared and checked locally                                                                                                                                                                                                                                              | Remaining acceptance gate                                                                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Marketplace redesign | Isolated current-source dev QA covers visibility gating, navigation, filters and error states. Empty installed/update views now distinguish unavailable data and filtered results from verified success.                                                                  | Positive listing, installation and update QA against real trusted feeds; no signed production feed was configured for this pass.                                                         |
+| Pi `0.4.0`           | Explicit macOS-target candidate preparation snapshots clean committed source and reuses Rust packaging twice to check determinism. Receipts explicitly retain `PENDING` publication and qualification. CI reuses the existing pinned CLI for required real archive tests. | Artwork/license review, actual Node/Pi runtime on supported native targets, generic ACP-host lifecycle and production author authority. Candidate archives are not publishable approval. |
+| Registry cleanup     | The read-only expiry diagnostic uses a neutral bounded-file reader, no longer depending on the legacy publisher directory. Its legacy re-export preserves current callers.                                                                                                | Real Rust contribution/publisher deployment and hosted checks before deleting the replaced business implementations.                                                                     |
+| Production authority | Existing fail-closed author/signing gates are preserved; QA credentials remain isolated.                                                                                                                                                                                  | Reviewed production pins, protected environments, independent owners and dedicated credentials. No production environment or signing key has been provisioned.                           |
+
+No official plugin release, registry package, signed production feed or public UI
+activation is implied by these source preparations. The marketplace remains
+hidden by default; the explicit development visibility environment flag is retained.
 
 ### Author-capable binary — delivery and GitHub QA, 2026-10-17
 
