@@ -21,6 +21,8 @@ describe("example consumer", () => {
     [".bg-popover", "a class only the bundled components use (via @source dist)"],
     ["zoom-in-95", "tw-animate utilities the components use"],
     [".bg-surface-sunken", "the kit-native Card surface"],
+    [".text-numstat-add-fg", "a line-count utility"],
+    [".bg-diff-del-bg", "a diff-row utility"],
     ["--cadencr-background:#131416", "tokens.css defaults"],
     ["Inter Variable", "the bundled UI font"],
   ])("emits %s (%s)", (needle) => {
@@ -29,5 +31,6 @@ describe("example consumer", () => {
 
   it("resolves theme utilities to --cadencr-* properties", () => {
     expect(css).toMatch(/\.bg-primary[^{]*\{background-color:var\(--cadencr-primary\)/);
+    expect(css).toMatch(/\.text-numstat-add-fg[^{]*\{color:var\(--cadencr-numstat-add-fg\)/);
   });
 });

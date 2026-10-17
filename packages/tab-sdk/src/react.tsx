@@ -25,8 +25,8 @@ export interface CadencrProviderProps {
   children: ReactNode;
   /** Rendered while connecting. */
   fallback?: ReactNode;
-  /** Rendered when the connection fails. Without it the error is thrown
-   *  during render, for the nearest error boundary. */
+  /** Rendered when the connection fails. Defaults to a plain, theme-aware
+   *  "Can't reach Cadencr" message with the error's text and code. */
   errorFallback?: ReactNode | ((error: CadencrError) => ReactNode);
   /** Read once, on mount. */
   connectOptions?: ConnectOptions;
@@ -66,10 +66,52 @@ export function CadencrProvider({
 
   if (state.status === "connecting") return fallback;
   if (state.status === "error") {
-    if (errorFallback === undefined) throw state.error;
+    if (errorFallback === undefined) return <ConnectFailed error={state.error} />;
     return typeof errorFallback === "function" ? errorFallback(state.error) : errorFallback;
   }
   return <ClientContext.Provider value={state.client}>{children}</ClientContext.Provider>;
+}
+
+/**
+ * The default `errorFallback`. Dependency-free (no kit, no Tailwind): inline
+ * styles read the `--cadencr-*` tokens, with system colors for a page that
+ * loads no tokens at all.
+ */
+function ConnectFailed({ error }: { error: CadencrError }): ReactNode {
+  return (
+    <div
+      role="alert"
+      style={{
+        display: "flex",
+        minHeight: "100dvh",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        padding: 24,
+        textAlign: "center",
+        fontFamily: "var(--font-sans, system-ui, sans-serif)",
+        color: "var(--cadencr-foreground, CanvasText)",
+        background: "var(--cadencr-background, Canvas)",
+      }}
+    >
+      <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Can't reach Cadencr</p>
+      <p
+        style={{
+          margin: 0,
+          maxWidth: 384,
+          fontSize: 12,
+          lineHeight: 1.4,
+          color: "var(--cadencr-muted-foreground, GrayText)",
+        }}
+      >
+        {error.message}
+      </p>
+      <code style={{ fontSize: 11, color: "var(--cadencr-muted-foreground, GrayText)" }}>
+        {error.code}
+      </code>
+    </div>
+  );
 }
 
 /** The connected client. Must be called under `<CadencrProvider>`. */

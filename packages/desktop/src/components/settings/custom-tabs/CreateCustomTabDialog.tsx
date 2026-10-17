@@ -21,6 +21,8 @@ import { apiErrorCode, apiErrorMessage, toastError } from "@/lib/api-errors";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { goToCustomTabWorkspace } from "./useOpenCustomTabProject";
+import { pluginTabKind } from "@/stores/feature-layout-schema";
+import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 
 /** The manifest bounds (`docs/CUSTOM_TABS.md` §3) the service checks the request against. */
 export const MAX_NAME_LENGTH = 64;
@@ -51,6 +53,11 @@ export function CreateCustomTabDialog({ onClose }: { onClose: () => void }): Rea
       toast.success("Custom tab created", {
         description: "Tell the agent what the tab should show. It builds the tab with you.",
       });
+      // A brand-new conversation has no saved layout yet: seed it with the tab
+      // (behind the agent) so the author sees it come alive as it is built.
+      useFeatureLayoutStore
+        .getState()
+        .addTab(opened.feature_id, pluginTabKind(opened.plugin_id), { activate: false });
       goToCustomTabWorkspace(navigate, queryClient, opened);
     },
     [navigate, onClose, queryClient],

@@ -70,6 +70,13 @@
   --color-acc-red: var(--cadencr-acc-red);
   --color-acc-yellow: var(--cadencr-acc-yellow);
   --color-acc-comment: var(--cadencr-acc-comment);
+  /* Line counts and diff rows, as the desktop's Git views draw them. */
+  --color-numstat-add-fg: var(--cadencr-numstat-add-fg);
+  --color-numstat-del-fg: var(--cadencr-numstat-del-fg);
+  --color-diff-add-bg: var(--cadencr-diff-add-bg);
+  --color-diff-del-bg: var(--cadencr-diff-del-bg);
+  --color-diff-add-bg-strong: var(--cadencr-diff-add-bg-strong);
+  --color-diff-del-bg-strong: var(--cadencr-diff-del-bg-strong);
   --radius-sm: calc(var(--cadencr-radius) - 4px);
   --radius-md: calc(var(--cadencr-radius) - 2px);
   --radius-lg: var(--cadencr-radius);

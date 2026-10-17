@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@/test-utils";
 import { serviceError } from "./custom-tabs-fixtures";
 import { CreateCustomTabDialog, MAX_NAME_LENGTH } from "./CreateCustomTabDialog";
+import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(() => Promise.resolve()),
@@ -49,6 +50,10 @@ describe("CreateCustomTabDialog", () => {
       to: "/projects/$projectId/features/$featureId",
       params: { projectId: "4", featureId: "9" },
     });
+    // The new conversation opens with its tab placed behind the agent.
+    const root = useFeatureLayoutStore.getState().features[9]?.splitRoot;
+    expect(root?.type === "leaf" && root.tabIds).toContain("plugin:graph");
+    expect(root?.type === "leaf" && root.activeTabId).toBe("agent");
   });
 
   it("shows the service's refusal inline", async () => {

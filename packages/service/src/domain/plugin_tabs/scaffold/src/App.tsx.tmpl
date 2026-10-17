@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { RefreshCw } from "lucide-react";
+import { toCadencrError } from "@cadencr/tab-sdk";
+import { getGitStatus, type GitStatusSnapshot } from "@cadencr/tab-sdk/api";
 import { useCadencr, useStream, useTabContext } from "@cadencr/tab-sdk/react";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@cadencr/tab-kit";
-
-/** The part of Cadencr's `git.status` payload this tab reads. */
-interface GitStatus {
-  uncommitted_count: number;
-}
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, cn } from "@cadencr/tab-kit";
 
 export function App() {
   const { feature, pullRequest } = useTabContext();
@@ -16,17 +14,14 @@ export function App() {
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const response = await client.api.request({
-        method: "GET",
-        path: "/api/git/changed-files",
-        query: { feature_id: feature.id, mode: "uncommitted" },
-      });
-      if (response.status !== 200) throw new Error(`HTTP ${response.status}`);
-      const files = await response.json<unknown[]>();
-      setChangedFiles(files.length);
+      // Typed client of Cadencr's API (needs the `git:read` permission).
+      const status = await getGitStatus({ feature_id: feature.id });
+      setChangedFiles(status.uncommitted_count);
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      void client.ui.toast({ title: `Could not refresh: ${reason}` });
+      // Every SDK failure is a CadencrError: `message`, a stable `code`
+      // (e.g. PLUGIN_SCOPE_DENIED) and, for HTTP errors, a `status`.
+      const { message } = toCadencrError(error);
+      void client.ui.toast({ title: `Could not refresh: ${message}`, variant: "error" });
     } finally {
       setRefreshing(false);
     }
@@ -36,9 +31,10 @@ export function App() {
     void refresh();
   }, [refresh]);
 
-  // Pushed by Cadencr whenever the worktree changes; no polling needed.
+  // Pushed by Cadencr whenever the worktree changes; no polling needed. The
+  // payload is the same snapshot `getGitStatus()` returns.
   useStream("git.status", (event) => {
-    const status = event.data.payload as GitStatus;
+    const status = event.data.payload as GitStatusSnapshot;
     setChangedFiles(status.uncommitted_count);
   });
 
@@ -48,6 +44,7 @@ export function App() {
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle className="truncate">{feature.name}</CardTitle>
           <Button size="sm" variant="outline" disabled={refreshing} onClick={() => void refresh()}>
+            <RefreshCw className={cn(refreshing && "motion-safe:animate-spin")} />
             {refreshing ? "Refreshing…" : "Refresh"}
           </Button>
         </CardHeader>

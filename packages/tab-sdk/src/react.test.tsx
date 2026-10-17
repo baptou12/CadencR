@@ -67,6 +67,19 @@ describe("CadencrProvider", () => {
     );
     expect(await screen.findByText("failed: PLUGIN_API_UNSUPPORTED")).toBeTruthy();
   });
+
+  it("renders a built-in error state without errorFallback", async () => {
+    host = createTestHost({ apiVersions: [9, 9] });
+    render(
+      <CadencrProvider connectOptions={{ transport: host.transport }}>
+        <Info />
+      </CadencrProvider>,
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Can't reach Cadencr");
+    expect(alert.textContent).toContain("PLUGIN_API_UNSUPPORTED");
+    expect(screen.queryByTestId("info")).toBeNull();
+  });
 });
 
 function Counter() {

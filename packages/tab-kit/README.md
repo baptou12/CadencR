@@ -46,6 +46,8 @@ The preset uses the desktop app's utility names: `bg-background`,
 `bg-accent`, `bg-destructive`, `border-border`, `border-input`, `ring-ring`,
 `bg-chart-1`…`bg-chart-5`, `bg-sidebar*`, `bg-surface-sunken`, `text-acc-green`
 (and `acc-cyan`, `orange`, `pink`, `purple`, `red`, `yellow`, `comment`),
+`text-numstat-add-fg` / `text-numstat-del-fg` (line counts),
+`bg-diff-add-bg` / `bg-diff-del-bg` (+ `-strong`, diff rows),
 `rounded-sm/md/lg/xl`, `font-sans` (Inter) and `font-mono` (the desktop's system monospace stack). `dark:` follows
 the Cadencr theme (`data-appearance`), not the OS setting. Every other theme
 token is available as a CSS variable, e.g. `var(--cadencr-diff-add-bg)`.
@@ -64,6 +66,26 @@ kit, styled only with the tokens and following the desktop settings-card
 anatomy): `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`,
 `CardFooter` — a recessed `surface-sunken` panel, `rounded-xl`, a 60% hairline;
 `Label`; and `EmptyState({ icon?, title, description?, action? })`.
+
+### Icons
+
+The desktop draws its icons with [Lucide](https://lucide.dev). The kit does
+not re-export them: add `lucide-react` to your tab (the scaffold does) and
+import what you need, so you get the whole set with its types and your build
+keeps only the icons you use:
+
+```tsx
+import { RefreshCw } from "lucide-react";
+
+<Button variant="ghost" size="icon-xs" aria-label="Refresh">
+  <RefreshCw />
+</Button>;
+```
+
+Kit components size a child `<svg>` themselves; elsewhere use `size-4`-style
+utilities. Icons inherit `currentColor`.
+
+### Bundling
 
 Radix, class-variance-authority, clsx, tailwind-merge and lucide-react are
 bundled; only `react` and `react-dom` are peer dependencies. For full prop

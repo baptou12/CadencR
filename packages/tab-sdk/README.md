@@ -122,13 +122,13 @@ components that already read them. `applyTheme`, `themeVariables` and
 
 ### React (`@cadencr/tab-sdk/react`)
 
-| Export                                                                  | Description                                                                                                   |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `<CadencrProvider fallback? errorFallback? connectOptions?>`            | Connects on mount, closes on unmount. Without `errorFallback` a failure throws to the nearest error boundary. |
-| `useCadencr()`                                                          | The client.                                                                                                   |
-| `useTabContext()`, `useTheme()`, `useVisibility()`                      | Live values.                                                                                                  |
-| `useStream(topic, handler, { params?, onResync?, onError?, enabled? })` | One subscription for the component's lifetime; inline callbacks are fine.                                     |
-| `useStorage(key, initial)`                                              | `{ value, loading, error, set(value) }` for one storage key.                                                  |
+| Export                                                                  | Description                                                                                                                                                                           |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<CadencrProvider fallback? errorFallback? connectOptions?>`            | Connects on mount, closes on unmount. Without `errorFallback` a failure renders a built-in, theme-aware "Can't reach Cadencr" message (`role="alert"`, the error's message and code). |
+| `useCadencr()`                                                          | The client.                                                                                                                                                                           |
+| `useTabContext()`, `useTheme()`, `useVisibility()`                      | Live values.                                                                                                                                                                          |
+| `useStream(topic, handler, { params?, onResync?, onError?, enabled? })` | One subscription for the component's lifetime; inline callbacks are fine.                                                                                                             |
+| `useStorage(key, initial)`                                              | `{ value, loading, error, set(value) }` for one storage key.                                                                                                                          |
 
 ### Typed API client (`@cadencr/tab-sdk/api`)
 
