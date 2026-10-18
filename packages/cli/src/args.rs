@@ -78,6 +78,8 @@ pub(crate) struct RegistryArgs {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum RegistryCommand {
+    #[command(flatten)]
+    Diagnostics(crate::metadata::MetadataCommand),
     /// Validate a candidate contribution relative to a base registry.
     Validate {
         #[arg(long)]
@@ -249,7 +251,9 @@ impl Cli {
             }) | Command::Registry(RegistryArgs {
                 command: RegistryCommand::BuildIndex { output: None, .. }
             }) | Command::Registry(RegistryArgs {
-                command: RegistryCommand::PackProvider { .. }
+                command: RegistryCommand::Diagnostics(
+                    crate::metadata::MetadataCommand::CheckMetadataExpiry { .. }
+                ) | RegistryCommand::PackProvider { .. }
                     | RegistryCommand::PackTheme { .. }
                     | RegistryCommand::PackTab { .. }
             })

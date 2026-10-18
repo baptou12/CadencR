@@ -1,6 +1,6 @@
 # Cadencr CLI
 
-`cadencr` provides headless plugin validation, declarative-theme/provider packaging, registry index
+`cadencr` provides headless plugin validation, theme/provider/tab packaging, registry index
 signing and verified publication staging. Commands never contact the service or
 database, install a plugin, or execute a provider binary.
 `stage-publication` downloads inert GitHub Release assets. `mirror-publication`
@@ -24,6 +24,9 @@ cadencr plugin validate <folder> --descriptor <descriptor.json>
 cadencr plugin validate <folder> --kind theme
 cadencr plugin validate <folder> --kind tab
 cadencr registry validate --base <directory> --candidate <directory>
+cadencr registry validate-metadata <file.json>...  # 1–32 local files; NOT authentication
+cadencr registry validate-submission <submission.json>...  # 1–32 local files
+cadencr registry check-metadata-expiry <envelope.json>... [--warning-hours <1..336>]
 cadencr registry build-index --packages <directory> \
   --generated-at <timestamp> --expires-at <timestamp> \
   [--schema-version <1|2>] [--output <new-file>]
@@ -129,7 +132,7 @@ the requested path.
 target, SHA-256 and compressed size. The shared app/CLI engine rejects symlinks,
 special files, sensitive paths, portable-name collisions and changing input.
 Archives are deterministic for the same implementation; decompressed TAR bytes
-match the transitional JavaScript oracle, but gzip bytes need not match across
+match frozen historical JavaScript fixture observations, but gzip bytes need not match across
 compression implementations. The output directory must be trusted and stable.
 
 `plan-publication` records expected release tags, asset names and provenance.
@@ -273,7 +276,9 @@ replace the original signed mixed payload in cache, receipts or install requests
 
 Pass `--json` for one structured diagnostic object. For `build-index` without
 `--output`, stdout remains the index JSON itself; failures are still structured
-JSON on stderr. Help and version retain clap's human-readable output.
+JSON on stderr. `check-metadata-expiry` likewise always writes its report to
+stdout (even when unhealthy and with `--json`); failures use stderr. Help and
+version retain clap's human-readable output.
 
 | Code | Meaning                                      |
 | ---: | -------------------------------------------- |
@@ -284,10 +289,34 @@ JSON on stderr. Help and version retain clap's human-readable output.
 
 ## Migration status
 
-The local validation CLI and Linux release/registry-CI wiring are implemented.
-The registry still uses its JavaScript gate until a real release version and
-SHA-256 digest are provisioned in the trusted pin file. No release is implied by
-building this crate locally.
+The shared Rust CLI/libraries are the sole registry business implementation;
+replaced JavaScript validators, packers and publishers have been removed. Thin
+CI orchestration and independent test/cryptography helpers remain JavaScript.
+Source readiness does not deploy the real registry or activate desktop UI.
+
+The candidate template pins qualified `0.13.1-dev.39108033875.1` for existing CI
+commands. The three standalone commands below were added **after that release**:
+merge this source, publish/qualify a new CLI, then review its exact pin and
+regenerated registry delivery payload. Do not run the full migrated template
+against the old binary or infer release qualification from a local build.
+
+### Standalone metadata diagnostics
+
+| Command                                     | Contract                                                                                                                                          |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registry validate-metadata <files>...`     | 1–32 local package/unsigned-index/signed-index files; all three package kinds; strict semantic shape validation, **not** signature authentication |
+| `registry validate-submission <files>...`   | 1–32 source-pinned submissions; shared ownership/URL/kind rules; no network, archive download or executable invocation                            |
+| `registry check-metadata-expiry <files>...` | 1–3 local signed envelopes, including domain policies; read-only timestamp scheduling, **not** contract/signature verification                    |
+
+Metadata/catalog reads are bounded to 32 MiB per file; submissions to 1 MiB.
+Symlinks and special files are refused. Expiry uses the current UTC clock and
+whole-second canonical timestamps. `--warning-hours` accepts 1–336 (default 72).
+The report contains `diagnostic_only: true`, a `results` array and
+`authenticated: false` per result. At or below the warning interval the status
+is `renewal-due`; at/beyond expiry it is `expired`. Healthy reports exit `0`;
+unhealthy/malformed/unsafe inputs exit `1`, with `METADATA_RENEWAL_DUE` or
+`METADATA_EXPIRY_CHECK_FAILED` on stderr. A healthy timestamp is never authority
+to acquire, install, execute or publish anything.
 
 Numeric canonicalization matches JavaScript and is covered by a deterministic
 263-case Node oracle. The app accepts the shared canonical signature format and

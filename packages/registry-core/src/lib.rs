@@ -9,7 +9,9 @@ mod discovery;
 mod error;
 mod index;
 mod marketplace;
+mod metadata;
 pub use marketplace::theme_distribution_repository;
+pub use metadata::{check_metadata_expiry, validate_metadata_file, validate_submission_file};
 mod marketplace_plan;
 mod marketplace_types;
 pub use marketplace::{
