@@ -17,6 +17,7 @@ function fixture() {
     recursive: true,
   });
   const candidate = {
+    kind: "theme",
     cli_version: "0.13.1-dev.123.1",
     cli_sha256: "a".repeat(64),
     repository: "merkr-software/cadencr-registry-qa",

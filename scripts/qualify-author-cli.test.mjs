@@ -7,5 +7,5 @@ test("distributed author CLI qualification guards and exact mocked network trace
     encoding: "utf8",
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stderr, /Ran 15 tests/);
+  assert.match(result.stderr, /Ran 20 tests/);
 });

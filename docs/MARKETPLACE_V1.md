@@ -54,17 +54,37 @@ Neither examples nor passing tests constitute publication approval.
 
 ### Wave 3 — Deliver and qualify a new distributed CLI
 
-- [ ] Merge the required source changes to `main`, pass canonical CI, then use
-      the existing manual **CLI-only** development release workflow. Both currently
-      qualified development binaries predate `kind: "tab"`; a local build is not
-      a substitute for this delivery gate.
-- [ ] Verify the downloaded executable's checksum and source provenance, then
+- [x] Merge the required source changes to `main`, pass canonical CI, then use
+      the existing manual **CLI-only** development release workflow. Released
+      `0.13.1-dev.39108033875.1` from `88ead507983371e5c3df468c6d9bf7c6c12e5fbb`;
+      its four downloaded assets, checksum, provenance and tag binding were
+      independently verified. This delivery does not qualify its lifecycle.
+- [x] Verify the downloaded executable's checksum and source provenance, then
       qualify provider/theme/tab validation, packaging, contribution checks,
       author publication/retry and mixed-catalog publication, interruption/resume,
       fresh-runner recovery and renewal on the approved isolated public QA target.
 - [ ] Review/promote the exact registry and author executable pins with their
       qualification evidence. Regenerate bootstrap/cutover hashes and manifests;
       do not reuse old payload approvals after changing their bytes.
+
+#### Wave 3 qualification checkpoint — 2026-10-18
+
+- Distributed `0.13.1-dev.39108033875.1` exercised provider/theme/tab author
+  publication/retry and mixed registry publication, interruption/resume, fresh
+  recovery and renewal on the approved public QA repository. Exact runs, hashes,
+  failure history and boundaries are in the
+  [qualification record](MARKETPLACE_CLI_QUALIFICATION_2026-10-18.md).
+- Renewal initially returned an error after publication; its original cause is
+  unknown. A separately reviewed recovery reused the original request/commit and
+  verified two replays with unchanged inventory. No replacement dates, reset or
+  artifact restoration was used; the initial run is not reported as green.
+- QA harnesses include compiled-tab/provider-asset regressions, Rust publication
+  preflight, sanitized diagnostics and bounded GET-only transport retries.
+  Final local scripts: 294 passed, no skips; independent reviews found no blocker.
+- Existing default qualification, registry and author pins are unchanged. Their
+  promotion and regenerated bootstrap/cutover approvals are the **next gate**,
+  not part of the QA-only authorization. No production deployment, authority
+  change, official-plugin release or desktop activation occurred.
 
 ### Wave 4 — Deploy the real registry and publication authority
 
