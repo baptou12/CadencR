@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       tag:
-        description: Existing namespaced official theme tag
+        description: Existing namespaced allowlisted provider/theme/tab tag
         required: true
         type: string
       request_sha256:
@@ -64,6 +64,13 @@ jobs:
           if [ "$DIGEST" != 0000000000000000000000000000000000000000000000000000000000000000 ]; then
             echo 'confirmed=true' >> "$GITHUB_OUTPUT"
           fi
+      - name: Export public inspection inputs only (never consumed by publish)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: official-plugin-inspection-${{ github.run_id }}
+          path: ${{ runner.temp }}/author-stage/
+          if-no-files-found: error
+          retention-days: 7
 
   publish:
     needs: inspect

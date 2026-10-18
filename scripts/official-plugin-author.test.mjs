@@ -5,9 +5,31 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { fixture as releaseFixture } from "./official-plugin-fixtures.mjs";
 const sha = "a".repeat(40);
 const zero = "0".repeat(64);
 const hash = (data) => createHash("sha256").update(data).digest("hex");
+function mockHttp(root) {
+  writeFileSync(
+    join(root, "py/sitecustomize.py"),
+    `import io,json,os,urllib.request
+class Opener:
+ def open(self,request,**k):
+  url=request.full_url if isinstance(request,urllib.request.Request) else request
+  if 'deployment-branch-policies' in url: data={'total_count':1,'branch_policies':[{'name':'main','type':'branch'}]}
+  elif 'environments/' in url: data={'id':123,'protection_rules':[{'type':'required_reviewers','prevent_self_review':True,'reviewers':[{'id':1}]}],'deployment_branch_policy':{'protected_branches':False,'custom_branch_policies':True}}
+  else: data={'id':42,'full_name':'merkr-software/CadencR'}
+  if os.environ.get('MOCK_ENV_ID') and 'environments/' in url: data['id']=124
+  if os.environ.get('MOCK_ENV_BYPASS') and 'environments/' in url: data['can_admins_bypass']=True
+  if os.environ.get('MOCK_ENV_UNPROTECTED') and 'environments/' in url: data={}
+  if os.environ.get('MOCK_REPO_MISMATCH') and 'environments/' not in url: data={'id':43}
+  return io.BytesIO(json.dumps(data).encode())
+def build_opener(*a): return Opener()
+urllib.request.build_opener=build_opener
+`,
+  );
+}
+
 function fixture() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "author-gate-")));
   for (const dir of ["scripts", "plugins", "mock", "py"])
@@ -59,47 +81,48 @@ function fixture() {
         author_cli_pin_sha256: hash(pin),
       }),
     );
-    writeFileSync(releasePath, JSON.stringify({ schema_version: 1, publication: "APPROVED" }));
+    writeFileSync(
+      releasePath,
+      JSON.stringify({
+        schema_version: 2,
+        publication: "APPROVED",
+        plugins: {
+          "theme-graphite": {
+            kind: "theme",
+            id: "graphite",
+            version: "0.1.0",
+            preparation: "READY",
+          },
+        },
+      }),
+    );
     writeFileSync(
       join(root, "mock/git"),
       `#!/bin/sh\ncase "$3" in\nls-tree) echo '100644 blob hash' ;;\nshow) cat '${releasePath}' ;;\nrev-parse) printf '%s\\n' '${sha}' ;;\n*) exit 1 ;;\nesac\n`,
       { mode: 0o700 },
     );
-    writeFileSync(
-      join(root, "py/sitecustomize.py"),
-      `import io,json,os,urllib.request
-class Opener:
- def open(self,request,**k):
-  url=request.full_url if isinstance(request,urllib.request.Request) else request
-  if 'deployment-branch-policies' in url: data={'total_count':1,'branch_policies':[{'name':'main','type':'branch'}]}
-  elif 'environments/' in url: data={'id':123,'protection_rules':[{'type':'required_reviewers','prevent_self_review':True,'reviewers':[{'id':1}]}],'deployment_branch_policy':{'protected_branches':False,'custom_branch_policies':True}}
-  else: data={'id':42,'full_name':'merkr-software/CadencR'}
-  if os.environ.get('MOCK_ENV_ID') and 'environments/' in url: data['id']=124
-  if os.environ.get('MOCK_ENV_BYPASS') and 'environments/' in url: data['can_admins_bypass']=True
-  if os.environ.get('MOCK_ENV_UNPROTECTED') and 'environments/' in url: data={}
-  if os.environ.get('MOCK_REPO_MISMATCH') and 'environments/' not in url: data={'id':43}
-  return io.BytesIO(json.dumps(data).encode())
-def build_opener(*a): return Opener()
-urllib.request.build_opener=build_opener
-`,
-    );
+    mockHttp(root);
     writeFileSync(
       join(root, "scripts/official-plugin-release.sh"),
-      `#!/bin/sh\nmkdir "$5"\nprintf archive > "$5/theme.tar.gz"\nprintf '{"archive":"theme.tar.gz"}' > "$5/release.json"\n`,
+      `#!/bin/sh
+python3 - "$5" <<'MOCK'
+import pathlib,json,hashlib,sys
+p=pathlib.Path(sys.argv[1]);p.mkdir();(p/'theme.tar.gz').write_bytes(b'archive');(p/'package.json').write_bytes(b'{}');(p/'submission.json').write_bytes(b'{}');(p/'SHA256SUMS').write_bytes(b'sums')
+def asset(name):
+ b=(p/name).read_bytes();return {'name':name,'size':len(b),'sha256':hashlib.sha256(b).hexdigest()}
+(p/'release.json').write_text(json.dumps({'schema_version':2,'archives':[dict(asset('theme.tar.gz'),target='theme')],'package':asset('package.json')}))
+MOCK
+`,
       { mode: 0o700 },
     );
   }
   function run(script, args) {
     return spawnSync("sh", [join(root, "scripts", script), ...args], { env, encoding: "utf8" });
   }
-  const stage = (digest = zero) =>
-    run("official-plugin-author-stage.sh", [
-      root,
-      sha,
-      "plugins/theme-graphite/v0.1.0",
-      digest,
-      join(root, "out-" + Math.random()),
-    ]);
+  const stage = (digest = zero, tag = "plugins/theme-graphite/v0.1.0") => {
+    const output = join(root, "out-" + Math.random());
+    return { ...run("official-plugin-author-stage.sh", [root, sha, tag, digest, output]), output };
+  };
   return { root, env, approve, run, stage, policyPath };
 }
 test("network fixture preserves stdlib imports and mocks only HTTP access", () => {
@@ -232,68 +255,6 @@ test("environment identity binds reviewed no-bypass attestation", () => {
   assert.match(f.stage().stderr, /AUTHOR_ENVIRONMENT_REVIEW_REQUIRED/);
 });
 
-test("real stage and preparation reconstruct independently and reject candidate payload drift", () => {
-  const f = fixture();
-  f.approve();
-  cpSync(
-    resolve("scripts/official-plugin-release.sh"),
-    join(f.root, "scripts/official-plugin-release.sh"),
-  );
-  const releasePath = join(f.root, "plugins/release-policy.json");
-  writeFileSync(
-    releasePath,
-    JSON.stringify({ schema_version: 1, publication: "APPROVED", themes: { graphite: "0.1.0" } }),
-  );
-  const payloadPath = join(f.root, "candidate-theme.json");
-  writeFileSync(payloadPath, '{"label":"Graphite"}');
-  writeFileSync(
-    join(f.root, "mock/git"),
-    `#!/usr/bin/env python3
-import pathlib,sys
-args=sys.argv[3:]
-if args[0]=='remote': print('https://github.com/merkr-software/CadencR.git')
-elif args[0]=='rev-parse': print('${sha}')
-elif args[0]=='ls-tree': print('100644 blob hash')
-elif args[0]=='show':
- path=args[1].split(':',1)[1]
- if path=='plugins/release-policy.json': sys.stdout.buffer.write(pathlib.Path('${releasePath}').read_bytes())
- elif path=='plugins/themes/graphite/theme.json': sys.stdout.buffer.write(pathlib.Path('${payloadPath}').read_bytes())
- elif path=='plugins/themes/LICENSE': print('Apache-2.0')
- else: sys.exit(1)
-else: sys.exit(1)
-`,
-    { mode: 0o700 },
-  );
-  const fetchDir = join(f.root, "tooling/marketplace-registry/scripts/ci");
-  mkdirSync(fetchDir, { recursive: true });
-  const cli = join(f.root, "canonical-cli");
-  writeFileSync(
-    cli,
-    `#!/usr/bin/env python3
-import hashlib,json,pathlib,sys
-if sys.argv[1]=='plugin': sys.exit(0)
-args=sys.argv
-source=pathlib.Path(args[args.index('--directory')+1])/'theme.json'
-output=pathlib.Path(args[args.index('--output')+1])
-payload=source.read_bytes(); output.write_bytes(payload)
-print(json.dumps({'kind':'theme','archive':str(output),'sha256':hashlib.sha256(payload).hexdigest(),'size':len(payload)}))
-`,
-    { mode: 0o700 },
-  );
-  writeFileSync(join(fetchDir, "fetch-released-cli.sh"), `#!/bin/sh\nprintf '%s\\n' '${cli}'\n`);
-  const inspected = f.stage();
-  assert.equal(inspected.status, 0, inspected.stderr);
-  assert.match(inspected.stdout, /^[0-9a-f]{64}\n$/);
-  const confirmed = f.stage(inspected.stdout.trim());
-  assert.equal(confirmed.status, 0, confirmed.stderr);
-  assert.equal(confirmed.stdout, inspected.stdout);
-  writeFileSync(payloadPath, '{"label":"Changed candidate"}');
-  const changed = f.stage(inspected.stdout.trim());
-  assert.notEqual(changed.status, 0);
-  assert.match(changed.stderr, /AUTHOR_REQUEST_DIGEST_MISMATCH/);
-  assert.equal(changed.stdout, "");
-});
-
 test("preparation mode flags are mutually exclusive", () => {
   for (const flags of [
     ["--qualification", "--author-approved"],
@@ -307,4 +268,73 @@ test("preparation mode flags are mutually exclusive", () => {
     assert.equal(result.status, 2);
     assert.match(result.stderr, /mutually exclusive/);
   }
+});
+
+for (const kind of ["theme", "provider", "tab"]) {
+  test(`${kind}: real trusted orchestrators reconstruct all metadata/assets and bind exact source content`, () => {
+    const f = fixture();
+    f.approve();
+    const c = releaseFixture(kind);
+    c.policy.publication = "APPROVED";
+    c.files["plugins/release-policy.json"] = JSON.stringify(c.policy);
+    c.save();
+    writeFileSync(
+      join(f.root, "plugins/release-policy.json"),
+      c.files["plugins/release-policy.json"],
+    );
+    for (const name of ["official-plugin-release.sh", "official-plugin-prepare.py"])
+      cpSync(resolve("scripts", name), join(f.root, "scripts", name));
+    cpSync(join(c.root, "mock/git"), join(f.root, "mock/git"));
+    const fetch = join(f.root, "tooling/marketplace-registry/scripts/ci");
+    mkdirSync(fetch, { recursive: true });
+    writeFileSync(
+      join(fetch, "fetch-released-cli.sh"),
+      `#!/bin/sh\nprintf '%s\\n' '${c.root}/cli'\n`,
+    );
+    const tag = `plugins/${c.plugin}/v${c.version}`;
+    const inspected = f.stage(zero, tag);
+    assert.equal(inspected.status, 0, inspected.stderr);
+    const request = JSON.parse(readFileSync(join(inspected.output, "request.json")));
+    assert.equal(
+      request.metadata.name,
+      "package.json",
+      "opaque release receipt cannot replace registry metadata",
+    );
+    assert.equal(request.additional_archives.length, kind === "provider" ? 1 : 0);
+    assert.equal(request.source_commit, sha);
+    const confirmed = f.stage(inspected.stdout.trim(), tag);
+    assert.equal(confirmed.status, 0, confirmed.stderr);
+    assert.equal(confirmed.stdout, inspected.stdout);
+    const payload = Object.values(c.entry.payloads)[0];
+    const name = Object.keys(payload.files)[0];
+    const path = `${payload.directory}/${name}`;
+    c.files[path] += " changed reviewed content";
+    payload.files[name].sha256 = hash(c.files[path]);
+    c.files["plugins/release-policy.json"] = JSON.stringify(c.policy);
+    c.save();
+    writeFileSync(
+      join(f.root, "plugins/release-policy.json"),
+      c.files["plugins/release-policy.json"],
+    );
+    const changed = f.stage(inspected.stdout.trim(), tag);
+    assert.notEqual(changed.status, 0);
+    assert.match(changed.stderr, /AUTHOR_REQUEST_DIGEST_MISMATCH/);
+  });
+}
+
+test("author preparation rejects extra reconstructed content and unknown policy entries", () => {
+  const f = fixture();
+  f.approve();
+  const script = join(f.root, "scripts/official-plugin-release.sh");
+  writeFileSync(script, readFileSync(script, "utf8") + '\nprintf unreviewed > "$5/extra.txt"\n');
+  assert.match(f.stage().stderr, /AUTHOR_EXTRA_CONTENT/);
+  assert.match(f.stage(zero, "plugins/tab-unapproved/v0.1.0").stderr, /AUTHOR_PLUGIN_UNAPPROVED/);
+});
+
+test("reviewed schema-2 policy passes only the activation gate, without publication", () => {
+  const f = fixture();
+  f.approve();
+  const result = f.run("official-plugin-author-gate.sh", [sha, zero]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "AUTHOR_ACTIVATION_APPROVED\n");
 });

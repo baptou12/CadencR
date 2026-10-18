@@ -80,6 +80,13 @@ jobs:
         timeout-minutes: 20
         run: pnpm --filter @cadencr/service run test -- --nocapture
 
+      - name: Official release orchestration against the current Rust CLI
+        timeout-minutes: 5
+        run: |
+          pnpm rust -- build -p cadencr-cli
+          CADENCR_OFFICIAL_PLUGIN_TEST_CLI="$GITHUB_WORKSPACE/target/debug/cadencr" \
+            node --test scripts/official-plugin-release.test.mjs
+
   web:
     name: Web (format, lint, types, knip)
     runs-on: ubuntu-latest

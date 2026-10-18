@@ -1,5 +1,152 @@
 # Marketplace V1 — GitHub-only distribution
 
+## Remaining delivery waves — 2026-10-18
+
+This is the current ordered checklist. It supersedes older next-step lists and
+source-only completion claims below; dated evidence remains valid only for the
+exact binary, package kind and scenario it exercised. The merged custom-tab
+implementation does not retroactively qualify the older distributed CLIs.
+
+The supported publication chain must cover **providers, themes and custom tabs**.
+The initial population milestone remains reviewed Graphite, Ember, Fjord and Pi;
+publishing an official tab is optional and requires an explicitly selected source.
+Neither examples nor passing tests constitute publication approval.
+
+### Wave 1 — Close source-level gaps for all three package kinds
+
+- [x] Replace the managed-tab revision-directory ceiling with bounded retention
+      and safe cleanup. Preserve active/in-use assets, handle interrupted staging
+      explicitly, and prove that repeated updates and removal/reinstallation do
+      not exhaust storage or affect editable plugins/user data.
+- [x] Complete official preparation **and author-publication orchestration** for
+      providers and tabs, not just themes. This replaces the Pi rejection and
+      theme-only author allowlist; it does not grant publication authority.
+      Share the existing Rust rules, preserve multi-platform provider releases,
+      immutable versions and exact content/source confirmation. Build/test
+      executable contributors only in unprivileged jobs, never signing jobs.
+- [x] Correct custom-tab compatibility examples and require a real semantic
+      version before preparation. Leave selection of the actual first compatible
+      desktop release explicitly pending; do not claim released `0.13.1`
+      supports marketplace tabs or invent a future desktop version. Keep older
+      clients on compatible feeds; `min_app_version` alone cannot make an unknown
+      catalog variant acceptable to an old parser.
+- [x] Cover all three kinds in release-script rejection/acceptance tests and
+      exercise changed storage behavior through an isolated development-service
+      API. Explicit CLI paths are required because debug dotenv overrides env;
+      this is not Electron UI or remote-install qualification.
+
+### Wave 2 — Finish official source and package readiness
+
+- [x] Prepare Pi's source-owned arm64 candidate template, exact source/mode
+      allowlists, license/artwork facts and external Node/Pi prerequisites.
+      Qualify a newly packed/extracted working-tree payload against actual Pi
+      using an isolated loopback model; this is not committed-source provenance,
+      authenticated-model, tool-permission or managed-install qualification.
+- [ ] Establish Pi artwork authorship/licensing provenance and approve the
+      initial supported native target matrix. The x86_64 preparation path remains
+      unqualified; preparation/readiness facts do not constitute that approval.
+- [x] Recheck source-bound theme candidates and prepare metadata templates with
+      real digests, license and provenance; keep source, candidate and approval
+      states distinct. Official tabs use an explicit reviewed allowlist and
+      compiled payload policy, not arbitrary example folders.
+- [x] Test official tab preparation with an inert fixture even if no official
+      tab is selected for the initial public catalog.
+
+### Wave 3 — Deliver and qualify a new distributed CLI
+
+- [ ] Merge the required source changes to `main`, pass canonical CI, then use
+      the existing manual **CLI-only** development release workflow. Both currently
+      qualified development binaries predate `kind: "tab"`; a local build is not
+      a substitute for this delivery gate.
+- [ ] Verify the downloaded executable's checksum and source provenance, then
+      qualify provider/theme/tab validation, packaging, contribution checks,
+      author publication/retry and mixed-catalog publication, interruption/resume,
+      fresh-runner recovery and renewal on the approved isolated public QA target.
+- [ ] Review/promote the exact registry and author executable pins with their
+      qualification evidence. Regenerate bootstrap/cutover hashes and manifests;
+      do not reuse old payload approvals after changing their bytes.
+
+### Wave 4 — Deploy the real registry and publication authority
+
+- [ ] Recheck public registry `main` and resolve its maintainer/approval policy
+      explicitly. A signed local merge is not a delivered bootstrap; do not
+      bypass protections or infer a governance change from implementation approval.
+- [ ] Deliver bootstrap first, then the trusted-base Rust contribution workflow;
+      observe actual hosted checks for providers, themes and tabs.
+- [ ] Separately provision reviewed production author/signing environments,
+      credentials, trust profile and renewal/revocation owners/alerts; deploy and
+      verify the protected Rust publisher. QA keys/tokens never become production
+      authority, and author publication does not grant catalog signing authority.
+
+### Wave 5 — Publish the initial plugins and populate signed feeds
+
+- [ ] Publish reviewed immutable author releases for Graphite, Ember, Fjord and
+      Pi using the qualified CLI and completed official jobs. An official tab is
+      added only if its source and release are explicitly approved.
+- [ ] Submit/review their registry entries, mirror exact approved archives into
+      registry-owned GitHub Releases, and publish/independently verify signed
+      catalogs and revocation policies. Exercise initial submission and a later
+      version; conflicting changes to an existing version must fail closed.
+
+### Wave 6 — Qualify consumer and external-author lifecycles
+
+- [ ] From clean isolated supported clients, test trusted-feed discovery,
+      install/use/update/restart/remove, theme activation, tab consent and Pi's
+      generic ACP lifecycle. Use inert signed tab fixtures if no official tab is
+      published, and exercise repeated updates beyond the former retention cap.
+- [ ] Exercise tampering, incompatible versions, local-ID conflicts, revocation,
+      expired/offline policies, interrupted operations and supported rollback
+      paths. Preserve existing projects, editable plugins and every database.
+- [ ] Verify a third-party author's initial submission and subsequent immutable
+      version update, including ownership/collision checks and retry reconciliation.
+      Record packaged-client coverage separately from dev/API-only evidence.
+
+### Wave 7 — Remove superseded tooling and stop at the hidden milestone
+
+- [ ] Remove each replaced JavaScript business implementation only after its
+      corresponding deployed Rust contribution/publisher checks and migrated
+      callers pass. Keep independent crypto oracles, frozen compatibility data,
+      transport helpers and metadata-expiry tooling.
+- [ ] Update operator/contributor documentation and evidence: populated verified
+      feeds, reproducible official releases, renewal/revocation procedures and
+      exact remaining platform limits. Keep the marketplace hidden by default.
+- [ ] Stop before public desktop activation. A later, separately authorized app
+      release supplies reviewed official trust/feed configuration and exposes the
+      UI only after its clean packaged-client acceptance gates pass.
+
+### Dependencies and delivery boundaries
+
+- Waves 1 and 2 can progress in parallel with disjoint ownership. Governance and
+  environment decisions from wave 4 can be prepared alongside them, without
+  changing protections or provisioning authority implicitly.
+- Wave 3 needs its required source on green `main`; waves 4–6 then consume that
+  actual qualified binary. Wave 7 cleanup is gated per deployed implementation.
+- A new **CLI release is required**; no public **desktop release** is required
+  to reach the populated-but-hidden milestone. Local packaged QA is not a release.
+- Implementation follows `parallel-advisor` with GPT-6.1-Sol workers; each finished
+  step receives `finish-job` review before its proposed commit. Leave changes
+  uncommitted pending approval; merge, push, release and production policy changes
+  remain separate delivery actions.
+
+### Waves 1–2 source checkpoint — 2026-10-18
+
+- The source changes are reviewed but not committed or deployed. Three separate
+  GPT-6.1-Sol `finish-job` reviews covered reuse, quality and efficiency; accepted
+  findings were corrected and checked again. No CLI pin, production authority,
+  repository protection or marketplace visibility change was made.
+- Managed-tab cleanup preserves active/leased bytes, unknown files and databases;
+  owner-local coordination avoids blocking unrelated tabs. Historical cleanup
+  no longer depends on the running host's compatibility range.
+- Official jobs reconstruct complete schema-2 package metadata and every target
+  archive for all three kinds without candidate execution. Strict JSON rejects
+  ambiguity/non-finite values; bounded Git batches replace per-blob subprocesses.
+- The official source policies bind real file digests/modes, not publication
+  approval. Templates retain `PENDING` publisher/compatibility values; Pi artwork
+  provenance and the initial public target matrix still need explicit review.
+  No production tab has been selected or silently added to the initial catalog.
+- Detailed verification and the debug-startup isolation incident are recorded in
+  [wave qualification](./qa/MARKETPLACE_WAVES_1_2_2026_10_18.md).
+
 ## Current milestone — publish plugins before public activation (2026-10-13)
 
 This section supersedes the preparation-only stop below. v0.13.0 is released
