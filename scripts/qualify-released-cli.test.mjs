@@ -9,6 +9,8 @@ import {
   symlinkSync,
   rmSync,
   realpathSync,
+  statSync,
+  readlinkSync,
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -52,7 +54,7 @@ test("offline qualification uses separate pins and never uploads generated keys"
       .split("\n")
       .filter((line) => line && !line.startsWith("#"))
       .join("\n"),
-    "CADENCR_RELEASE_VERSION=0.13.0\nCADENCR_RELEASE_SHA256=d3223e3b3ff74543595fd3354c3249f50fa01def65f376a624eb1fbc8072df2a",
+    "CADENCR_RELEASE_VERSION=0.13.1-dev.39144478778.1\nCADENCR_RELEASE_SHA256=be5a15c9d065670466511fa9e23ce6e5205c73fade4a5ed9320b262296fbb122",
   );
   const yaml = readFileSync(workflow, "utf8");
   assert.match(yaml, /scripts\/cli-qualification\.env "\$CLI_ROOT"/);
@@ -190,6 +192,22 @@ test("fixture generator submits all three kinds as new contributions", (t) => {
     },
   });
   assert.equal(result.status, 0, result.stderr);
+  for (const [kind, original, limit] of [
+    ["metadata", "provider-package.json", 32 * 1024 * 1024],
+    ["submission", "submission-provider.json", 1024 * 1024],
+    ["expiry", "expiry-healthy.json", 32 * 1024 * 1024],
+  ]) {
+    const oversized = path.join(root, `${kind}-oversized.json`);
+    assert.ok(statSync(oversized).size > limit);
+    assert.deepEqual(
+      JSON.parse(readFileSync(oversized, "utf8")),
+      JSON.parse(readFileSync(path.join(root, original), "utf8")),
+    );
+  }
+  assert.equal(
+    readlinkSync(path.join(root, "expiry-link.json")),
+    path.join(root, "expiry-healthy.json"),
+  );
   for (const [name, kind] of [
     ["example-provider-0.1.0.json", "provider"],
     ["qualification-1.0.0.json", "theme"],
@@ -206,5 +224,131 @@ test("fixture generator submits all three kinds as new contributions", (t) => {
     const descriptor = pkg.package[kind === "provider" ? "agent" : kind];
     assert.equal(submission.source.repository, descriptor.repository);
     assert.equal(submission.source.tag, `v${descriptor.version}`);
+    assert.deepEqual(
+      JSON.parse(readFileSync(path.join(root, `submission-${kind}.json`), "utf8")),
+      submission,
+    );
+    const provenance = JSON.parse(
+      readFileSync(path.join(root, `submission-${kind}-provenance.json`), "utf8"),
+    );
+    assert.notEqual(provenance.source.repository, descriptor.repository);
+    const nested = JSON.parse(
+      readFileSync(path.join(root, `submission-${kind}-nested.json`), "utf8"),
+    );
+    assert.deepEqual(nested.package.package, submission.package);
+  }
+});
+
+test("standalone diagnostics qualify all kinds and preserve expiry output channels", () => {
+  const shell = readFileSync(script, "utf8");
+  assert.match(shell, /run "validate-metadata-\$kind" --json registry validate-metadata/);
+  assert.match(shell, /run "validate-submission-\$kind" --json registry validate-submission/);
+  assert.match(shell, /for label in nested unknown provenance/);
+  assert.match(shell, /for label in link fifo oversized/);
+  assert.match(shell, /os\.mkfifo/);
+
+  assert.match(shell, /for state in expired renewal-due healthy/);
+  assert.match(shell, /for mode in human json/);
+  assert.match(shell, /entry\['authenticated'\] is False/);
+  assert.match(shell, /diagnostic\['code'\]=='METADATA_RENEWAL_DUE'/);
+  assert.match(shell, /assert code=='1'/);
+  assert.match(shell, /assert code=='0' and stderr==''/);
+  assert.match(shell, /test "\$result" -eq "\$expected_result"/);
+  assert.match(shell, /test ! -s "\$CLI_WORK_ROOT\/logs\/\$name.out"/);
+});
+
+test("exact run/reject helpers fail closed on exit, stdout, and diagnostic corruption", (t) => {
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "cli-helper-contract-")));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(path.join(root, "logs"));
+  mkdirSync(path.join(root, "bin"));
+  const shell = readFileSync(script, "utf8");
+  const helpers = shell.slice(shell.indexOf("run() {"), shell.indexOf("run version --version"));
+  const diagnostic = JSON.stringify({ ok: false, code: "REGISTRY_VALIDATION_FAILED" });
+  const quote = (text) => `'${text.replaceAll("'", "'\\''")}'`;
+  const cases = [
+    ["semantic", 1, "", diagnostic, true],
+    ["write-failure", 3, "", JSON.stringify({ ok: false, code: "OUTPUT_WRITE_FAILED" }), true],
+    ["timeout", 124, "", diagnostic, false],
+    ["wrong-exit", 3, "", diagnostic, false],
+    ["accepted", 0, "", diagnostic, false],
+    ["stdout", 1, "unexpected", diagnostic, false],
+    ["malformed", 1, "", "not JSON", false],
+    ["wrong-code", 1, "", JSON.stringify({ ok: false, code: "OTHER" }), false],
+  ];
+  for (const [name, exit, stdout, stderr, accepted] of cases) {
+    writeFileSync(
+      path.join(root, "bin/timeout"),
+      `#!/bin/sh\nprintf '%s' ${quote(stdout)}\nprintf '%s' ${quote(stderr)} >&2\nexit ${exit}\n`,
+      { mode: 0o700 },
+    );
+    const code = name === "write-failure" ? "OUTPUT_WRITE_FAILED" : "REGISTRY_VALIDATION_FAILED";
+    const result = spawnSync(
+      "sh",
+      ["-c", `set -eu\n${helpers}\nreject ${name} ${code} registry validate-metadata ignored`],
+      {
+        encoding: "utf8",
+        env: { PATH: `${root}/bin:${process.env.PATH}`, CLI_WORK_ROOT: root, CLI: "/unused" },
+      },
+    );
+    assert.equal(result.status === 0, accepted, `${name}: ${result.stderr}`);
+  }
+  // New success checks deliberately defer their marker until output assertions pass.
+  writeFileSync(path.join(root, "bin/timeout"), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+  for (const name of [
+    "validate-metadata-provider",
+    "validate-submission-tab",
+    "expiry-healthy-json",
+  ]) {
+    const result = spawnSync("sh", ["-c", `set -eu\n${helpers}\nrun ${name}`], {
+      env: { PATH: `${root}/bin:${process.env.PATH}`, CLI_WORK_ROOT: root, CLI: "/unused" },
+    });
+    assert.equal(result.status, 0);
+    assert.equal(existsSync(path.join(root, `logs/${name}.passed`)), false);
+  }
+});
+
+test("exact expiry assertion enforces report state, exit, trust, and channels", (t) => {
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "cli-expiry-contract-")));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const shell = readFileSync(script, "utf8");
+  const body = shell.split("prefix,state,mode,code=sys.argv[1:]\n")[1].split("\nPY\n")[0];
+  const assertion = "import json,pathlib,sys\nprefix,state,mode,code=sys.argv[1:]\n" + body;
+  const report = (state, authenticated = false) =>
+    JSON.stringify({
+      diagnostic_only: true,
+      results: [{ status: state, authenticated, remaining_hours: 24 }],
+    });
+  const diagnostic = JSON.stringify({ ok: false, code: "METADATA_RENEWAL_DUE" });
+  const cases = [
+    ["healthy", "json", "0", report("healthy"), "", true],
+    ["expired", "json", "1", report("expired"), diagnostic, true],
+    ["renewal-due", "human", "1", report("renewal-due"), "error[METADATA_RENEWAL_DUE]", true],
+    ["healthy", "json", "1", report("healthy"), "", false],
+    ["expired", "json", "0", report("expired"), diagnostic, false],
+    ["expired", "json", "124", report("expired"), diagnostic, false],
+    ["expired", "json", "1", report("healthy"), diagnostic, false],
+    ["expired", "json", "1", report("expired", true), diagnostic, false],
+    ["expired", "json", "1", diagnostic, report("expired"), false],
+    ["expired", "json", "1", report("expired"), "malformed", false],
+    [
+      "expired",
+      "json",
+      "1",
+      report("expired"),
+      JSON.stringify({ ok: false, code: "OTHER" }),
+      false,
+    ],
+    ["healthy", "json", "0", report("healthy"), diagnostic, false],
+    ["expired", "json", "1", report("expired") + "\n{}", diagnostic, false],
+  ];
+  for (const [state, mode, exit, stdout, stderr, accepted] of cases) {
+    const prefix = path.join(root, "report");
+    writeFileSync(prefix + ".out", stdout);
+    writeFileSync(prefix + ".err", stderr);
+    const result = spawnSync("python3", ["-c", assertion, prefix, state, mode, exit], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status === 0, accepted, `${state}/${mode}/${exit}: ${result.stderr}`);
   }
 });
