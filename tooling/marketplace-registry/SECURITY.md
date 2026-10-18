@@ -17,6 +17,14 @@ revoke execution through the signed blocklist. Signing-key compromise requires
 the product trust-root recovery process; publishing a newly signed index alone
 cannot replace a compiled trust root.
 
+## Rust runtime boundary
+
+All business validation, packaging, signing and publication uses the Rust CLI and
+shared monorepo libraries. There is no JavaScript fallback, including for a
+`PENDING` pin. Remaining Node code only orchestrates CI security/processes or tests.
+New standalone metadata/submission/expiry commands require the next qualified
+release; the existing CI pin does not contain them. See [runtime gates](README.md#status-and-runtime).
+
 ## CI trust boundary
 
 The metadata contribution gate runs the validator from the trusted base commit
@@ -38,11 +46,12 @@ A PR can propose changes to the workflow itself. Therefore a green PR check is
 not a publisher authorization or proof that the proposed validator is trustworthy.
 Require maintainer review of workflow/tooling changes and configure repository
 protections before deployment. Tests of PR tooling remain in an unprivileged job,
-isolated from signing and publication credentials. The template's
-separate tooling-test job deliberately runs candidate tests as untrusted code on
-a disposable hosted runner, without persisted checkout credentials, secrets or
-write permissions. It does not supply artifacts or authority to the metadata gate
-or protected publisher. Do not convert that job to a privileged trigger.
+isolated from signing and publication credentials. Both template jobs use trusted
+base helpers and a separately verified executable; `contributor-tooling` builds
+an unsigned index from inert candidate data, never candidate tests or npm scripts.
+There are no persisted checkout credentials, signing secrets or write permissions.
+Its output supplies no authority to the protected publisher. Do not convert it
+to a privileged trigger.
 
 Protected publisher jobs must independently revalidate reviewed default-branch
 metadata inside a protected publication environment. They must not invoke package
@@ -82,7 +91,7 @@ protected signing and publication are still separate mandatory gates.
 
 ## Draft mirroring credentials and remote state
 
-`mirror:publication` is an explicitly mutating operator command. Its dedicated
+`registry mirror-publication` is an explicitly mutating operator command. Its dedicated
 `CADENCR_REGISTRY_GITHUB_TOKEN` must be scoped to the selected repository's release
 operations and supplied only from a protected environment. Do not pass it in argv,
 store it in the submission/receipt, or give it to contributor code. The CLI has no
@@ -104,7 +113,7 @@ explicit, and workflow concurrency/protected production publication is not insta
 
 ## Promotion boundary
 
-`promote:publication` is a separate explicit publishing command, not an automatic
+`registry promote-publication` is a separate explicit publishing command, not an automatic
 continuation of mirroring. A dedicated token and exact repository/tag confirmations
 are required. Protected environment approval and cross-runner serialization are
 operator responsibilities; this increment does not deploy a workflow or provision
@@ -127,7 +136,7 @@ availability; protected catalog publication still needs its own checks.
 
 ## Catalogue signing gate
 
-`sign:publication-catalog` does not read GitHub tokens or publish remotely. The
+`registry sign-publication-catalog` does not read GitHub tokens or publish remotely. The
 manifest and staged receipts are trusted operator inputs, never a PR artifact
 handoff. It validates all included packages and publication bindings, verifies
 public archive/provenance bytes, then loads the signing key. It does not execute
@@ -140,7 +149,7 @@ approval, source ownership or build provenance. Fresh download checks prove
 availability and matching bytes only at verification time, not permanent hosting.
 Repository/tag protections and immutable releases remain required operational gates.
 
-The low-level `sign:index` helper remains available for trusted operators and is
+The low-level `registry sign-index` helper remains available for trusted operators and is
 not a replacement for this publication gate. Neither command provisions a protected
 signing environment. The bootstrap preparation workflow remains unsigned and must
 not be mistaken for the production publishing workflow. Actual catalogue upload,
@@ -149,11 +158,11 @@ are intentionally not performed by this local signing increment.
 
 ## Signed snapshot publication boundary
 
-`publish:catalog` verifies signatures with an operator-pinned public key, validates
+`registry publish-catalog` verifies signatures with an operator-pinned public key, validates
 history against an explicitly supplied baseline, and rebuilds the payload through
 the existing publication-evidence/public-download gate before release writes. It
-never loads a private key. Candidate and baseline inputs are limited to 1 MiB, the
-same limit currently enforced by app catalogue acquisition.
+never loads a private key. Candidate and baseline inputs are bounded to 32 MiB; canonical output is bounded
+separately by the same Rust catalog contract.
 
 The historical baseline may be expired, but must remain correctly signed with
 canonical valid metadata. Candidate freshness and strictly increasing publication
@@ -222,9 +231,9 @@ The publisher and contribution CI share trusted release-pin data. The bootstrap
 never sources that file, never accepts an arbitrary asset URL, and verifies the
 bounded official HTTPS download and advertised version before execution. Both
 runners select their own runtime before signing-key materialization; a missing
-publisher command fails closed. Explicit wholly `PENDING` pins are the only
-legacy fallback, not an escape hatch for malformed pins or failed downloads.
-Provisioning affects both roles and requires reviewed artifact/parity evidence.
+publisher command fails closed. Missing, malformed, `PENDING` or failed-download
+pins never select another runtime. Provisioning affects both roles and requires
+reviewed distributed-executable qualification evidence.
 
 The hosted template is manual/default-branch only, uses the exact dispatch commit,
 and gates credential access through an externally configured protected environment.

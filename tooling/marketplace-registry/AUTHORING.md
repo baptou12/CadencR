@@ -1,5 +1,8 @@
 # Prepare a provider release locally
 
+The standalone `validate-submission` command requires the next qualified CLI
+release; it is not in `0.13.1-dev.39108033875.1`. See [runtime gates](README.md#status-and-runtime).
+
 These commands prepare artifacts only. They do not create a GitHub repository,
 publish a release, submit a registry PR, or establish publisher trust.
 
@@ -36,16 +39,16 @@ your managed package metadata. Do not pass your source checkout or home director
 as staging. The tool rejects symlinks, special files and common secret-prone
 filenames, but this denylist is not proof that files contain no secrets. Review
 every staged file. Staging must be trusted and quiescent: do not modify it while
-packaging. Identity and directory checks detect changes, but the Node-based packer
+packaging. Identity and directory checks detect changes, but the Rust packer
 is not a filesystem sandbox against an actively hostile process on the same
 machine. Protected publication must never package an untrusted live checkout.
 
 ## Package and record the checksum
 
-Using the portable registry tooling with Node 22:
+Using the Rust CLI (built and released from the Cadencr monorepo):
 
 ```bash
-npm run pack:provider -- \
+cadencr registry pack-provider \
   --package /path/to/package.json \
   --target darwin-aarch64 \
   --directory /path/to/staging \
@@ -240,7 +243,7 @@ Pin the source commit and release tag, record the changelog, and embed your fina
 managed package metadata in the submission envelope described in `CONTRIBUTING.md`.
 
 ```bash
-npm run validate:submission -- /path/to/submission.json
+cadencr registry validate-submission /path/to/submission.json
 ```
 
 The command checks source/asset URL consistency without fetching or executing

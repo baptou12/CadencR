@@ -7,62 +7,26 @@ use crate::github::{Asset, CreateDraftRequest, Release, UploadAssetRequest, Veri
 use crate::{DownloadRequest, Downloaded};
 use serde_json::json;
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader};
-use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 mod assertions;
+mod server;
 use assertions::*;
 
 struct Remote {
-    _process: OwnedProcess,
+    _server: server::Server,
     control: String,
     base: String,
     http: reqwest::blocking::Client,
     github: GitHubClient,
 }
-struct OwnedProcess(Child);
-impl Drop for OwnedProcess {
-    fn drop(&mut self) {
-        if self
-            .0
-            .try_wait()
-            .expect("inspect owned handoff server")
-            .is_none()
-        {
-            self.0.kill().expect("stop owned handoff server");
-        }
-        self.0.wait().expect("reap owned handoff server");
-    }
-}
 impl Remote {
     fn new() -> Self {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let mut process = Command::new("node")
-            .arg(
-                root.join("tooling/marketplace-registry/tests/helpers/pipeline-handoff-server.mjs"),
-            )
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .unwrap();
-        let stdout = process.stdout.take().unwrap();
-        let process = OwnedProcess(process);
-        let (send, receive) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let mut line = String::new();
-            let result = BufReader::new(stdout).read_line(&mut line).map(|_| line);
-            let _ = send.send(result);
-        });
-        let line = receive
-            .recv_timeout(Duration::from_secs(10))
-            .expect("bounded Node startup")
-            .unwrap();
-        let address: Value = serde_json::from_str(&line).unwrap();
-        let base = address["remote"].as_str().unwrap().to_owned();
+        let server = server::Server::start();
+        let base = server.base.clone();
         Self {
-            _process: process,
-            control: address["control"].as_str().unwrap().into(),
+            control: format!("{base}/control"),
+            _server: server,
             github: GitHubClient::fixture(
                 REPOSITORY,
                 "handoff-token",

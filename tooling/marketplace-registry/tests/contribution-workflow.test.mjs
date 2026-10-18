@@ -59,9 +59,9 @@ test("released CLI pin is the qualified atomic three-field pin", async () => {
   const config = await readFile(new URL("../ci/released-cli.env", import.meta.url), "utf8");
   const version = config.match(/^CADENCR_RELEASE_VERSION=(\S+)$/m)?.[1];
   const digest = config.match(/^CADENCR_RELEASE_SHA256=(\S+)$/m)?.[1];
-  assert.equal(version, "0.13.1-dev.38974097824.1");
-  assert.equal(digest, "ee3516bb5ad7ed143428f255e9e4dd24d9f13003061a803c99be8f3fd8db9a7e");
-  assert.match(config, /^CADENCR_RELEASE_TAG=cli\/v0\.13\.1-dev\.38974097824\.1$/m);
+  assert.equal(version, "0.13.1-dev.39108033875.1");
+  assert.equal(digest, "d11bfade6297fa30e1e10e82605f5a221da8e07edeeee372e2c2f6185c6ff725");
+  assert.match(config, /^CADENCR_RELEASE_TAG=cli\/v0\.13\.1-dev\.39108033875\.1$/m);
   assert.doesNotMatch(config, /URL|latest/);
 });
 
@@ -319,4 +319,33 @@ test("bootstrap bounds the fixed official download and never runs candidate code
   assert.match(helper, /--max-filesize 134217728/);
   assert.doesNotMatch(script, /npm|validate-contribution\.mjs|cd "\$candidate"/);
   assert.match(script, /registry build-index --schema-version 2 --packages/);
+});
+
+test("all trusted workflow business operations use released Rust commands without legacy fallback", async () => {
+  const workflows = await Promise.all(
+    [
+      "validate-provider-metadata.yml",
+      "prepare-protected-publication.yml",
+      "publish-protected-catalog.yml",
+    ].map((file) => readFile(new URL(`../.github/workflows/${file}`, import.meta.url), "utf8")),
+  );
+  for (const workflow of workflows) {
+    assert.doesNotMatch(workflow, /npm\s+(?:ci|install|run)|pnpm|yarn|scripts\/[\w-]+\.mjs/);
+    assert.doesNotMatch(
+      workflow,
+      /candidate-registry\/scripts|working-directory: candidate-registry/,
+    );
+  }
+  const selector = await readFile(
+    new URL("../scripts/ci/select-publisher-runtime.sh", import.meta.url),
+    "utf8",
+  );
+  assert.match(selector, /refusing legacy fallback/);
+  // The contribution/publisher pin must not claim newly added commands exist in
+  // already-distributed bytes. Full metadata/expiry cutover needs a new release.
+  const pin = await readFile(new URL("../ci/released-cli.env", import.meta.url), "utf8");
+  assert.match(
+    pin,
+    /newly added metadata and\n# expiry commands require a separately qualified release/,
+  );
 });

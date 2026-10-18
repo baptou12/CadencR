@@ -7,7 +7,7 @@ reviewed themes and Pi before a future desktop activation. Procedures involving
 signing, tags, feed advancement, production pins or remote writes require reviewed
 targets/inputs and protected operator authority; preparation alone is insufficient.
 Examples are syntax, not actual keys, destinations or assigned owners. No scheduler
-is deployed here. The distributed `0.13.1-dev.38974097824.1` CLI passed isolated
+is deployed here. The distributed `0.13.1-dev.39108033875.1` CLI passed isolated
 GitHub lifecycle qualification; that is not production deployment.
 
 | Required record before activation | Accountable role / evidence                                                             |
@@ -20,28 +20,24 @@ GitHub lifecycle qualification; that is not production deployment.
 | Runtime cutover                   | Released Rust binary independently downloaded/verified/exercised; both CI pins reviewed |
 
 The owners and live controls above remain unassigned/unverified in this template.
-The candidate pin selects the qualified Rust binary with no JavaScript fallback.
-Remote registry main has no pin/helpers: first merge a bootstrap PR preserving
-its old validation workflow, then cut over the workflow from that trusted base.
-See the [deployment sequence](README.md#remote-deployment-requires-two-reviewed-changes).
-Keep legacy business code only for compatibility/oracles until deployed Rust CI
-passes and oracle migration is complete. It cannot process schema-2 mixed
-catalogs or the trust-generation protocol. No desktop trust/feed or key change
-is authorized by the candidate cutover.
+The candidate contribution/publisher pin selects the qualified Rust binary with
+no JavaScript fallback. **Full cutover needs a new qualified CLI release** for
+standalone metadata/submission validation and expiry diagnostics added afterward.
+Reinspect the remote default branch, regenerate delivery payload hashes and follow
+the [deployment sequence](README.md#remote-deployment-requires-two-reviewed-changes).
+The JavaScript business implementation has been removed from this source template;
+that does not deploy these changes or authorize desktop trust/feed/key changes.
 
 ## Read-only expiry and failure alert preparation
 
-The retained JavaScript compatibility diagnostic below is not part of the pinned
-Rust CI/publisher runtime. Removal requires a replacement monitoring procedure;
-the Rust CLI has no equivalent expiry-monitor subcommand. Run it against **local snapshots**, including the
-catalog, provider policy and theme policy where present:
+Use the **newly released and qualified Rust CLI**, not the older CI pin. Run this
+read-only diagnostic against local catalog/provider/theme-policy snapshots:
 
 ```sh
-node scripts/check-metadata-expiry.mjs \
+cadencr registry check-metadata-expiry \
   /reviewed/snapshots/managed-index.json \
   /reviewed/snapshots/managed-blocklist.json \
   /reviewed/snapshots/managed-theme-blocklist.json
-node --test tests/check-metadata-expiry.test.mjs
 ```
 
 - Reads at most three regular non-symlink files, each at most 32 MiB; no network,
