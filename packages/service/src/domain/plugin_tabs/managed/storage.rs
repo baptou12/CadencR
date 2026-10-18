@@ -1,5 +1,8 @@
 mod cache;
 mod filesystem;
+#[cfg(test)]
+pub(in crate::domain::plugin_tabs) mod fixtures;
+mod retention;
 use super::invalid;
 use crate::{
     domain::themes::managed::{catalog, models::SignedMixedCatalog, storage as io},
@@ -8,6 +11,7 @@ use crate::{
 use cadencr_plugin_core::tab::TabManifest;
 use filesystem::check_directory;
 pub use filesystem::{secure, write_file};
+pub use retention::{lease, RevisionLease};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -81,12 +85,22 @@ pub fn ids(root: &Path) -> Result<Vec<String>, AppError> {
 pub fn read(root: &Path, id: &str) -> Result<TabManifest, AppError> {
     cache::read(root, id)
 }
+#[cfg(test)]
 pub(super) fn read_trusted(
     root: &Path,
     id: &str,
     trust: &crate::domain::agents::providers::installed::managed::trust::ManagedTrustStore,
 ) -> Result<(Receipt, BTreeMap<String, Vec<u8>>, TabManifest), AppError> {
     let dir = directory(root, id)?.ok_or_else(|| invalid("managed tab is not installed"))?;
+    read_trusted_directory(root, id, &dir, trust)
+}
+pub(super) fn read_trusted_directory(
+    root: &Path,
+    id: &str,
+    dir: &Path,
+    trust: &crate::domain::agents::providers::installed::managed::trust::ManagedTrustStore,
+) -> Result<(Receipt, BTreeMap<String, Vec<u8>>, TabManifest), AppError> {
+    check_directory(root, dir)?;
     let revision = dir.parent().ok_or_else(|| invalid("revision missing"))?;
     let receipt: Receipt = serde_json::from_slice(&io::regular(
         &revision.join("receipt.json"),
@@ -134,15 +148,13 @@ pub fn commit(
             "at most 128 marketplace tabs can be installed at once",
         ));
     }
+    let cell = retention::admit_owner(root, &receipt.id)?;
+    let state = cell.lock().map_err(invalid)?;
     secure(root, &owner)?;
     let sha = io::digest(archive);
     let destination = owner.join(&sha);
     if !destination.try_exists().map_err(invalid)? {
-        if std::fs::read_dir(&owner).map_err(invalid)?.take(17).count() >= 17 {
-            return Err(invalid(
-                "tab revision storage is full; review retained revisions before retrying",
-            ));
-        }
+        retention::prepare(root, &receipt.id, &state)?;
         let mut builder = tempfile::Builder::new();
         builder.prefix(".stage-");
         #[cfg(unix)]
@@ -150,8 +162,10 @@ pub fn commit(
             use std::os::unix::fs::PermissionsExt as _;
             builder.permissions(std::fs::Permissions::from_mode(0o700));
         }
-        let staging = builder.tempdir_in(&owner).map_err(invalid)?;
-        let payload = staging.path().join(&receipt.id);
+        // Do not let TempDir recursively delete an interrupted/modified tree:
+        // partial stages stay bounded by retention admission and need review.
+        let staging = builder.tempdir_in(&owner).map_err(invalid)?.keep();
+        let payload = staging.join(&receipt.id);
         secure(root, &payload)?;
         for (name, bytes) in files {
             let path = payload.join(name);
@@ -162,12 +176,12 @@ pub fn commit(
             )?;
             write_file(&path, bytes)?;
         }
-        write_file(&staging.path().join("archive.tar.gz"), archive)?;
+        write_file(&staging.join("archive.tar.gz"), archive)?;
         crate::shared::atomic_file::write_atomic_private(
-            &staging.path().join("receipt.json"),
+            &staging.join("receipt.json"),
             &serde_json::to_string(receipt).map_err(invalid)?,
         )?;
-        std::fs::rename(staging.path(), &destination).map_err(invalid)?;
+        std::fs::rename(&staging, &destination).map_err(invalid)?;
     }
     check_directory(root, &destination.join(&receipt.id))?;
     if io::regular(&destination.join("archive.tar.gz"), LIMIT)? != archive {
@@ -179,6 +193,18 @@ pub fn commit(
         if io::regular(&destination.join(&receipt.id).join(name), LIMIT)? != *bytes {
             return Err(invalid("retained tab payload changed"));
         }
+    }
+    // Only replace managed JSON, never an unknown file occupying a control path.
+    let retained: Receipt = serde_json::from_slice(&io::regular(
+        &destination.join("receipt.json"),
+        LIMIT + 64 * 1024,
+    )?)
+    .map_err(invalid)?;
+    if retained.id != receipt.id || retained.version != receipt.version {
+        return Err(invalid("retained tab receipt identity mismatch"));
+    }
+    if owner.join("active.json").symlink_metadata().is_ok() {
+        validate_pointer(&owner.join("active.json"))?;
     }
     // Store the newly authenticated catalog proof even when reusing identical bytes.
     crate::shared::atomic_file::write_atomic_private(
@@ -192,58 +218,36 @@ pub fn commit(
     )
 }
 
+fn validate_pointer(path: &Path) -> Result<(), AppError> {
+    let pointer: String = serde_json::from_slice(&io::regular(path, 1024)?).map_err(invalid)?;
+    if pointer.len() != 64
+        || !pointer
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
+        return Err(invalid(
+            "invalid tab revision pointer; unknown file preserved",
+        ));
+    }
+    Ok(())
+}
+
+/// Uninstall only the active pointer and recognized, unleased managed artifacts.
+pub fn deactivate(root: &Path, id: &str) -> Result<(), AppError> {
+    let cell = retention::owner_state(root, id)?;
+    let state = cell.lock().map_err(invalid)?;
+    let owned = owner(root, id)?;
+    check_directory(root, &owned)?;
+    validate_pointer(&owned.join("active.json"))?;
+    std::fs::remove_file(owned.join("active.json")).map_err(invalid)?;
+    retention::collect(root, id, &state)?;
+    retention::remove_empty_owner(root, id, &cell)
+}
+
 #[cfg(test)]
 pub(super) mod tests {
+    use super::fixtures::fixture;
     use super::*;
-    use crate::domain::agents::providers::installed::managed::trust::{
-        ManagedTrustStore, TrustedIndexKey,
-    };
-    use base64::Engine as _;
-    use ed25519_dalek::{Signer as _, SigningKey};
-
-    pub(in crate::domain::plugin_tabs::managed) fn fixture(
-        root: &Path,
-    ) -> (
-        Receipt,
-        Vec<u8>,
-        BTreeMap<String, Vec<u8>>,
-        ManagedTrustStore,
-    ) {
-        let stage = root.join("input");
-        std::fs::create_dir_all(stage.join("dist")).unwrap();
-        std::fs::write(stage.join("tab.json"), r#"{"schema_version":1,"kind":"tab","id":"graph","name":"Graph","version":"1.0.0","api_version":1,"entry":"dist/index.html","permissions":["git:read"]}"#).unwrap();
-        std::fs::write(stage.join("dist/index.html"), "<html>Graph</html>").unwrap();
-        let output = root.join("tab.tar.gz");
-        let packed = cadencr_registry_core::pack_tab(
-            cadencr_registry_core::PackTabRequest::builder()
-                .directory(&stage)
-                .output(&output)
-                .build(),
-        )
-        .unwrap();
-        let now = chrono::Utc::now();
-        let payload = serde_json::json!({"schema_version":2,"generated_at":(now-chrono::Duration::minutes(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs,true),"expires_at":(now+chrono::Duration::hours(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs,true),"packages":[{"kind":"tab","package":{"tab":{"id":"graph","name":"Graph","description":"A graph","version":"1.0.0","api_version":1,"license":"MIT","repository":"https://github.com/acme/tabs","distribution":{"archive":"https://github.com/acme/tabs/releases/download/v1.0.0/tab.tar.gz","sha256":packed.sha256}},"host":{"publisher":"acme","compatibility":{"min_app_version":"0.1.0"}}}}]});
-        let key = SigningKey::from_bytes(&[37; 32]);
-        let bytes = cadencr_registry_core::canonical_json_bytes(&payload);
-        let index = serde_json::from_value(serde_json::json!({"signed":payload,"signature":{"algorithm":"ed25519","key_id":"tab-test","value":base64::engine::general_purpose::STANDARD.encode(key.sign(&bytes).to_bytes())}})).unwrap();
-        let trust = ManagedTrustStore::new([TrustedIndexKey::new(
-            "tab-test",
-            key.verifying_key().to_bytes(),
-        )
-        .unwrap()]);
-        let archive = std::fs::read(output).unwrap();
-        let files = cadencr_registry_core::read_tab_archive_bytes(&archive).unwrap();
-        (
-            Receipt {
-                index,
-                id: "graph".into(),
-                version: "1.0.0".into(),
-            },
-            archive,
-            files,
-            trust,
-        )
-    }
 
     #[test]
     fn signed_revisions_preserve_payload_and_reject_forged_bytes() {
@@ -315,6 +319,28 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn unknown_database_at_control_paths_is_never_removed_or_replaced() {
+        let temp = tempfile::tempdir().unwrap();
+        let (receipt, archive, files, _) = fixture(temp.path());
+        let root = temp.path().join("managed");
+        commit(&root, &receipt, &archive, &files).unwrap();
+        let pointer = root.join("graph/active.json");
+        let proof = directory(&root, "graph")
+            .unwrap()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("receipt.json");
+        let database = b"SQLite format 3\0precious";
+        std::fs::write(&proof, database).unwrap();
+        assert!(commit(&root, &receipt, &archive, &files).is_err());
+        assert_eq!(std::fs::read(proof).unwrap(), database);
+        std::fs::write(&pointer, database).unwrap();
+        assert!(deactivate(&root, "graph").is_err());
+        assert_eq!(std::fs::read(pointer).unwrap(), database);
+    }
+
+    #[test]
     fn full_revision_history_still_allows_reusing_authenticated_bytes() {
         let temp = tempfile::tempdir().unwrap();
         let (receipt, archive, files, trust) = fixture(temp.path());
@@ -352,8 +378,4 @@ pub(super) mod tests {
         assert_eq!(ids(&root).unwrap(), ["graph"]);
         read_trusted(&root, "graph", &trust).unwrap();
     }
-}
-
-pub fn verify_asset(root: &Path, id: &str, file: &Path) -> Result<(), AppError> {
-    cache::verify_asset(root, id, file)
 }

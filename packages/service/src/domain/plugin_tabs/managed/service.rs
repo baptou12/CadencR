@@ -137,12 +137,9 @@ fn install_bytes(
 pub async fn remove(id: String) -> Result<(), AppError> {
     let root = storage::root();
     let _guard = MUTATION.lock().await;
-    tokio::task::spawn_blocking(move || {
-        let pointer = storage::owner(&root, &id)?.join("active.json");
-        std::fs::remove_file(pointer).map_err(invalid)
-    })
-    .await
-    .map_err(invalid)?
+    tokio::task::spawn_blocking(move || storage::deactivate(&root, &id))
+        .await
+        .map_err(invalid)?
 }
 
 #[cfg(test)]
@@ -151,7 +148,7 @@ mod tests {
     #[test]
     fn installer_admits_signed_bytes_and_preserves_local_author_tabs() {
         let temp = tempfile::tempdir().unwrap();
-        let (receipt, archive, _, trust) = super::storage::tests::fixture(temp.path());
+        let (receipt, archive, _, trust) = super::storage::fixtures::fixture(temp.path());
         let body = InstallManagedTabRequest {
             index: receipt.index.clone(),
             tab_id: "graph".into(),

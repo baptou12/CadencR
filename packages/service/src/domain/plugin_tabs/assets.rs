@@ -11,17 +11,11 @@
 //!    read without full validation, so an `entry` of `/etc/index.html` or a
 //!    `dist` linked elsewhere must not move the web root off the tab;
 //!  - the *resolved* path (symlinks followed) must still be inside the web root
-//!    and pass the same segment rules, so a link cannot smuggle out
-//!    `.git/config` or a file elsewhere on disk;
-//!  - every response carries the CSP of `docs/CUSTOM_TABS.md` §5.2, `nosniff`
-//!    and `no-store` (the author rebuilds constantly; a cached bundle would
-//!    hide their change).
+//!    and pass the same segment rules (no `.git/config` or external files);
+//!  - responses carry the CSP of `docs/CUSTOM_TABS.md` §5.2, `nosniff`,
+//!    and `no-store`, so author rebuilds cannot be hidden by cached bundles.
 //!
-//! Bodies are streamed from disk, so a large bundle file is never buffered
-//! whole.
-//!
-//! Deliberately outside the OpenAPI surface, like `GET /api/blobs/{hash}`: it
-//! returns opaque bytes, not a JSON model.
+//! Bodies stream from disk. Opaque bytes are outside the OpenAPI surface.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -29,7 +23,7 @@ use axum::body::Body;
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use cadencr_plugin_core::tab::read_tab_manifest;
-use tokio_util::io::ReaderStream;
+mod stream;
 
 use super::{paths, registry};
 use crate::error::AppError;
@@ -45,17 +39,21 @@ const MAX_ASSET_BYTES: u64 = 64 * 1024 * 1024;
 /// Serve `path` from tab `id`'s web root — the directory holding the
 /// manifest's `entry` — so the bundle's relative URLs (`./assets/…`) resolve
 /// the way they do on any static host. An empty path serves the entry itself.
-/// Nothing outside the web root (sources, `tab.json`) is reachable.
 pub async fn serve(id: &str, path: &str) -> Result<Response, AppError> {
-    let dir = paths::plugin_dir(id)?;
+    let local_root = paths::tabs_dir();
     let managed_root = super::managed::storage::root();
     let (id, path) = (id.to_string(), path.to_string());
-    let (file, length) = tokio::task::spawn_blocking(move || {
-        let located = locate(&dir, &id, &path)?;
-        if dir.starts_with(&managed_root) {
-            super::managed::storage::verify_asset(&managed_root, &id, &located.0)?;
+    let (file, length, lease) = tokio::task::spawn_blocking(move || {
+        let selected = paths::resolve_plugin_directory()
+            .id(&id)
+            .local_root(&local_root)
+            .managed_root(&managed_root)
+            .call()?;
+        let (file, length) = locate(selected.directory(), &id, &path)?;
+        if let paths::PluginDirectory::Managed(lease) = &selected {
+            lease.verify_asset(&file)?;
         }
-        Ok::<_, AppError>(located)
+        Ok::<_, AppError>((file, length, selected.into_lease()))
     })
     .await
     .map_err(|error| AppError::Internal(format!("custom tab asset lookup failed: {error}")))??;
@@ -63,7 +61,7 @@ pub async fn serve(id: &str, path: &str) -> Result<Response, AppError> {
         .await
         .map_err(|error| AppError::Internal(format!("cannot read custom tab asset: {error}")))?;
     Ok(response(
-        Body::from_stream(ReaderStream::new(opened)),
+        stream::body(opened, lease),
         length,
         content_type(&file),
     ))
@@ -218,7 +216,6 @@ fn asset_not_found(relative: &str) -> AppError {
         format!("no custom tab asset `{relative}`"),
     )
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -45,11 +45,14 @@ fn stamp(path: &Path) -> Result<Stamp, AppError> {
 }
 
 pub(super) fn read(root: &Path, id: &str) -> Result<TabManifest, AppError> {
-    let dir = super::directory(root, id)?.ok_or_else(|| invalid("managed tab is not installed"))?;
+    let lease = super::lease(root, id)?.ok_or_else(|| invalid("managed tab is not installed"))?;
+    read_directory(root, id, lease.directory())
+}
+pub(super) fn read_directory(root: &Path, id: &str, dir: &Path) -> Result<TabManifest, AppError> {
     let cache = CACHE.get_or_init(Mutex::default);
     {
         let entries = cache.lock().map_err(invalid)?;
-        if let Some(entry) = entries.get(&dir) {
+        if let Some(entry) = entries.get(dir) {
             let mut unchanged = true;
             for (path, before) in &entry.files {
                 if stamp(path)? != *before {
@@ -73,7 +76,7 @@ pub(super) fn read(root: &Path, id: &str) -> Result<TabManifest, AppError> {
     ]);
     let trust =
         crate::domain::agents::providers::installed::managed::trust::pinned_index_trust_store();
-    let (_, files, manifest) = super::read_trusted(root, id, &trust)?;
+    let (_, files, manifest) = super::read_trusted_directory(root, id, dir, &trust)?;
     for (name, bytes) in files {
         let path = dir.join(name);
         let before = stamp(&path)?;
@@ -99,7 +102,7 @@ pub(super) fn read(root: &Path, id: &str) -> Result<TabManifest, AppError> {
         entries.clear();
     }
     entries.insert(
-        dir,
+        dir.to_owned(),
         Cached {
             manifest: manifest.clone(),
             files: stamps,
@@ -108,18 +111,32 @@ pub(super) fn read(root: &Path, id: &str) -> Result<TabManifest, AppError> {
     Ok(manifest)
 }
 
-pub(super) fn verify_asset(root: &Path, id: &str, file: &Path) -> Result<(), AppError> {
-    read(root, id)?;
-    let dir = super::directory(root, id)?.ok_or_else(|| invalid("managed tab disappeared"))?;
+pub(super) fn verify_directory_asset(
+    root: &Path,
+    id: &str,
+    dir: &Path,
+    file: &Path,
+) -> Result<(), AppError> {
+    read_directory(root, id, dir)?;
     let canonical = dir.canonicalize().map_err(invalid)?;
     let relative = file.strip_prefix(&canonical).map_err(invalid)?;
     let key = dir.join(relative);
     let entries = CACHE.get_or_init(Mutex::default).lock().map_err(invalid)?;
     if entries
-        .get(&dir)
+        .get(dir)
         .is_none_or(|entry| !entry.files.contains_key(&key))
     {
         return Err(invalid("asset is absent from the signed tab archive"));
     }
+    Ok(())
+}
+
+/// A collected directory must never leave a stale authenticated cache entry.
+pub(super) fn invalidate(directory: &Path) -> Result<(), AppError> {
+    CACHE
+        .get_or_init(Mutex::default)
+        .lock()
+        .map_err(invalid)?
+        .remove(directory);
     Ok(())
 }
