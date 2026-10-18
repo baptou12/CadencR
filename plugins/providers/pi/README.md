@@ -171,9 +171,11 @@ verified launcher. No runtime dependencies or credentials are bundled.
 `pnpm --filter @cadencr/pi-provider smoke` starts real Pi for prompt-free discovery/session checks. Live and
 resume QA additionally send billable prompts and require explicit opt-in.
 
-The candidate recommendation pins Pi `0.85.1` because its public installed protocol
-sources were audited. Actual live QA against that version is still pending; this
-is not a verified compatibility claim. JSONL frames are limited to 16 MiB of UTF-8
+The candidate pins Pi `0.85.1` because its installed protocol sources were
+reviewed. Historical extracted-payload checks on macOS arm64 exercised actual Pi
+against an isolated loopback model and the local-descriptor generic host. They
+qualify that recorded protocol scope, not a newer archive, x86_64, managed
+installation, external-model authentication or every feature in the mapping. JSONL frames are limited to 16 MiB of UTF-8
 bytes per frame, accommodating substantial base64 image inputs while bounding
 unterminated input. Larger image frames must be resized or rejected.
 
@@ -201,7 +203,8 @@ node plugins/providers/pi/scripts/prepare-candidate.mjs \
 ```
 
 - Every option is required. Only explicit `darwin-aarch64` or `darwin-x86_64`
-  **candidate** targets are accepted; neither is thereby supported or qualified.
+  **candidate** targets are accepted; preparation itself does not qualify either.
+  Historical arm64 protocol evidence is recorded separately; x86_64 is unqualified.
   Linux remains a CI host, not an application target. Windows is not prepared.
 - `external-node-pi` preserves the current launcher, Node range and separately
   installed Pi `0.85.1` prerequisites; it does not select or approve a future
@@ -236,7 +239,10 @@ The new directory retains the payload snapshot, private preparation inputs,
 `package.json` with the computed archive digest, two byte-identical canonical
 archives, and `candidate.json`. The receipt binds source commit/path, version,
 explicit candidate target, runtime prerequisites, CLI checksum, metadata checksum,
-and archive digest/size. Its publication and qualification gates remain `PENDING`.
+and archive digest/size, plus the committed `readiness.json` digest and its
+source-license/artwork/runtime/target facts. Its publication and current-candidate
+qualification gates remain `PENDING`; historical protocol evidence is not erased
+or transferred to new archive bytes.
 The repository namespace is expected provenance, not verified remote authority;
 the receipt explicitly records `unverified-local-checkout`. It contains no runner paths. No whole-directory upload is intended: inspect only
 `candidate.json`, `package.json` and the primary archive; retain private scratch
@@ -280,3 +286,33 @@ The fixture's unit tests run normally without Pi, credentials or external APIs.
 This is protocol evidence, not external-model authentication, tool-permission,
 managed installation, x86_64, or publication approval. See the
 [native and generic-service evidence](../../../docs/qa/MARKETPLACE_PI_LOOPBACK_2026_10_18.md).
+
+## Source review and package inputs
+
+[`readiness.json`](readiness.json) records exact retained-source asset digests,
+external runtime requirements and per-target evidence boundaries. Preparation
+verifies those digests and prerequisites against committed Git blobs. It is a
+review aid, not an approval or a replacement for canonical CLI validation.
+
+| Item            | Reviewed source fact                                                                                 | Boundary                                                                                          |
+| --------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Connector       | Package and retained `LICENSE` declare Apache-2.0; runtime has no npm dependencies                   | License-file presence is not an authorship/legal attestation                                      |
+| Artwork         | Retained `icon.svg` contains a rectangle and two local paths, without scripts or external references | Original creator, licensing grant and brand-use permission are not established by retained source |
+| Runtime         | External Node.js `>=22.19.0 <23.0.0` and Pi `0.85.1`                                                 | Neither runtime, credentials nor model access is bundled                                          |
+| macOS arm64     | Recorded extracted candidate passed native loopback and local-descriptor protocol checks             | Exact historical source/archive are in the manifest; managed admission remains separate           |
+| macOS x86_64    | Explicit portable preparation target                                                                 | No native x86_64 execution is recorded                                                            |
+| Linux / Windows | Not prepared application targets                                                                     | Linux CI does not imply application support; Windows needs a verified launcher                    |
+
+[`package-template.json`](package-template.json) fixes the discriminated provider
+kind, Pi identity, source repository, Apache declaration, executable and assets.
+Only the arm64 candidate is included in that source-owned template. Its publisher,
+minimum app version and archive destination are deliberately `PENDING`, so it is
+**not a valid publishable package**. The release preparer supplies a source-tag-bound
+archive URL only after a reviewed release policy selects the target/payload.
+
+The local candidate command still accepts the inner legacy `{agent, host}` object,
+not the discriminated template wrapper. An operator must explicitly select one
+target and provide reviewed candidate publisher, compatibility and HTTPS archive
+values. No production publisher, application compatibility floor or native-target
+approval is inferred from a successful pack. The template/readiness documents stay
+outside the payload; the payload remains `bin/`, README, license and artwork only.

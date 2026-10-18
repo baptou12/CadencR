@@ -56,7 +56,7 @@ actual source commit/tag. No plugin tag, publication workflow or release is
 created by this import. Namespaced tags must be URL-encoded in release-asset
 metadata by the shared registry tooling.
 
-The next wave adds a read-only preparation workflow, not a publisher. See
+The preparation workflow is read-only and does not grant publication authority. See
 [`RELEASING.md`](RELEASING.md) for source/tag binding, sanitized artifact output,
 qualification-only testing and the remaining protected-publication gates.
 
@@ -64,3 +64,16 @@ Publication remains gated on source/license review, supported-platform and
 generic-host conformance, real GitHub lifecycle qualification, reviewed registry
 cutover and protected signing authority. The registry remains a separate
 repository; the marketplace stays hidden until a later activation decision.
+
+## Source/package readiness
+
+| Source | Machine-readable facts                                                                                                                                  | Source-owned package inputs                                                                                                                              |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pi     | [`providers/pi/readiness.json`](providers/pi/readiness.json): license/artwork digests, external runtimes, scoped arm64 evidence and unqualified targets | [`package-template.json`](providers/pi/package-template.json): fixed provider identity/assets; unresolved publisher, compatibility floor and destination |
+| Themes | [`themes/readiness.json`](themes/readiness.json): exact source/license/archive digests and visual-evidence boundary                                     | [`package-templates`](themes/package-templates/): three fixed identities and document version; unresolved publication inputs                             |
+
+These documents distinguish source facts and historical qualification from
+current-artifact approval. They neither bundle Node/Pi nor invent artwork rights,
+a production publisher, compatibility version, signing authority or publication.
+The shared canonical CLI remains responsible for schema/archive validation;
+trusted release jobs consume reviewed Git data, not candidate build scripts.

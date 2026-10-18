@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildRuntime } from "./build.mjs";
 import { CandidateInputError, readCandidateFile } from "./read-candidate-file.mjs";
+import { sourceReadiness } from "./source-readiness.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = "plugins/providers/pi";
@@ -254,6 +255,15 @@ async function prepare(args) {
   stage = "source validation";
   const repo = await verifySource(commit);
   const runtime = committedPrerequisites(repo, commit);
+  let readiness;
+  try {
+    readiness = sourceReadiness(
+      (path) => sourceBytes(repo, commit, path),
+      options["candidate-target"],
+    );
+  } catch {
+    fail("Committed readiness facts changed; review source license, artwork, runtime and targets");
+  }
   stage = "CLI verification";
   const cliBytes = await regularAbsolute(options.cli);
   if (digest(cliBytes) !== options["cli-sha256"]) fail("CLI checksum mismatch");
@@ -322,6 +332,7 @@ async function prepare(args) {
     version,
     candidate_target: options["candidate-target"],
     runtime,
+    readiness,
     cli_sha256: digest(cliBytes),
     package_metadata_sha256: digest(await regularAbsolute(finalMetadataPath, 64 * 1024)),
     archive: { name: archiveName, sha256: first.sha256, size: first.size },

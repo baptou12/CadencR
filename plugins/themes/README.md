@@ -102,8 +102,9 @@ relative luminance. Both CSS and xterm terminal backgrounds must remain dark
 This narrow gate accepts these asset-free, opaque six-digit hex originals only.
 It rejects extra theme-folder files, symlinks, executable file bits, unexpected
 document sections, duplicate JSON keys, missing checked colors and nonfinite
-numbers. Seven mutation/reference tests cover every contrast pair and unsafe
-inputs. The tier snapshot was reviewed against Cadencr `v0.13.0` and needs review
+numbers. Mutation/reference tests cover every contrast pair and unsafe
+inputs; a separate source-facts test checks retained license/theme digests and
+all three package-template identities. The tier snapshot was reviewed against Cadencr `v0.13.0` and needs review
 when the shared contract changes.
 
 This is **not** the complete theme schema, a general asset validator, a WCAG audit
@@ -111,3 +112,26 @@ or packaging/signing logic. The reviewed CLI is authoritative for canonical
 validation and packaging. Passing this gate does not certify rendered
 hover/focus/disabled states: live visual review remains a separate prerequisite
 before publication.
+
+## Source review and package inputs
+
+[`readiness.json`](readiness.json) records the retained license digest, all three
+exact `theme.json` digests and historical canonical archive digests. The default
+Python tests verify current source bytes and source-owned package identities.
+These themes contain declarative opaque color values only: no artwork files,
+fonts, textures, external assets, scripts or runtime dependencies are present.
+The source import records describe original palettes under Apache-2.0; retained
+license/source facts are not a legal attestation of authorship or human approval.
+
+The discriminated templates in [`package-templates`](package-templates/) fix the
+known `theme` kind, identity/version, descriptions, source repository, license and
+`document_version: 1`. Publisher, minimum app version and public archive URL remain
+explicit `PENDING` values rather than invented authority or compatibility. These
+are intentionally invalid publication inputs until reviewed and completed; release
+preparation derives immutable source-tag-bound archive URLs from approved policy.
+
+Templates, readiness data, README and LICENSE remain outside the distribution
+folders. Each archive must still contain only `theme.json`; the root license is
+source/release documentation, not an extra theme payload member. Historical UI
+review and the 40-pair contrast gate remain useful scoped evidence, not an
+accessibility certification or a new packaged-app review. Publication stays closed.

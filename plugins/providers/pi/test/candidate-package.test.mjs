@@ -23,7 +23,15 @@ async function fixture() {
   const repo = join(base, "repo");
   const plugin = join(repo, "plugins/providers/pi");
   await mkdir(plugin, { recursive: true });
-  for (const file of ["src", "scripts", "package.json", "README.md", "LICENSE", "icon.svg"]) {
+  for (const file of [
+    "src",
+    "scripts",
+    "package.json",
+    "README.md",
+    "LICENSE",
+    "icon.svg",
+    "readiness.json",
+  ]) {
     await cp(join(original, file), join(plugin, file), { recursive: true });
   }
   const env = {
@@ -220,6 +228,19 @@ test(
       assert.equal(receipt.runtime.pi, "0.85.1");
       assert.equal(receipt.source.commit, f.args[1]);
       assert.equal(
+        receipt.readiness.manifest_sha256,
+        digest(await readFile(join(f.plugin, "readiness.json"))),
+      );
+      assert.equal(
+        receipt.readiness.targets[receipt.candidate_target].preparation,
+        "external-node-pi-candidate",
+      );
+      assert.equal(receipt.readiness.artwork.authorship, "not-established-by-retained-source");
+      assert.equal(
+        receipt.readiness.historical_protocol_evidence.qualifies_current_candidate,
+        false,
+      );
+      assert.equal(
         receipt.archive.sha256,
         digest(await readFile(join(f.output, receipt.archive.name))),
       );
@@ -272,4 +293,21 @@ test("candidate input refuses ambiguous metadata and symlink output", async () =
   const parentLink = join(f.base, "linked-parent");
   await symlink(f.base, parentLink);
   assert.equal(f.run({ "--directory": join(parentLink, "new-candidate") }).status, 1);
+});
+
+test("source-bound preparation rejects committed readiness drift before any archive output", async () => {
+  const f = await fixture();
+  const path = join(f.plugin, "readiness.json");
+  const facts = JSON.parse(await readFile(path, "utf8"));
+  facts.source_license.sha256 = "0".repeat(64);
+  await writeFile(path, `${JSON.stringify(facts, null, 2)}\n`);
+  f.git("add", ".");
+  f.git("commit", "--quiet", "-m", "Synthetic stale readiness digest");
+  f.args[1] = f.git("rev-parse", "HEAD");
+  const result = f.run();
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /source validation: Committed readiness facts changed/);
+  assert.ok(!result.stderr.includes(f.base));
+  await assert.rejects(readFile(join(f.output, "candidate.json")), /ENOENT/);
 });
