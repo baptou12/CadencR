@@ -1,9 +1,167 @@
 {
-  "schema_version": 1,
-  "themes": {
-    "graphite": "0.1.0",
-    "ember": "0.1.0",
-    "fjord": "0.1.0"
+  "schema_version": 2,
+  "plugins": {
+    "theme-graphite": {
+      "kind": "theme",
+      "id": "graphite",
+      "version": "0.1.0",
+      "source_path": "plugins/themes",
+      "package": "plugins/themes/package-templates/graphite.json",
+      "preparation": "READY",
+      "payloads": {
+        "theme": {
+          "directory": "plugins/themes/graphite",
+          "closed_directories": ["."],
+          "files": {
+            "theme.json": {
+              "sha256": "ec1af0e82fdaacbda8fd7648eafa638fa2e515fb0ca10c449d27c0eb9b2347c5",
+              "mode": "100644"
+            }
+          }
+        }
+      }
+    },
+    "theme-ember": {
+      "kind": "theme",
+      "id": "ember",
+      "version": "0.1.0",
+      "source_path": "plugins/themes",
+      "package": "plugins/themes/package-templates/ember.json",
+      "preparation": "READY",
+      "payloads": {
+        "theme": {
+          "directory": "plugins/themes/ember",
+          "closed_directories": ["."],
+          "files": {
+            "theme.json": {
+              "sha256": "a021721902aba17a5fa8b9156941482cd98b40a3b5c33763f2f3ec9c07aa4079",
+              "mode": "100644"
+            }
+          }
+        }
+      }
+    },
+    "theme-fjord": {
+      "kind": "theme",
+      "id": "fjord",
+      "version": "0.1.0",
+      "source_path": "plugins/themes",
+      "package": "plugins/themes/package-templates/fjord.json",
+      "preparation": "READY",
+      "payloads": {
+        "theme": {
+          "directory": "plugins/themes/fjord",
+          "closed_directories": ["."],
+          "files": {
+            "theme.json": {
+              "sha256": "05cd4fb4b1819bdae1a3316c5cb0d398fcefd9813dd30c220468828e7eebe14e",
+              "mode": "100644"
+            }
+          }
+        }
+      }
+    },
+    "provider-pi": {
+      "kind": "provider",
+      "id": "pi",
+      "version": "0.4.0",
+      "source_path": "plugins/providers/pi",
+      "package": "plugins/providers/pi/package-template.json",
+      "preparation": "READY",
+      "payloads": {
+        "darwin-aarch64": {
+          "directory": "plugins/providers/pi",
+          "closed_directories": ["src"],
+          "files": {
+            "bin/acp-events.mjs": {
+              "source": "src/acp-events.mjs",
+              "source_mode": "100644",
+              "mode": "100644",
+              "sha256": "9a21ab8fc1e53662ff53710d44d2c0b9757ddb9ec207b427118262e4d5d2b2bc"
+            },
+            "bin/acp-server.mjs": {
+              "source": "src/acp-server.mjs",
+              "source_mode": "100644",
+              "mode": "100644",
+              "sha256": "7c9ec22d123ae147f6b9998fbf70072714b1e6d56055f4df2c224b8e7a5a1008"
+            },
+            "bin/acp-session.mjs": {
+              "source": "src/acp-session.mjs",
+              "source_mode": "100644",
+              "mode": "100644",
+              "sha256": "be3033ed4e8fb381ea511d54b5e50c5fd61761cc84aea3fc0e717893814d69d0"
+            },
+            "bin/cadencr-permissions.mjs": {
+              "source": "src/cadencr-permissions.mjs",
+              "source_mode": "100644",
+              "mode": "100644",
+              "sha256": "f00a1108b244222eb0eeaf4d6358e8f3fc02a070fb99a16dec1b1072a7de7c50"
+            },
+            "bin/jsonl.mjs": {
+              "source": "src/jsonl.mjs",
+              "source_mode": "100644",
+              "mode": "100644",
+              "sha256": "f9f19eb360fdf6945ea5d2a2e2848416b129b6d155f8a7fca35026622beb976f"
+            },
+            "bin/models-command.mjs": {
+              "source": "src/models-command.mjs",
+              "source_mode": "100644",
+              "mode": "100644",
+              "sha256": "c51ca30363e1f26f7d8a06c3a300c0c834c8536afc2cdcb9078c7833fdbe2a16"
+            },
+            "bin/pi-args.mjs": {
+              "source": "src/pi-args.mjs",
+              "source_mode": "100644",
+              "mode": "100644",
+              "sha256": "13714a00640080300ce183f32da364136a15dd028974e1ed0a91dec3d8733972"
+            },
+            "bin/pi-models.mjs": {
+              "source": "src/pi-models.mjs",
+              "source_mode": "100644",
+              "mode": "100644",
+              "sha256": "c53e25c4d4c0175d88cdf4d87c165750775d86bc12ce435e7d9f775489943cfc"
+            },
+            "bin/pi-rpc-client.mjs": {
+              "source": "src/pi-rpc-client.mjs",
+              "source_mode": "100644",
+              "mode": "100644",
+              "sha256": "701d960eb30fc8df4b7ae4274cfa8f8a522271de6a2ba1869f4acbc7d516f2f4"
+            },
+            "bin/provider": {
+              "source": "src/provider.mjs",
+              "source_mode": "100644",
+              "mode": "100755",
+              "sha256": "2a834eda10b20357b90f3d5a0c1ae3938a2afd8f68e0876ce226c6fd84e6c39a"
+            },
+            "bin/session-identity.mjs": {
+              "source": "src/session-identity.mjs",
+              "source_mode": "100644",
+              "mode": "100644",
+              "sha256": "6fe9be1772e1c058495c429e75755701c1e5a98492fe5780cebbd7a6c121471b"
+            },
+            "bin/version.mjs": {
+              "source": "src/version.mjs",
+              "source_mode": "100644",
+              "mode": "100644",
+              "sha256": "2c0879b10a90f810d0ae4a795a982fa6b42428c71c1a452eb4d779215235a8db"
+            },
+            "README.md": {
+              "mode": "100644",
+              "sha256": "1c8f4f162bb8a11bbfa5978478bad243da608d5618b80544239bc81bed022349"
+            },
+            "LICENSE": {
+              "mode": "100644",
+              "sha256": "969e96a549b0526e1a7739d596210857bc3c67fc6337c7e032d75a6daddf4ad5"
+            },
+            "icon.svg": {
+              "mode": "100644",
+              "sha256": "a5624bc3b8cac94de75f6f13701eca2ad3ef67bbeba286c4af3f398806f0858a"
+            }
+          }
+        }
+      },
+      "version_file": "plugins/providers/pi/package.json"
+    }
   },
   "publication": "PENDING"
 }

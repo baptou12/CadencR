@@ -1,0 +1,33 @@
+{
+  "kind": "provider",
+  "package": {
+    "agent": {
+      "id": "pi",
+      "name": "Pi",
+      "version": "0.4.0",
+      "description": "External Cadencr provider connector for Pi's native RPC mode",
+      "repository": "https://github.com/merkr-software/CadencR",
+      "license": "Apache-2.0",
+      "distribution": {
+        "binary": {
+          "darwin-aarch64": {
+            "archive": "PENDING",
+            "cmd": "bin/provider",
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      }
+    },
+    "host": {
+      "publisher": "PENDING",
+      "compatibility": {
+        "min_app_version": "PENDING"
+      },
+      "assets": {
+        "icon": "icon.svg",
+        "readme": "README.md",
+        "license": "LICENSE"
+      }
+    }
+  }
+}

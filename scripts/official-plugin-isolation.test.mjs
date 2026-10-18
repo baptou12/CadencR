@@ -227,3 +227,23 @@ test("independent official plugin tag namespaces do not trigger desktop releases
   }
   assert.equal(`v${json("packages/desktop/package.json").version}`.startsWith("v"), true);
 });
+
+test("isolated plugin CI requires real Pi candidate tests with the already pinned CLI", () => {
+  const workflow = yaml(".github/workflows/ci.yml");
+  const job = workflow.jobs.plugins;
+  assert.equal(job.if, undefined);
+  assert.equal(job["continue-on-error"], undefined);
+  assert.equal(job.environment, undefined, "candidate checks have no production authority");
+  const steps = job.steps;
+  const fetch = steps.findIndex((step) => step.run?.includes("fetch-released-cli.sh"));
+  const candidate = steps.findIndex((step) => step.name === "Canonical Pi candidate preparation");
+  assert.ok(fetch >= 0 && candidate > fetch, "candidate tests require the verified download");
+  assert.match(steps[fetch].run, /scripts\/cli-qualification\.env/);
+  assert.deepEqual(steps[candidate], {
+    name: "Canonical Pi candidate preparation",
+    run:
+      'CADENCR_PI_CANDIDATE_TEST_CLI="$RUNNER_TEMP/official-plugin-cli/cadencr" \\\n' +
+      "  node --test plugins/providers/pi/test/candidate-package.test.mjs\n",
+  });
+  assert.ok(workflow.jobs["precommit-checks"].needs.includes("plugins"));
+});

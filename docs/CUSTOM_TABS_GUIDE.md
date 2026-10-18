@@ -90,14 +90,14 @@ same errors on the tab's card.
 
 ### Permissions
 
-| Permission | What the tab can read |
-| --- | --- |
-| `features:read` | This conversation's feature and project, and the project's other features. |
-| `git:read` | Status, diffs, history and branches of this conversation's worktree; live `git.status`. |
-| `forge:read` | The pull/merge request of this conversation; live `forge.status`. |
-| `files:read` | Files of this conversation's worktree; live `files.changes`. |
-| `agent:observe` | The agent conversation's history and live `session.stream` (read only). |
-| `workspace:read` | Every project and feature; live `session.status`. |
+| Permission       | What the tab can read                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| `features:read`  | This conversation's feature and project, and the project's other features.              |
+| `git:read`       | Status, diffs, history and branches of this conversation's worktree; live `git.status`. |
+| `forge:read`     | The pull/merge request of this conversation; live `forge.status`.                       |
+| `files:read`     | Files of this conversation's worktree; live `files.changes`.                            |
+| `agent:observe`  | The agent conversation's history and live `session.stream` (read only).                 |
+| `workspace:read` | Every project and feature; live `session.status`.                                       |
 
 A tab never gets your Cadencr token. Each open tab receives a short-lived grant
 for **its** conversation only. The service checks every request against a fixed
@@ -111,7 +111,7 @@ import { CadencrProvider, useTabContext, useStream } from "@cadencr/tab-sdk/reac
 import { getChangedFiles } from "@cadencr/tab-sdk/api";
 
 function App() {
-  const { feature } = useTabContext();          // project, feature, branch, PR, session
+  const { feature } = useTabContext(); // project, feature, branch, PR, session
   const [files, setFiles] = useState<string[]>([]);
   const refresh = () =>
     getChangedFiles({ feature_id: feature.id, mode: "uncommitted" }).then((f) =>
@@ -119,10 +119,20 @@ function App() {
     );
   useEffect(() => void refresh(), [feature.id]);
   useStream("git.status", () => void refresh()); // pushed live, no polling
-  return <ul>{files.map((p) => <li key={p}>{p}</li>)}</ul>;
+  return (
+    <ul>
+      {files.map((p) => (
+        <li key={p}>{p}</li>
+      ))}
+    </ul>
+  );
 }
 
-createRoot(root).render(<CadencrProvider><App /></CadencrProvider>);
+createRoot(root).render(
+  <CadencrProvider>
+    <App />
+  </CadencrProvider>,
+);
 ```
 
 The client also has the following:
@@ -181,3 +191,74 @@ private network addresses, are refused.
 - Every plugin route is `proposed`: it may still change before custom tabs can
   be published. The SDK and kit are versioned `0.x` and ship vendored inside the
   starter until they are published on npm.
+
+## Publish a custom tab to the marketplace
+
+Build the tab first (`pnpm build` in its author project). Open the project's
+settings and use **Custom tab publication preparation**, then **Prepare a custom
+tab bundle**. These sections are available in development builds with
+`VITE_INTERNAL_MARKETPLACE=true`, like the rest of the unreleased marketplace.
+
+The metadata uses the signed catalog's schema-2 `tab` kind. This is a template,
+not publishable metadata: replace the checksum and `FIRST_COMPATIBLE_APP_VERSION`
+before preparation. The first desktop release with marketplace-tab support has
+not been selected yet; released `0.13.1` does **not** support these packages.
+
+```json
+{
+  "kind": "tab",
+  "package": {
+    "tab": {
+      "id": "files-graph",
+      "name": "Files graph",
+      "description": "Explore changed files",
+      "version": "1.0.0",
+      "repository": "https://github.com/acme/files-graph",
+      "license": "MIT",
+      "api_version": 1,
+      "distribution": {
+        "archive": "https://github.com/acme/files-graph/releases/download/v1.0.0/tab.tar.gz",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "host": {
+      "publisher": "acme",
+      "compatibility": { "min_app_version": "FIRST_COMPATIBLE_APP_VERSION" }
+    }
+  }
+}
+```
+
+Use the actual first compatible app version or a later tested release for
+`min_app_version`; the placeholder deliberately fails semantic-version validation.
+Keep the mixed tab catalog separate from feeds consumed by older clients: their
+parsers can reject the unknown `tab` kind before compatibility filtering.
+
+The ID, name, version and API version must match `tab.json`. Preparation replaces
+the placeholder checksum with the actual SHA-256 and captures only `tab.json`,
+the declared SVG icon and the directory containing the compiled HTML entry.
+The distributed entry must be inside a web directory such as `dist/index.html`.
+Sources, dependencies, Git history, symlinks and executable file modes are not
+distributed. Both compressed and unpacked archives are limited to 32 MiB.
+
+Review the prepared bundle, create the source release, then generate and submit
+the registry contribution through the existing publication workflow. Preparing a
+bundle alone publishes nothing; the registry still verifies and signs its catalog.
+
+For headless packaging, assemble that same distribution tree and run:
+
+```sh
+cadencr registry pack-tab --directory ./staging --output ./tab.tar.gz
+```
+
+For release preparation, add `--package ./marketplace-package.json` to bind the
+compiled manifest's identity, version and API version to reviewed schema-2 metadata.
+
+Marketplace tabs share the mixed catalog source and signing trust already used
+by themes (`CADENCR_MANAGED_THEME_INDEX_URL`); no separate signing key is needed.
+They appear under **Custom tabs** in the marketplace and install into immutable
+revisions under `plugins/managed-tabs`, separate from editable `plugins/tabs`
+projects. Installation does not grant permissions. Enable the tab through the
+existing consent dialog; changes to its permissions or network origins require
+consent again. Updates and removal keep configuration, while installation refuses
+to overwrite a local author tab with the same ID.

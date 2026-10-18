@@ -18,20 +18,30 @@ pub use marketplace::{
 };
 pub use marketplace_types::{
     parse_marketplace_package, MarketplaceAssets, MarketplaceCompatibility, MarketplaceHost,
-    MarketplacePackage, ProviderPackage, ThemeDescriptor, ThemeDistribution, ThemePackage,
+    MarketplacePackage, ProviderPackage, TabDescriptor, TabPackage, ThemeDescriptor,
+    ThemeDistribution, ThemePackage,
 };
 mod json;
 mod package;
 mod pipeline_preflight;
 mod publication_plan;
+mod release_archive;
+pub use release_archive::{parse_github_release_archive_url, GitHubReleaseArchive};
 mod safe_io;
 mod signing;
 mod snapshot;
 mod submission;
+#[cfg(test)]
+mod tab_marketplace;
 mod theme_blocklist;
 pub use theme_blocklist::{
     prepare_theme_blocklist, PreparedThemeBlocklist, ThemeBlocklist, ThemeBlocklistEntry,
     MAX_SIGNED_THEME_BLOCKLIST_BYTES, MAX_THEME_BLOCKLIST_BYTES,
+};
+mod tab_archive;
+pub use tab_archive::{
+    pack_tab, read_tab_archive_bytes, snapshot_tab_folder, validate_tab_files,
+    validate_tab_package_files, verify_tab_archive, PackTabRequest, PackedTab,
 };
 mod theme_archive;
 mod theme_verify;

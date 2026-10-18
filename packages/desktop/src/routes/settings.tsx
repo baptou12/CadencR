@@ -1,31 +1,28 @@
 import { useEffect, useRef } from "react";
-import { MARKETPLACE_ENABLED } from "@/lib/marketplace-gate";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useShortcut } from "@/hooks/useShortcut";
 import { Button } from "@/components/ui/button";
 import { SidebarCollapsedChrome } from "@/components/SidebarCollapsedChrome";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MarketplaceSection } from "@/components/MarketplaceSection";
 import { GeneralSettingsSections } from "@/components/settings/GeneralSettingsSections";
 import { SettingsNavSidebar } from "@/components/settings/SettingsNavSidebar";
 import { NAV_GROUPS } from "@/components/settings/settings-nav-groups";
 import {
+  isLegacyMarketplaceLink,
   parseSettingsSearch,
-  resolveSettingsTab,
-  useVisitedSettingsViews,
 } from "@/components/settings/settings-navigation";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
   validateSearch: parseSettingsSearch,
+  beforeLoad: ({ search }) => {
+    if (isLegacyMarketplaceLink(search)) throw redirect({ to: "/marketplace" });
+  },
 });
 
 function SettingsPage() {
   const search = Route.useSearch();
-  const activeTab = resolveSettingsTab(search);
-  const visited = useVisitedSettingsViews(activeTab);
   const navigate = useNavigate();
   const mainRef = useRef<HTMLElement | null>(null);
   const goBack = () => {
@@ -39,61 +36,23 @@ function SettingsPage() {
   });
 
   useEffect(() => {
-    if (activeTab !== "general" || !search.section) return;
+    if (!search.section) return;
     document.getElementById(search.section)?.scrollIntoView({ block: "start" });
-  }, [activeTab, search.section]);
+  }, [search.section]);
 
   return (
-    <Tabs
-      value={activeTab}
-      onValueChange={(tab) => {
-        if (tab !== "general" && (tab !== "marketplace" || !MARKETPLACE_ENABLED)) return;
-        void navigate({ to: "/settings", search: { tab } });
-      }}
-      className="h-full min-h-0 bg-background text-foreground"
-    >
+    <div className="flex h-full min-h-0 flex-col bg-background text-foreground">
       <SettingsPageHeader onBack={goBack} />
-      <TabsContent
-        value="general"
-        forceMount
-        hidden={activeTab !== "general"}
-        aria-hidden={activeTab !== "general"}
-        inert={activeTab !== "general"}
-        style={activeTab !== "general" ? { display: "none" } : undefined}
-        className="overflow-hidden data-[state=active]:flex"
-      >
-        {visited.general && (
-          <>
-            {activeTab === "general" && (
-              <SettingsNavSidebar groups={NAV_GROUPS} scrollRef={mainRef} />
-            )}
-            <main ref={mainRef} className="relative min-w-0 flex-1 overflow-y-auto">
-              <div className="mx-auto max-w-[820px] space-y-6 px-4 py-6 md:px-10 md:py-8">
-                <GeneralSettingsSections />
-                <div className="h-12" />
-              </div>
-            </main>
-          </>
-        )}
-      </TabsContent>
-      {MARKETPLACE_ENABLED && (
-        <TabsContent
-          value="marketplace"
-          forceMount
-          hidden={activeTab !== "marketplace"}
-          aria-hidden={activeTab !== "marketplace"}
-          inert={activeTab !== "marketplace"}
-          style={activeTab !== "marketplace" ? { display: "none" } : undefined}
-          className="overflow-y-auto"
-        >
-          {visited.marketplace && (
-            <main className="mx-auto max-w-[1100px] p-4">
-              <MarketplaceSection />
-            </main>
-          )}
-        </TabsContent>
-      )}
-    </Tabs>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <SettingsNavSidebar groups={NAV_GROUPS} scrollRef={mainRef} />
+        <main ref={mainRef} className="relative min-w-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-[820px] space-y-6 px-4 py-6 md:px-10 md:py-8">
+            <GeneralSettingsSections />
+            <div className="h-12" />
+          </div>
+        </main>
+      </div>
+    </div>
   );
 }
 
@@ -102,17 +61,7 @@ function SettingsPageHeader({ onBack }: { onBack: () => void }): React.JSX.Eleme
   return (
     <header className="titlebar-drag flex min-h-11 shrink-0 items-center gap-3 border-b border-border px-4 md:px-6">
       <SidebarCollapsedChrome visible={collapsed} onExpand={() => setCollapsed(false)} />
-      <h1 className="shrink-0 text-sm font-semibold">Settings</h1>
-      <TabsList aria-label="Settings views" className="h-11 min-w-0 flex-1 border-b-0">
-        <TabsTrigger value="general" className="px-2">
-          General
-        </TabsTrigger>
-        {MARKETPLACE_ENABLED && (
-          <TabsTrigger value="marketplace" className="px-2">
-            Marketplace
-          </TabsTrigger>
-        )}
-      </TabsList>
+      <h1 className="min-w-0 flex-1 text-sm font-semibold">Settings</h1>
       <Button
         variant="ghost"
         size="sm"

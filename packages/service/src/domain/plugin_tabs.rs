@@ -23,6 +23,7 @@ pub mod config;
 pub mod consent;
 pub mod enablement;
 pub mod grants;
+pub mod managed;
 pub mod models;
 pub mod net;
 pub mod paths;

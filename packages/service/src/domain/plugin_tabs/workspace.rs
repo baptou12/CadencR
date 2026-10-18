@@ -31,6 +31,11 @@ pub async fn ensure(pool: &SqlitePool, plugin_id: &str) -> Result<PluginTabWorks
 /// the Git tab can show what the agent changed.
 pub async fn ensure_for(pool: &SqlitePool, tab: &LocalTab) -> Result<PluginTabWorkspace, AppError> {
     let plugin_id = tab.id.as_str();
+    if !paths::tabs_dir().join(plugin_id).is_dir() {
+        return Err(AppError::BadRequest(
+            "marketplace tabs are immutable; author a separate local tab to modify one".into(),
+        ));
+    }
     let dir = paths::plugin_dir(plugin_id)?;
     let cwd = dir.to_string_lossy().to_string();
     let label = tab.manifest().map(|manifest| manifest.name.trim());

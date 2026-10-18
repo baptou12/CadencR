@@ -13,7 +13,7 @@ pub(super) fn build(
 ) -> Result<PreparedPublicationPackage, AppError> {
     if !body.target.is_empty() || !body.staging_directory.is_empty() {
         return Err(AppError::BadRequest(
-            "themes have no platform target or external staging directory".into(),
+            "themes and tabs have no platform target or external staging directory".into(),
         ));
     }
     if body.metadata_json.len() > MAX_METADATA_BYTES {
@@ -25,21 +25,31 @@ pub(super) fn build(
         .map_err(|error| AppError::BadRequest(error.to_string()))?;
     cadencr_registry_core::validate_marketplace_package(&metadata)
         .map_err(|error| AppError::BadRequest(error.to_string()))?;
-    if metadata["kind"] != "theme" || metadata["package"]["theme"]["id"] != plugin_id {
+    let kind = metadata["kind"].as_str().unwrap_or_default();
+    if !matches!(kind, "theme" | "tab") || metadata["package"][kind]["id"] != plugin_id {
         return Err(AppError::BadRequest(
-            "theme package identity does not match author project".into(),
+            "package identity does not match author project".into(),
         ));
     }
-    let validated =
-        cadencr_plugin_core::theme::validate_theme_folder(&project_root).map_err(|issues| {
-            AppError::BadRequest(
-                issues
-                    .iter()
-                    .map(cadencr_plugin_core::theme::ThemeIssue::describe)
-                    .collect::<Vec<_>>()
-                    .join("; "),
-            )
-        })?;
+    let files = if kind == "tab" {
+        let files = cadencr_registry_core::snapshot_tab_folder(&project_root)
+            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        cadencr_registry_core::validate_tab_package_files(&metadata["package"], &files)
+            .map_err(|error| AppError::BadRequest(error.to_string()))?;
+        files
+    } else {
+        cadencr_plugin_core::theme::validate_theme_folder(&project_root)
+            .map_err(|issues| {
+                AppError::BadRequest(
+                    issues
+                        .iter()
+                        .map(cadencr_plugin_core::theme::ThemeIssue::describe)
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                )
+            })?
+            .files
+    };
     let prospective = super::output::prospective_path(&output_root)?;
     super::input::reject_output_overlap(&prospective, &project_root, &project_root)?;
     super::quota::ensure_capacity(&output_root)?;
@@ -55,11 +65,11 @@ pub(super) fn build(
         .project_id(project_id)
         .plugin_id(plugin_id)
         .bundle(bundle.as_path())
-        .files(validated.files)
+        .files(files)
         .metadata(metadata)
         .call();
     if result.is_err() {
-        for name in ["theme.tar.gz", "package.json"] {
+        for name in ["theme.tar.gz", "tab.tar.gz", "package.json"] {
             let path = bundle.join(name);
             match std::fs::remove_file(path) {
                 Ok(()) => {}
@@ -82,18 +92,34 @@ fn write_bundle(
 ) -> Result<PreparedPublicationPackage, AppError> {
     let staging = tempfile::tempdir_in(bundle).map_err(io_error)?;
     for (name, bytes) in files {
+        if let Some(parent) = staging.path().join(&name).parent() {
+            std::fs::create_dir_all(parent).map_err(io_error)?;
+        }
         publication_storage::write_exclusive_synced(&staging.path().join(name), &bytes)
             .map_err(io_error)?;
     }
-    let archive_path = bundle.join("theme.tar.gz");
-    let packed = cadencr_registry_core::pack_theme(
-        cadencr_registry_core::PackThemeRequest::builder()
-            .directory(staging.path())
-            .output(&archive_path)
-            .build(),
-    )
-    .map_err(|error| AppError::BadRequest(error.to_string()))?;
-    metadata["package"]["theme"]["distribution"]["sha256"] = packed.sha256.clone().into();
+    let kind = metadata["kind"].as_str().unwrap_or_default().to_owned();
+    let archive_path = bundle.join(format!("{kind}.tar.gz"));
+    let (sha256, size) = if kind == "tab" {
+        let packed = cadencr_registry_core::pack_tab(
+            cadencr_registry_core::PackTabRequest::builder()
+                .directory(staging.path())
+                .output(&archive_path)
+                .build(),
+        )
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        (packed.sha256, packed.size)
+    } else {
+        let packed = cadencr_registry_core::pack_theme(
+            cadencr_registry_core::PackThemeRequest::builder()
+                .directory(staging.path())
+                .output(&archive_path)
+                .build(),
+        )
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        (packed.sha256, packed.size)
+    };
+    metadata["package"][&kind]["distribution"]["sha256"] = sha256.clone().into();
     let metadata_path = bundle.join("package.json");
     publication_storage::write_exclusive_synced(
         &metadata_path,
@@ -107,8 +133,8 @@ fn write_bundle(
         target: String::new(),
         archive_path: archive_path.display().to_string(),
         metadata_path: metadata_path.display().to_string(),
-        sha256: packed.sha256,
-        size: packed.size,
+        sha256,
+        size,
     })
 }
 
@@ -201,5 +227,33 @@ mod tests {
             }
         )
         .is_err());
+    }
+    #[test]
+    fn tab_bundle_excludes_sources() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("graph");
+        std::fs::create_dir_all(project.join("dist")).unwrap();
+        std::fs::write(project.join("tab.json"), r#"{"schema_version":1,"kind":"tab","id":"graph","name":"Graph","version":"1.0.0","api_version":1,"entry":"dist/index.html"}"#).unwrap();
+        std::fs::write(project.join("dist/index.html"), "<html>Graph</html>").unwrap();
+        std::fs::write(project.join("source.ts"), "source must stay local").unwrap();
+        let metadata = json!({"kind":"tab","package":{"tab":{"id":"graph","name":"Graph","description":"A graph","version":"1.0.0","api_version":1,"license":"MIT","repository":"https://github.com/acme/tabs","distribution":{"archive":"https://github.com/acme/tabs/releases/download/v1.0.0/tab.tar.gz","sha256":"0".repeat(64)}},"host":{"publisher":"acme","compatibility":{"min_app_version":"0.1.0"}}}});
+        let response = build(
+            1,
+            project,
+            "graph".into(),
+            temp.path().join("output"),
+            PreparePublicationPackageRequest {
+                metadata_json: metadata.to_string(),
+                target: String::new(),
+                staging_directory: String::new(),
+            },
+        )
+        .unwrap();
+        let bytes = std::fs::read(&response.archive_path).unwrap();
+        let files = cadencr_registry_core::read_tab_archive_bytes(&bytes).unwrap();
+        assert_eq!(
+            files.keys().cloned().collect::<Vec<_>>(),
+            ["dist/index.html", "tab.json"]
+        );
     }
 }

@@ -76,7 +76,11 @@ pub async fn prepare_publication_package_handler(
     // bundle quota prevents abandoned successful outputs from growing without bound.
     let response = tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        if kind == super::models::ProjectAuthoringTarget::Theme {
+        if kind != super::models::ProjectAuthoringTarget::Provider {
+            super::publication_release::local::validate_project_kind(
+                body.metadata_json.as_bytes(),
+                kind,
+            )?;
             return theme::build(project_id, project_root, plugin_id, output_root, body);
         }
         let prepared = input::prepare(project_id, project_root, plugin_id, output_root, body)?;

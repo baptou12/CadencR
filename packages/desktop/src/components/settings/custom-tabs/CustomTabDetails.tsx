@@ -135,7 +135,7 @@ function CardActions({
         variant="outline"
         size="xs"
         className="gap-1.5"
-        disabled={opening}
+        disabled={opening || tab.managed === true}
         onClick={() =>
           opener.open(
             tab.id,
@@ -152,7 +152,7 @@ function CardActions({
         ) : (
           <RotateCcw className="size-3.5" aria-hidden />
         )}
-        {hasProject ? "Open project" : "Retry setup"}
+        {tab.managed ? "Marketplace installation" : hasProject ? "Open project" : "Retry setup"}
       </Button>
       {isDesktopShell() ? <RevealButton dir={tab.dir} /> : null}
       <Button

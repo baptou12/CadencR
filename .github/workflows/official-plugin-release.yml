@@ -3,10 +3,10 @@ name: Prepare independent official plugin release
 on:
   push:
     tags:
-      - "plugins/provider-pi/v*"
-      - "plugins/theme-graphite/v*"
-      - "plugins/theme-ember/v*"
-      - "plugins/theme-fjord/v*"
+      # Discovery only: the exact source-bound policy allowlist is authoritative.
+      - "plugins/provider-*/v*"
+      - "plugins/theme-*/v*"
+      - "plugins/tab-*/v*"
 
 permissions:
   contents: read
@@ -15,6 +15,7 @@ jobs:
   prepare:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # Read-only, no environment, credentials, signing, or source build.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

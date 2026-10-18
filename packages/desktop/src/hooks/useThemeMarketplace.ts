@@ -1,11 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type UseMutationResult,
-  type UseQueryResult,
-} from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import {
   getManagedThemeCatalog,
@@ -25,6 +19,7 @@ import {
   managedThemesKey,
 } from "@/lib/theme-marketplace";
 import { useManagedThemes } from "./useManagedThemes";
+import { useStableMutation, useStableQuery } from "./stable-query";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 
 type ThemeAction =
@@ -33,21 +28,20 @@ type ThemeAction =
   | { kind: "remove"; id: string; confirmFallback: boolean }
   | { kind: "duplicate"; id: string; label: string };
 const catalogKey = ["marketplace", "theme-catalog"];
+export const themeCatalogQuery = queryOptions({
+  queryKey: catalogKey,
+  staleTime: 60_000,
+  queryFn: async ({ signal }) => {
+    const response = await getManagedThemeCatalog(signal);
+    themeCatalogSchema.parse(response);
+    return response;
+  },
+});
 export function useThemeMarketplace() {
   const client = useQueryClient();
   const [notice, setNotice] = useState<string | null>(null);
   const inventory = useStableQuery(useManagedThemes());
-  const catalog = useStableQuery(
-    useQuery({
-      queryKey: catalogKey,
-      staleTime: 60_000,
-      queryFn: async ({ signal }) => {
-        const response = await getManagedThemeCatalog(signal);
-        themeCatalogSchema.parse(response);
-        return response;
-      },
-    }),
-  );
+  const catalog = useStableQuery(useQuery(themeCatalogQuery));
   const refresh = useStableMutation(
     useMutation({
       mutationFn: async () => {
@@ -94,36 +88,6 @@ export function useThemeMarketplace() {
     [inventory, catalog, refresh, mutation, recovery, notice],
   );
 }
-// Observer result objects are fresh each render; expose only the state/actions
-// consumers need so unrelated parent renders preserve the marketplace facade.
-function useStableQuery<T>({
-  data,
-  error,
-  isSuccess,
-  isError,
-  isLoading,
-  isFetching,
-}: UseQueryResult<T>) {
-  return useMemo(
-    () => ({ data, error, isSuccess, isError, isLoading, isFetching }),
-    [data, error, isSuccess, isError, isLoading, isFetching],
-  );
-}
-function useStableMutation<T, V>({
-  error,
-  isSuccess,
-  isError,
-  isPending,
-  variables,
-  mutate,
-  mutateAsync,
-}: UseMutationResult<T, Error, V>) {
-  return useMemo(
-    () => ({ error, isSuccess, isError, isPending, variables, mutate, mutateAsync }),
-    [error, isSuccess, isError, isPending, variables, mutate, mutateAsync],
-  );
-}
-
 async function executeThemeAction(action: ThemeAction): Promise<string | null> {
   switch (action.kind) {
     case "install":

@@ -30,7 +30,7 @@ try:
     release = json.loads((root/'plugins/release-policy.json').read_bytes())
 except (OSError, ValueError):
     fail('AUTHOR_POLICY_INVALID')
-if policy.get('schema_version') != 1 or policy.get('repository') != 'merkr-software/CadencR' or release.get('schema_version') != 1:
+if policy.get('schema_version') != 1 or policy.get('repository') != 'merkr-software/CadencR' or release.get('schema_version') != 2:
     fail('AUTHOR_POLICY_INVALID')
 if policy.get('publication') != 'APPROVED' or release.get('publication') != 'APPROVED':
     fail('AUTHOR_PUBLICATION_PENDING')

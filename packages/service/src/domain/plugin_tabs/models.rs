@@ -12,6 +12,9 @@ pub use cadencr_plugin_core::tab::{
 /// One local custom tab, valid or not.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PluginTabSummary {
+    /// Present for an immutable marketplace installation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub managed: Option<bool>,
     pub id: String,
     /// The manifest name, or the id when `tab.json` could not be parsed.
     pub name: String,

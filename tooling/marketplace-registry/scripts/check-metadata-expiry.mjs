@@ -1,5 +1,5 @@
 // Read-only scheduling diagnostic, NOT signature verification or publication authority.
-import { readBoundedRegularFile } from "./publication/io.mjs";
+import { readBoundedRegularFile } from "./read-bounded-regular-file.mjs";
 import { pathToFileURL } from "node:url";
 
 const MAX_BYTES = 32 * 1024 * 1024;

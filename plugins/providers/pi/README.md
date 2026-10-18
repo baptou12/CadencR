@@ -171,9 +171,11 @@ verified launcher. No runtime dependencies or credentials are bundled.
 `pnpm --filter @cadencr/pi-provider smoke` starts real Pi for prompt-free discovery/session checks. Live and
 resume QA additionally send billable prompts and require explicit opt-in.
 
-The candidate recommendation pins Pi `0.85.1` because its public installed protocol
-sources were audited. Actual live QA against that version is still pending; this
-is not a verified compatibility claim. JSONL frames are limited to 16 MiB of UTF-8
+The candidate pins Pi `0.85.1` because its installed protocol sources were
+reviewed. Historical extracted-payload checks on macOS arm64 exercised actual Pi
+against an isolated loopback model and the local-descriptor generic host. They
+qualify that recorded protocol scope, not a newer archive, x86_64, managed
+installation, external-model authentication or every feature in the mapping. JSONL frames are limited to 16 MiB of UTF-8
 bytes per frame, accommodating substantial base64 image inputs while bounding
 unterminated input. Larger image frames must be resized or rejected.
 
@@ -181,3 +183,136 @@ Packaging refuses an existing payload directory, including symlinks. Use
 `pnpm --filter @cadencr/pi-provider package:plugin --directory /absolute/new/payload` for a fresh target. The sorted
 manifest is written beside it as `payload.SHA256SUMS`. No existing payload is
 removed or replaced.
+
+## Source-bound portable candidate preparation
+
+The optional local adapter below delegates validation and both archive builds to
+`cadencr registry pack-provider` (the shared Rust engine). It does not implement
+another archive writer, sign, publish, approve artwork/licenses, or qualify a
+platform. The official Pi release workflow still refuses publication.
+
+```sh
+node plugins/providers/pi/scripts/prepare-candidate.mjs \
+  --source-commit <full-clean-HEAD-commit> \
+  --candidate-target darwin-aarch64 \
+  --runtime external-node-pi \
+  --package /absolute/operator-supplied-candidate.json \
+  --cli /absolute/reviewed/cadencr \
+  --cli-sha256 <exact-reviewed-binary-sha256> \
+  --directory /absolute/existing-parent/new-candidate
+```
+
+- Every option is required. Only explicit `darwin-aarch64` or `darwin-x86_64`
+  **candidate** targets are accepted; preparation itself does not qualify either.
+  Historical arm64 protocol evidence is recorded separately; x86_64 is unqualified.
+  Linux remains a CI host, not an application target. Windows is not prepared.
+- `external-node-pi` preserves the current launcher, Node range and separately
+  installed Pi `0.85.1` prerequisites; it does not select or approve a future
+  native/self-contained distribution policy.
+- Source must be the exact clean `HEAD`, with no untracked plugin source or
+  tracked symlinks. Metadata is bounded to 64 KiB before reading; CLI/archive
+  reads are bounded to 128 MiB through checked, non-following file descriptors.
+  Runtime modules/assets are snapshotted from those Git objects,
+  not shared `bin/` output. Input paths and output ancestors must be symlink-free.
+- The supplied legacy provider package object has exactly `agent` and `host`.
+  `agent` must use `id: "pi"`, `name: "Pi"`, version `0.4.0`, this package's exact
+  description, repository `https://github.com/merkr-software/CadencR`, license
+  `Apache-2.0`, and only the selected `distribution.binary` target. That target
+  has only `archive`, `cmd: "bin/provider"`, and an initial 64-zero `sha256`.
+  `archive` is an operator-supplied credential-free HTTPS URL ending in
+  `/pi-0.4.0-<candidate-target>.tar.gz`; no URL/query credentials are accepted.
+- `host` supplies the operator's candidate `publisher`, explicit compatibility
+  versions, and `assets: {"icon":"icon.svg","readme":"README.md","license":"LICENSE"}`.
+  No publisher, minimum app version or public hosting destination is invented.
+  These candidate inputs do not constitute production approval. Additional
+  fields, command arguments, environment values and multiple targets are refused;
+  canonical schema validation remains owned by the Rust CLI. Input must be exact
+  `JSON.stringify(value, null, 2)` bytes plus one newline, refusing ambiguous
+  duplicate-key or alternate-format documents before invoking the CLI.
+
+The receipt rechecks its Node range against committed `package.json` and its Pi
+pin against the committed README install command and pinned upstream documentation.
+A prerequisite change requires explicit candidate-contract review; it cannot
+silently retain an obsolete runtime claim.
+
+The new directory retains the payload snapshot, private preparation inputs,
+`package.json` with the computed archive digest, two byte-identical canonical
+archives, and `candidate.json`. The receipt binds source commit/path, version,
+explicit candidate target, runtime prerequisites, CLI checksum, metadata checksum,
+and archive digest/size, plus the committed `readiness.json` digest and its
+source-license/artwork/runtime/target facts. Its publication and current-candidate
+qualification gates remain `PENDING`; historical protocol evidence is not erased
+or transferred to new archive bytes.
+The repository namespace is expected provenance, not verified remote authority;
+the receipt explicitly records `unverified-local-checkout`. It contains no runner paths. No whole-directory upload is intended: inspect only
+`candidate.json`, `package.json` and the primary archive; retain private scratch
+locally. Existing outputs are refused, never removed or replaced. Failures retain
+partial preparation for private inspection and grant no publication authority.
+Scratch is deliberately not recursively cleaned: a CLI might create an unexpected
+database, and database deletion is prohibited. Errors identify the failed preparation stage and a safe validation/I/O reason or
+child exit status, without forwarding arbitrary child stderr, paths or environment.
+
+Focused real-engine tests require an explicit locally reviewed CLI:
+
+```sh
+CADENCR_PI_CANDIDATE_TEST_CLI=/absolute/reviewed/cadencr \
+  node --test plugins/providers/pi/test/candidate-package.test.mjs
+```
+
+Without that variable, credential-free refusal tests still run; real canonical
+archive cases are explicitly skipped. These packaging tests do not execute Pi,
+access credentials, qualify macOS behavior, or replace managed-host live QA.
+
+## Native protocol QA with a local model fixture
+
+The opt-in test below executes the supplied connector and actual Pi `0.85.1`
+against a scripted HTTP model bound to `127.0.0.1`. It checks text streaming,
+usage, context retained after connector restart/resume, and held-stream
+cancellation. It does not contact a real model provider or use personal Pi auth.
+
+```sh
+CADENCR_PI_NATIVE_TEST_COMMAND=/absolute/reviewed/pi \
+CADENCR_PI_NATIVE_TEST_PROVIDER=/absolute/extracted/bin/provider \
+  node --test plugins/providers/pi/test/native-loopback.test.mjs
+```
+
+Both executable paths must be explicit and absolute. Without either variable the
+native case is skipped; partial opt-in or invalid executables fail. The test
+uses an allowlisted child environment, isolated configuration/workspace/session
+storage, and inert local model metadata. It retains scratch, never recursively
+deletes unexpected database state, and stops its owned children and fixture.
+The fixture's unit tests run normally without Pi, credentials or external APIs.
+
+This is protocol evidence, not external-model authentication, tool-permission,
+managed installation, x86_64, or publication approval. See the
+[native and generic-service evidence](../../../docs/qa/MARKETPLACE_PI_LOOPBACK_2026_10_18.md).
+
+## Source review and package inputs
+
+[`readiness.json`](readiness.json) records exact retained-source asset digests,
+external runtime requirements and per-target evidence boundaries. Preparation
+verifies those digests and prerequisites against committed Git blobs. It is a
+review aid, not an approval or a replacement for canonical CLI validation.
+
+| Item            | Reviewed source fact                                                                                 | Boundary                                                                                          |
+| --------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Connector       | Package and retained `LICENSE` declare Apache-2.0; runtime has no npm dependencies                   | License-file presence is not an authorship/legal attestation                                      |
+| Artwork         | Retained `icon.svg` contains a rectangle and two local paths, without scripts or external references | Original creator, licensing grant and brand-use permission are not established by retained source |
+| Runtime         | External Node.js `>=22.19.0 <23.0.0` and Pi `0.85.1`                                                 | Neither runtime, credentials nor model access is bundled                                          |
+| macOS arm64     | Recorded extracted candidate passed native loopback and local-descriptor protocol checks             | Exact historical source/archive are in the manifest; managed admission remains separate           |
+| macOS x86_64    | Explicit portable preparation target                                                                 | No native x86_64 execution is recorded                                                            |
+| Linux / Windows | Not prepared application targets                                                                     | Linux CI does not imply application support; Windows needs a verified launcher                    |
+
+[`package-template.json`](package-template.json) fixes the discriminated provider
+kind, Pi identity, source repository, Apache declaration, executable and assets.
+Only the arm64 candidate is included in that source-owned template. Its publisher,
+minimum app version and archive destination are deliberately `PENDING`, so it is
+**not a valid publishable package**. The release preparer supplies a source-tag-bound
+archive URL only after a reviewed release policy selects the target/payload.
+
+The local candidate command still accepts the inner legacy `{agent, host}` object,
+not the discriminated template wrapper. An operator must explicitly select one
+target and provide reviewed candidate publisher, compatibility and HTTPS archive
+values. No production publisher, application compatibility floor or native-target
+approval is inferred from a successful pack. The template/readiness documents stay
+outside the payload; the payload remains `bin/`, README, license and artwork only.

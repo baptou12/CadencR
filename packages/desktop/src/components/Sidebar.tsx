@@ -29,6 +29,7 @@ import {
 import { handleSidebarTypeToFilter, SidebarFilterInput } from "@/components/SidebarFilterInput";
 import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
 import { CadencrLogo } from "@/components/CadencrLogo";
+import { MarketplaceSidebarLink } from "@/components/MarketplaceSidebarLink";
 import { SchedulesSidebarLink } from "@/components/SchedulesSidebarLink";
 import { UnifiedAgentsSidebarLink } from "@/components/UnifiedAgentsSidebarLink";
 import { ConnectionStatusIndicator } from "@/components/ConnectionStatusIndicator";
@@ -106,6 +107,7 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
               {/* The unified agents grid is desktop-only — hide its entry on phones.
             Schedules is a plain list, so it works everywhere. */}
               <div className="mb-2 flex shrink-0 flex-col gap-0.5 px-1">
+                <MarketplaceSidebarLink />
                 {!isMobile && <UnifiedAgentsSidebarLink />}
                 <SchedulesSidebarLink />
               </div>

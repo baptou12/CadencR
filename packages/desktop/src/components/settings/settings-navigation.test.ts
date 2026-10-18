@@ -1,39 +1,39 @@
-import { describe, expect, it, vi } from "vitest";
-import { parseSettingsSearch, resolveSettingsTab } from "./settings-navigation";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const gate = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/lib/marketplace-gate", () => ({
+  get MARKETPLACE_ENABLED() {
+    return gate.enabled;
+  },
+}));
+import { isLegacyMarketplaceLink, parseSettingsSearch } from "./settings-navigation";
 import { NAV_GROUPS } from "./settings-nav-groups";
 
-vi.mock("@/lib/marketplace-gate", () => ({ MARKETPLACE_ENABLED: true }));
+afterEach(() => {
+  gate.enabled = true;
+});
 
 describe("settings navigation", () => {
-  it("defaults to General and preserves general section deep links", () => {
-    expect(resolveSettingsTab(parseSettingsSearch({}))).toBe("general");
-    const search = parseSettingsSearch({ section: "appearance" });
-    expect(search.section).toBe("appearance");
-    expect(resolveSettingsTab(search)).toBe("general");
+  it("preserves general section deep links", () => {
+    expect(parseSettingsSearch({ section: "appearance" })).toEqual({ section: "appearance" });
+    expect(isLegacyMarketplaceLink(parseSettingsSearch({ section: "appearance" }))).toBe(false);
   });
 
-  it("supports Marketplace URL selection and legacy section links", () => {
-    expect(resolveSettingsTab(parseSettingsSearch({ tab: "marketplace" }))).toBe("marketplace");
-    expect(resolveSettingsTab(parseSettingsSearch({ section: "marketplace" }))).toBe("marketplace");
+  it("sends old marketplace tab and section links to the Marketplace page", () => {
+    expect(isLegacyMarketplaceLink(parseSettingsSearch({ tab: "marketplace" }))).toBe(true);
+    expect(isLegacyMarketplaceLink(parseSettingsSearch({ section: "marketplace" }))).toBe(true);
   });
 
-  it("honors an explicit tab over a stale section", () => {
-    expect(
-      resolveSettingsTab(parseSettingsSearch({ tab: "general", section: "marketplace" })),
-    ).toBe("general");
-    expect(
-      resolveSettingsTab(parseSettingsSearch({ tab: "marketplace", section: "appearance" })),
-    ).toBe("marketplace");
+  it("keeps marketplace links on Settings when the marketplace is not in the build", () => {
+    gate.enabled = false;
+    expect(isLegacyMarketplaceLink(parseSettingsSearch({ tab: "marketplace" }))).toBe(false);
   });
 
   it("validates unknown URL input without rejecting the page", () => {
-    expect(parseSettingsSearch({ tab: "missing", section: 42 })).toEqual({
+    expect(parseSettingsSearch({ tab: 3, section: 42 })).toEqual({
       tab: undefined,
       section: undefined,
     });
-    expect(
-      resolveSettingsTab(parseSettingsSearch({ tab: "missing", section: "marketplace" })),
-    ).toBe("marketplace");
   });
 
   it("keeps the Custom tabs create action and drops unknown actions", () => {

@@ -2667,6 +2667,12 @@ export interface InstallManagedProviderRequest {
   version: string;
 }
 
+export interface InstallManagedTabRequest {
+  index: SignedMixedCatalog;
+  tab_id: string;
+  version: string;
+}
+
 export interface InstallManagedThemeRequest {
   index: SignedMixedCatalog;
   theme_id: string;
@@ -3058,6 +3064,14 @@ export interface ManagedProvidersInventory {
   providers: ManagedProviderInventoryEntry[];
   root: string;
   trust: ManagedTrustInventory;
+}
+
+export interface ManagedTabInventoryEntry {
+  /** @nullable */
+  error?: string | null;
+  id: string;
+  name: string;
+  version: string;
 }
 
 export type ManagedThemeCatalogResponseIndex = null | SignedMixedCatalog;
@@ -3579,6 +3593,11 @@ export interface PluginTabSummary {
   id: string;
   /** The tab trigger text (`tab.label`, else the name). */
   label: string;
+  /**
+   * Present for an immutable marketplace installation.
+   * @nullable
+   */
+  managed?: boolean | null;
   /** The manifest name, or the id when `tab.json` could not be parsed. */
   name: string;
   network: PluginTabNetwork;
@@ -20871,6 +20890,490 @@ export const useOpenSession = <TError = ErrorType<void>, TContext = unknown>(
   TContext
 > => {
   return useMutation(getOpenSessionMutationOptions(options), queryClient);
+};
+
+export const getManagedTabs = (signal?: AbortSignal) => {
+  return customInstance<ManagedTabInventoryEntry[]>({
+    url: `/api/marketplace/tabs`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetManagedTabsQueryKey = () => {
+  return [`/api/marketplace/tabs`] as const;
+};
+
+export const getGetManagedTabsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getManagedTabs>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabs>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetManagedTabsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getManagedTabs>>> = ({ signal }) =>
+    getManagedTabs(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getManagedTabs>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetManagedTabsQueryResult = NonNullable<Awaited<ReturnType<typeof getManagedTabs>>>;
+export type GetManagedTabsQueryError = ErrorType<unknown>;
+
+export function useGetManagedTabs<
+  TData = Awaited<ReturnType<typeof getManagedTabs>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabs>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getManagedTabs>>,
+          TError,
+          Awaited<ReturnType<typeof getManagedTabs>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetManagedTabs<
+  TData = Awaited<ReturnType<typeof getManagedTabs>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabs>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getManagedTabs>>,
+          TError,
+          Awaited<ReturnType<typeof getManagedTabs>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetManagedTabs<
+  TData = Awaited<ReturnType<typeof getManagedTabs>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabs>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useGetManagedTabs<
+  TData = Awaited<ReturnType<typeof getManagedTabs>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabs>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetManagedTabsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const installManagedTab = (
+  installManagedTabRequest: InstallManagedTabRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ManagedTabInventoryEntry>({
+    url: `/api/marketplace/tabs`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: installManagedTabRequest,
+    signal,
+  });
+};
+
+export const getInstallManagedTabMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof installManagedTab>>,
+    TError,
+    InstallManagedTabMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof installManagedTab>>,
+  TError,
+  InstallManagedTabMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["installManagedTab"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof installManagedTab>>,
+    InstallManagedTabMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return installManagedTab(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type InstallManagedTabMutationResult = NonNullable<
+  Awaited<ReturnType<typeof installManagedTab>>
+>;
+export type InstallManagedTabMutationBody = InstallManagedTabRequest;
+export type InstallManagedTabMutationError = ErrorType<unknown>;
+export type InstallManagedTabMutationVariables = { data: InstallManagedTabRequest };
+
+export const useInstallManagedTab = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof installManagedTab>>,
+      TError,
+      InstallManagedTabMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof installManagedTab>>,
+  TError,
+  InstallManagedTabMutationVariables,
+  TContext
+> => {
+  return useMutation(getInstallManagedTabMutationOptions(options), queryClient);
+};
+
+export const getManagedTabCatalog = (signal?: AbortSignal) => {
+  return customInstance<ManagedThemeCatalogResponse>({
+    url: `/api/marketplace/tabs/catalog`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetManagedTabCatalogQueryKey = () => {
+  return [`/api/marketplace/tabs/catalog`] as const;
+};
+
+export const getGetManagedTabCatalogQueryOptions = <
+  TData = Awaited<ReturnType<typeof getManagedTabCatalog>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabCatalog>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetManagedTabCatalogQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getManagedTabCatalog>>> = ({ signal }) =>
+    getManagedTabCatalog(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getManagedTabCatalog>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetManagedTabCatalogQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getManagedTabCatalog>>
+>;
+export type GetManagedTabCatalogQueryError = ErrorType<unknown>;
+
+export function useGetManagedTabCatalog<
+  TData = Awaited<ReturnType<typeof getManagedTabCatalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabCatalog>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getManagedTabCatalog>>,
+          TError,
+          Awaited<ReturnType<typeof getManagedTabCatalog>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetManagedTabCatalog<
+  TData = Awaited<ReturnType<typeof getManagedTabCatalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabCatalog>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getManagedTabCatalog>>,
+          TError,
+          Awaited<ReturnType<typeof getManagedTabCatalog>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetManagedTabCatalog<
+  TData = Awaited<ReturnType<typeof getManagedTabCatalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabCatalog>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useGetManagedTabCatalog<
+  TData = Awaited<ReturnType<typeof getManagedTabCatalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabCatalog>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetManagedTabCatalogQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const refreshManagedTabCatalog = (signal?: AbortSignal) => {
+  return customInstance<ManagedThemeCatalogResponse>({
+    url: `/api/marketplace/tabs/catalog/refresh`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getRefreshManagedTabCatalogMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshManagedTabCatalog>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof refreshManagedTabCatalog>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["refreshManagedTabCatalog"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof refreshManagedTabCatalog>>,
+    void
+  > = () => {
+    return refreshManagedTabCatalog();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefreshManagedTabCatalogMutationResult = NonNullable<
+  Awaited<ReturnType<typeof refreshManagedTabCatalog>>
+>;
+
+export type RefreshManagedTabCatalogMutationError = ErrorType<unknown>;
+
+export const useRefreshManagedTabCatalog = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof refreshManagedTabCatalog>>,
+      TError,
+      void,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof refreshManagedTabCatalog>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRefreshManagedTabCatalogMutationOptions(options), queryClient);
+};
+
+export const removeManagedTab = (id: string, signal?: AbortSignal) => {
+  return customInstance<boolean>({ url: `/api/marketplace/tabs/${id}`, method: "DELETE", signal });
+};
+
+export const getRemoveManagedTabMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeManagedTab>>,
+    TError,
+    RemoveManagedTabMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof removeManagedTab>>,
+  TError,
+  RemoveManagedTabMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["removeManagedTab"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removeManagedTab>>,
+    RemoveManagedTabMutationVariables
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return removeManagedTab(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoveManagedTabMutationResult = NonNullable<
+  Awaited<ReturnType<typeof removeManagedTab>>
+>;
+
+export type RemoveManagedTabMutationError = ErrorType<unknown>;
+export type RemoveManagedTabMutationVariables = { id: string };
+
+export const useRemoveManagedTab = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof removeManagedTab>>,
+      TError,
+      RemoveManagedTabMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof removeManagedTab>>,
+  TError,
+  RemoveManagedTabMutationVariables,
+  TContext
+> => {
+  return useMutation(getRemoveManagedTabMutationOptions(options), queryClient);
+};
+
+export const updateManagedTab = (
+  id: string,
+  installManagedTabRequest: InstallManagedTabRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ManagedTabInventoryEntry>({
+    url: `/api/marketplace/tabs/${id}/update`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: installManagedTabRequest,
+    signal,
+  });
+};
+
+export const getUpdateManagedTabMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateManagedTab>>,
+    TError,
+    UpdateManagedTabMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateManagedTab>>,
+  TError,
+  UpdateManagedTabMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["updateManagedTab"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateManagedTab>>,
+    UpdateManagedTabMutationVariables
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateManagedTab(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateManagedTabMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateManagedTab>>
+>;
+export type UpdateManagedTabMutationBody = InstallManagedTabRequest;
+export type UpdateManagedTabMutationError = ErrorType<unknown>;
+export type UpdateManagedTabMutationVariables = { id: string; data: InstallManagedTabRequest };
+
+export const useUpdateManagedTab = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateManagedTab>>,
+      TError,
+      UpdateManagedTabMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateManagedTab>>,
+  TError,
+  UpdateManagedTabMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateManagedTabMutationOptions(options), queryClient);
 };
 
 export const detectRoute = (signal?: AbortSignal) => {

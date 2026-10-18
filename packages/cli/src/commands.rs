@@ -83,6 +83,17 @@ fn run_registry(command: &RegistryCommand) -> Result<Option<String>, Diagnostic>
             output: destination,
         } => pack_provider(package, target, directory, destination),
         RegistryCommand::PackTheme { directory, output } => crate::theme::pack(directory, output),
+        RegistryCommand::PackTab {
+            directory,
+            package,
+            output,
+        } => crate::tab::pack(
+            cadencr_registry_core::PackTabRequest::builder()
+                .directory(directory)
+                .output(output)
+                .maybe_package(package.as_deref())
+                .build(),
+        ),
         RegistryCommand::PlanPublication {
             submission,
             repository,

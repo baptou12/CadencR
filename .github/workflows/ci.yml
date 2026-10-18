@@ -80,6 +80,13 @@ jobs:
         timeout-minutes: 20
         run: pnpm --filter @cadencr/service run test -- --nocapture
 
+      - name: Official release orchestration against the current Rust CLI
+        timeout-minutes: 5
+        run: |
+          pnpm rust -- build -p cadencr-cli
+          CADENCR_OFFICIAL_PLUGIN_TEST_CLI="$GITHUB_WORKSPACE/target/debug/cadencr" \
+            node --test scripts/official-plugin-release.test.mjs
+
   web:
     name: Web (format, lint, types, knip)
     runs-on: ubuntu-latest
@@ -259,6 +266,11 @@ jobs:
         run: |
           sh tooling/marketplace-registry/scripts/ci/fetch-released-cli.sh \
             scripts/cli-qualification.env "$RUNNER_TEMP/official-plugin-cli"
+
+      - name: Canonical Pi candidate preparation
+        run: |
+          CADENCR_PI_CANDIDATE_TEST_CLI="$RUNNER_TEMP/official-plugin-cli/cadencr" \
+            node --test plugins/providers/pi/test/candidate-package.test.mjs
 
       - name: Canonical theme validation and deterministic packaging
         run: |

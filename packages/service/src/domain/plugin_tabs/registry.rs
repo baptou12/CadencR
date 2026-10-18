@@ -59,21 +59,69 @@ impl LocalTab {
 /// is a directory is listed, valid or not, so a broken tab is visible.
 pub async fn list() -> Result<Vec<LocalTab>, AppError> {
     let root = paths::tabs_dir();
-    tokio::task::spawn_blocking(move || scan(&root))
-        .await
-        .map_err(|error| AppError::Internal(format!("custom tab scan failed: {error}")))?
+    let managed_root = super::managed::storage::root();
+    tokio::task::spawn_blocking(move || {
+        let mut tabs = scan(&root)?;
+        for id in super::managed::storage::ids(&managed_root)? {
+            if tabs.iter().any(|tab| tab.id == id) {
+                continue;
+            }
+            let report = match super::managed::storage::lease(&managed_root, &id) {
+                Ok(None) => continue,
+                Ok(Some(lease)) => match lease.read() {
+                    Ok(_) => inspect_tab_folder(lease.directory()),
+                    Err(error) => unavailable_report(lease.directory().to_owned(), error),
+                },
+                Err(error) => {
+                    unavailable_report(super::managed::storage::owner(&managed_root, &id)?, error)
+                }
+            };
+            tabs.push(LocalTab { id, report });
+        }
+        tabs.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(tabs)
+    })
+    .await
+    .map_err(|error| AppError::Internal(format!("custom tab scan failed: {error}")))?
+}
+
+fn unavailable_report(directory: std::path::PathBuf, error: AppError) -> TabFolderReport {
+    use cadencr_plugin_core::tab::{TabFindings, TabIssue, TabIssueCode};
+    TabFolderReport {
+        directory,
+        manifest: None,
+        icon_svg: None,
+        entry_present: false,
+        findings: TabFindings {
+            errors: vec![TabIssue::document(
+                TabIssueCode::ManifestUnreadable,
+                error.to_string(),
+            )],
+            warnings: Vec::new(),
+        },
+    }
 }
 
 /// One tab by id; `PLUGIN_TAB_NOT_FOUND` when its folder does not exist.
 pub async fn get(id: &str) -> Result<LocalTab, AppError> {
-    let dir = paths::plugin_dir(id)?;
+    let local_root = paths::tabs_dir();
+    let managed_root = super::managed::storage::root();
     let id = id.to_string();
     tokio::task::spawn_blocking(move || {
+        let selected = paths::resolve_plugin_directory()
+            .id(&id)
+            .local_root(&local_root)
+            .managed_root(&managed_root)
+            .call()?;
+        if let paths::PluginDirectory::Managed(lease) = &selected {
+            lease.read()?;
+        }
+        let dir = selected.directory();
         if !dir.is_dir() {
             return Err(not_found(&id));
         }
         Ok(LocalTab {
-            report: inspect_tab_folder(&dir),
+            report: inspect_tab_folder(dir),
             id,
         })
     })
@@ -161,5 +209,51 @@ mod tests {
                 ..
             })
         ));
+    }
+    #[tokio::test]
+    async fn a_broken_marketplace_revision_does_not_hide_local_tabs() {
+        write_tab("local", serde_json::json!({}));
+        let root = super::super::managed::storage::root();
+        let owner = super::super::managed::storage::owner(&root, "broken").unwrap();
+        super::super::managed::storage::secure(&root, &owner).unwrap();
+        super::super::managed::storage::write_file(
+            &owner.join("active.json"),
+            br#""invalid-revision""#,
+        )
+        .unwrap();
+        let tabs = list().await.unwrap();
+        assert_eq!(tabs.len(), 2);
+        assert!(tabs
+            .iter()
+            .find(|tab| tab.id == "local")
+            .unwrap()
+            .valid_manifest()
+            .is_some());
+        let broken = tabs.iter().find(|tab| tab.id == "broken").unwrap();
+        assert!(broken.valid_manifest().is_none());
+        assert!(!broken.report.findings.errors.is_empty());
+    }
+
+    #[test]
+    fn inspection_lease_keeps_the_selected_manifest_across_updates_and_removal() {
+        use super::super::managed::storage::{self, fixtures::fixture_revision};
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("managed");
+        let install = |revision| {
+            let (receipt, archive, files, _) =
+                fixture_revision(&temp.path().join(format!("fixture-{revision}")), revision);
+            storage::commit(&root, &receipt, &archive, &files).unwrap();
+        };
+        install(0);
+        let selected = storage::lease(&root, "graph").unwrap().unwrap();
+        install(1);
+        install(2);
+        storage::deactivate(&root, "graph").unwrap();
+        let report = inspect_tab_folder(selected.directory());
+        assert_eq!(report.valid_manifest().unwrap().version, "1.0.0");
+        let old = selected.directory().to_owned();
+        drop(selected);
+        install(3);
+        assert!(!old.exists());
     }
 }

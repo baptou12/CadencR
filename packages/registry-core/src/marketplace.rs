@@ -17,6 +17,7 @@ pub fn marketplace_package_kind(value: &Value) -> Option<&str> {
     match value.get("kind").and_then(Value::as_str) {
         Some("provider") => Some("provider"),
         Some("theme") => Some("theme"),
+        Some("tab") => Some("tab"),
         _ => None,
     }
 }
@@ -24,7 +25,7 @@ pub fn marketplace_package_identity(value: &Value) -> Option<(&str, &str)> {
     let kind = marketplace_package_kind(value)?;
     let descriptor = value
         .get("package")?
-        .get(if kind == "theme" { "theme" } else { "agent" })?;
+        .get(if kind == "provider" { "agent" } else { kind })?;
     Some((
         descriptor.get("id")?.as_str()?,
         descriptor.get("version")?.as_str()?,
@@ -35,7 +36,8 @@ pub(crate) fn body(value: &Value) -> &Value {
 }
 pub(crate) fn descriptor(value: &Value) -> &Value {
     let body = body(value);
-    body.get("theme")
+    body.get("tab")
+        .or_else(|| body.get("theme"))
         .or_else(|| body.get("agent"))
         .unwrap_or(&Value::Null)
 }
@@ -50,7 +52,7 @@ pub(crate) fn validate(value: &Value, label: &str, errors: &mut Diagnostics) {
     };
     package::reject_unknown(object, &["kind", "package"], label, errors);
     let Some(kind) = marketplace_package_kind(value) else {
-        errors.push(format!("{label}.kind must equal provider or theme"));
+        errors.push(format!("{label}.kind must equal provider, theme or tab"));
         return;
     };
     let content = value.get("package").unwrap_or(&Value::Null);
@@ -58,7 +60,7 @@ pub(crate) fn validate(value: &Value, label: &str, errors: &mut Diagnostics) {
         package::validate_provider_content(content, label, errors);
         return;
     }
-    validate_theme(content, label, errors);
+    validate_content(content, kind, label, errors);
 }
 
 pub fn valid_theme_id(id: &str) -> bool {
@@ -72,14 +74,14 @@ pub fn valid_theme_id(id: &str) -> bool {
         })
 }
 
-fn validate_theme(content: &Value, label: &str, errors: &mut Diagnostics) {
+fn validate_content(content: &Value, kind: &str, label: &str, errors: &mut Diagnostics) {
     let Some(object) = content.as_object() else {
         errors.push(format!("{label}.package must be an object"));
         return;
     };
-    package::reject_unknown(object, &["theme", "host"], label, errors);
-    let Some(theme) = content.get("theme").and_then(Value::as_object) else {
-        errors.push(format!("{label}.theme must be an object"));
+    package::reject_unknown(object, &[kind, "host"], label, errors);
+    let Some(theme) = content.get(kind).and_then(Value::as_object) else {
+        errors.push(format!("{label}.{kind} must be an object"));
         return;
     };
     package::reject_unknown(
@@ -91,18 +93,25 @@ fn validate_theme(content: &Value, label: &str, errors: &mut Diagnostics) {
             "version",
             "repository",
             "license",
-            "document_version",
+            if kind == "tab" {
+                "api_version"
+            } else {
+                "document_version"
+            },
             "distribution",
         ],
         label,
         errors,
     );
-    if theme
-        .get("id")
-        .and_then(Value::as_str)
-        .is_none_or(|id| !valid_theme_id(id))
-    {
-        errors.push(format!("{label}.theme.id is invalid"));
+    if theme.get("id").and_then(Value::as_str).is_none_or(|id| {
+        if kind == "tab" {
+            !cadencr_plugin_core::tab::is_valid_tab_id(id)
+                || cadencr_plugin_core::tab::RESERVED_IDS.contains(&id)
+        } else {
+            !valid_theme_id(id)
+        }
+    }) {
+        errors.push(format!("{label}.{kind}.id is invalid"));
     }
     for field in ["name", "description", "license"] {
         if theme
@@ -110,7 +119,7 @@ fn validate_theme(content: &Value, label: &str, errors: &mut Diagnostics) {
             .and_then(Value::as_str)
             .is_none_or(|s| s.trim().is_empty() || s.contains('\0'))
         {
-            errors.push(format!("{label}.theme.{field} must not be empty"));
+            errors.push(format!("{label}.{kind}.{field} must not be empty"));
         }
     }
     if theme
@@ -118,7 +127,7 @@ fn validate_theme(content: &Value, label: &str, errors: &mut Diagnostics) {
         .and_then(Value::as_str)
         .is_none_or(|s| semver::Version::parse(s).is_err())
     {
-        errors.push(format!("{label}.theme.version must be semantic version"));
+        errors.push(format!("{label}.{kind}.version must be semantic version"));
     }
     if !theme
         .get("repository")
@@ -126,13 +135,18 @@ fn validate_theme(content: &Value, label: &str, errors: &mut Diagnostics) {
         .is_some_and(crate::submission::canonical_github_repository)
     {
         errors.push(format!(
-            "{label}.theme.repository must be a canonical HTTPS GitHub repository"
+            "{label}.{kind}.repository must be a canonical HTTPS GitHub repository"
         ));
     }
-    if theme.get("document_version") != Some(&Value::from(1)) {
-        errors.push(format!("{label}.theme.document_version must equal 1"));
+    let version_field = if kind == "tab" {
+        "api_version"
+    } else {
+        "document_version"
+    };
+    if theme.get(version_field) != Some(&Value::from(1)) {
+        errors.push(format!("{label}.{kind}.{version_field} must equal 1"));
     }
-    validate_theme_distribution(theme, label, errors);
+    validate_theme_distribution(theme, kind, label, errors);
     validate_theme_host(content, label, errors);
 }
 
@@ -146,36 +160,9 @@ pub fn theme_distribution_repository(
     let fail = || {
         RegistryError::single("theme archive must be an exact GitHub release asset matching its distribution repository")
     };
-    let url = url::Url::parse(archive).map_err(|_| fail())?;
-    let parts = url.path().split('/').collect::<Vec<_>>();
-    let segment = |s: &str| {
-        !s.is_empty()
-            && s != "."
-            && s != ".."
-            && s.bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
-    };
-    if url.scheme() != "https"
-        || url.host_str() != Some("github.com")
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.port().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-        || url.as_str() != archive
-        || parts.len() != 7
-        || !parts[0].is_empty()
-        || parts[3..5] != ["releases", "download"]
-        || ![parts[1], parts[2], parts[5], parts[6]]
-            .iter()
-            .all(|s| segment(s))
-        || parts[6].len() > 128
-        || (!parts[6].to_ascii_lowercase().ends_with(".tar.gz")
-            && !parts[6].to_ascii_lowercase().ends_with(".tgz"))
-    {
-        return Err(fail());
-    }
-    let repository = format!("https://github.com/{}/{}", parts[1], parts[2]);
+    let repository = crate::parse_github_release_archive_url(archive)
+        .map_err(|_| fail())?
+        .repository;
     if explicit.is_some_and(|value| value.as_str() != Some(repository.as_str())) {
         return Err(fail());
     }
@@ -184,11 +171,12 @@ pub fn theme_distribution_repository(
 
 fn validate_theme_distribution(
     theme: &serde_json::Map<String, Value>,
+    kind: &str,
     label: &str,
     errors: &mut Diagnostics,
 ) {
     let Some(distribution) = theme.get("distribution").and_then(Value::as_object) else {
-        errors.push(format!("{label}.theme.distribution must be an object"));
+        errors.push(format!("{label}.{kind}.distribution must be an object"));
         return;
     };
     package::reject_unknown(
@@ -204,7 +192,7 @@ fn validate_theme_distribution(
             .unwrap_or_default(),
         distribution.get("repository"),
     ) {
-        errors.push(format!("{label}.theme.distribution: {error}"));
+        errors.push(format!("{label}.{kind}.distribution: {error}"));
     }
     if !distribution
         .get("sha256")
@@ -216,7 +204,7 @@ fn validate_theme_distribution(
         })
     {
         errors.push(format!(
-            "{label}.theme.distribution.sha256 must be lowercase SHA256"
+            "{label}.{kind}.distribution.sha256 must be lowercase SHA256"
         ));
     }
 }

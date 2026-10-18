@@ -5,24 +5,64 @@
 - Tags: `plugins/provider-pi/v0.4.0`, `plugins/theme-graphite/v0.1.0`,
   `plugins/theme-ember/v0.1.0`, `plugins/theme-fjord/v0.1.0`.
 - Never use desktop `v*` tags. Plugin versions do not change app versions.
-- `release-policy.json` records theme source versions because theme documents have
-  no package version. Pi uses its own `package.json` version.
+- `release-policy.json` records the explicit source identities, independent versions
+  and reviewed blob mappings. Source templates carry full registry metadata.
 - This preparation adds no tags, releases, registry entries or marketplace activation.
 
 ## Preparation contract
 
-The workflow checks the exact tag's commit and official tracked source paths.
-It downloads only the checksum-pinned **production released CLI** using the shared
-fetcher. `PENDING` pins fail the job; no qualification-pin or source-build fallback.
-The canonical CLI validates and packs each theme twice and exact bytes must match.
-Only `theme.json` is staged. Pi preparation refuses to invent native targets or
-package metadata while those decisions remain pending.
+The trusted preparer reads candidate **Git blobs only**. It never imports, invokes
+or builds a contributor script, launcher, tab bundle or provider binary. Only the
+checksum-pinned released Rust CLI executes. The registry pin still identifies the
+older provider/theme-qualified binary; a tab-capable replacement has not been
+delivered or promoted. The separate author pin and publication policies remain
+`PENDING`; there is no qualification-pin or source-build fallback in production.
 
-Public output is limited to the archive, `SHA256SUMS` and `release.json`, which
-binds tag, version, source path, full source commit and archive digest/size. CLI
-receipts containing private runner paths, logs, keys and environment are excluded.
-This is preparation metadata, **not** a registry package or signed author submission.
-Namespaced tag URLs are encoded by the shared Rust original-author engine.
+`release-policy.json` schema `2` is the explicit allowlist, not tag matching:
+
+| Field                         | Meaning                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| `plugins.<kind>-<id>`         | Exact official identity and independent source version                   |
+| `source_path`, `package`      | Tracked source root and full schema-2 package template                   |
+| `preparation: READY`          | Source mapping recorded; **not** legal/native/publication approval       |
+| `payloads.<target>.directory` | Source root for reviewed payload blobs                                   |
+| `files.<destination>`         | SHA-256 and output mode; optional source path and exact source mode      |
+| `closed_directories`          | Exact runtime subtrees: extra/missing files fail rather than disappear   |
+| `publication`                 | Still `PENDING`; only a separate reviewed change may approve publication |
+
+Themes have exact closed `theme.json` trees. Pi's interpreted modules are copied
+from `src/*.mjs` into `bin/`, with `provider.mjs` renamed `provider` and marked
+executable; the copied launcher is **never run**. Explicit readme/license/icon
+blobs are included. Author scripts, tests and dependencies are not payload.
+Pi's recorded arm64 candidate does not assert native or production qualification.
+Changing a mapped byte or source mode requires a reviewed policy digest update.
+
+Custom tabs use the same mechanism with **already compiled**, reviewed tracked
+web assets and a `tab.json`; no production tab identity/source is selected or
+allowlisted here. Any necessary arbitrary compilation must happen separately in
+an isolated unprivileged job, without signing/publication credentials. Build-job
+artifacts are not publication authority and are never downloaded by author jobs.
+The reviewed compiled blobs must be source-bound before trusted reconstruction.
+
+All three kinds pack twice through the shared Rust CLI; exact archive bytes and
+receipts must match. Providers support all explicitly declared target archives.
+`pack-tab --package` additionally binds the compiled runtime manifest to the full
+marketplace identity. Final schema-2 `package.json` and `submission.json` pass
+Rust's shared `plan-publication` validation, including source repository/tag.
+No Python/JavaScript registry-validator or archive implementation is introduced.
+
+Public output contains every archive, `SHA256SUMS`, full `package.json`, full
+`submission.json` and source-bound `release.json`. The latter is a preparation
+receipt, **not** a substitute for registry-consumable package metadata. CLI logs,
+local paths, environment and private scratch are excluded. Namespaced source-tag
+URLs are canonical encoded GitHub Release URLs validated by shared Rust rules.
+
+The source templates record known identity/license/runtime facts, while genuine
+undecided publisher/minimum-app-version fields remain `PENDING`. Thus source
+mapping is operational and inert fixtures exercise all kinds, but current
+production templates intentionally fail Rust publication validation until those
+separate decisions are made. Do not invent compatibility versions to make a job
+pass. Likewise, this change cannot promote a binary that lacks these CLI rules.
 
 ## Closed publication gate
 
@@ -80,8 +120,8 @@ cadencr plugin publish-release --request request.json --directory /canonical/art
 - Portable schema `1` binds repository/account/numeric repository ID, tag/source
   commit, notes/prerelease and every asset's safe basename, byte size and digest.
   Unknown fields, unsafe paths, symlinks, duplicate names and oversized inputs fail.
-- `metadata` is bounded opaque release documentation, **not** a validated registry
-  package or submission. This command grants no signing or registry authority.
+- `metadata` is opaque to this low-level engine; the official preparer supplies
+  Rust-validated full `package.json`, not its `release.json` receipt. This command grants no signing or registry authority.
 
 The older registry-qualified CLI does **not** contain these new commands.
 Author-capable `0.13.1-dev.39060688472.1` is now delivered from exact green main;
@@ -89,7 +129,8 @@ its public assets/provenance, isolated credential-free Linux QA and real GitHub
 author publication/retry/draft recovery pass with inert theme fixtures in the
 public QA repository. A separate fresh Linux runner reconciled the same release
 without changing IDs, contents or mutation timestamps. This does not qualify Pi's
-runtime or official package metadata. See the
+runtime or official package metadata. Both previously qualified binaries predate
+marketplace tabs; all-three-kind delivery needs the new distributed-CLI gate. See the
 [evidence and remaining gates](../docs/qa/MARKETPLACE_AUTHOR_CLI_2026_10_17.md).
 Keep production policies and the dedicated author pin `PENDING` until the separate
 production pin/policy/environment review is complete.
@@ -97,19 +138,22 @@ production pin/policy/environment review is complete.
 ## Protected manual author workflow
 
 `official-plugin-author.yml` runs only from trusted `main`. It reads candidate
-theme Git objects as data and never executes candidate scripts or accepts artifacts
+provider/theme/tab Git objects as data and never executes candidate scripts or accepts artifacts
 from another run. Both jobs independently reconstruct the same source-bound request.
 
-| Dispatch input   | Meaning                                                                |
-| ---------------- | ---------------------------------------------------------------------- |
-| `source_commit`  | Exact reviewed full commit containing approved theme source/policy     |
-| `tag`            | Existing `plugins/theme-<name>/v<version>` tag at that commit          |
-| `request_sha256` | Sixty-four zeros inspect only; the emitted digest confirms a later run |
+| Dispatch input   | Meaning                                                                  |
+| ---------------- | ------------------------------------------------------------------------ |
+| `source_commit`  | Exact reviewed full commit containing approved plugin source/policy      |
+| `tag`            | Existing allowlisted `plugins/<kind>-<id>/v<version>` tag at that commit |
+| `request_sha256` | Sixty-four zeros inspect only; the emitted digest confirms a later run   |
 
 Publication is conditional on the exact reconstructed digest and a separate
 `official-plugin-publication` environment. The author secret is available only to
 the final CLI step; catalog signing and registry submission are not included.
-Pi remains refused until its packaging/target/conformance gates are closed.
+Unknown/unapproved plugin identities are refused. Pi and actual custom-tab shipping
+remain gated on the source metadata, runtime/conformance and authority decisions.
+Inspection exports public inputs for human review only; publication reconstructs
+every byte independently and never consumes those uploaded artifacts.
 
 Before activation, all of the following require explicit review:
 
@@ -153,5 +197,8 @@ never grants production authority. Public metadata records the canonical reposit
 identity, never the local checkout path.
 
 Private scratch is retained and its path printed to stderr on packaging attempts.
+Rust failures retain a private, bounded `cli-diagnostics.log` in that scratch
+(maximum 64 KiB, mode `0600`). Public errors expose only the command stage and
+stable error code; the log is never copied into output or uploaded.
 There is no recursive cleanup: an unexpected database created in CLI HOME must
 not be deleted. Review retained scratch separately; never upload it.

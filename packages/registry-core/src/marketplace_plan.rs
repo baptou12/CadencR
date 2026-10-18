@@ -16,26 +16,27 @@ pub(crate) fn create(submission: &Value, repository: &str) -> Result<Value, Regi
     }
     let (id, version) = crate::marketplace::marketplace_package_identity(entry)
         .ok_or_else(|| RegistryError::single("invalid theme identity"))?;
-    let distribution = &entry["package"]["theme"]["distribution"];
+    let kind = crate::marketplace::kind(entry);
+    let distribution = &entry["package"][kind]["distribution"];
     let source_url = distribution["archive"]
         .as_str()
         .ok_or_else(|| RegistryError::single("missing theme archive"))?;
     if !source_url.ends_with(".tar.gz") && !source_url.ends_with(".tgz") {
         return Err(RegistryError::single("themes require gzip tar archives"));
     }
-    let tag = format!("theme-{id}-v{version}");
-    let asset = "theme.tar.gz";
+    let tag = format!("{kind}-{id}-v{version}");
+    let asset = format!("{kind}.tar.gz");
     let destination = format!("https://github.com/{repository}/releases/download/{tag}/{asset}");
     let mut mirrored = entry.clone();
-    mirrored["package"]["theme"]["distribution"]["archive"] = json!(destination);
-    mirrored["package"]["theme"]["distribution"]["repository"] =
+    mirrored["package"][kind]["distribution"]["archive"] = json!(destination);
+    mirrored["package"][kind]["distribution"]["repository"] =
         json!(format!("https://github.com/{repository}"));
     Ok(json!({
         "schema_version":2,"repository":repository,
         "source":{"submission":submission,"identity":{"provider_id":id,"version":version,
             "repository":submission["source"]["repository"],"commit":submission["source"]["commit"],"tag":submission["source"]["tag"]}},
         "release":{"tag":tag},
-        "targets":[{"target":"theme","asset":asset,"source_url":source_url,"destination_url":destination,"sha256":distribution["sha256"]}],
+        "targets":[{"target":kind,"asset":asset,"source_url":source_url,"destination_url":destination,"sha256":distribution["sha256"]}],
         "mirrored_package":mirrored
     }))
 }

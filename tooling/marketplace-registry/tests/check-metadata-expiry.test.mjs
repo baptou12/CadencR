@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, symlink, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, realpath, writeFile, symlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkExpiry } from "../scripts/check-metadata-expiry.mjs";
@@ -37,11 +37,14 @@ test("expiry diagnostic fails closed on malformed, stale, near-expiry and unsafe
     await writeFile(file, "{");
     await assert.rejects(checkExpiry(file, { now }));
     await symlink(file, join(root, "link"));
-    await assert.rejects(checkExpiry(join(root, "link"), { now }));
-    await assert.rejects(checkExpiry(root, { now }));
+    await assert.rejects(
+      checkExpiry(join(root, "link"), { now }),
+      /^Error: metadata must be a regular file$/,
+    );
+    await assert.rejects(checkExpiry(root, { now }), /^Error: metadata must be a regular file$/);
     await assert.rejects(checkExpiry(file, { now, warningHours: 0 }));
     await writeFile(file, Buffer.alloc(32 * 1024 * 1024 + 1));
-    await assert.rejects(checkExpiry(file, { now }));
+    await assert.rejects(checkExpiry(file, { now }), /^Error: metadata exceeds 32 MiB$/);
   } finally {
     await rm(root, { recursive: true });
   }
@@ -95,4 +98,36 @@ test("CLI handles signed catalog and domain policy envelopes with truthful exit 
   } finally {
     await rm(root, { recursive: true });
   }
+});
+
+test("expiry CLI works without the publication business directory", async (t) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "registry-expiry-standalone-")));
+  t.after(() => rm(root, { recursive: true }));
+  for (const name of ["check-metadata-expiry.mjs", "read-bounded-regular-file.mjs"]) {
+    await copyFile(new URL(`../scripts/${name}`, import.meta.url), join(root, name));
+  }
+  const file = join(root, "metadata.json");
+  const now = Math.floor(Date.now() / 1000) * 1000;
+  await writeFile(
+    file,
+    JSON.stringify({
+      signed: {
+        generated_at: new Date(now - 60000).toISOString().replace(".000Z", "Z"),
+        expires_at: new Date(now + 96 * 3600000).toISOString().replace(".000Z", "Z"),
+      },
+      signature: {},
+    }),
+  );
+  const result = spawnSync(process.execPath, [join(root, "check-metadata-expiry.mjs"), file], {
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).results[0].status, "healthy");
+  assert.equal(JSON.parse(result.stdout).results[0].authenticated, false);
+});
+
+test("legacy publication I/O preserves the neutral reader export", async () => {
+  const neutral = await import("../scripts/read-bounded-regular-file.mjs");
+  const legacy = await import("../scripts/publication/io.mjs");
+  assert.equal(legacy.readBoundedRegularFile, neutral.readBoundedRegularFile);
 });

@@ -16,7 +16,7 @@ export function ProviderPublicationPreparation({
 }: {
   projectId: number;
   enabled: boolean;
-  pluginKind?: "provider" | "theme";
+  pluginKind?: "provider" | "theme" | "tab";
 }): React.JSX.Element {
   const readiness = useGetProjectPublicationReadiness(projectId, {
     query: { enabled },
@@ -26,9 +26,11 @@ export function ProviderPublicationPreparation({
     <SettingsSection
       size="sm"
       title={
-        pluginKind === "theme"
-          ? "Theme publication preparation"
-          : "Provider publication preparation"
+        pluginKind === "tab"
+          ? "Custom tab publication preparation"
+          : pluginKind === "theme"
+            ? "Theme publication preparation"
+            : "Provider publication preparation"
       }
       subtitle="Local checks only"
       description={`Review local ${pluginKind} prerequisites. This does not publish to GitHub, create a release, or submit to a registry.`}
