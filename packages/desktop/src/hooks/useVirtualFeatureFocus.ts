@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ListRange, VirtuosoHandle } from "react-virtuoso";
+import { useScrollParentOffsetSync } from "@/hooks/useScrollParentOffsetSync";
 
 export function useVirtualFeatureFocus(
   featureIds: readonly number[],
@@ -144,9 +145,9 @@ export function useVirtualListNavigation(
 
 /**
  * A sidebar virtual list's plumbing: the scroll parent (the sidebar's scroll
- * area), keyboard navigation and revealing the open row. `rowIds` holds each
- * entry's conversation id, null for a header; `reveal` brings the open
- * conversation into view.
+ * area), keyboard navigation, revealing the open row and re-measuring when
+ * content above the list resizes. `rowIds` holds each entry's conversation
+ * id, null for a header; `reveal` brings the open conversation into view.
  */
 export function useSidebarVirtualList(
   rowIds: readonly (number | null)[],
@@ -172,6 +173,7 @@ export function useSidebarVirtualList(
     scrollParent,
   );
   useVirtualListNavigation(rootRef, featureIndexes, virtualFocus.focusIndex, indexAttribute);
+  useScrollParentOffsetSync(rootRef, scrollParent);
   const wrapperRef = useCallback((element: HTMLDivElement | null): void => {
     rootRef.current = element;
     setScrollParent(element?.closest<HTMLElement>("[data-radix-scroll-area-viewport]") ?? null);
