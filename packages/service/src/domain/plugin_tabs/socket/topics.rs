@@ -300,14 +300,14 @@ async fn session_status(
     mut rx: broadcast::Receiver<SessionStatusEvent>,
     emitter: Emitter,
 ) {
-    if !emit_session_status_snapshot(&state, &emitter).await {
+    if !emit_session_status_snapshot(&state, &emitter) {
         return;
     }
     loop {
         let open = match rx.recv().await {
             Ok(event) => emitter.emit("app", "session_status.update", &event),
             Err(broadcast::error::RecvError::Lagged(_)) => {
-                emit_session_status_snapshot(&state, &emitter).await
+                emit_session_status_snapshot(&state, &emitter)
             }
             Err(broadcast::error::RecvError::Closed) => false,
         };
@@ -318,14 +318,11 @@ async fn session_status(
 }
 
 /// The same snapshot `/ws` sends, running turns stamped with their start.
-async fn emit_session_status_snapshot(state: &AppState, emitter: &Emitter) -> bool {
-    let seq = state.session_status_tx.current_seq();
-    let states =
-        crate::domain::ws_session::handler::session_status_snapshot_with_timers(state).await;
+fn emit_session_status_snapshot(state: &AppState, emitter: &Emitter) -> bool {
     emitter.emit(
         "app",
         "session_status.snapshot",
-        &json!({ "states": states, "seq": seq }),
+        &state.session_status_tx.snapshot(),
     )
 }
 

@@ -318,7 +318,7 @@ pub struct SessionStatusSnapshotRow {
 /// `app/session_status.snapshot` payloads. The `seq` is stamped at
 /// subscription time by the WS handler, so it lives on the snapshot
 /// envelope rather than per-entry.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SessionStatusSnapshotEntry {
     pub session_id: i64,
     pub feature_id: i64,
@@ -327,10 +327,10 @@ pub struct SessionStatusSnapshotEntry {
     pub kind: Option<crate::domain::session_status::PendingKind>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
-    /// Server-stamped turn start (epoch ms) for a running session, so a
+    /// Server-stamped turn start (epoch ms) for a non-idle session, so a
     /// (re)connecting client anchors its elapsed timer to the same instant as
-    /// every other device. Filled in by the WS handler from the in-memory
-    /// active-turn registry (the DB has no per-turn start column).
+    /// every other device. Kept by the live status book; `None` for a gate
+    /// restored from the DB at boot (the DB has no per-turn start column).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub turn_started_at_ms: Option<i64>,
 }

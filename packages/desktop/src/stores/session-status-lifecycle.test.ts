@@ -9,6 +9,7 @@ import { transitionTurn } from "@/stores/ws-turn-lifecycle";
 import { startTurnTiming } from "@/stores/ws-turn-timing";
 import { getInvalidatePredicate } from "@/test-utils";
 import { resetScheduleInvalidationForTest } from "@/lib/schedules/invalidate";
+import { resetServerClock } from "@/lib/server-clock";
 
 class MockWebSocket {
   static CLOSED = 3;
@@ -50,8 +51,11 @@ describe("session status lifecycle sync", () => {
       ws: null,
       isConnected: false,
       hasSnapshot: false,
+      epoch: null,
+      snapshotSeq: 0,
     });
     useWsSessionStore.setState({ sessions: {} });
+    resetServerClock();
     MockWebSocket.reset();
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -134,6 +138,187 @@ describe("session status lifecycle sync", () => {
     const updated = useWsSessionStore.getState().sessions.s2;
     expect(updated.turnTiming.startedAt).toBe(42_000);
     expect(updated.turnTiming.segmentStartedAt).toBe(42_000);
+  });
+
+  it("re-anchors a conversation that first saw the turn through its own stream", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(50_000);
+    vi.stubGlobal("WebSocket", MockWebSocket);
+
+    // The feature socket's stream flipped the turn active first, so the timer
+    // started at this device's first sight of it.
+    const session = createSessionEntry();
+    session.sessionDbId = 21;
+    session.lifecycle = { phase: "active" };
+    session.turnTiming = startTurnTiming(50_000);
+    useWsSessionStore.setState({ sessions: { s21: session } });
+
+    useSessionStatusStore.getState().connect();
+    MockWebSocket.instances.at(-1)?.simulateMessage({
+      domain: "app",
+      action: "session_status.update",
+      payload: {
+        session_id: 21,
+        feature_id: 2,
+        status: "agent",
+        seq: 1,
+        turn_started_at_ms: 40_000,
+      },
+    });
+
+    const updated = useWsSessionStore.getState().sessions.s21;
+    expect(updated.lifecycle.phase).toBe("active");
+    expect(updated.turnTiming.startedAt).toBe(40_000);
+    expect(updated.turnTiming.segmentStartedAt).toBe(40_000);
+  });
+
+  it("anchors a conversation opened mid-turn to the turn start it already knows", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(90_000);
+    useSessionStatusStore.setState({
+      bySession: {
+        22: { status: "agent", kind: null, featureId: 2, seq: 4, turnStartedAtMs: 30_000 },
+      },
+    });
+    const session = createSessionEntry();
+    useWsSessionStore.setState({ sessions: { s22: session } });
+
+    // Hydrating from history: no status event arrives, the turn is mid-way.
+    useWsSessionStore.getState().setPersistedState("s22", {
+      blocks: [],
+      lifecycle: { phase: "active" },
+      sessionDbId: 22,
+      featureId: 2,
+    });
+
+    expect(useWsSessionStore.getState().sessions.s22.turnTiming.startedAt).toBe(30_000);
+  });
+
+  it("measures the turn on the server clock, whatever this device's skew", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const session = createSessionEntry();
+    session.sessionDbId = 23;
+    useWsSessionStore.setState({ sessions: { s23: session } });
+
+    // The server runs 3s ahead of this device; its turn started 10s ago.
+    useSessionStatusStore.getState().connect();
+    MockWebSocket.instances.at(-1)?.simulateMessage({
+      domain: "app",
+      action: "session_status.snapshot",
+      payload: {
+        seq: 5,
+        epoch: 1,
+        server_now_ms: 103_000,
+        states: {
+          23: {
+            session_id: 23,
+            feature_id: 2,
+            status: "agent",
+            turn_started_at_ms: 93_000,
+          },
+        },
+      },
+    });
+
+    expect(useWsSessionStore.getState().sessions.s23.turnTiming.startedAt).toBe(90_000);
+  });
+
+  it("replaces everything on a snapshot from a restarted server and ends its turns", () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const session = createSessionEntry();
+    session.sessionDbId = 24;
+    session.lifecycle = { phase: "active" };
+    useWsSessionStore.setState({ sessions: { s24: session } });
+    // The old process had reached seq 80; the new one restarted from zero.
+    useSessionStatusStore.setState({
+      epoch: 1,
+      bySession: { 24: { status: "agent", kind: null, featureId: 2, seq: 80 } },
+    });
+
+    useSessionStatusStore.getState().connect();
+    MockWebSocket.instances.at(-1)?.simulateMessage({
+      domain: "app",
+      action: "session_status.snapshot",
+      payload: { seq: 2, epoch: 2, states: {} },
+    });
+
+    const state = useSessionStatusStore.getState();
+    expect(state.bySession).toEqual({});
+    expect(state.epoch).toBe(2);
+    expect(useWsSessionStore.getState().sessions.s24.lifecycle.phase).toBe("terminal");
+  });
+
+  it("leaves a local turn alone when the snapshot omits a session that was already idle", () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const session = createSessionEntry();
+    session.sessionDbId = 27;
+    // This device just sent a prompt; the server's "agent" has not arrived yet.
+    session.lifecycle = transitionTurn(session.lifecycle, { type: "prompt_sent" });
+    useWsSessionStore.setState({ sessions: { s27: session } });
+    useSessionStatusStore.setState({
+      bySession: { 27: { status: "idle", kind: null, featureId: 2, seq: 3 } },
+    });
+
+    useSessionStatusStore.getState().connect();
+    MockWebSocket.instances.at(-1)?.simulateMessage({
+      domain: "app",
+      action: "session_status.snapshot",
+      payload: { seq: 4, states: {} },
+    });
+
+    expect(useWsSessionStore.getState().sessions.s27.lifecycle.phase).toBe("active");
+  });
+
+  it("ignores an update the snapshot already folded in", () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    useSessionStatusStore.getState().connect();
+    const ws = MockWebSocket.instances.at(-1);
+    ws?.simulateMessage({
+      domain: "app",
+      action: "session_status.snapshot",
+      payload: { seq: 10, epoch: 1, states: {} },
+    });
+
+    // Buffered between subscribe and snapshot: its idle successor is folded in.
+    ws?.simulateMessage({
+      domain: "app",
+      action: "session_status.update",
+      payload: { session_id: 25, feature_id: 2, status: "agent", seq: 9, epoch: 1 },
+    });
+    expect(useSessionStatusStore.getState().bySession[25]).toBeUndefined();
+
+    ws?.simulateMessage({
+      domain: "app",
+      action: "session_status.update",
+      payload: { session_id: 25, feature_id: 2, status: "agent", seq: 11, epoch: 1 },
+    });
+    expect(useSessionStatusStore.getState().bySession[25]?.status).toBe("agent");
+  });
+
+  it("keeps a new turn start that arrives with an unchanged status", () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    useSessionStatusStore.setState({
+      bySession: {
+        26: { status: "agent", kind: null, featureId: 2, seq: 1, turnStartedAtMs: 1_000 },
+      },
+    });
+
+    useSessionStatusStore.getState().connect();
+    MockWebSocket.instances.at(-1)?.simulateMessage({
+      domain: "app",
+      action: "session_status.update",
+      payload: {
+        session_id: 26,
+        feature_id: 2,
+        status: "agent",
+        seq: 2,
+        turn_started_at_ms: 5_000,
+      },
+    });
+
+    expect(useSessionStatusStore.getState().bySession[26]?.turnStartedAtMs).toBe(5_000);
   });
 
   it("clears a pending gate when the session leaves the question state", () => {

@@ -145,6 +145,10 @@ pub async fn delete_feature_handler(
     }
     service::delete_feature(&state.write_pool, &state.read_pool, id).await?;
     state
+        .session_status_tx
+        .forget_deleted_sessions(&state.write_pool)
+        .await?;
+    state
         .feature_events_tx
         .emit(id, None, FeatureEventAction::Deleted);
     Ok(Json(SuccessResponse { success: true }))

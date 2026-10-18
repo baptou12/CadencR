@@ -213,19 +213,6 @@ impl WsSessionPersistence {
         broadcaster.broadcast(session_id, feature_id, status, kind);
     }
 
-    /// Convenience: broadcast a [`ProviderSignal`] (TurnStarted /
-    /// AwaitingUser(kind) / TurnEnded). Equivalent to calling
-    /// `broadcast_session_status` with the signal's status + kind, but
-    /// callers that already speak the signal vocabulary stay readable.
-    pub fn broadcast_session_signal(
-        broadcaster: &crate::domain::session_status::SessionStatusBroadcaster,
-        session_id: i64,
-        feature_id: i64,
-        signal: crate::domain::session_status::ProviderSignal,
-    ) {
-        broadcaster.signal(session_id, feature_id, signal);
-    }
-
     #[cfg(test)]
     pub async fn mark_completed(&self) {
         let Some(session_id) = self.session_db_id else {
@@ -512,10 +499,7 @@ mod session_state_tests {
         tokio::sync::broadcast::Receiver<crate::domain::session_status::SessionStatusEvent>,
     ) {
         let (tx, rx) = tokio::sync::broadcast::channel(16);
-        let bc = crate::domain::session_status::SessionStatusBroadcaster::new(
-            tx,
-            std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
-        );
+        let bc = crate::domain::session_status::SessionStatusBroadcaster::new(tx);
         (bc, rx)
     }
 
@@ -543,8 +527,10 @@ mod session_state_tests {
     async fn test_broadcast_session_status_idle() {
         use crate::domain::session_status::AgentStatus;
         let (bc, mut rx) = test_broadcaster();
+        WsSessionPersistence::broadcast_session_status(&bc, 5, 7, AgentStatus::Agent, None);
         WsSessionPersistence::broadcast_session_status(&bc, 5, 7, AgentStatus::Idle, None);
 
+        rx.recv().await.unwrap();
         let event = rx.recv().await.unwrap();
         assert_eq!(event.feature_id, 7);
         assert_eq!(event.status, AgentStatus::Idle);

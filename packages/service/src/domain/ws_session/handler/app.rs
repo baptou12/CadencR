@@ -115,36 +115,20 @@ async fn handle_unsubscribe_git_status(
         .await;
 }
 
-/// Build the per-session status snapshot and enrich each running entry with
-/// the server-stamped turn start from the active-turn registry, so a
-/// (re)connecting client anchors its elapsed timer to the same instant the
-/// host did. The DB has no per-turn start column, so this is the only place
-/// the snapshot picks the timestamp up.
-pub(crate) async fn session_status_snapshot_with_timers(
-    app_state: &AppState,
-) -> std::collections::HashMap<String, crate::domain::sessions::models::SessionStatusSnapshotEntry>
-{
-    let mut states =
-        crate::domain::sessions::repository::get_session_status_snapshot(&app_state.read_pool)
-            .await
-            .unwrap_or_default();
-    for entry in states.values_mut() {
-        if entry.status == crate::domain::session_status::AgentStatus::Agent {
-            entry.turn_started_at_ms = app_state.active_turns.started_at(entry.session_id).await;
-        }
-    }
-    states
+fn session_status_snapshot(
+    broadcaster: &crate::domain::session_status::SessionStatusBroadcaster,
+) -> serde_json::Value {
+    serde_json::to_value(broadcaster.snapshot()).expect("status snapshot serializes")
 }
 
 /// Subscribe the client to real-time per-session status updates.
 /// Sends an initial snapshot keyed by `session_id`, then streams
 /// incremental [`SessionStatusEvent`]s.
 ///
-/// Every envelope carries a monotonic `seq` (stamped at send time by
-/// `SessionStatusBroadcaster`). Snapshots include the current counter so the
-/// frontend can reject any snapshot whose seq is older than an update
-/// already applied for a session — that's how we close the lag-recovery
-/// race where a snapshot would otherwise wipe a fresh live update.
+/// Every envelope carries a monotonic `seq` and the server `epoch` (stamped by
+/// `SessionStatusBroadcaster`). A snapshot is read from the same live book as
+/// the events, under the same lock, and carries its seq: the frontend drops
+/// any update it already folded in and resets on a new epoch.
 async fn handle_subscribe_session_status(
     envelope: WsEnvelope,
     sender: &WsSender,
@@ -154,23 +138,18 @@ async fn handle_subscribe_session_status(
     // subscribe is queued in the broadcast buffer rather than lost.
     let mut rx = app_state.session_status_tx.subscribe();
 
-    // Read snapshot AFTER subscribing. Seq is read first so the snapshot's
-    // stamped seq is a lower bound: every event with seq > snapshot.seq is
-    // guaranteed to flow through `rx` (either because it was emitted after
-    // subscribe, or because it was buffered before this line).
-    let seq = app_state.session_status_tx.current_seq();
-    let states = session_status_snapshot_with_timers(app_state).await;
-
+    // Read the snapshot AFTER subscribing: every event with seq >
+    // snapshot.seq is then guaranteed to flow through `rx`, and every event
+    // up to it (possibly also buffered in `rx`) is already folded in.
     let snapshot = WsEnvelope::reply(
         &envelope.id,
         "app",
         "session_status.snapshot",
-        serde_json::json!({ "states": states, "seq": seq }),
+        session_status_snapshot(&app_state.session_status_tx),
     );
     let _ = sender.send(Message::Text(String::from(snapshot).into()));
 
     let sender = sender.clone();
-    let app_state = app_state.clone();
     let broadcaster = app_state.session_status_tx.clone();
 
     tokio::spawn(async move {
@@ -195,12 +174,10 @@ async fn handle_subscribe_session_status(
                         skipped = n,
                         "session status broadcast lagged, sending fresh snapshot",
                     );
-                    let states = session_status_snapshot_with_timers(&app_state).await;
-                    let seq = broadcaster.current_seq();
                     let snapshot = WsEnvelope::new(
                         "app",
                         "session_status.snapshot",
-                        serde_json::json!({ "states": states, "seq": seq }),
+                        session_status_snapshot(&broadcaster),
                     );
                     if sender
                         .send(Message::Text(String::from(snapshot).into()))
