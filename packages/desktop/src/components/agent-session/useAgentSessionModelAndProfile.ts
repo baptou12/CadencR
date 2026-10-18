@@ -30,9 +30,14 @@ export function useAgentSessionModelAndProfile(
     hasConversation: blocks.length > 0,
   });
 
+  // Embedded cards run without a catalog, so `model.activeProviderId` is the
+  // Claude fallback there; trust the session's known provider instead, or a
+  // cold card forwards a profile to a provider that rejects it.
+  const profileProviderId = agentCatalogData
+    ? model.activeProviderId
+    : (selection?.providerId ?? model.activeProviderId);
   const isClaudeProvider =
-    model.activeProviderId === PROVIDER_IDS.CLAUDE_CODE ||
-    runtimeProvider === PROVIDER_IDS.CLAUDE_CODE;
+    profileProviderId === PROVIDER_IDS.CLAUDE_CODE || runtimeProvider === PROVIDER_IDS.CLAUDE_CODE;
   const supportsProfiles = Boolean(
     agentCatalogData?.providers.find((provider) => provider.id === model.activeProviderId)
       ?.profile_capability,

@@ -485,6 +485,39 @@ describe("AgentSession auto-scroll", () => {
     expect(onSend).toHaveBeenCalledWith("Hi there", undefined, "bedrock");
   });
 
+  // Embedded Unified Agents cards disable the catalog, so the provider comes
+  // from the session's hydrated selection rather than the Claude fallback.
+  it.each([
+    { providerId: "qa-fake-agent", modelId: "fake-small", profile: undefined },
+    { providerId: "claude_code", modelId: "opus", profile: "default" },
+  ])(
+    "sends profile $profile from a catalog-less $providerId session",
+    async ({ providerId, modelId, profile }) => {
+      const user = userEvent.setup();
+      const onSend = vi.fn(async () => {});
+      const coldCatalog = { data: undefined, isLoading: false } as unknown as NonNullable<
+        Parameters<typeof AgentSession>[0]["agentCatalog"]
+      >;
+      render(
+        <AgentSession
+          agentType="session"
+          blocks={[makeBlock("1", "Hello")]}
+          status="idle"
+          onSend={onSend}
+          onStop={vi.fn()}
+          agentCatalog={coldCatalog}
+          selection={{ providerId, modelId }}
+          runtimeProvider={providerId}
+        />,
+      );
+
+      fireEvent.change(screen.getByRole("textbox"), { target: { value: "Hi there" } });
+      await user.click(screen.getByLabelText("Send message"));
+
+      expect(onSend).toHaveBeenCalledWith("Hi there", undefined, profile);
+    },
+  );
+
   // On cold-open, item heights start at `defaultItemHeight` (96px) and grow
   // as markdown / code highlighting / async sub-components remeasure. After
   // we land at the bottom once, the total list height keeps growing — the
