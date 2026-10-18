@@ -7,10 +7,7 @@ import {
 import { clearReconnect, unregisterReconnector } from "@/lib/ws-reconnect";
 import { useConnectionStatusStore } from "@/stores/connection-status-store";
 import { discardStreamDeltas } from "./ws-delta-coalescer";
-import {
-  SESSION_CLOSED_BEFORE_DELIVERY,
-  failQueuedPromptDelivery,
-} from "./ws-session-prompt-delivery";
+import { SESSION_CLOSED_BEFORE_DELIVERY, failPromptDelivery } from "./ws-session-prompt-delivery";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import type { SessionEntry, WsSessionStore } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
@@ -45,7 +42,7 @@ export function createWsSessionTransportActions(deps: TransportActionDeps): Tran
       // (it early-returns on `intentional`), so resolve in-flight requests now
       // rather than leaving permission/worktree calls hanging until the timeout.
       if (session) rejectPendingRequests(session);
-      failQueuedPromptDelivery(sessionId, SESSION_CLOSED_BEFORE_DELIVERY);
+      failPromptDelivery(sessionId, SESSION_CLOSED_BEFORE_DELIVERY);
       if (session?.conn) {
         if (session.serverSessionId) {
           session.conn.sendJson(createDestroy(session.serverSessionId));

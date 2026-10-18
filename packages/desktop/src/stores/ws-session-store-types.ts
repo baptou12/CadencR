@@ -65,9 +65,10 @@ export interface WsSessionStore {
   initSession: (sessionId: string, config: SessionConfig) => void;
   sendPrompt: (sessionId: string, text: string, options?: PromptDispatchOptions) => void;
   /**
-   * `sendPrompt` that settles once the prompt is on the wire: immediately for
-   * an initialized session, after `session.initialized` for a queued one.
-   * Rejects when initialization fails or the session is torn down first.
+   * `sendPrompt` that settles once the prompt is on the wire: immediately when
+   * the socket takes it, otherwise after `session.initialized` or the
+   * reconnect flush. Rejects when initialization fails or the session is torn
+   * down first.
    */
   deliverPrompt: (
     sessionId: string,

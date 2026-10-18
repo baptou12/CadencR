@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /**
- * Delivery of prompts sent before `session.initialized` (issue #251): the
- * composer awaits `deliverPrompt`, so it must settle exactly when the queued
+ * Delivery of prompts that cannot leave immediately (issue #251): the
+ * composer awaits `deliverPrompt`, so it must settle exactly when the held
  * prompt reaches the wire, and reject when it never will.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -253,5 +253,45 @@ describe("ws-session queued prompt delivery", () => {
 
     // The parked init is replayed on reconnect, so no second init may start.
     expect(useWsSessionStore.getState().sessions.s1.initRequestId).toBe(initRequestId);
+  });
+  it("keeps a prompt parked during a socket drop pending until the reconnect flush", async () => {
+    const { ws, initId } = await connectAndInit();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      ref: initId,
+      payload: { session_id: "srv-1" },
+    });
+    ws.readyState = MockWebSocket.CLOSED;
+    ws.fireEvent("close", { code: 1006 });
+
+    const delivery = track(useWsSessionStore.getState().deliverPrompt("s1", "hello"));
+    await tick();
+    expect(delivery.outcome).toBe("pending");
+    expect(useWsSessionStore.getState().sessions.s1.outboundQueue).toHaveLength(1);
+
+    useWsSessionStore.getState().connect("s1");
+    await tick();
+
+    expect(delivery.outcome).toBe("delivered");
+    expect(sentActions(getWs())).toContain("session.prompt.send");
+  });
+
+  it("rejects a prompt parked during a socket drop when the session is torn down", async () => {
+    const { ws, initId } = await connectAndInit();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      ref: initId,
+      payload: { session_id: "srv-1" },
+    });
+    ws.readyState = MockWebSocket.CLOSED;
+    ws.fireEvent("close", { code: 1006 });
+    const delivery = track(useWsSessionStore.getState().deliverPrompt("s1", "hello"));
+
+    useWsSessionStore.getState().disconnect("s1");
+    await tick();
+
+    expect(delivery.outcome).toBeInstanceOf(Error);
   });
 });
