@@ -8,10 +8,12 @@ source template, including the expiry tool and executable legacy test helpers.
 Only thin orchestration/tests and frozen historical data remain. Production registry
 state, author authority and desktop visibility are unchanged.
 
-The candidate CI pin now references qualified `0.13.1-dev.39108033875.1` for its
-existing commands. New standalone metadata/submission/expiry commands require the
-**next CLI release**, followed by executable qualification, pin review and rebuilt
-delivery payload approvals. Source tests are not distributed-binary qualification.
+The candidate CI pin still references `0.13.1-dev.39108033875.1` for its existing
+commands. The replacement `0.13.1-dev.39144478778.1`, including standalone
+metadata/submission/expiry commands, is now released. Its isolated qualification
+is recorded [separately](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-18.md).
+Production pin review and rebuilt delivery payload approvals remain required;
+source tests are not distributed-binary qualification.
 See [template runtime gates](../tooling/marketplace-registry/README.md#status-and-runtime).
 
 ## Remaining delivery waves — 2026-10-18
@@ -142,10 +144,19 @@ Neither examples nor passing tests constitute publication approval.
       tests and thin CI/test orchestration; shared Rust libraries/CLI are the
       sole business implementation. Standalone metadata/submission/expiry
       commands and native handoff fixtures replace the remaining dependencies.
-- [ ] Merge this source and release/qualify a **new** distributed CLI containing
-      those three new commands. Qualified `39108033875.1` supports existing CI
-      commands, not the expanded full-template contract. Review the replacement
-      pin and regenerate bootstrap/cutover payload hashes before deployment.
+- [x] Merge the Rust-only source and release the replacement CLI
+      `0.13.1-dev.39144478778.1`, including all three standalone diagnostics.
+      Its 65 networkless checks, three-kind author lifecycle and incremental
+      registry publication pass on the actual distributed ELF; see the
+      [new qualification record](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-18.md).
+- [ ] Diagnose and address the new renewal's post-publication digest error.
+      The original run remains failed even if exact-intent recovery succeeds.
+      Demonstrate first-pass renewal and unchanged replays without weakening
+      integrity checks before promoting production pins. Rust changes require
+      another CLI release and qualification; source tests alone cannot close it.
+- [ ] Review the replacement registry/author pins and regenerate bootstrap/cutover
+      payload hashes and approvals before deployment. The source candidate still
+      pins the older CLI; neither QA pins nor a manual CLI release deploy it.
 - [ ] Update final operational evidence: populated verified feeds, reproducible
       official releases, renewal/revocation controls and exact platform limits.
       Source documentation is migrated; live delivery/owner/alert proof is not.

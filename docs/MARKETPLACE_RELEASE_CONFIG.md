@@ -19,16 +19,16 @@ Read-only CLI preparation CI and downloaded checksum verification are complete
 source `6d0e2b6ed39ceb22d9fd1fa785d5cb5fa8a09f93`). Its `v0.12.1`
 artifact label belonged to preparation only. The actual
 [v0.13.0 release](https://github.com/merkr-software/CadencR/releases/tag/v0.13.0)
-contains the original Linux Rust CLI and checksums. The corrected standalone
-`0.13.1-dev.38974097824.1` CLI is now published and has passed isolated public
-GitHub publication/replay, fresh-runner reconstruction, empty-delta renewal and
-controlled post-publication network interruption/resume. See the
-[current evidence](./MARKETPLACE_V1.md#qualified-distributed-cli--2026-10-17).
-This uses inert themes and QA-only trust, not production credentials or provider
-runtime certification. The candidate template now pins the qualified executable
-without JavaScript fallback; actual remote registry deployment, JavaScript oracle
-migration/removal and official-plugin publication remain pending. Desktop
-activation is still separate.
+contains the original Linux Rust CLI and checksums. The latest CLI-only delivery,
+`0.13.1-dev.39144478778.1`, includes the remaining standalone Rust diagnostics.
+See its [dated qualification record](./MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-18.md)
+for exact provider/theme/tab runs and failure history. These use inert fixtures
+and QA-only trust, not production credentials or runtime certification.
+JavaScript business implementations and executable legacy test oracles are
+removed from the source template; thin orchestration and frozen test data remain.
+The candidate registry pin still targets an older CLI. Reviewing its replacement,
+regenerating delivery approvals, actual registry deployment and official-plugin
+publication remain pending. Desktop activation is separate.
 
 Internal QA can opt in with `VITE_INTERNAL_MARKETPLACE=true` in a DEV renderer
 only; production builds cannot expose the marketplace through that environment
