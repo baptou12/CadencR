@@ -1022,8 +1022,30 @@ export interface CommitBody {
 }
 
 /**
+ * What a decorating ref points from: the branch checked out (`HEAD ->`), any
+ * other local branch, a remote-tracking branch, or a tag.
+ */
+export type CommitRefKind = (typeof CommitRefKind)[keyof typeof CommitRefKind];
+
+export const CommitRefKind = {
+  head: "head",
+  local: "local",
+  remote: "remote",
+  tag: "tag",
+} as const;
+
+/**
+ * One decorating ref on a graph commit, by its short name (`main`,
+ * `origin/main`, `v1.0`).
+ */
+export interface CommitRef {
+  kind: CommitRefKind;
+  name: string;
+}
+
+/**
  * One commit row in the graph view. Carries `parents` so the frontend can
- * compute lane positions, `refs` (decorating branch/tag labels), and the
+ * compute lane positions, `decorations` (typed branch/tag labels), and the
  * `--shortstat` summary (`files_changed` / `additions` / `deletions`).
  */
 export interface CommitGraphEntry {
@@ -1031,11 +1053,21 @@ export interface CommitGraphEntry {
   author: string;
   body: string;
   date: string;
+  /**
+   * The decorating refs with their kind, so the UI can tell the checked-out branch, a
+   * local branch, a remote-tracking branch and a tag apart — the names
+   * alone cannot (`feature/x` and `origin/x` both contain a slash).
+   */
+  decorations: CommitRef[];
   deletions: number;
   files_changed: number;
   is_pushed: boolean;
   message: string;
   parents: string[];
+  /**
+   * Short names of `decorations`. The desktop reads `decorations`; this
+   * stays for custom tabs, which reach this route through the tab SDK.
+   */
   refs: string[];
   sha: string;
   short_sha: string;

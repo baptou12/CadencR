@@ -19,6 +19,7 @@ mod changed_files;
 mod diff;
 mod files;
 mod graph;
+mod graph_refs;
 mod index;
 mod log;
 mod merge;

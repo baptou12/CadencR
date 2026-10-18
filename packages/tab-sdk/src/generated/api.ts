@@ -148,8 +148,30 @@ export interface ChangedFile {
 }
 
 /**
+ * What a decorating ref points from: the branch checked out (`HEAD ->`), any
+ * other local branch, a remote-tracking branch, or a tag.
+ */
+export type CommitRefKind = (typeof CommitRefKind)[keyof typeof CommitRefKind];
+
+export const CommitRefKind = {
+  head: "head",
+  local: "local",
+  remote: "remote",
+  tag: "tag",
+} as const;
+
+/**
+ * One decorating ref on a graph commit, by its short name (`main`,
+ * `origin/main`, `v1.0`).
+ */
+export interface CommitRef {
+  kind: CommitRefKind;
+  name: string;
+}
+
+/**
  * One commit row in the graph view. Carries `parents` so the frontend can
- * compute lane positions, `refs` (decorating branch/tag labels), and the
+ * compute lane positions, `decorations` (typed branch/tag labels), and the
  * `--shortstat` summary (`files_changed` / `additions` / `deletions`).
  */
 export interface CommitGraphEntry {
@@ -157,11 +179,21 @@ export interface CommitGraphEntry {
   author: string;
   body: string;
   date: string;
+  /**
+   * The decorating refs with their kind, so the UI can tell the checked-out branch, a
+   * local branch, a remote-tracking branch and a tag apart — the names
+   * alone cannot (`feature/x` and `origin/x` both contain a slash).
+   */
+  decorations: CommitRef[];
   deletions: number;
   files_changed: number;
   is_pushed: boolean;
   message: string;
   parents: string[];
+  /**
+   * Short names of `decorations`. The desktop reads `decorations`; this
+   * stays for custom tabs, which reach this route through the tab SDK.
+   */
   refs: string[];
   sha: string;
   short_sha: string;
@@ -547,6 +579,42 @@ export interface SharedFeatureRef {
 }
 
 /**
+ * How a branch came to belong to a conversation.
+ */
+export type BranchOrigin = (typeof BranchOrigin)[keyof typeof BranchOrigin];
+
+export const BranchOrigin = {
+  provisioned: "provisioned",
+  checked_out: "checked_out",
+  agent: "agent",
+  manual: "manual",
+  head: "head",
+} as const;
+
+/**
+ * A conversation branch as the header lists it.
+ */
+export interface ThreadBranch {
+  is_current: boolean;
+  /**
+   * `None` for a branch that has no row of its own (the provisioned branch
+   * before it ever carried a target, or the followed checkout).
+   * @nullable
+   */
+  last_seen_at?: string | null;
+  name: string;
+  origin: BranchOrigin;
+  /**
+   * The branch's compare target. For the current branch this is the
+   * resolved target (the snapshot's `target_branch`); for the others it is
+   * the one configured for them (their own, else the conversation-wide
+   * one), or `None` when they follow the default.
+   * @nullable
+   */
+  target_branch?: string | null;
+}
+
+/**
  * One-shot snapshot of the worktree's git state. Field semantics:
  *
  * - `*_count` fields are derived from `git status --porcelain=v2`.
@@ -570,6 +638,9 @@ export interface SharedFeatureRef {
  * - `host` / `compare_url` / `action_label` are populated only when a remote
  *   exists. The frontend disables the open-PR button when `compare_url` is
  *   `None`.
+ * - `thread_branches` lists the conversation's branches; the current one
+ *   (first, `is_current`) can differ from `current_branch` when a
+ *   worktree-free conversation's branch is no longer checked out.
  * - `shared_with` lists OTHER features that point at the same worktree
  *   directory (reuse-branch flow). Filled in by the caller via
  *   `enrich_with_sharing` — `compute_status` itself leaves it empty.
@@ -617,6 +688,11 @@ export interface GitStatusSnapshot {
    * from a zero divergence count.
    */
   target_resolved?: boolean;
+  /**
+   * Every branch of the conversation, the current one first. Filled in
+   * by the caller via `enrich_snapshot`, like `shared_with`.
+   */
+  thread_branches?: ThreadBranch[];
   /** @minimum 0 */
   uncommitted_count: number;
   /** @minimum 0 */
@@ -797,12 +873,33 @@ export interface PrSummary {
   url: string;
 }
 
+/**
+ * The proposal of one of a conversation's non-current branches, with the
+ * same health signals the snapshot carries for the current one.
+ */
+export interface BranchPr {
+  branch: string;
+  ci?: null | CiRollup;
+  pr: PrSummary;
+  /**
+   * Same contract as [`PrStatusSnapshot::unresolved_threads`].
+   * @minimum 0
+   * @nullable
+   */
+  unresolved_threads?: number | null;
+}
+
 export interface PrStatusSnapshot {
   ci?: null | CiRollup;
   /** @nullable */
   error?: string | null;
   feature_id: number;
   fetched_at: number;
+  /**
+   * The proposals of the conversation's other branches — everything above
+   * describes the current branch's. Only branches that have one.
+   */
+  other_prs?: BranchPr[];
   pr?: null | PrSummary;
   /**
    * The forge cannot be reached until the user finishes connecting it — no
@@ -1203,6 +1300,13 @@ export type GetPrParams = {
 
 export type GetPrCommentsParams = {
   feature_id: number;
+  /**
+   * One of the conversation's proposals (the current branch's or another
+   * branch's); the current branch's when absent.
+   * @minimum 0
+   * @nullable
+   */
+  pr_number?: number | null;
 };
 
 export type GetStatsParams = {
