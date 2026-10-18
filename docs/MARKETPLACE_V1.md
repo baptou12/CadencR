@@ -1,5 +1,19 @@
 # Marketplace V1 — GitHub-only distribution
 
+## Current source migration checkpoint — 2026-10-18
+
+The requested full Rust cutover supersedes earlier instructions to retain legacy
+JavaScript business implementations until deployment. They are removed from this
+source template, including the expiry tool and executable legacy test helpers.
+Only thin orchestration/tests and frozen historical data remain. Production registry
+state, author authority and desktop visibility are unchanged.
+
+The candidate CI pin now references qualified `0.13.1-dev.39108033875.1` for its
+existing commands. New standalone metadata/submission/expiry commands require the
+**next CLI release**, followed by executable qualification, pin review and rebuilt
+delivery payload approvals. Source tests are not distributed-binary qualification.
+See [template runtime gates](../tooling/marketplace-registry/README.md#status-and-runtime).
+
 ## Remaining delivery waves — 2026-10-18
 
 This is the current ordered checklist. It supersedes older next-step lists and
@@ -123,16 +137,21 @@ Neither examples nor passing tests constitute publication approval.
 
 ### Wave 7 — Remove superseded tooling and stop at the hidden milestone
 
-- [ ] Remove each replaced JavaScript business implementation only after its
-      corresponding deployed Rust contribution/publisher checks and migrated
-      callers pass. Keep independent crypto oracles, frozen compatibility data,
-      transport helpers and metadata-expiry tooling.
-- [ ] Update operator/contributor documentation and evidence: populated verified
-      feeds, reproducible official releases, renewal/revocation procedures and
-      exact remaining platform limits. Keep the marketplace hidden by default.
-- [ ] Stop before public desktop activation. A later, separately authorized app
-      release supplies reviewed official trust/feed configuration and exposes the
-      UI only after its clean packaged-client acceptance gates pass.
+- [x] Source migration: remove replaced JavaScript business tools and executable
+      legacy test oracles. Keep frozen compatibility data, independent crypto
+      tests and thin CI/test orchestration; shared Rust libraries/CLI are the
+      sole business implementation. Standalone metadata/submission/expiry
+      commands and native handoff fixtures replace the remaining dependencies.
+- [ ] Merge this source and release/qualify a **new** distributed CLI containing
+      those three new commands. Qualified `39108033875.1` supports existing CI
+      commands, not the expanded full-template contract. Review the replacement
+      pin and regenerate bootstrap/cutover payload hashes before deployment.
+- [ ] Update final operational evidence: populated verified feeds, reproducible
+      official releases, renewal/revocation controls and exact platform limits.
+      Source documentation is migrated; live delivery/owner/alert proof is not.
+- [ ] Stop before public desktop activation. A separately authorized app release
+      supplies reviewed official trust/feed configuration and exposes UI only
+      after clean packaged-client acceptance gates pass.
 
 ### Dependencies and delivery boundaries
 
@@ -140,7 +159,8 @@ Neither examples nor passing tests constitute publication approval.
   environment decisions from wave 4 can be prepared alongside them, without
   changing protections or provisioning authority implicitly.
 - Wave 3 needs its required source on green `main`; waves 4–6 then consume that
-  actual qualified binary. Wave 7 cleanup is gated per deployed implementation.
+  actual qualified binary. Source cleanup is now prepared ahead of deployment; the expanded runtime
+  contract requires a newly qualified CLI and reviewed delivery before adoption.
 - A new **CLI release is required**; no public **desktop release** is required
   to reach the populated-but-hidden milestone. Local packaged QA is not a release.
 - Implementation follows `parallel-advisor` with GPT-6.1-Sol workers; each finished

@@ -23,6 +23,8 @@ binary=$(sh "$script_dir/fetch-released-cli.sh" "$pin_file" "$work/released") ||
 
 "$binary" registry validate --base "$base" --candidate "$candidate"
 if [ "$mode" = tooling ]; then
+  # An empty bootstrap is a valid contribution, not a publishable signed catalog.
+  # The released CLI rejects empty signed indexes; do not fabricate one here.
   set -- "$candidate"/packages/*.json
   if [ ! -e "$1" ]; then
     echo "No publishable package JSON; skipping index assembly."

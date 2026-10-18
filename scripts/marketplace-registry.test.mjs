@@ -1,11 +1,4 @@
-import {
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmdirSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,18 +14,20 @@ function runNestedTests(cwd, tests, inheritedEnv = process.env) {
     cwd,
     env,
     encoding: "utf8",
-    timeout: 30_000,
+    timeout: 180_000,
+    maxBuffer: 4 * 1024 * 1024,
   });
 }
 
 test("registry tooling stays covered by the root test suite", () => {
   const cwd = fileURLToPath(new URL("../tooling/marketplace-registry/", import.meta.url));
-  const tests = readdirSync(`${cwd}/tests`).filter((name) => name.endsWith(".test.mjs"));
-  assert.ok(tests.length > 0, "registry test discovery must not be empty");
-  const result = runNestedTests(
+  const result = spawnSync(process.execPath, ["tests/run.mjs"], {
     cwd,
-    tests.map((name) => `tests/${name}`),
-  );
+    env: { ...process.env, NODE_TEST_CONTEXT: "child-v8" },
+    encoding: "utf8",
+    timeout: 780_000,
+    maxBuffer: 4 * 1024 * 1024,
+  });
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });

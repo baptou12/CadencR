@@ -62,6 +62,7 @@ fn validate_provider(
 
 fn run_registry(command: &RegistryCommand) -> Result<Option<String>, Diagnostic> {
     match command {
+        RegistryCommand::Diagnostics(command) => crate::metadata::run(command),
         RegistryCommand::Validate { base, candidate } => validate_registry(base, candidate),
         RegistryCommand::BuildIndex {
             schema_version,

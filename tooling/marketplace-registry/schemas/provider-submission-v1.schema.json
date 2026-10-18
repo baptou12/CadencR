@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:cadencr:provider-submission:v1",
   "title": "Cadencr provider marketplace submission v1",
-  "$comment": "Structural checks only. Acceptance requires scripts/validate-submission.mjs for repository equality, release-asset binding, normalized built-in identity reservation, and the complete managed-package policy. Validation does not verify repository ownership or SPDX correctness.",
+  "$comment": "Structural checks only. Acceptance requires cadencr registry validate-submission for repository equality, release-asset binding, normalized built-in identity reservation, and the complete managed-package policy. Validation does not verify repository ownership or SPDX correctness.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "package", "source", "changelog"],

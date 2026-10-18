@@ -218,25 +218,22 @@ not an ordinary delegated-key rotation.
 
 ## Deployment cutover still pending
 
-The standalone CLI release and isolated lifecycle QA are complete. The candidate
-template pin is `0.13.1-dev.38974097824.1`, tag
-`cli/v0.13.1-dev.38974097824.1`, SHA-256
-`ee3516bb5ad7ed143428f255e9e4dd24d9f13003061a803c99be8f3fd8db9a7e`,
-from source `b3e3ed5ac9d2cd4580117558a218b4c809af65d5`. Its trusted
-contribution and publisher callers require Rust and have no JavaScript fallback.
+The candidate template pins qualified `0.13.1-dev.39108033875.1` for existing
+contribution/build/publication commands; see its exact
+[qualification evidence](MARKETPLACE_CLI_QUALIFICATION_2026-10-18.md). The source
+now removes replaced JavaScript business tooling and adds Rust standalone
+metadata/submission/expiry commands. **Those new commands need a new CLI release
+and qualification before full template deployment.** The older binary is not a
+replacement pin for this expanded contract.
 
-The actual remote registry at `24656f0f1ceb23576b0be9449c86c6d09e24f5b3`
-has no pin or helpers and only its original metadata validation workflow active.
-First merge a reviewed bootstrap PR adding the pin and three CI helpers without
-changing that workflow; then cut over validation from the merged trusted base.
-Preserve required `inert-metadata` / `contributor-tooling` checks, CODEOWNER review
-and last-push approval. Privileged workflows under `examples/workflows` are not
-deployed publishers. See the [template deployment sequence](../tooling/marketplace-registry/README.md#remote-deployment-requires-two-reviewed-changes).
+Merge/release/qualify the updated CLI, review the exact source/version/tag/digest,
+and regenerate all registry delivery payload hashes. Reinspect actual remote
+`main` and protections rather than reuse stale bootstrap approvals. If the trusted
+base lacks helpers, deliver them first while preserving validation; then switch
+workflows from that merged base and observe real hosted three-kind checks.
+Preserve the required checks and explicitly agreed governance. No source cleanup
+performs that deployment, assigns authority or activates desktop UI.
 
-Remove replaced JavaScript business code only after deployed Rust CI succeeds
-and executable test oracles are migrated to immutable data/Rust coverage. It is
-compatibility/oracle code, not a supported substitute for schema-2 mixed
-contributions or trust-generation publication. Official roots/feeds, production
-publication authority and packaged-client certification remain separate gates.
-The candidate publisher uploads no raw recovery state; fresh runners reconstruct
-publication state from verified remote evidence.
+Author pins, official roots/feeds, signing environments, initial plugin releases
+and packaged-client certification remain separate gates. Fresh runners rebuild
+proof from verified remote evidence; raw recovery state is never uploaded/restored.
