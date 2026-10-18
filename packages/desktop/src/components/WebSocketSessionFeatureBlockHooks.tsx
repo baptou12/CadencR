@@ -184,16 +184,25 @@ function useSessionInitialization({
   const { initSession, isConnected } = controls.ws;
   const serverSessionId = data.session?.serverSessionId;
   const persistedLoaded = data.session?.persistedLoaded ?? false;
+  // Embedded cards skip init on mount, but a prompt sent from one is only
+  // queued until `session.initialized` — so init on demand (issue #251). The
+  // in-flight guard also lets a refused or socket-dropped init be retried by
+  // the next queued prompt instead of looping on mount.
+  const needsOnDemandInit =
+    (data.session?.queuedPrompts.length ?? 0) > 0 && data.session?.initRequestId === null;
   useEffect(() => {
-    if (!autoInitSession) return;
-    if (!isConnected || controls.initializedRef.current === sessionId) return;
-    if (serverSessionId !== "" || !persistedLoaded) return;
+    if (!isConnected || serverSessionId !== "" || !persistedLoaded) return;
+    const initOnMount = autoInitSession && controls.initializedRef.current !== sessionId;
+    if (!initOnMount && !needsOnDemandInit) return;
+    // A card and the full view can share this session; read the live entry so
+    // two effects in one commit don't both send an init.
+    if (useWsSessionStore.getState().sessions[sessionId]?.initRequestId) return;
     controls.initializedRef.current = sessionId;
-    // No provider/model/effort: this effect only runs for a brand-new session,
-    // and the frontend resolvers return catalog fallbacks until the selection
-    // query settles. The backend treats any pair we send as pinned, so it must
-    // resolve this one itself — it reads the same settings, with the live
-    // catalog we do not have here.
+    // No provider/model/effort: the frontend resolvers return catalog
+    // fallbacks until the selection query settles. The backend treats any
+    // pair we send as pinned, so it must resolve this one itself — it reads
+    // the persisted session row and settings, with the live catalog we do
+    // not have here.
     initSession({
       cwd,
       featureId,
@@ -207,6 +216,7 @@ function useSessionInitialization({
     featureId,
     initSession,
     isConnected,
+    needsOnDemandInit,
     persistedLoaded,
     serverSessionId,
     sessionId,

@@ -33,8 +33,10 @@ vi.mock("@tanstack/react-hotkeys", () => ({
   useHotkeys: vi.fn(),
 }));
 
+const draftMocks = vi.hoisted(() => ({ saveDraft: vi.fn() }));
+
 vi.mock("@/hooks/usePromptDraft", () => ({
-  usePromptDraft: vi.fn(() => ({ saveDraft: vi.fn() })),
+  usePromptDraft: vi.fn(() => ({ saveDraft: draftMocks.saveDraft })),
 }));
 
 vi.mock("@/hooks/usePromptHistory", () => ({
@@ -169,6 +171,7 @@ describe("AgentPromptBar async onSend", () => {
     attachmentMocks.attachments = [];
     attachmentMocks.clearAttachments.mockClear();
     attachmentMocks.restoreAttachments.mockClear();
+    draftMocks.saveDraft.mockClear();
     vi.useRealTimers();
   });
 
@@ -227,6 +230,31 @@ describe("AgentPromptBar async onSend", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Send message")).toHaveAttribute("aria-busy", "false"),
     );
+  });
+
+  it("keeps the persisted draft until an in-flight send is delivered", async () => {
+    const user = userEvent.setup();
+    let resolveSend: () => void = () => {};
+    const slowOnSend = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSend = resolve;
+        }),
+    );
+
+    render(<AgentPromptBar onSend={slowOnSend} onStop={onStop} status="idle" />);
+    await user.type(screen.getByRole("textbox"), "queued");
+    draftMocks.saveDraft.mockClear();
+    await user.click(screen.getByLabelText("Send message"));
+
+    // The send-time clear must not overwrite the draft: an app closed now
+    // restores "queued" on the next launch.
+    expect(screen.getByRole("textbox")).toHaveAttribute("placeholder", "Sending…");
+    expect(draftMocks.saveDraft).not.toHaveBeenCalled();
+
+    resolveSend();
+    await waitFor(() => expect(draftMocks.saveDraft).toHaveBeenCalledWith(null));
+    expect(draftMocks.saveDraft).not.toHaveBeenCalledWith("");
   });
 
   it("restores image attachments when async onSend rejects", async () => {

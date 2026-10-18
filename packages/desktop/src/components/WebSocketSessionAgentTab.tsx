@@ -251,11 +251,18 @@ function useAgentSendHandler(args: {
           branchSetup = { kind: "worktree" };
         }
       }
-      controls.ws.sendPrompt(text, {
-        attachments,
-        branchSetup,
-        claudeProfile: claudeProfile ?? claudeProfileForPrompt(controls),
-      });
+      // Awaiting delivery keeps the composer pending while the session
+      // initializes; a rejection hands the text back to the composer.
+      try {
+        await controls.ws.deliverPrompt(text, {
+          attachments,
+          branchSetup,
+          claudeProfile: claudeProfile ?? claudeProfileForPrompt(controls),
+        });
+      } catch (error) {
+        toastError(error, "Message not sent");
+        throw error;
+      }
     },
     [
       checkoutMutateAsync,

@@ -82,6 +82,7 @@ export function handleInitialized(ctx: StoreAccessors, sessionId: string, payloa
     lifecycle: transitionTurn(session.lifecycle, { type: "initialized" }),
     mcpServers: null,
     supportsPromptReceipts: p.supports_prompt_receipts ?? false,
+    initRequestId: null,
   };
   if (p.sessionDbId != null) updates.sessionDbId = p.sessionDbId;
   // Empty models are valid for providers that negotiate models at runtime.

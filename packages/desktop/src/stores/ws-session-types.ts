@@ -242,6 +242,12 @@ export interface SessionEntry extends SessionConfigState {
   cwd: string | null;
   queuedPrompts: QueuedPrompt[];
   /**
+   * Envelope id of the in-flight `session.init`, cleared once it is answered
+   * or the socket drops. A `session.error` echoing it as `ref` means the
+   * queued prompts will never be sent.
+   */
+  initRequestId: string | null;
+  /**
    * Transport health for the agent stream (driven by
    * `session.stream_status`). Providers that do not support this stay at
    * `"ok"`. See `StreamHealth`.
@@ -309,6 +315,7 @@ export function createSessionEntry(): SessionEntry {
     sessionDbId: null,
     cwd: null,
     queuedPrompts: [],
+    initRequestId: null,
     streamHealth: createStreamHealth(),
   };
 }

@@ -12,7 +12,8 @@
  *     setText, focus).
  *   - `setText` is the React state setter that mirrors the editor's text.
  *   - `clearAttachments` empties the image picker.
- *   - `saveDraft(null)` is called on success to drop the persisted draft.
+ *   - `saveDraft(null)` is called on success to drop the persisted draft;
+ *     until then `sendInFlightRef` keeps the send-time clear from wiping it.
  *   - `history.addEntry(trimmed)` records the submitted prompt (no-op when
  *     `projectId` is missing).
  *   - The async call site must surface its own toast — this hook only
@@ -40,6 +41,8 @@ export interface RunSendDeps {
   getAttachments: () => ImageAttachment[];
   /** Flipped true on send so a late draft refetch can't re-inject sent text. */
   interactedRef: MutableRefObject<boolean>;
+  /** True while `send` is pending; editor changes then skip draft persistence. */
+  sendInFlightRef: MutableRefObject<boolean>;
 }
 
 export interface AgentPromptSendApi {
@@ -63,6 +66,7 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
     addHistoryEntry,
     getAttachments,
     interactedRef,
+    sendInFlightRef,
   } = deps;
   const [sending, setSending] = useState(false);
   // On phones, dismiss the on-screen keyboard when sending and keep it closed.
@@ -84,6 +88,7 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
           : undefined;
       // Optimistically clear the visible textarea so the user sees their
       // submission "in flight". On failure we restore it below.
+      sendInFlightRef.current = true;
       setText("");
       editorRef.current?.clear();
       if (isMobile) editorRef.current?.blur();
@@ -105,6 +110,7 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
         restoreAttachments(attachments);
         if (!isMobile) requestAnimationFrame(() => editorRef.current?.focus());
       } finally {
+        sendInFlightRef.current = false;
         setSending(false);
       }
     },
@@ -117,6 +123,7 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
       addHistoryEntry,
       getAttachments,
       interactedRef,
+      sendInFlightRef,
       isMobile,
     ],
   );
