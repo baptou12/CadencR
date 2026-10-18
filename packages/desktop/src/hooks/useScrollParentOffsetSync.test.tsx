@@ -4,6 +4,7 @@ import { useScrollParentOffsetSync } from "./useScrollParentOffsetSync";
 
 const observed: Element[] = [];
 const resizeCallbacks: Array<() => void> = [];
+const disconnect = vi.fn();
 class CapturingResizeObserver {
   constructor(callback: () => void) {
     resizeCallbacks.push(callback);
@@ -11,10 +12,8 @@ class CapturingResizeObserver {
   observe(element: Element): void {
     observed.push(element);
   }
-  disconnect(): void {}
+  disconnect = disconnect;
 }
-
-const frames: Array<() => void> = [];
 
 function boxed<T extends HTMLElement>(element: T, box: Partial<DOMRect>): T {
   element.getBoundingClientRect = () => ({ ...box }) as DOMRect;
@@ -37,13 +36,15 @@ function sidebar(listCount = 1) {
   return { viewport, content, lists, scrolls };
 }
 
+/** Delivers a content resize; the first one records each list's offset. */
+const resize = () => resizeCallbacks.forEach((callback) => callback());
+
 describe("useScrollParentOffsetSync", () => {
   beforeEach(() => {
     observed.length = 0;
     resizeCallbacks.length = 0;
-    frames.length = 0;
+    disconnect.mockClear();
     vi.stubGlobal("ResizeObserver", CapturingResizeObserver);
-    vi.stubGlobal("requestAnimationFrame", (callback: () => void) => frames.push(callback));
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -53,34 +54,46 @@ describe("useScrollParentOffsetSync", () => {
     const { viewport, content, lists, scrolls } = sidebar();
     renderHook(() => useScrollParentOffsetSync(lists[0].ref, viewport));
     expect(observed).toEqual([content]);
+    resize();
+    scrolls.mockClear();
 
     // A block above the list shrinks: the list moves up without any scroll.
     lists[0].box.top = 220;
-    resizeCallbacks[0]();
+    resize();
+    expect(scrolls).toHaveBeenCalledTimes(1);
+
+    resize();
     expect(scrolls).toHaveBeenCalledTimes(1);
   });
 
   it("measures the offset within the content, so a real scroll is not replayed", () => {
     const { viewport, lists, scrolls } = sidebar();
     renderHook(() => useScrollParentOffsetSync(lists[0].ref, viewport));
+    resize();
+    scrolls.mockClear();
 
     viewport.scrollTop = 50;
     lists[0].box.top = 250;
-    resizeCallbacks[0]();
+    resize();
     expect(scrolls).not.toHaveBeenCalled();
   });
 
-  it("replays one scroll per frame for every list in the scroll parent", () => {
+  it("shares one observer and one replay across the lists of a scroll parent", () => {
     const { viewport, lists, scrolls } = sidebar(2);
-    for (const list of lists) renderHook(() => useScrollParentOffsetSync(list.ref, viewport));
+    const hooks = lists.map((list) =>
+      renderHook(() => useScrollParentOffsetSync(list.ref, viewport)),
+    );
+    expect(resizeCallbacks).toHaveLength(1);
+    resize();
+    scrolls.mockClear();
 
     for (const list of lists) list.box.top -= 80;
-    resizeCallbacks.forEach((callback) => callback());
+    resize();
     expect(scrolls).toHaveBeenCalledTimes(1);
 
-    frames.forEach((frame) => frame());
-    for (const list of lists) list.box.top -= 80;
-    resizeCallbacks.forEach((callback) => callback());
-    expect(scrolls).toHaveBeenCalledTimes(2);
+    hooks[0].unmount();
+    expect(disconnect).not.toHaveBeenCalled();
+    hooks[1].unmount();
+    expect(disconnect).toHaveBeenCalledTimes(1);
   });
 });
