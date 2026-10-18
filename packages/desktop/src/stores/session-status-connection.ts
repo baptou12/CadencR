@@ -16,6 +16,7 @@ import { isBrowserRemote } from "@/lib/remote/device-token";
 import { hydratePrStatuses } from "@/stores/pr-status-hydration";
 import { subscribeForgeStatus } from "@/stores/forge-visibility";
 import { clearStorageMaintenanceStatus } from "@/stores/storage-maintenance-store";
+import { resetServerClock } from "@/lib/server-clock";
 import type { EnvelopeDispatcher, SessionStatusState } from "@/stores/session-status-store";
 
 const APP_WS_SOURCE = "app-ws";
@@ -54,6 +55,7 @@ interface AppWsConnection {
 function handleAppWsOpen(connection: AppWsConnection): void {
   const { ws, set } = connection;
   resetReconnectState(APP_WS_SOURCE);
+  resetServerClock();
   set({ isConnected: true });
   useConnectionStatusStore.getState().reportSource(APP_WS_SOURCE, "connected");
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.session_status", {})));

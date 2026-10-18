@@ -21,11 +21,13 @@ import { createStreamingState } from "./ws-message-processing";
 import type { TurnLifecycle } from "./ws-turn-lifecycle";
 import { createIdleTurnLifecycle } from "./ws-turn-lifecycle";
 import {
+  anchorTurnTiming,
   createTurnTiming,
   formatTurnDuration,
   transitionTurnTiming,
   type TurnTimingState,
 } from "./ws-turn-timing";
+import { serverTurnStartLocalMs } from "./server-turn-start";
 import { blocksPatchWithDerived } from "./ws-block-mutations";
 import { DEFAULT_PROVIDER } from "../shared/models";
 import type { RuntimeSelection } from "../shared/models";
@@ -334,9 +336,7 @@ export function updateSession(
   if (!prev) return {};
   const normalizedPatch = normalizeSessionPatch(prev, patch);
   const next = { ...prev, ...normalizedPatch };
-  // Recompute timing on a lifecycle change UNLESS the caller supplied its own
-  // `turnTiming` (e.g. a status-driven sync anchoring the timer to the
-  // server-stamped turn start) — honoring it keeps all devices in sync.
+  // Recompute timing on a lifecycle change unless the caller supplied its own.
   if (
     normalizedPatch.lifecycle &&
     normalizedPatch.turnTiming === undefined &&
@@ -348,6 +348,13 @@ export function updateSession(
       normalizedPatch.lifecycle,
     );
   }
+  // Every session's timer runs from the server-stamped turn start, the one
+  // value all devices share.
+  next.turnTiming = anchorTurnTiming(
+    next.turnTiming,
+    next.lifecycle,
+    serverTurnStartLocalMs(next.sessionDbId),
+  );
   if (shouldAppendTurnSummary(prev.lifecycle, next.lifecycle, next.turnTiming, next.blocks)) {
     const blocks = [...next.blocks, buildTurnSummaryBlock(next.turnTiming)];
     Object.assign(next, blocksPatchWithDerived(next.streamingState, blocks));
