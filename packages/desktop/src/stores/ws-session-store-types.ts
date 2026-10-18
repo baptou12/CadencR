@@ -64,6 +64,16 @@ export interface WsSessionStore {
   send: (sessionId: string, envelope: WsEnvelope) => void;
   initSession: (sessionId: string, config: SessionConfig) => void;
   sendPrompt: (sessionId: string, text: string, options?: PromptDispatchOptions) => void;
+  /**
+   * `sendPrompt` that settles once the prompt is on the wire: immediately for
+   * an initialized session, after `session.initialized` for a queued one.
+   * Rejects when initialization fails or the session is torn down first.
+   */
+  deliverPrompt: (
+    sessionId: string,
+    text: string,
+    options?: PromptDispatchOptions,
+  ) => Promise<void>;
   respondToPermission: (
     sessionId: string,
     requestId: string,

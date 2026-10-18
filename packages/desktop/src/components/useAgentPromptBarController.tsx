@@ -38,6 +38,7 @@ function usePromptState(props: AgentPromptBarProps) {
   const navigatingHistoryRef = useRef(false);
   const restoringDraftRef = useRef(false);
   const interactedRef = useRef(false);
+  const sendInFlightRef = useRef(false);
   const hadSpecialStateRef = useRef(false);
   const shouldRestoreFocusRef = useRef(false);
   const draft = usePromptDraft({ featureId: props.featureId });
@@ -69,6 +70,7 @@ function usePromptState(props: AgentPromptBarProps) {
     isMobile,
     navigatingHistoryRef,
     restoringDraftRef,
+    sendInFlightRef,
     setText,
     shouldRestoreFocusRef,
     text,
@@ -140,6 +142,7 @@ function usePromptSending(
     addHistoryEntry,
     getAttachments,
     interactedRef: state.interactedRef,
+    sendInFlightRef: state.sendInFlightRef,
   });
   const hasSendableContent = isShellCommandMode
     ? state.text.slice(1).trim().length > 0 && state.attachments.attachments.length === 0
@@ -192,7 +195,9 @@ function usePromptEditorActions(props: AgentPromptBarProps, state: PromptState) 
   const handleEditorChange = useCallback(
     (newText: string): void => {
       state.setText(newText);
-      if (state.restoringDraftRef.current) return;
+      // The send-time clear must not wipe the persisted draft: it stays until
+      // the prompt is delivered, so an app closed mid-send can restore it.
+      if (state.restoringDraftRef.current || state.sendInFlightRef.current) return;
       state.interactedRef.current = true;
       if (state.navigatingHistoryRef.current) {
         state.navigatingHistoryRef.current = false;
@@ -207,6 +212,7 @@ function usePromptEditorActions(props: AgentPromptBarProps, state: PromptState) 
       state.interactedRef,
       state.navigatingHistoryRef,
       state.restoringDraftRef,
+      state.sendInFlightRef,
       state.setText,
     ],
   );

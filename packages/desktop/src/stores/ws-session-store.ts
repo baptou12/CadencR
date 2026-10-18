@@ -32,6 +32,11 @@ import type { SocketHandlerDeps } from "./ws-session-socket-handler";
 import { connectSession } from "./ws-session-connect";
 import { createWsSessionSimpleActions } from "./ws-session-simple-actions";
 import { createWsSessionTransportActions } from "./ws-session-transport-actions";
+import {
+  awaitQueuedPromptDelivery,
+  failQueuedPromptDelivery,
+  settleQueuedPromptDelivery,
+} from "./ws-session-prompt-delivery";
 import { createWsSessionConfigActions } from "./ws-session-config-actions";
 
 import { blocksPatchWithDerived } from "./ws-message-processing";
@@ -114,8 +119,20 @@ function flushQueuedInitActions(set: WsStoreSet, get: WsStoreGet, sessionId: str
   for (const envelope of buildQueuedInitEnvelopes(session)) {
     sendRawEnvelope(get, sessionId, envelope);
   }
+  settleQueuedPromptDelivery(sessionId, session.queuedPrompts);
   if (session.queuedPrompts.length === 0 && !session.pendingInitAccessMode) return;
   set(updateSession(get(), sessionId, { queuedPrompts: [], pendingInitAccessMode: null }));
+}
+
+/**
+ * `session.init` was refused: its queued prompts will never be sent. Awaiting
+ * callers get theirs back; fire-and-forget `sendPrompt` callers only see the
+ * inline error block. `pendingInitAccessMode` is kept — it is still the
+ * user's choice for the next init.
+ */
+function failQueuedInit(set: WsStoreSet, get: WsStoreGet, sessionId: string, message: string) {
+  set(updateSession(get(), sessionId, { queuedPrompts: [], initRequestId: null }));
+  failQueuedPromptDelivery(sessionId, message);
 }
 
 function reinitOnReconnect(get: WsStoreGet, sessionId: string): void {
@@ -263,35 +280,58 @@ function createBranchActions(
   };
 }
 
-function createPromptActions(set: WsStoreSet, get: WsStoreGet): Pick<WsSessionStore, "sendPrompt"> {
+/** Send the prompt now, or queue it until `session.initialized`. */
+function dispatchPrompt(
+  set: WsStoreSet,
+  get: WsStoreGet,
+  sessionId: string,
+  text: string,
+  options: PromptDispatchOptions,
+): { queued: boolean; messageUuid: string } {
+  const session = getSessionEntry(get, sessionId);
+  if (session.featureId !== null) {
+    noteUserPrompt(session.featureId);
+    // Prompting the conversation is acting on what For me asked.
+    acknowledgeForMe(session.featureId);
+  }
+  const messageUuid = options.messageUuid ?? crypto.randomUUID();
+  if (session.serverSessionId) {
+    sendRawEnvelope(
+      get,
+      sessionId,
+      createPromptSend(session.serverSessionId, text, {
+        ...options,
+        messageUuid,
+        trackPromptReceipt: shouldTrackPromptReceipt(session),
+      }),
+    );
+    return { queued: false, messageUuid };
+  }
+  set(
+    updateSession(
+      get(),
+      sessionId,
+      buildQueuedPromptPatch(session, text, { ...options, messageUuid }),
+    ),
+  );
+  return { queued: true, messageUuid };
+}
+
+function createPromptActions(
+  set: WsStoreSet,
+  get: WsStoreGet,
+): Pick<WsSessionStore, "sendPrompt" | "deliverPrompt"> {
   return {
+    deliverPrompt(sessionId, text, options: PromptDispatchOptions = {}) {
+      // Queueing onto a missing entry is a no-op, so nothing would settle it.
+      if (!get().sessions[sessionId]) {
+        return Promise.reject(new Error("The session is not connected."));
+      }
+      const { queued, messageUuid } = dispatchPrompt(set, get, sessionId, text, options);
+      return queued ? awaitQueuedPromptDelivery(sessionId, messageUuid) : Promise.resolve();
+    },
     sendPrompt(sessionId, text, options: PromptDispatchOptions = {}) {
-      const session = getSessionEntry(get, sessionId);
-      if (session.featureId !== null) {
-        noteUserPrompt(session.featureId);
-        // Prompting the conversation is acting on what For me asked.
-        acknowledgeForMe(session.featureId);
-      }
-      const messageUuid = options.messageUuid ?? crypto.randomUUID();
-      if (session.serverSessionId) {
-        sendRawEnvelope(
-          get,
-          sessionId,
-          createPromptSend(session.serverSessionId, text, {
-            ...options,
-            messageUuid,
-            trackPromptReceipt: shouldTrackPromptReceipt(session),
-          }),
-        );
-        return;
-      }
-      set(
-        updateSession(
-          get(),
-          sessionId,
-          buildQueuedPromptPatch(session, text, { ...options, messageUuid }),
-        ),
-      );
+      dispatchPrompt(set, get, sessionId, text, options);
     },
   };
 }
@@ -309,6 +349,7 @@ function createWsSessionStore(set: WsStoreSet, get: WsStoreGet): WsSessionStore 
   const socketDeps: SocketHandlerDeps = {
     ctx,
     flushQueuedInitActions: (sessionId) => flushQueuedInitActions(set, get, sessionId),
+    failQueuedInit: (sessionId, message) => failQueuedInit(set, get, sessionId, message),
   };
   return {
     sessions: {},

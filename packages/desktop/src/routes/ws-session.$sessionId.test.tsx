@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => {
   const mockFocusActiveInput = vi.fn();
   const mockSetFeatureSettingMutateAsync = vi.fn().mockResolvedValue(undefined);
   const mockSetWorkspaceSettingMutateAsync = vi.fn().mockResolvedValue(undefined);
-  const mockSendPrompt = vi.fn();
+  const mockDeliverPrompt = vi.fn();
   const mockToastError = vi.fn();
   const mockListBranches = vi.fn().mockResolvedValue([]);
   const mockCheckoutBranchMutateAsync = vi.fn().mockResolvedValue({ success: true });
@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => {
     mockFocusActiveInput,
     mockSetFeatureSettingMutateAsync,
     mockSetWorkspaceSettingMutateAsync,
-    mockSendPrompt,
+    mockDeliverPrompt,
     mockToastError,
     mockListBranches,
     mockCheckoutBranchMutateAsync,
@@ -120,7 +120,8 @@ vi.mock("@/hooks/useWebSocketSession", () => ({
     status: "idle",
     isConnected: false,
     initSession: vi.fn(),
-    sendPrompt: mocks.mockSendPrompt,
+    sendPrompt: vi.fn(),
+    deliverPrompt: mocks.mockDeliverPrompt,
     interrupt: vi.fn(),
     clearSession: vi.fn(),
     pendingPermission: null,
@@ -355,7 +356,7 @@ describe("WsSessionPage route", () => {
     vi.mocked(AgentSession).mockClear();
     mocks.mockFocusPromptBar.mockClear();
     mocks.mockFocusActiveInput.mockClear();
-    mocks.mockSendPrompt.mockClear();
+    mocks.mockDeliverPrompt.mockClear();
     mocks.mockToastError.mockClear();
     mocks.mockListBranches.mockReset();
     mocks.mockListBranches.mockResolvedValue([]);
@@ -403,7 +404,7 @@ describe("WsSessionPage route", () => {
     const todos = [{ content: "do x", status: "pending" as const, activeForm: "doing x" }];
     vi.mocked(useWsSessionStore).mockImplementation((selector) =>
       (selector as (s: unknown) => unknown)({
-        sessions: { "ws-feature-35": { todos } },
+        sessions: { "ws-feature-35": { todos, queuedPrompts: [], initRequestId: null } },
         requestSlashCommands: vi.fn(),
         retryWorktreeSetup: vi.fn(),
       }),
@@ -418,7 +419,7 @@ describe("WsSessionPage route", () => {
     const todos = [{ content: "do x", status: "pending" as const, activeForm: "doing x" }];
     vi.mocked(useWsSessionStore).mockImplementation((selector) =>
       (selector as (s: unknown) => unknown)({
-        sessions: { "ws-feature-35": { todos } },
+        sessions: { "ws-feature-35": { todos, queuedPrompts: [], initRequestId: null } },
         requestSlashCommands: vi.fn(),
         retryWorktreeSetup: vi.fn(),
       }),
@@ -440,7 +441,7 @@ describe("WsSessionPage route", () => {
     expect(mocks.mockFocusPromptBar).not.toHaveBeenCalled();
   });
 
-  it("toasts and aborts the send when saving worktree settings fails (does not call sendPrompt)", async () => {
+  it("toasts and aborts the send when saving worktree settings fails (does not call deliverPrompt)", async () => {
     mocks.mockSetFeatureSettingMutateAsync.mockRejectedValueOnce(new Error("disk full"));
 
     render(<WsSessionPage />);
@@ -454,7 +455,22 @@ describe("WsSessionPage route", () => {
     expect(
       mocks.mockToastError.mock.calls.some((call) => /worktree settings/i.test(String(call[0]))),
     ).toBe(true);
-    expect(mocks.mockSendPrompt).not.toHaveBeenCalled();
+    expect(mocks.mockDeliverPrompt).not.toHaveBeenCalled();
+  });
+
+  it("toasts and rethrows when a queued prompt is never delivered", async () => {
+    mocks.mockDeliverPrompt.mockRejectedValueOnce(
+      new Error("The session could not start: Failed to create/find session in database"),
+    );
+
+    render(<WsSessionPage />);
+    const onSend = lastAgentSessionProps().onSend as (text: string) => Promise<void>;
+    await act(async () => {
+      await expect(onSend("hello")).rejects.toThrow("could not start");
+    });
+    expect(mocks.mockToastError).toHaveBeenCalledWith(
+      "The session could not start: Failed to create/find session in database",
+    );
   });
 
   it("persists reuse settings and starts a worktree for the branch_worktree mode", async () => {
@@ -468,7 +484,7 @@ describe("WsSessionPage route", () => {
       id: 35,
       data: { key: "worktree_mode", value: "reuse" },
     });
-    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", {
+    expect(mocks.mockDeliverPrompt).toHaveBeenCalledWith("hello", {
       attachments: undefined,
       branchSetup: { kind: "worktree" },
       claudeProfile: "default",
@@ -480,7 +496,7 @@ describe("WsSessionPage route", () => {
     // No worktree feature settings: the backend forks the branch after
     // auto-naming, signalled via the prompt's `branchSetup` (not a pre-send op).
     expect(mocks.mockSetFeatureSettingMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", {
+    expect(mocks.mockDeliverPrompt).toHaveBeenCalledWith("hello", {
       attachments: undefined,
       branchSetup: { kind: "project_branch", base: "develop" },
       claudeProfile: "default",
@@ -493,7 +509,7 @@ describe("WsSessionPage route", () => {
       data: { project_id: 1, branch: "feat/unattached" },
     });
     expect(mocks.mockSetFeatureSettingMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", {
+    expect(mocks.mockDeliverPrompt).toHaveBeenCalledWith("hello", {
       attachments: undefined,
       branchSetup: undefined,
       claudeProfile: "default",
@@ -504,7 +520,7 @@ describe("WsSessionPage route", () => {
     await setModeBranchAndSend({ mode: "on_branch" });
     expect(mocks.mockCheckoutBranchMutateAsync).not.toHaveBeenCalled();
     expect(mocks.mockSetFeatureSettingMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", {
+    expect(mocks.mockDeliverPrompt).toHaveBeenCalledWith("hello", {
       attachments: undefined,
       branchSetup: undefined,
       claudeProfile: "default",
@@ -523,7 +539,7 @@ describe("WsSessionPage route", () => {
       await onSend("hello", undefined, "bedrock");
     });
 
-    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", {
+    expect(mocks.mockDeliverPrompt).toHaveBeenCalledWith("hello", {
       attachments: undefined,
       branchSetup: undefined,
       claudeProfile: "bedrock",

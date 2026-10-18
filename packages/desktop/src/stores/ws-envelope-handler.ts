@@ -49,6 +49,10 @@ import {
 } from "./ws-envelope-turn-handlers";
 import { SESSION_ACTION, type SessionActionName } from "./ws-session-action-names";
 import { discardStreamDeltas } from "./ws-delta-coalescer";
+import {
+  SESSION_CLOSED_BEFORE_DELIVERY,
+  failQueuedPromptDelivery,
+} from "./ws-session-prompt-delivery";
 export type { StoreAccessors } from "./ws-envelope-types";
 
 // Main envelope handler
@@ -407,6 +411,7 @@ function handleCompactOk(ctx: StoreAccessors, sessionId: string): void {
 
 function handleDeleted(ctx: StoreAccessors, sessionId: string): void {
   discardStreamDeltas(sessionId);
+  failQueuedPromptDelivery(sessionId, SESSION_CLOSED_BEFORE_DELIVERY);
   const del = ctx.get().sessions[sessionId];
   if (del?.conn) del.conn.close();
   const { [sessionId]: _, ...rest } = ctx.get().sessions;
