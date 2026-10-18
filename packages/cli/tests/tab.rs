@@ -114,3 +114,79 @@ fn actual_cli_packs_the_compiled_custom_tab_without_overwriting() {
     assert_eq!(receipt["sha256"].as_str().unwrap().len(), 64);
     assert!(!run().status.success());
 }
+
+#[test]
+fn release_packaging_binds_strict_metadata_to_the_compiled_tab() {
+    let root = tempfile::tempdir().unwrap();
+    let folder = root.path().join("graph");
+    std::fs::create_dir_all(folder.join("dist")).unwrap();
+    let mut document = manifest("graph");
+    document.as_object_mut().unwrap().remove("icon");
+    std::fs::write(folder.join("tab.json"), document.to_string()).unwrap();
+    std::fs::write(folder.join("dist/index.html"), "<html>Graph</html>").unwrap();
+    let package = json!({"kind":"tab","package":{
+        "tab":{"id":"graph","name":document["name"],"description":"Explore changes",
+            "version":"0.1.0","repository":"https://github.com/acme/tabs","license":"MIT",
+            "api_version":1,"distribution":{
+                "archive":"https://github.com/acme/tabs/releases/download/v0.1.0/tab.tar.gz",
+                "sha256":"0".repeat(64)}},
+        "host":{"publisher":"acme","compatibility":{"min_app_version":"1.0.0"}}
+    }});
+    let metadata = root.path().join("package.json");
+    let run = |output: &Path| {
+        Command::new(env!("CARGO_BIN_EXE_cadencr"))
+            .args(["--json", "registry", "pack-tab", "--directory"])
+            .arg(&folder)
+            .arg("--package")
+            .arg(&metadata)
+            .arg("--output")
+            .arg(output)
+            .output()
+            .unwrap()
+    };
+    for field in ["id", "name", "version", "api_version"] {
+        let mut changed = package.clone();
+        changed["package"]["tab"][field] = match field {
+            "api_version" => json!(2),
+            "version" => json!("0.2.0"),
+            _ => json!("different"),
+        };
+        std::fs::write(&metadata, changed.to_string()).unwrap();
+        let output = root.path().join(format!("wrong-{field}.tar.gz"));
+        let rejected = run(&output);
+        assert_eq!(rejected.status.code(), Some(1), "{field}");
+        let error: Value = serde_json::from_slice(&rejected.stderr).unwrap();
+        assert_eq!(error["code"], "TAB_PACKAGING_FAILED");
+        assert!(!output.exists(), "invalid {field} wrote an archive");
+    }
+    for invalid in [
+        json!({"kind":"provider","package":package.clone()}),
+        json!({"kind":"tab","package":package["package"],"extra":true}),
+    ] {
+        std::fs::write(&metadata, invalid.to_string()).unwrap();
+        let output = root.path().join("invalid.tar.gz");
+        assert_eq!(run(&output).status.code(), Some(1));
+        assert!(!output.exists());
+    }
+    // Duplicate JSON fields are not silently reinterpreted at this boundary.
+    std::fs::write(&metadata, "{\"kind\":\"provider\",\"kind\":\"tab\"}").unwrap();
+    assert_eq!(
+        run(&root.path().join("duplicate.tar.gz")).status.code(),
+        Some(1)
+    );
+    std::fs::write(&metadata, package.to_string()).unwrap();
+    let first = root.path().join("first.tar.gz");
+    let second = root.path().join("second.tar.gz");
+    let accepted = run(&first);
+    assert!(
+        accepted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&accepted.stderr)
+    );
+    assert!(run(&second).status.success());
+    assert_eq!(
+        std::fs::read(&first).unwrap(),
+        std::fs::read(&second).unwrap()
+    );
+    assert_eq!(run(&first).status.code(), Some(1));
+}

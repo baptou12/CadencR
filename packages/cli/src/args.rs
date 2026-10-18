@@ -122,6 +122,9 @@ pub(crate) enum RegistryCommand {
     PackTab {
         #[arg(long)]
         directory: PathBuf,
+        /// Bind the runtime manifest to full schema-2 marketplace metadata.
+        #[arg(long)]
+        package: Option<PathBuf>,
         #[arg(long)]
         output: PathBuf,
     },

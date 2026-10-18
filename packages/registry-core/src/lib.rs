@@ -25,6 +25,8 @@ mod json;
 mod package;
 mod pipeline_preflight;
 mod publication_plan;
+mod release_archive;
+pub use release_archive::{parse_github_release_archive_url, GitHubReleaseArchive};
 mod safe_io;
 mod signing;
 mod snapshot;

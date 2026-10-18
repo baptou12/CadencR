@@ -90,14 +90,14 @@ same errors on the tab's card.
 
 ### Permissions
 
-| Permission | What the tab can read |
-| --- | --- |
-| `features:read` | This conversation's feature and project, and the project's other features. |
-| `git:read` | Status, diffs, history and branches of this conversation's worktree; live `git.status`. |
-| `forge:read` | The pull/merge request of this conversation; live `forge.status`. |
-| `files:read` | Files of this conversation's worktree; live `files.changes`. |
-| `agent:observe` | The agent conversation's history and live `session.stream` (read only). |
-| `workspace:read` | Every project and feature; live `session.status`. |
+| Permission       | What the tab can read                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| `features:read`  | This conversation's feature and project, and the project's other features.              |
+| `git:read`       | Status, diffs, history and branches of this conversation's worktree; live `git.status`. |
+| `forge:read`     | The pull/merge request of this conversation; live `forge.status`.                       |
+| `files:read`     | Files of this conversation's worktree; live `files.changes`.                            |
+| `agent:observe`  | The agent conversation's history and live `session.stream` (read only).                 |
+| `workspace:read` | Every project and feature; live `session.status`.                                       |
 
 A tab never gets your Cadencr token. Each open tab receives a short-lived grant
 for **its** conversation only. The service checks every request against a fixed
@@ -111,7 +111,7 @@ import { CadencrProvider, useTabContext, useStream } from "@cadencr/tab-sdk/reac
 import { getChangedFiles } from "@cadencr/tab-sdk/api";
 
 function App() {
-  const { feature } = useTabContext();          // project, feature, branch, PR, session
+  const { feature } = useTabContext(); // project, feature, branch, PR, session
   const [files, setFiles] = useState<string[]>([]);
   const refresh = () =>
     getChangedFiles({ feature_id: feature.id, mode: "uncommitted" }).then((f) =>
@@ -119,10 +119,20 @@ function App() {
     );
   useEffect(() => void refresh(), [feature.id]);
   useStream("git.status", () => void refresh()); // pushed live, no polling
-  return <ul>{files.map((p) => <li key={p}>{p}</li>)}</ul>;
+  return (
+    <ul>
+      {files.map((p) => (
+        <li key={p}>{p}</li>
+      ))}
+    </ul>
+  );
 }
 
-createRoot(root).render(<CadencrProvider><App /></CadencrProvider>);
+createRoot(root).render(
+  <CadencrProvider>
+    <App />
+  </CadencrProvider>,
+);
 ```
 
 The client also has the following:
@@ -189,7 +199,10 @@ settings and use **Custom tab publication preparation**, then **Prepare a custom
 tab bundle**. These sections are available in development builds with
 `VITE_INTERNAL_MARKETPLACE=true`, like the rest of the unreleased marketplace.
 
-The metadata uses the signed catalog's schema-2 `tab` kind:
+The metadata uses the signed catalog's schema-2 `tab` kind. This is a template,
+not publishable metadata: replace the checksum and `FIRST_COMPATIBLE_APP_VERSION`
+before preparation. The first desktop release with marketplace-tab support has
+not been selected yet; released `0.13.1` does **not** support these packages.
 
 ```json
 {
@@ -210,11 +223,16 @@ The metadata uses the signed catalog's schema-2 `tab` kind:
     },
     "host": {
       "publisher": "acme",
-      "compatibility": { "min_app_version": "0.13.1" }
+      "compatibility": { "min_app_version": "FIRST_COMPATIBLE_APP_VERSION" }
     }
   }
 }
 ```
+
+Use the actual first compatible app version or a later tested release for
+`min_app_version`; the placeholder deliberately fails semantic-version validation.
+Keep the mixed tab catalog separate from feeds consumed by older clients: their
+parsers can reject the unknown `tab` kind before compatibility filtering.
 
 The ID, name, version and API version must match `tab.json`. Preparation replaces
 the placeholder checksum with the actual SHA-256 and captures only `tab.json`,
@@ -232,6 +250,9 @@ For headless packaging, assemble that same distribution tree and run:
 ```sh
 cadencr registry pack-tab --directory ./staging --output ./tab.tar.gz
 ```
+
+For release preparation, add `--package ./marketplace-package.json` to bind the
+compiled manifest's identity, version and API version to reviewed schema-2 metadata.
 
 Marketplace tabs share the mixed catalog source and signing trust already used
 by themes (`CADENCR_MANAGED_THEME_INDEX_URL`); no separate signing key is needed.

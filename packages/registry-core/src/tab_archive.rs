@@ -12,6 +12,8 @@ pub const MAX_TAB_BYTES: u64 = 32 * 1024 * 1024;
 pub struct PackTabRequest<'a> {
     pub directory: &'a Path,
     pub output: &'a Path,
+    /// Optional full schema-2 metadata, bound to the compiled runtime manifest.
+    pub package: Option<&'a Path>,
 }
 #[derive(Debug)]
 pub struct PackedTab {
@@ -38,7 +40,18 @@ pub fn pack_tab(request: PackTabRequest<'_>) -> Result<PackedTab, RegistryError>
         remaining -= bytes.len() as u64;
         files.insert(name.to_owned(), bytes);
     }
-    validate_tab_files(&files)?;
+    if let Some(path) = request.package {
+        let bytes = crate::safe_io::read_bounded_regular(path, 1024 * 1024)
+            .map_err(|e| invalid(e.to_string()))?;
+        let package = crate::parse_json_bytes(&bytes).map_err(|e| invalid(e.to_string()))?;
+        crate::validate_marketplace_package(&package)?;
+        if crate::marketplace_package_kind(&package) != Some("tab") {
+            return Err(invalid("tab packaging requires kind: tab metadata"));
+        }
+        validate_tab_package_files(&package["package"], &files)?;
+    } else {
+        validate_tab_files(&files)?;
+    }
     let built = archive::write::web_archive(&snapshot, request.output)?;
     Ok(PackedTab {
         archive: request.output.into(),

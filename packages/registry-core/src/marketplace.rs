@@ -160,36 +160,9 @@ pub fn theme_distribution_repository(
     let fail = || {
         RegistryError::single("theme archive must be an exact GitHub release asset matching its distribution repository")
     };
-    let url = url::Url::parse(archive).map_err(|_| fail())?;
-    let parts = url.path().split('/').collect::<Vec<_>>();
-    let segment = |s: &str| {
-        !s.is_empty()
-            && s != "."
-            && s != ".."
-            && s.bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
-    };
-    if url.scheme() != "https"
-        || url.host_str() != Some("github.com")
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.port().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-        || url.as_str() != archive
-        || parts.len() != 7
-        || !parts[0].is_empty()
-        || parts[3..5] != ["releases", "download"]
-        || ![parts[1], parts[2], parts[5], parts[6]]
-            .iter()
-            .all(|s| segment(s))
-        || parts[6].len() > 128
-        || (!parts[6].to_ascii_lowercase().ends_with(".tar.gz")
-            && !parts[6].to_ascii_lowercase().ends_with(".tgz"))
-    {
-        return Err(fail());
-    }
-    let repository = format!("https://github.com/{}/{}", parts[1], parts[2]);
+    let repository = crate::parse_github_release_archive_url(archive)
+        .map_err(|_| fail())?
+        .repository;
     if explicit.is_some_and(|value| value.as_str() != Some(repository.as_str())) {
         return Err(fail());
     }
