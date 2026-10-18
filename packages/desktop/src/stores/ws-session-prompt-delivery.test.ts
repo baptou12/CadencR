@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useWsSessionStore } from "./ws-session-store";
+import { forceReconnectAll } from "@/lib/ws-reconnect";
 
 // --- Mock WebSocket (same shape as ws-session-store.test.ts) ---
 
@@ -200,6 +201,20 @@ describe("ws-session queued prompt delivery", () => {
 
     ws.readyState = MockWebSocket.CLOSED;
     ws.fireEvent("close", { code: 1006 });
+    await tick();
+
+    expect(delivery.outcome).toBe("pending");
+    const session = useWsSessionStore.getState().sessions.s1;
+    expect(session.queuedPrompts).toHaveLength(1);
+    expect(session.initRequestId).toBeNull();
+  });
+
+  it("forgets a sent init on a forced reconnect so the queued prompt can retry it", async () => {
+    await connectAndInit();
+    const delivery = track(useWsSessionStore.getState().deliverPrompt("s1", "hello"));
+
+    // Wake-style reconnect: the close handler ignores this intentional close.
+    forceReconnectAll();
     await tick();
 
     expect(delivery.outcome).toBe("pending");

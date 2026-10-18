@@ -1,4 +1,12 @@
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -76,6 +84,19 @@ function EditorRefPlugin({
 }) {
   const [editor] = useLexicalComposerContext();
   editorRef.current = editor;
+  return null;
+}
+
+/**
+ * A disabled editor must also refuse typing: `pointer-events-none` does not
+ * stop a focused editor, and text typed during an awaited send is never saved
+ * as a draft. Layout effect, so a refocus scheduled for the next frame lands
+ * on an editable root again. Handles changes only; the mount value is in
+ * `initialConfig`.
+ */
+function EditablePlugin({ editable }: { editable: boolean }) {
+  const [editor] = useLexicalComposerContext();
+  useLayoutEffect(() => editor.setEditable(editable), [editor, editable]);
   return null;
 }
 
@@ -215,6 +236,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
     return (
       <>
         <EditorRefPlugin editorRef={editorRef} />
+        <EditablePlugin editable={!disabled} />
         <PlainTextPlugin
           contentEditable={
             <ContentEditable
@@ -281,9 +303,13 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
     const initialShellCommandsEnabledRef = useRef(
       props.promptCommandPolicy?.userShell ?? DEFAULT_PROMPT_COMMAND_POLICY.userShell,
     );
+    // `LexicalComposer` sets editability on mount after its children's
+    // effects, so the mount value has to come from the config.
+    const initialEditableRef = useRef(!props.disabled);
     const initialConfig = useMemo(
       () => ({
         namespace: "PromptEditor",
+        editable: initialEditableRef.current,
         theme: { paragraph: "m-0 leading-[22px]" },
         nodes: [MentionNode, SlashCommandNode, ConversationReferenceNode, ShellCommandPrefixNode],
         onError(error: Error) {

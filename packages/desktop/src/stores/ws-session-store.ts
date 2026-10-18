@@ -29,7 +29,7 @@ import { advancePendingPermissionQueue } from "@/lib/pending-permission-queue";
 import { noteUserPrompt } from "@/lib/auto-layout/auto-layout-controller";
 import { acknowledgeForMe } from "@/stores/for-me-ack";
 import type { SocketHandlerDeps } from "./ws-session-socket-handler";
-import { connectSession } from "./ws-session-connect";
+import { connectSession, initRequestIdAfterDrop } from "./ws-session-connect";
 import { createWsSessionSimpleActions } from "./ws-session-simple-actions";
 import { createWsSessionTransportActions } from "./ws-session-transport-actions";
 import {
@@ -115,7 +115,14 @@ function forceReconnectSession(set: WsStoreSet, get: WsStoreGet, sessionId: stri
   if (session?.conn) {
     rejectPendingRequests(session);
     session.conn.close(1000, "force-reconnect");
-    set(updateSession(get(), sessionId, { conn: null, isConnected: false }));
+    // The close handler ignores this intentional close, so drop a sent init here.
+    set(
+      updateSession(get(), sessionId, {
+        conn: null,
+        isConnected: false,
+        initRequestId: initRequestIdAfterDrop(session),
+      }),
+    );
   }
   get().connect(sessionId);
 }

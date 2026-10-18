@@ -62,7 +62,7 @@ function handleConnectionOpen(context: SessionConnectionContext): void {
  * still-queued prompt re-run it once the transport is back. One still parked
  * in the outbound queue is replayed on reconnect, so it stays in flight.
  */
-function initRequestIdAfterDrop(session: SessionEntry | undefined): string | null {
+export function initRequestIdAfterDrop(session: SessionEntry | undefined): string | null {
   const id = session?.initRequestId ?? null;
   return id !== null && session?.outboundQueue.some((envelope) => envelope.id === id) ? id : null;
 }
