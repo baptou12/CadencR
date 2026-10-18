@@ -279,7 +279,7 @@ async fn test_prompt_send_steers_turn_owned_by_another_connection_without_spawni
     // Register A as the turn's owner in the global registry (as mark_agent_running does).
     app_state
         .active_turns
-        .begin_turn(db_id, &owner_sessions, 1_000)
+        .begin_turn(db_id, &owner_sessions)
         .await;
 
     // Connection B (the host): a Pending handle for the SAME db session id.

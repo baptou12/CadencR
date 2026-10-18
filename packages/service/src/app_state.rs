@@ -300,10 +300,7 @@ impl AppState {
             browser_bridge: Arc::new(RwLock::new(BrowserBridgeConfig::from_env())),
             max_parallel_agents: Self::max_parallel_from_env(),
             agent_timeout_minutes: Self::agent_timeout_minutes_from_env(),
-            session_status_tx: SessionStatusBroadcaster::new(
-                session_status_tx,
-                Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            ),
+            session_status_tx: SessionStatusBroadcaster::new(session_status_tx),
             feature_events_tx: FeatureEventBroadcaster::new(feature_events_tx),
             schedule_events_tx,
             pty_manager: pty_manager.clone(),
@@ -389,10 +386,7 @@ impl AppState {
             browser_bridge: Arc::new(RwLock::new(None)),
             max_parallel_agents: 3,
             agent_timeout_minutes: 30,
-            session_status_tx: SessionStatusBroadcaster::new(
-                session_status_tx,
-                std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            ),
+            session_status_tx: SessionStatusBroadcaster::new(session_status_tx),
             feature_events_tx: FeatureEventBroadcaster::new(feature_events_tx),
             schedule_events_tx,
             pty_manager: pty_manager.clone(),

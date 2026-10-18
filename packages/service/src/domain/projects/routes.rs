@@ -43,6 +43,10 @@ pub async fn delete_project_handler(
     Path(id): Path<i64>,
 ) -> Result<Json<SuccessResponse>, AppError> {
     service::delete_project(&state.write_pool, id).await?;
+    state
+        .session_status_tx
+        .forget_deleted_sessions(&state.write_pool)
+        .await?;
     Ok(Json(SuccessResponse { success: true }))
 }
 

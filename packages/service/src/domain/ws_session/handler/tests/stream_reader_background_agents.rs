@@ -116,10 +116,14 @@ async fn result_goes_idle_once_the_background_agent_finishes() {
     let app_state = make_test_app_state().await;
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
     let (ws_tx, mut ws_rx) = mpsc::unbounded_channel();
-    let mut status_rx = app_state.session_status_tx.subscribe();
     let db_session_id = 582i64;
     let feature_id = 1i64;
     insert_running_session(&app_state, db_session_id, feature_id).await;
+    // The turn was announced when it started, as `mark_agent_running` does.
+    app_state
+        .session_status_tx
+        .broadcast_running(db_session_id, feature_id);
+    let mut status_rx = app_state.session_status_tx.subscribe();
 
     // Start, finish (the CLI's terminal notification), then the resume turn's
     // result arrives with the live set empty.

@@ -93,8 +93,8 @@ pub async fn get_session_status_snapshot(
                 status: derived.status,
                 kind: derived.kind,
                 request_id: row.request_id,
-                // Filled by the WS handler from the active-turn registry; the
-                // DB has no per-turn start column.
+                // The DB has no per-turn start column; only the live status
+                // book knows a running turn's start.
                 turn_started_at_ms: None,
             },
         );
