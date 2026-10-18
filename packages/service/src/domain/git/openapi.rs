@@ -74,6 +74,8 @@ use super::{models, routes};
         models::CommitLogEntry,
         models::CommitLogResponse,
         models::CommitGraphEntry,
+        models::CommitRef,
+        models::CommitRefKind,
         models::CommitGraphResponse,
         models::CommitUrlResponse,
         models::StashEntry,
