@@ -29,6 +29,38 @@ export type PortsState =
   | { status: "error"; error: CadencrError }
   | { status: "ready"; ports: PortEntry[]; checkedAt: string };
 
+/**
+ * The backend's answers are JSON nothing has checked yet: check the shape
+ * before rendering it (by hand, to keep this example's dependencies to the SDK).
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isPortEntry(value: unknown): value is PortEntry {
+  return (
+    isRecord(value) &&
+    typeof value.port === "number" &&
+    typeof value.pid === "number" &&
+    typeof value.command === "string" &&
+    Array.isArray(value.addresses)
+  );
+}
+
+function portsResult(value: unknown): { ports: PortEntry[]; checkedAt: string } {
+  if (isRecord(value) && Array.isArray(value.ports) && value.ports.every(isPortEntry) && typeof value.checkedAt === "string") {
+    return { ports: value.ports, checkedAt: value.checkedAt };
+  }
+  throw new Error("The backend answered `ports` with an unexpected shape.");
+}
+
+function conversationResult(value: unknown): Conversation {
+  if (isRecord(value) && typeof value.title === "string" && typeof value.worktree === "string" && typeof value.platform === "string") {
+    return { title: value.title, worktree: value.worktree, platform: value.platform };
+  }
+  throw new Error("The backend answered `context` with an unexpected shape.");
+}
+
 /** The backend runs `lsof` each time: often enough to feel live, not more. */
 const POLL_MS = 5_000;
 
@@ -42,6 +74,7 @@ export function usePorts() {
   const visible = useVisibility();
   const [state, setState] = useState<PortsState>({ status: "loading" });
   const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [conversationLoading, setConversationLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const inFlight = useRef(false);
 
@@ -50,7 +83,7 @@ export function usePorts() {
     inFlight.current = true;
     setRefreshing(true);
     try {
-      const result = await client.backend.request<{ ports: PortEntry[]; checkedAt: string }>("ports");
+      const result = portsResult(await client.backend.request("ports"));
       setState({ status: "ready", ports: result.ports, checkedAt: result.checkedAt });
     } catch (error) {
       setState({ status: "error", error: toCadencrError(error) });
@@ -61,16 +94,18 @@ export function usePorts() {
   }, [client]);
 
   useEffect(() => {
+    setConversationLoading(true);
     client.backend
-      .request<Conversation>("context")
-      .then(setConversation)
+      .request("context")
+      .then((value) => setConversation(conversationResult(value)))
       .catch((error: unknown) =>
         void client.ui.toast({
           title: "Couldn't read the conversation",
           description: toCadencrError(error).message,
           variant: "error",
         }),
-      );
+      )
+      .finally(() => setConversationLoading(false));
   }, [client]);
 
   useEffect(() => {
@@ -101,5 +136,5 @@ export function usePorts() {
     [client, load],
   );
 
-  return { state, conversation, refreshing, reload: load, stop };
+  return { state, conversation, conversationLoading, refreshing, reload: load, stop };
 }

@@ -21,7 +21,8 @@ pub const MAX_BACKEND_ARG_CHARS: usize = 4096;
 const MAX_PROGRAM_CHARS: usize = 64;
 
 /// Programs that run whatever they are handed. Compared case-insensitively,
-/// without a Windows executable suffix.
+/// without a Windows executable suffix, and without a version suffix too
+/// (`python3.12`, `node18`, `php-8.2` are their interpreters).
 pub const DENIED_PROGRAMS: &[&str] = &[
     // shells
     "sh",
@@ -113,7 +114,9 @@ pub fn is_denied_program(program: &str) -> bool {
         .iter()
         .find_map(|suffix| lower.strip_suffix(suffix))
         .unwrap_or(&lower);
-    DENIED_PROGRAMS.contains(&stem)
+    let unversioned =
+        stem.trim_end_matches(|c: char| c.is_ascii_digit() || matches!(c, '.' | '-' | '_'));
+    DENIED_PROGRAMS.contains(&stem) || DENIED_PROGRAMS.contains(&unversioned)
 }
 
 pub(super) fn validate_commands(commands: &[TabCommand], findings: &mut TabFindings) {
@@ -253,6 +256,17 @@ mod tests {
                 ["COMMAND_NOT_ALLOWED"],
                 "{program}"
             );
+        }
+        for versioned in [
+            "python3.12",
+            "node18",
+            "ruby3.2",
+            "perl5.36",
+            "php-8.2",
+            "lua5.4",
+            "Python3.11.EXE",
+        ] {
+            assert!(is_denied_program(versioned), "{versioned}");
         }
         assert!(!is_denied_program("gitk"));
         assert!(!is_denied_program("nodemon-free"));

@@ -4,6 +4,7 @@
 //! tab and conversation, newest first, in memory only. The renderer shows it
 //! in the tab's **Activity** dialog; nothing here is ever sent to a tab.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -15,6 +16,11 @@ pub const MAX_RECORDS: usize = 50;
 /// Characters of a command's arguments kept in its record, all arguments
 /// together: a request may carry far more (`exec::MAX_ARGS_BYTES`).
 pub const MAX_RECORDED_ARGS_CHARS: usize = 1024;
+/// Characters of a program name kept, in its record and its logs: a request
+/// is recorded before its name is checked (a valid one has at most 64).
+pub const MAX_RECORDED_PROGRAM_CHARS: usize = 128;
+/// Characters of a refusal or failure message kept in its record.
+const MAX_RECORDED_ERROR_CHARS: usize = 1024;
 
 /// How one requested command ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
@@ -55,6 +61,16 @@ pub struct ActivityLog {
 impl ActivityLog {
     pub fn record(&self, plugin_id: &str, feature_id: i64, mut record: PluginTabExecRecord) {
         record.args = bounded(std::mem::take(&mut record.args));
+        if let Cow::Owned(program) = cut(&record.program, MAX_RECORDED_PROGRAM_CHARS) {
+            record.program = program;
+        }
+        if let Some(Cow::Owned(error)) = record
+            .error
+            .as_deref()
+            .map(|error| cut(error, MAX_RECORDED_ERROR_CHARS))
+        {
+            record.error = Some(error);
+        }
         let mut log = self.lock();
         let records = log.entry((plugin_id.to_string(), feature_id)).or_default();
         records.push_front(record);
@@ -75,6 +91,14 @@ impl ActivityLog {
         self.inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// `text`'s first `max` characters and `…`, when it has more.
+pub fn cut(text: &str, max: usize) -> Cow<'_, str> {
+    match text.char_indices().nth(max) {
+        Some((end, _)) => Cow::Owned(format!("{}…", &text[..end])),
+        None => Cow::Borrowed(text),
     }
 }
 
@@ -138,5 +162,15 @@ mod tests {
         assert_eq!(args[0], "log");
         assert_eq!(args[1].chars().count(), MAX_RECORDED_ARGS_CHARS - 3 + 1);
         assert!(args[1].ends_with('…'));
+        let mut huge = record(&"p".repeat(10_000));
+        huge.error = Some("e".repeat(10_000));
+        log.record("graph", 1, huge);
+        let kept = &log.recent("graph", 1)[0];
+        assert_eq!(kept.program.chars().count(), MAX_RECORDED_PROGRAM_CHARS + 1);
+        assert_eq!(
+            kept.error.as_ref().unwrap().chars().count(),
+            MAX_RECORDED_ERROR_CHARS + 1
+        );
+        assert_eq!(cut("git", 3), "git");
     }
 }

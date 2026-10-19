@@ -100,52 +100,69 @@ export function useReviewers() {
   const visible = useVisibility();
   const [state, setState] = useState<ReviewersState>({ status: "loading" });
   const [refreshing, setRefreshing] = useState(false);
-  const latest = useRef(0);
   const shownPaths = useRef<string | null>(null);
-  // One load runs commands at a time: a superseded one stops starting new
-  // `git log`s, and the next waits for its last ones, so two loads never
-  // exceed the 4 commands Cadencr allows a tab.
-  const previous = useRef<Promise<unknown>>(Promise.resolve());
+  // Loads run one after another, never side by side, so a tab never exceeds
+  // the 4 commands Cadencr allows it, and a load asked for while one runs is
+  // queued, not lost: `queued` is the next load's `force` (a forced one wins).
+  // A conversation change bumps `generation`, which stops the old loads.
+  const generation = useRef(0);
+  const queued = useRef<boolean | null>(null);
+  const draining = useRef<number | null>(null);
+  const previous = useRef<Promise<void>>(Promise.resolve());
 
-  const load = useCallback(
-    async (force: boolean) => {
-      const request = ++latest.current;
-      const current = () => request === latest.current;
-      setRefreshing(true);
+  /** Run the queued loads for generation `own` (the one it was queued in). */
+  const drain = useCallback(async (own: number) => {
+    const current = () => own === generation.current;
+    if (!current()) return;
+    setRefreshing(true);
+    while (current() && queued.current !== null) {
+      const force = queued.current;
+      queued.current = null;
       try {
         const paths = await changedPaths(feature.id, feature.baseBranch);
         const key = paths.join("\n");
-        if (!force && key === shownPaths.current) return;
-        await previous.current;
-        if (!current()) return;
-        const run = loadReviewers(client, paths, feature.baseBranch, current);
-        // Only sequences the next load: `run`'s error is reported just below.
-        previous.current = run.catch(() => undefined);
-        const next = await run;
-        if (request !== latest.current) return;
+        if (!current()) break;
+        if (!force && key === shownPaths.current) continue;
+        const next = await loadReviewers(client, paths, feature.baseBranch, current);
+        if (!current()) break;
         shownPaths.current = key;
         setState(next);
       } catch (error) {
-        if (request !== latest.current) return;
+        if (!current()) break;
         shownPaths.current = null;
         setState({ status: "error", error: toCadencrError(error) });
-      } finally {
-        if (request === latest.current) setRefreshing(false);
       }
+    }
+    if (current()) {
+      draining.current = null;
+      setRefreshing(false);
+    }
+  }, [client, feature.id, feature.baseBranch]);
+
+  const load = useCallback(
+    (force: boolean) => {
+      queued.current = force || queued.current === true;
+      if (draining.current === generation.current) return;
+      const own = generation.current;
+      draining.current = own;
+      // `drain` reports its own errors; this only sequences the runs.
+      previous.current = previous.current.then(() => drain(own));
     },
-    [client, feature.id, feature.baseBranch],
+    [drain],
   );
 
   useEffect(() => {
+    generation.current += 1;
     shownPaths.current = null;
+    queued.current = null;
     setState({ status: "loading" });
-    void load(true);
+    load(true);
   }, [load]);
 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const schedule = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void load(false), REFRESH_DEBOUNCE_MS);
+    timer.current = setTimeout(() => load(false), REFRESH_DEBOUNCE_MS);
   }, [load]);
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);
@@ -167,5 +184,5 @@ export function useReviewers() {
       }),
   });
 
-  return { state, refreshing, reload: () => void load(true) };
+  return { state, refreshing, reload: () => load(true) };
 }

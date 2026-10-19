@@ -124,8 +124,8 @@ Rules (validated by `cadencr-plugin-core::tab`, the service and
   interpreters and runtimes (`node`, `python`, `ruby`, `perl`, `deno`, `bun`,
   `java`, `dotnet`…), package runners (`npx`, `npm`, `pnpm`, `yarn`, `uvx`,
   `pipx`…) and launchers/privilege tools (`env`, `sudo`, `xargs`, `nohup`,
-  `open`, `start`…), with or without a Windows suffix
-  (`cadencr_plugin_core::tab::DENIED_PROGRAMS`). Listing a program names
+  `open`, `start`…), with or without a Windows suffix or a version suffix
+  (`python3.12`, `node18`, `php-8.2`; `cadencr_plugin_core::tab::DENIED_PROGRAMS`). Listing a program names
   _which_ program runs, not what it does with its arguments.
 - `backend.command`: a clean relative path inside the tab folder (contains a
   `/`, e.g. `bin/backend`) or a bare program name looked up on `PATH` (`node`,

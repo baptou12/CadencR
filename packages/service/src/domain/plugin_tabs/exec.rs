@@ -21,7 +21,9 @@ use sqlx::SqlitePool;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use utoipa::ToSchema;
 
-use super::activity::{ActivityLog, PluginTabExecOutcome, PluginTabExecRecord};
+use super::activity::{
+    cut, ActivityLog, PluginTabExecOutcome, PluginTabExecRecord, MAX_RECORDED_PROGRAM_CHARS,
+};
 use super::principal::PluginPrincipal;
 use crate::domain::agents::providers::installed::managed::process_policy::{
     capture_managed_command, managed_command, ManagedProcessPolicyError,
@@ -80,7 +82,7 @@ pub async fn run(
     tracing::info!(
         plugin_id = principal.plugin_id,
         feature_id = principal.feature_id,
-        program = request.program,
+        program = %cut(&request.program, MAX_RECORDED_PROGRAM_CHARS),
         args = request.args.len(),
         outcome = ?kind,
         exit_code,
@@ -126,7 +128,7 @@ async fn execute(
             "PLUGIN_EXEC_DENIED",
             format!(
                 "`{}` is not in this tab's `commands` in tab.json",
-                request.program
+                cut(&request.program, MAX_RECORDED_PROGRAM_CHARS)
             ),
         )));
     }

@@ -109,7 +109,7 @@ function Body({ state, onRetry }: { state: ReturnType<typeof useReviewers>["stat
       </ul>
       {state.filesSkipped > 0 ? (
         <p className="mt-3 text-xs text-muted-foreground">
-          {state.filesSkipped} more changed files were not read, to keep this quick.
+          {state.filesSkipped} more changed {state.filesSkipped === 1 ? "file was" : "files were"} not read, to keep this quick.
         </p>
       ) : null}
     </>

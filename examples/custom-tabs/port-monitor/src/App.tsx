@@ -22,7 +22,7 @@ function useFolderBadge(count: number | null) {
 }
 
 export function App() {
-  const { state, conversation, refreshing, reload, stop } = usePorts();
+  const { state, conversation, conversationLoading, refreshing, reload, stop } = usePorts();
   const ports = state.status === "ready" ? state.ports : null;
   const mine = ports?.filter((entry) => entry.inFolder === true) ?? [];
   const others = ports?.filter((entry) => entry.inFolder !== true) ?? [];
@@ -37,7 +37,8 @@ export function App() {
           <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
             <Cpu className="size-3 shrink-0" aria-hidden />
             Read by this tab's native backend
-            {conversation ? ` · ${conversation.title}` : ""}
+            {conversation ? ` · ${conversation.title}` : null}
+            {conversationLoading ? <Skeleton className="h-3 w-24" aria-label="Loading the conversation" /> : null}
           </p>
         </div>
         <Button variant="ghost" size="icon-xs" aria-label="Refresh" onClick={() => void reload()} disabled={refreshing}>
