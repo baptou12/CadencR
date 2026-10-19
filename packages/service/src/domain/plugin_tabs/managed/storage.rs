@@ -125,9 +125,7 @@ pub(super) fn read_trusted_directory(
     }
     Ok((receipt, files, manifest))
 }
-/// The package's manifest, provided it matches the signed metadata. A
-/// marketplace tab may not ship a native backend: it would run with the
-/// user's rights, and the marketplace has no verified-publisher review yet.
+/// The signed package's manifest. Never a native backend: no publisher is verified.
 pub fn verify_identity(
     package: &serde_json::Value,
     files: &BTreeMap<String, Vec<u8>>,
@@ -135,9 +133,7 @@ pub fn verify_identity(
     let manifest =
         cadencr_registry_core::validate_tab_package_files(package, files).map_err(invalid)?;
     if manifest.backend.is_some() {
-        return Err(invalid(
-            "marketplace tabs cannot ship a native backend (tab.json `backend`)",
-        ));
+        return Err(invalid("a marketplace tab cannot ship a native `backend`"));
     }
     Ok(manifest)
 }
@@ -393,14 +389,12 @@ pub(super) mod tests {
     fn a_marketplace_package_cannot_ship_a_native_backend() {
         let temp = tempfile::tempdir().unwrap();
         let (receipt, _, mut files, _) = fixture(temp.path());
-        let package =
-            catalog::resolve_kind(&receipt.index, "graph", &receipt.version, "tab").unwrap();
+        let package = catalog::resolve_kind(&receipt.index, "graph", &receipt.version, "tab")
+            .expect("the fixture's package");
         assert!(verify_identity(&package, &files).is_ok());
         let mut manifest: serde_json::Value = serde_json::from_slice(&files["tab.json"]).unwrap();
-        manifest["backend"] =
-            serde_json::json!({"command": "node", "args": ["x.mjs"], "reasoning": "r"});
+        manifest["backend"] = serde_json::json!({"command": "node", "reasoning": "r"});
         files.insert("tab.json".into(), serde_json::to_vec(&manifest).unwrap());
-        let error = verify_identity(&package, &files).unwrap_err();
-        assert!(format!("{error:?}").contains("native backend"), "{error:?}");
+        assert!(format!("{:?}", verify_identity(&package, &files)).contains("native `backend`"));
     }
 }

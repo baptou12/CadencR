@@ -210,10 +210,16 @@ impl BackendSupervisor {
             );
         }
     }
+
+    /// Start [`reap_orphans`] for the life of the service: a tab's backend
+    /// stops once no instance of the tab is open.
+    pub fn spawn_reaper(&self, grants: &GrantStore) {
+        tokio::spawn(reap_orphans(self.clone(), grants.clone()));
+    }
 }
 
 /// Runs for the life of the service: see [`BackendSupervisor::reap`].
-pub async fn reap_orphans(supervisor: BackendSupervisor, grants: GrantStore) {
+async fn reap_orphans(supervisor: BackendSupervisor, grants: GrantStore) {
     let mut interval = tokio::time::interval(REAP_INTERVAL);
     loop {
         interval.tick().await;
