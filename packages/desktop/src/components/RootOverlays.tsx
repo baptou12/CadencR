@@ -4,6 +4,7 @@ import { ArchiveFeatureDialog } from "@/components/ArchiveFeatureDialog";
 import { FeatureDeleteDialog } from "@/components/FeatureDeleteDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ImageLightboxHost } from "@/components/ImageLightbox";
+import { MermaidFullscreenHost } from "@/components/MermaidFullscreen";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { Toaster } from "@/components/ui/sonner";
 import { SchedulesShortcut } from "@/components/SchedulesShortcut";
@@ -86,6 +87,7 @@ export function RootOverlays({
       <PostUpdateChangelogDialog />
       <ThemeDrawer />
       <ImageLightboxHost />
+      <MermaidFullscreenHost />
       <ArchiveFeatureDialog
         open={archiveConfirmAction != null}
         feature={archiveConfirmAction?.feature}
