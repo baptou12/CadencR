@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{
@@ -76,20 +76,45 @@ impl Requester {
         self.send::<(), T>(Method::GET, path, None, StatusCode::OK)
     }
 
-    pub(super) fn get_catalog_blob<T: DeserializeOwned>(
+    pub(super) fn get_with_deadline<T: DeserializeOwned>(
         &self,
         path: &str,
+        deadline: Option<Instant>,
     ) -> Result<T, PublisherError> {
-        let response = self
-            .client
-            .get(format!("{}{path}", self.base))
-            .headers(self.headers.clone())
-            .send()
-            .map_err(network)?;
+        self.get_bounded(path, MAX_JSON_BYTES, deadline)
+    }
+
+    pub(super) fn get_catalog_blob_with_deadline<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        deadline: Option<Instant>,
+    ) -> Result<T, PublisherError> {
         // Base64, newline wrapping and a bounded JSON metadata allowance.
         let limit =
             (cadencr_registry_core::MAX_CATALOG_BYTES as u64).div_ceil(3) * 4 + 2 * 1024 * 1024;
-        decode_bounded(response, StatusCode::OK, limit)
+        self.get_bounded(path, limit, deadline)
+    }
+
+    fn get_bounded<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        limit: u64,
+        deadline: Option<Instant>,
+    ) -> Result<T, PublisherError> {
+        let mut request = self
+            .client
+            .get(format!("{}{path}", self.base))
+            .headers(self.headers.clone());
+        if let Some(deadline) = deadline {
+            let remaining = deadline
+                .checked_duration_since(Instant::now())
+                .filter(|remaining| !remaining.is_zero())
+                .ok_or_else(|| error("GitHub discovery verification deadline exceeded"))?;
+            request = request.timeout(remaining.min(TIMEOUT));
+        }
+        let result = decode_bounded(request.send().map_err(network)?, StatusCode::OK, limit);
+        check_deadline(deadline)?;
+        result
     }
 
     pub(super) fn get_optional<T: DeserializeOwned>(
@@ -213,6 +238,13 @@ fn network(_: reqwest::Error) -> PublisherError {
 }
 
 use std::io::Read as _;
+
+pub(super) fn check_deadline(deadline: Option<Instant>) -> Result<(), PublisherError> {
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        return Err(error("GitHub discovery verification deadline exceeded"));
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

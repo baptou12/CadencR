@@ -7,8 +7,11 @@ reviewed themes and Pi before a future desktop activation. Procedures involving
 signing, tags, feed advancement, production pins or remote writes require reviewed
 targets/inputs and protected operator authority; preparation alone is insufficient.
 Examples are syntax, not actual keys, destinations or assigned owners. No scheduler
-is deployed here. The distributed `0.13.1-dev.39108033875.1` CLI passed isolated
-GitHub lifecycle qualification; that is not production deployment.
+is deployed here. Earlier distributed CLI qualification is dated evidence, not
+production deployment. The newer `0.13.1-dev.39144478778.1` ships standalone Rust
+diagnostics, but its initial renewal returned an error after publication; exact
+recovery does not make that first run green. See the
+[qualification record](../../docs/MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-18.md).
 
 | Required record before activation | Accountable role / evidence                                                             |
 | --------------------------------- | --------------------------------------------------------------------------------------- |
@@ -21,8 +24,9 @@ GitHub lifecycle qualification; that is not production deployment.
 
 The owners and live controls above remain unassigned/unverified in this template.
 The candidate contribution/publisher pin selects the qualified Rust binary with
-no JavaScript fallback. **Full cutover needs a new qualified CLI release** for
-standalone metadata/submission validation and expiry diagnostics added afterward.
+no JavaScript fallback. **Full cutover needs a corrected, qualified CLI release**
+closing the post-publication renewal gate, then separately reviewed replacement
+pins. Source changes and successful recovery do not close that delivery gate.
 Reinspect the remote default branch, regenerate delivery payload hashes and follow
 the [deployment sequence](README.md#remote-deployment-requires-two-reviewed-changes).
 The JavaScript business implementation has been removed from this source template;
@@ -83,6 +87,36 @@ isolated environment, and retain real acknowledgment evidence as an activation g
 5. Independently fetch public bytes without credentials; authenticate all namespaces,
    confirm high-water continuity and expiry, then verify a supported packaged client.
    Retain run/receipt evidence and acknowledge/clear alerts only after these checks.
+
+### Source-only discovery convergence correction
+
+The source correction is not included in the CLI qualified above. A deterministic
+regression reproduces the failure class: after discovery advances, its stable
+public URL serves the exact previous signed catalog before serving the candidate.
+This does not establish which response caused the historical hosted error.
+
+- Keep the canonical stable discovery URL and request cache revalidation; a
+  commit-pinned alternate URL is not proof that the configured feed is current.
+- Allow at most four public reads in a shared 30-second convergence window,
+  including inter-read authenticated head checks and backoff. Each HTTP request
+  receives only the remaining budget, including response-body reads. This is not
+  a 30-second bound on the complete publication command or its other validations.
+- Only fully read bytes matching the reviewed predecessor's exact SHA-256 may
+  trigger another read. Bootstrap has no predecessor allowance. The observation
+  remains bounded by the discovery size limit; only the exact candidate size and
+  SHA-256 can produce success.
+- Unknown content, invalid/truncated/oversized responses, redirects, transport or
+  cleanup errors remain terminal. Recheck authenticated candidate identity and
+  freshness before additional reads; retain the final release/tag/asset checks.
+- Never repeat publication mutations, CAS, or the whole pipeline automatically.
+  Persistent predecessor bytes exhaust the budget without a success receipt.
+  Preserve the original operation after failure, as required by step 4 above.
+
+Merge, green CI, a new CLI-only release and actual distributed-binary qualification
+are required before deployment or pin promotion. Demonstrate first-pass renewal,
+same-intent replay and clean-runner recovery. A separately reviewed new operation
+may follow a reconciled prior operation; if an attempt fails, preserve its exact
+request, commit and timestamps rather than replacing them to manufacture success.
 
 ## Revocation incident runbook
 

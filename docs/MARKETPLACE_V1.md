@@ -149,11 +149,16 @@ Neither examples nor passing tests constitute publication approval.
       Its 65 networkless checks, three-kind author lifecycle and incremental
       registry publication pass on the actual distributed ELF; see the
       [new qualification record](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-18.md).
-- [ ] Diagnose and address the new renewal's post-publication digest error.
-      The original run remains failed even if exact-intent recovery succeeds.
-      Demonstrate first-pass renewal and unchanged replays without weakening
-      integrity checks before promoting production pins. Rust changes require
-      another CLI release and qualification; source tests alone cannot close it.
+- [x] Reproduce and correct the source failure class where the stable public feed
+      still serves the reviewed predecessor after discovery advances. Only its
+      exact digest permits bounded read-only convergence; candidate bytes,
+      authenticated identity, freshness and cleanup remain mandatory. Source
+      regression is not proof of the historical hosted error's exact cause; see
+      [the source-only contract](../tooling/marketplace-registry/OPERATIONS.md#source-only-discovery-convergence-correction).
+- [ ] Merge the correction, pass canonical CI, release a new CLI and demonstrate
+      first-pass renewal plus unchanged replays/clean-runner recovery using that
+      actual distributed binary. The original failed run remains failed. Do not
+      promote production pins from source tests or successful recovery alone.
 - [ ] Review the replacement registry/author pins and regenerate bootstrap/cutover
       payload hashes and approvals before deployment. The source candidate still
       pins the older CLI; neither QA pins nor a manual CLI release deploy it.
