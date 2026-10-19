@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from "react";
+import { memo, type ReactElement, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2Icon } from "lucide-react";
 
@@ -33,9 +33,10 @@ const REFRESH_MS = 2000;
  * What a custom tab ran in this conversation: the commands Cadencr ran for
  * it and its native backend, with the backend's log and a Stop control.
  * Opened from the "+" menu's **Activity…**; one per tab instance. The dialog
- * hides native views while open, so the guest can't cover it.
+ * hides native views while open, so the guest can't cover it. Memoized: it
+ * stays mounted in every kept-alive tab, hidden ones included.
  */
-export function PluginTabActivityDialog({
+export const PluginTabActivityDialog = memo(function PluginTabActivityDialog({
   instanceId,
   featureId,
   summary,
@@ -66,7 +67,7 @@ export function PluginTabActivityDialog({
       </DialogContent>
     </Dialog>
   );
-}
+});
 
 function ActivityBody({
   featureId,
