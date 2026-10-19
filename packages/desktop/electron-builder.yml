@@ -29,6 +29,10 @@ extraResources:
   # listener via `--renderer-dir` (the Rust sidecar can't read an asar).
   - from: out/renderer
     to: renderer
+  # Universal AppKit addon from `electron/mac-native-addon.ts` (see `mac-window.ts`).
+  - from: resources/native
+    to: native
+    filter: ["*.node"]
 mac:
   # Spell out the arch: electron-builder's default drops it for x64. The zip
   # uses this name; the dmg has its own below.

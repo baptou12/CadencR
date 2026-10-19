@@ -17,6 +17,7 @@ import {
   electronBundleContractPlugin,
   type ElectronBundleContract,
 } from "./electron/bundle-contract";
+import { macNativeAddonPlugin } from "./electron/mac-native-addon";
 import pkg from "./package.json" with { type: "json" };
 
 const excalidrawFontsDir = path.join(
@@ -162,6 +163,7 @@ export default defineConfig(({ mode }) => {
       plugins: [
         externalizeDepsPlugin(),
         electronBundleContractPlugin(electronBundleContracts.main),
+        macNativeAddonPlugin(__dirname),
       ],
       build: {
         rollupOptions: {

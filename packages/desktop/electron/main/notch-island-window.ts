@@ -9,6 +9,7 @@ import {
   type NotchReadyPayload,
   type NotchSnapshot,
 } from "../../src/shared/notch";
+import { preventAppActivation } from "./mac-window";
 import type { NotchPlacement } from "./notch-geometry";
 import { rendererLoadTarget, secureWebContents } from "./renderer-window-security";
 import { sendToWindow } from "./safe-send";
@@ -199,6 +200,8 @@ function createWindow(bounds: Electron.Rectangle): BrowserWindow {
     maximizable: false,
     fullscreenable: false,
     focusable: false,
+    // The app stays inactive while the island is used, so its first click must land.
+    acceptFirstMouse: true,
     skipTaskbar: true,
     enableLargerThanScreen: true,
     roundedCorners: false,
@@ -211,6 +214,13 @@ function createWindow(bounds: Electron.Rectangle): BrowserWindow {
       backgroundThrottling: false,
     },
   });
+  try {
+    // Only opening a conversation may bring Cadencr forward (see `openFeature`).
+    preventAppActivation(win);
+  } catch (error) {
+    win.destroy();
+    throw error;
+  }
   // Above the menu bar (24) yet below its drop-down menus (101).
   win.setAlwaysOnTop(true, "status");
   win.setIgnoreMouseEvents(true, { forward: true });
