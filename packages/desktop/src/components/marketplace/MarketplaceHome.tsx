@@ -18,7 +18,7 @@ import {
   MarketplaceSkeleton,
   MarketplaceUnavailable,
 } from "./MarketplaceStates";
-import { formatAgo } from "./PluginBits";
+import { formatAgo } from "@/lib/date-utils";
 
 export const MARKETPLACE_VIEWS = ["discover", "installed", "updates"] as const;
 export type MarketplaceView = (typeof MARKETPLACE_VIEWS)[number];

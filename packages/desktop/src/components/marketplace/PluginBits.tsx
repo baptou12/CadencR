@@ -1,20 +1,10 @@
-import { format, formatDistanceToNowStrict } from "date-fns";
+import { format } from "date-fns";
 import { ArrowUpCircle, Check, CircleAlert, RotateCw } from "lucide-react";
 import type { MarketplaceListing, PluginKind } from "@/lib/marketplace-listings";
 import { Badge } from "@/components/ui/badge";
 import { ProviderIconGraphic, useProviderMetadata } from "@/lib/provider-icons";
 import { cn } from "@/lib/utils";
 import { KINDS } from "./kinds";
-
-/** "3 days ago"; the raw value when it does not parse, never a made-up date. */
-export function formatAgo(iso?: string | null): string | null {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return Date.now() - date.getTime() < 60_000
-    ? "just now"
-    : formatDistanceToNowStrict(date, { addSuffix: true });
-}
 
 export function formatDay(iso?: string | null): string | null {
   if (!iso) return null;

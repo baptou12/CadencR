@@ -10,6 +10,7 @@
 //! `--version`, and lets the caller pick the best (highest semver). It also
 //! exposes the full candidate list so the host app can render a picker UI.
 
+mod path_lookup;
 mod shell;
 mod shell_exec;
 mod types;
@@ -19,6 +20,7 @@ mod walk;
 #[cfg(test)]
 mod tests_support;
 
+pub use path_lookup::find_on_path;
 pub use shell::login_shell_path;
 pub use shell_exec::{login_shell_command, login_shell_exec_command, shell_quote};
 pub use types::{Candidate, CandidateSource, DiscoverySpec, VersionKey};

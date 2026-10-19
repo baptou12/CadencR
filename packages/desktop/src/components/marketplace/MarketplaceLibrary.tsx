@@ -9,7 +9,8 @@ import { marketplaceError } from "@/lib/marketplace";
 import { KINDS } from "./kinds";
 import { useMarketplaceState } from "./MarketplaceContext";
 import { CheckCatalogButton, MarketplaceEmpty } from "./MarketplaceStates";
-import { formatAgo, formatDay, KindChips, PluginMark, PluginStateBadge } from "./PluginBits";
+import { formatAgo } from "@/lib/date-utils";
+import { formatDay, KindChips, PluginMark, PluginStateBadge } from "./PluginBits";
 import { usePluginActions } from "./usePluginActions";
 
 /** What a row says about the installation, in the order a user scans it. */
