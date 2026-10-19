@@ -54,7 +54,7 @@ test("offline qualification uses separate pins and never uploads generated keys"
       .split("\n")
       .filter((line) => line && !line.startsWith("#"))
       .join("\n"),
-    "CADENCR_RELEASE_VERSION=0.13.1-dev.39144478778.1\nCADENCR_RELEASE_SHA256=be5a15c9d065670466511fa9e23ce6e5205c73fade4a5ed9320b262296fbb122",
+    "CADENCR_RELEASE_VERSION=0.13.1-dev.39144478778.1\nCADENCR_RELEASE_SHA256=be5a15c9d065670466511fa9e23ce6e5205c73fade4a5ed9320b262296fbb122\nCADENCR_RELEASE_TAG=cli/v0.13.1-dev.39144478778.1",
   );
   const yaml = readFileSync(workflow, "utf8");
   assert.match(yaml, /scripts\/cli-qualification\.env "\$CLI_ROOT"/);
@@ -102,7 +102,19 @@ test("reviewed pin input is strictly bounded before executable invocation", (t) 
     });
   };
   const digest = "a".repeat(64);
+  const base = `CADENCR_RELEASE_VERSION=0.13.1-dev.39108033875.1\nCADENCR_RELEASE_SHA256=${digest}`;
   for (const content of [
+    base + "\nCADENCR_RELEASE_VERSION=0.13.1-dev.39108033875.1",
+    base + `\nCADENCR_RELEASE_SHA256=${digest}`,
+    base +
+      "\nCADENCR_RELEASE_TAG=cli/v0.13.1-dev.39108033875.1\nCADENCR_RELEASE_TAG=cli/v0.13.1-dev.39108033875.1",
+    ...["", "v0.13.1-dev.39108033875.1", "cli/v0.13.1-dev.39108033875.2", "$(touch bad)"].map(
+      (tag) => base + `\nCADENCR_RELEASE_TAG=${tag}`,
+    ),
+    ...["0.13.1", "0.13.1-dev.0.1", "0.13.1-dev.1.0", "0.13.1-dev.01.1", "0.13.1-dev.1.01"].map(
+      (version) =>
+        `CADENCR_RELEASE_VERSION=${version}\nCADENCR_RELEASE_SHA256=${digest}\nCADENCR_RELEASE_TAG=cli/v${version}`,
+    ),
     "CADENCR_RELEASE_VERSION=0.13.1-dev.39108033875.1\nCADENCR_RELEASE_SHA256=bad",
     `CADENCR_RELEASE_VERSION=00.99.0\nCADENCR_RELEASE_SHA256=${digest}`,
     `CADENCR_RELEASE_VERSION=0.13.1;echo bad\nCADENCR_RELEASE_SHA256=${digest}`,
@@ -118,6 +130,10 @@ test("reviewed pin input is strictly bounded before executable invocation", (t) 
     `CADENCR_RELEASE_VERSION=0.13.1-dev.39108033875.1\nCADENCR_RELEASE_SHA256=${digest}`,
   );
   assert.match(acceptedShape.stderr, /digest mismatch/);
+  assert.match(
+    run(base + "\nCADENCR_RELEASE_TAG=cli/v0.13.1-dev.39108033875.1").stderr,
+    /digest mismatch/,
+  );
   assert.equal(existsSync(path.join(root, "work")), false);
 });
 
@@ -147,7 +163,7 @@ test("synthetic runner stops at version mismatch and emits key-free failed evide
   const pin = path.join(root, "pins.env");
   writeFileSync(
     pin,
-    `CADENCR_RELEASE_VERSION=0.13.1-dev.39108033875.1\nCADENCR_RELEASE_SHA256=${digest}\n`,
+    `CADENCR_RELEASE_VERSION=0.13.1-dev.39108033875.1\nCADENCR_RELEASE_SHA256=${digest}\nCADENCR_RELEASE_TAG=cli/v0.13.1-dev.39108033875.1\n`,
   );
   const bin = path.join(root, "bin");
   mkdirSync(bin);
@@ -351,4 +367,34 @@ test("exact expiry assertion enforces report state, exit, trust, and channels", 
     });
     assert.equal(result.status === 0, accepted, `${state}/${mode}/${exit}: ${result.stderr}`);
   }
+});
+
+test("repository qualification pins select the exact namespaced released asset without network or execution", (t) => {
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "cli-qualification-fetch-")));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const tools = path.join(root, "tools");
+  mkdirSync(tools);
+  const requests = path.join(root, "requests");
+  // Stop at the download boundary: no bytes, digest bypass, or ELF execution.
+  writeFileSync(
+    path.join(tools, "curl"),
+    `#!/bin/sh\nprintf '%s\\n' "$@" > '${requests}'\nprintf 404\n`,
+    { mode: 0o700 },
+  );
+  const fetcher = new URL(
+    "../tooling/marketplace-registry/scripts/ci/fetch-released-cli.sh",
+    import.meta.url,
+  ).pathname;
+  const result = spawnSync("sh", [fetcher, pins.pathname, path.join(root, "output")], {
+    encoding: "utf8",
+    env: { PATH: `${tools}:${process.env.PATH}` },
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /download failed with HTTP 404/);
+  const args = readFileSync(requests, "utf8").trim().split("\n");
+  assert.equal(
+    args.at(-1),
+    "https://github.com/merkr-software/CadencR/releases/download/cli/v0.13.1-dev.39144478778.1/cadencr-v0.13.1-dev.39144478778.1-x86_64-unknown-linux-gnu",
+  );
+  assert.equal(existsSync(path.join(root, "output/cadencr")), false);
 });

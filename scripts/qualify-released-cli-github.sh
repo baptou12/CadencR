@@ -102,7 +102,8 @@ if stat.S_IMODE(private.stat().st_mode) & 0o077:
 cli = regular(required('CLI'), 'CLI', 134217728)
 pins = (pathlib.Path(os.environ['SCRIPT_ROOT']) / 'cli-qualification.env').read_text()
 expected_pins = ['CADENCR_RELEASE_VERSION=0.13.1-dev.39144478778.1',
-                 'CADENCR_RELEASE_SHA256=be5a15c9d065670466511fa9e23ce6e5205c73fade4a5ed9320b262296fbb122']
+                 'CADENCR_RELEASE_SHA256=be5a15c9d065670466511fa9e23ce6e5205c73fade4a5ed9320b262296fbb122',
+                 'CADENCR_RELEASE_TAG=cli/v0.13.1-dev.39144478778.1']
 if [line for line in pins.splitlines() if line and not line.startswith('#')] != expected_pins:
     fail('unexpected qualification pins')
 with cli.open('rb') as binary:
