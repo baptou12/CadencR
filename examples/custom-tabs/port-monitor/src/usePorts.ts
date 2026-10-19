@@ -1,64 +1,40 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toCadencrError, type CadencrError } from "@cadencr/tab-sdk";
 import { useCadencr, useVisibility } from "@cadencr/tab-sdk/react";
+import { z } from "zod";
 
 /** One process listening on one port, as `backend/server.mjs` reports it. */
-export interface PortEntry {
-  port: number;
-  pid: number;
-  command: string;
-  user: string | null;
+const portEntrySchema = z.object({
+  port: z.number().int(),
+  pid: z.number().int(),
+  command: z.string(),
+  user: z.string().nullable(),
   /** `null` where the platform cannot tell (Windows). */
-  cwd: string | null;
-  addresses: string[];
+  cwd: z.string().nullable(),
+  addresses: z.array(z.string()),
   /**
    * Running in this conversation's folder; `null` when unknown. Conversations
    * that share a folder (no worktree of their own) share these processes too.
    */
-  inFolder: boolean | null;
-}
+  inFolder: z.boolean().nullable(),
+});
+export type PortEntry = z.infer<typeof portEntrySchema>;
 
-export interface Conversation {
-  title: string;
-  worktree: string;
-  platform: string;
-}
+const portsSchema = z.object({ ports: z.array(portEntrySchema), checkedAt: z.string() });
+
+const conversationSchema = z.object({ title: z.string(), worktree: z.string(), platform: z.string() });
+export type Conversation = z.infer<typeof conversationSchema>;
 
 export type PortsState =
   | { status: "loading" }
   | { status: "error"; error: CadencrError }
   | { status: "ready"; ports: PortEntry[]; checkedAt: string };
 
-/**
- * The backend's answers are JSON nothing has checked yet: check the shape
- * before rendering it (by hand, to keep this example's dependencies to the SDK).
- */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isPortEntry(value: unknown): value is PortEntry {
-  return (
-    isRecord(value) &&
-    typeof value.port === "number" &&
-    typeof value.pid === "number" &&
-    typeof value.command === "string" &&
-    Array.isArray(value.addresses)
-  );
-}
-
-function portsResult(value: unknown): { ports: PortEntry[]; checkedAt: string } {
-  if (isRecord(value) && Array.isArray(value.ports) && value.ports.every(isPortEntry) && typeof value.checkedAt === "string") {
-    return { ports: value.ports, checkedAt: value.checkedAt };
-  }
-  throw new Error("The backend answered `ports` with an unexpected shape.");
-}
-
-function conversationResult(value: unknown): Conversation {
-  if (isRecord(value) && typeof value.title === "string" && typeof value.worktree === "string" && typeof value.platform === "string") {
-    return { title: value.title, worktree: value.worktree, platform: value.platform };
-  }
-  throw new Error("The backend answered `context` with an unexpected shape.");
+/** The backend's answers are JSON nothing has checked yet: parse before rendering. */
+function parseReply<T>(schema: z.ZodType<T>, method: string, value: unknown): T {
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) throw new Error(`The backend answered \`${method}\` with an unexpected shape.`);
+  return parsed.data;
 }
 
 /** The backend runs `lsof` each time: often enough to feel live, not more. */
@@ -83,7 +59,7 @@ export function usePorts() {
     inFlight.current = true;
     setRefreshing(true);
     try {
-      const result = portsResult(await client.backend.request("ports"));
+      const result = parseReply(portsSchema, "ports", await client.backend.request("ports"));
       setState({ status: "ready", ports: result.ports, checkedAt: result.checkedAt });
     } catch (error) {
       setState({ status: "error", error: toCadencrError(error) });
@@ -97,7 +73,7 @@ export function usePorts() {
     setConversationLoading(true);
     client.backend
       .request("context")
-      .then((value) => setConversation(conversationResult(value)))
+      .then((value) => setConversation(parseReply(conversationSchema, "context", value)))
       .catch((error: unknown) =>
         void client.ui.toast({
           title: "Couldn't read the conversation",
