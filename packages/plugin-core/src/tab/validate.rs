@@ -7,7 +7,9 @@ use std::collections::BTreeSet;
 
 use super::issues::{TabFindings, TabIssueCode as Code};
 use super::manifest::TabManifest;
-use super::{configuration, network, SCOPES, SUPPORTED_API_VERSION, SUPPORTED_SCHEMA_VERSION};
+use super::{
+    configuration, execution, network, SCOPES, SUPPORTED_API_VERSION, SUPPORTED_SCHEMA_VERSION,
+};
 
 pub const MAX_NAME_CHARS: usize = 64;
 pub const MAX_DESCRIPTION_CHARS: usize = 280;
@@ -29,6 +31,10 @@ pub fn validate_manifest(manifest: &TabManifest) -> TabFindings {
         network::validate(network, &mut findings);
     }
     configuration::validate(&manifest.configuration, &mut findings);
+    execution::validate_commands(&manifest.commands, &mut findings);
+    if let Some(backend) = &manifest.backend {
+        execution::validate_backend(backend, &mut findings);
+    }
     findings
 }
 

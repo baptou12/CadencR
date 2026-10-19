@@ -33,6 +33,14 @@ pub struct TabManifest {
     pub network: Option<TabNetwork>,
     #[serde(default)]
     pub configuration: Vec<TabConfigField>,
+    /// Programs Cadencr may run on the tab's behalf (`exec.run`). Declaring
+    /// one makes the tab a "runs commands" tab ([`TabAccessLevel::Commands`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commands: Vec<TabCommand>,
+    /// A native process the tab talks to (`backend.request`). It runs with
+    /// the user's rights ([`TabAccessLevel::Backend`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<TabBackend>,
 }
 
 impl TabManifest {
@@ -44,6 +52,24 @@ impl TabManifest {
             .unwrap_or(&self.name)
     }
 
+    /// See [`TabAccessLevel`]: a backend outranks commands.
+    pub fn access_level(&self) -> TabAccessLevel {
+        if self.backend.is_some() {
+            TabAccessLevel::Backend
+        } else if self.commands.is_empty() {
+            TabAccessLevel::Ui
+        } else {
+            TabAccessLevel::Commands
+        }
+    }
+
+    /// The declared command for `program`, matched exactly.
+    pub fn command(&self, program: &str) -> Option<&TabCommand> {
+        self.commands
+            .iter()
+            .find(|command| command.program == program)
+    }
+
     /// Declared egress origins; empty when the manifest has no `network`.
     pub fn allowed_origins(&self) -> &[String] {
         self.network
@@ -51,6 +77,72 @@ impl TabManifest {
             .map(|network| network.allowed_origins.as_slice())
             .unwrap_or_default()
     }
+}
+
+/// One program a tab may ask Cadencr to run (`commands[]`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TabCommand {
+    /// A bare program name looked up on `PATH`, e.g. `git`.
+    pub program: String,
+    /// Shown to the user at consent time; required.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
+}
+
+/// The tab's native backend process (`backend`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TabBackend {
+    /// A path inside the tab folder (`bin/backend`) or a bare program name
+    /// looked up on `PATH` (`node`, with the script in `args`).
+    pub command: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    /// Shown to the user at consent time; required.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
+}
+
+/// Where a backend's `command` is found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackendTarget<'a> {
+    /// A path inside the tab folder, e.g. `bin/backend`.
+    FolderFile(&'a str),
+    /// A bare program name looked up on `PATH`, e.g. `node`.
+    Program(&'a str),
+}
+
+impl TabBackend {
+    /// A `command` holding a `/` is a path inside the tab folder.
+    pub fn target(&self) -> BackendTarget<'_> {
+        if self.command.contains('/') {
+            BackendTarget::FolderFile(&self.command)
+        } else {
+            BackendTarget::Program(&self.command)
+        }
+    }
+
+    /// `node backend/server.mjs`: the launch line as the user would type it.
+    pub fn command_line(&self) -> String {
+        std::iter::once(self.command.as_str())
+            .chain(self.args.iter().map(String::as_str))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
+/// How far a tab reaches beyond its page, from least to most. Shown on the
+/// tab's card and drives how insistent the consent dialog is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum TabAccessLevel {
+    /// The page only: read-only Cadencr data through its permissions.
+    Ui,
+    /// Also asks Cadencr to run the programs listed in `commands`.
+    Commands,
+    /// Also ships a native process that runs with the user's rights.
+    Backend,
 }
 
 /// Presentation of the tab trigger.
@@ -143,6 +235,30 @@ mod tests {
     }
 
     #[test]
+    fn the_access_level_follows_commands_and_backend() {
+        let mut manifest: TabManifest = serde_json::from_value(json!({
+            "schema_version": 1, "kind": "tab", "id": "a", "name": "A",
+            "version": "0.1.0", "api_version": 1, "entry": "dist/index.html"
+        }))
+        .unwrap();
+        assert_eq!(manifest.access_level(), TabAccessLevel::Ui);
+        manifest.commands.push(TabCommand {
+            program: "git".into(),
+            reasoning: Some("history".into()),
+        });
+        assert_eq!(manifest.access_level(), TabAccessLevel::Commands);
+        assert!(manifest.command("git").is_some());
+        assert!(manifest.command("Git").is_none());
+        manifest.backend = Some(TabBackend {
+            command: "node".into(),
+            args: vec!["backend/server.mjs".into()],
+            reasoning: Some("ports".into()),
+        });
+        assert_eq!(manifest.access_level(), TabAccessLevel::Backend);
+        assert!(TabAccessLevel::Ui < TabAccessLevel::Commands);
+    }
+
+    #[test]
     fn unknown_keys_are_rejected_at_every_level() {
         let base = json!({
             "schema_version": 1, "kind": "tab", "id": "a", "name": "A",
@@ -179,5 +295,20 @@ mod tests {
         let select = field(TabConfigFieldType::Select, &["a", "b"]);
         assert!(select.accepts(&json!("a")));
         assert!(!select.accepts(&json!("c")));
+    }
+
+    #[test]
+    fn a_backend_runs_a_folder_file_or_a_program_on_path() {
+        let backend = |command: &str, args: &[&str]| TabBackend {
+            command: command.into(),
+            args: args.iter().map(|arg| arg.to_string()).collect(),
+            reasoning: None,
+        };
+        let script = backend("node", &["backend/server.mjs", "--quiet"]);
+        assert_eq!(script.target(), BackendTarget::Program("node"));
+        assert_eq!(script.command_line(), "node backend/server.mjs --quiet");
+        let binary = backend("bin/backend", &[]);
+        assert_eq!(binary.target(), BackendTarget::FolderFile("bin/backend"));
+        assert_eq!(binary.command_line(), "bin/backend");
     }
 }

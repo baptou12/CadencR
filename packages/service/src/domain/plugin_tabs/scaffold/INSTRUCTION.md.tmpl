@@ -52,6 +52,8 @@ user approve the tab again before it runs.
 | `permissions` | scopes the tab needs (below); unknown scopes are errors |
 | `network` | optional `{ "allowed_origins": ["https://host"], "reasoning": "why" }` |
 | `configuration` | optional settings form (below) |
+| `commands` | optional programs Cadencr runs for the tab (below) |
+| `backend` | optional native process the tab ships (below) |
 
 Unknown keys are errors. Paths are relative, without `..` or backslashes.
 
@@ -87,6 +89,42 @@ relay itself refuses (`PLUGIN_NETWORK_DENIED`, `PLUGIN_NETWORK_TIMEOUT`,
 `PLUGIN_NETWORK_TOO_MANY_REDIRECTS`, `PLUGIN_NETWORK_RESPONSE_TOO_LARGE`,
 `PLUGIN_TAB_SECRET_UNKNOWN`, …).
 `http://localhost` is accepted for local development only.
+
+### Levels: read-only, commands, native code
+
+A tab is **read-only** unless it declares `commands` or a `backend`. Stay
+read-only whenever the API, streams and `net.fetch` are enough: each level up
+asks the user to trust more, and Cadencr says so on the tab, in Settings and
+in the consent dialog.
+
+**Commands.** List each program the tab runs, with a reason:
+`"commands": [{ "program": "git", "reasoning": "Reads who changed these files." }]`.
+Then `await client.exec.run("git", ["log", "-1"], { timeoutMs? })` resolves
+`{ exitCode, success, stdout, stderr, durationMs }` for any exit status. The
+program is a bare name found on the user's `PATH`, run without a shell in the
+conversation's folder, stopped after 30 s (up to 120 s) or 1 MiB of output.
+Every run is shown to the user in the tab's Activity. Shells, interpreters and
+package runners (`bash`, `node`, `python`, `npx`…) are refused
+(`COMMAND_NOT_ALLOWED`). Errors: `PLUGIN_EXEC_DENIED` (not listed),
+`PLUGIN_EXEC_NOT_FOUND`, `PLUGIN_EXEC_TIMEOUT`, `PLUGIN_EXEC_OUTPUT_TOO_LARGE`,
+`PLUGIN_EXEC_BUSY`.
+
+**Native backend.** For a long-running process or your own dependencies:
+`"backend": { "command": "node", "args": ["backend/server.mjs"], "reasoning": "…" }`
+(`command` is a file in this folder or a program on `PATH`). Cadencr starts it
+with this folder as working directory on the first
+`await client.backend.request(method, params?)` and stops it when the tab
+closes. It reads JSON lines on stdin and answers on stdout:
+
+1. first line: `{"type":"hello","worktree","feature_id","project_id","scopes","api":{"base_url","token_header","token"}}`
+   — call the Cadencr API with `fetch(api.base_url + path, { headers: { [api.token_header]: api.token } })`;
+   the token carries only this tab's permissions;
+2. then `{"type":"request","id","method","params"}` lines; answer each with
+   `{"type":"response","id","result"}` or `{"type":"response","id","error":{"code","message"}}`;
+3. write logs to stderr (shown in Activity), never to stdout; exit when stdin closes.
+
+A backend runs with the user's rights and is not sandboxed: keep it small and
+say exactly what it does in `reasoning`. Marketplace tabs cannot ship one.
 
 ### Configuration and secrets
 
@@ -167,6 +205,8 @@ treat any event as "something changed" and refetch, debounced.
 | `client.state.get()/set(value)` | per tab instance, in Cadencr's memory, ≤ 1 MiB; survives the view being recreated, not an app restart |
 | `client.config.get()` | configuration values (above) |
 | `client.net.fetch(url, init)` | egress through Cadencr (above) |
+| `client.exec.run(program, args?, options?)` | run a listed command (above) |
+| `client.backend.request(method, params?, options?)` | call the tab's backend (above) |
 | `client.ui.toast({ title, description?, variant? })` | `variant`: `"default"`, `"success"`, `"error"` |
 | `client.ui.openExternal(url)` | opens an `https:` URL in the browser after the user confirms |
 | `client.ui.setBadge(text \| null)` | up to 4 characters on the tab trigger |

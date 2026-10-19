@@ -41,6 +41,15 @@ pub enum TabIssueCode {
     ConfigOptionInvalid,
     ConfigSecretDefault,
     ConfigDefaultInvalid,
+    CommandsTooMany,
+    CommandInvalid,
+    CommandDuplicate,
+    CommandNotAllowed,
+    CommandReasoningRequired,
+    BackendCommandInvalid,
+    BackendArgsInvalid,
+    BackendReasoningRequired,
+    BackendUnavailable,
 }
 
 impl TabIssueCode {
@@ -77,6 +86,15 @@ impl TabIssueCode {
             Self::ConfigOptionInvalid => "CONFIG_OPTION_INVALID",
             Self::ConfigSecretDefault => "CONFIG_SECRET_DEFAULT",
             Self::ConfigDefaultInvalid => "CONFIG_DEFAULT_INVALID",
+            Self::CommandsTooMany => "COMMANDS_TOO_MANY",
+            Self::CommandInvalid => "COMMAND_INVALID",
+            Self::CommandDuplicate => "COMMAND_DUPLICATE",
+            Self::CommandNotAllowed => "COMMAND_NOT_ALLOWED",
+            Self::CommandReasoningRequired => "COMMAND_REASONING_REQUIRED",
+            Self::BackendCommandInvalid => "BACKEND_COMMAND_INVALID",
+            Self::BackendArgsInvalid => "BACKEND_ARGS_INVALID",
+            Self::BackendReasoningRequired => "BACKEND_REASONING_REQUIRED",
+            Self::BackendUnavailable => "BACKEND_UNAVAILABLE",
         }
     }
 }

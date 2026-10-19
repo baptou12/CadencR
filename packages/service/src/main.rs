@@ -274,6 +274,11 @@ async fn main() -> anyhow::Result<()> {
                 state.plugin_tab_grants.clone(),
                 state.plugin_tab_events_tx.subscribe(),
             ));
+            // A tab's native backend stops once no instance of the tab is open.
+            tokio::spawn(domain::plugin_tabs::backend::reap_orphans(
+                state.plugin_tab_backends.clone(),
+                state.plugin_tab_grants.clone(),
+            ));
 
             // A theme is built in a project named after it, and renaming a theme
             // is editing its file — so the same event that reloads the theme

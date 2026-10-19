@@ -58,6 +58,10 @@ pub struct GrantRequest {
     pub feature_id: i64,
     pub scopes: Vec<Scope>,
     pub permissions_hash: String,
+    /// [`GRANT_TTL`] for a tab instance; a backend's grant lives as long as
+    /// its process and is revoked when it stops.
+    #[builder(default = GRANT_TTL)]
+    pub ttl: Duration,
 }
 
 /// A freshly minted grant: the raw token is shown once, to the broker.
@@ -84,7 +88,7 @@ impl GrantStore {
             feature_id: request.feature_id,
             scopes: request.scopes,
             permissions_hash: request.permissions_hash,
-            expires: now + GRANT_TTL,
+            expires: now + request.ttl,
             key: token_key(&token),
             revoked: CancellationToken::new(),
         };
@@ -95,7 +99,7 @@ impl GrantStore {
             token,
             grant,
             expires_at: Utc::now()
-                + chrono::Duration::from_std(GRANT_TTL).expect("the TTL fits a chrono duration"),
+                + chrono::Duration::from_std(request.ttl).expect("the TTL fits a chrono duration"),
         }
     }
 
@@ -133,6 +137,18 @@ impl GrantStore {
     pub fn revoke_stale(&self, plugin_id: &str, current: Option<&str>) -> usize {
         self.revoke_where(|grant| {
             grant.plugin_id == plugin_id && Some(grant.permissions_hash.as_str()) != current
+        })
+    }
+
+    /// Whether a live grant other than `except_key` is open for `plugin_id`
+    /// in `feature_id`: some tab instance still shows it there.
+    pub fn has_other_live(&self, plugin_id: &str, feature_id: i64, except_key: &str) -> bool {
+        let now = Instant::now();
+        self.lock().values().any(|grant| {
+            grant.plugin_id == plugin_id
+                && grant.feature_id == feature_id
+                && grant.key != except_key
+                && grant.is_live(now)
         })
     }
 
@@ -300,6 +316,28 @@ mod tests {
         assert!(!store.revoke_key(&other.key));
         assert!(other.revoked.is_cancelled());
         assert_eq!(store.len(), 0);
+    }
+
+    #[test]
+    fn other_live_grants_are_counted_per_feature() {
+        let store = GrantStore::default();
+        let own = store.mint(
+            GrantRequest::builder()
+                .plugin_id("graph".into())
+                .project_id(1)
+                .feature_id(2)
+                .scopes(vec![])
+                .permissions_hash("h".into())
+                .ttl(Duration::from_secs(3600))
+                .build(),
+        );
+        assert!(own.expires_at - Utc::now() > chrono::Duration::minutes(59));
+        assert!(!store.has_other_live("graph", 2, &own.grant.key));
+        let instance = store.mint(request("graph", "h")).grant;
+        assert!(store.has_other_live("graph", 2, &own.grant.key));
+        assert!(!store.has_other_live("graph", 3, &own.grant.key));
+        store.revoke_key(&instance.key);
+        assert!(!store.has_other_live("graph", 2, &own.grant.key));
     }
 
     #[test]

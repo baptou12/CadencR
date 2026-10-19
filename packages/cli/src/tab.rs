@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use cadencr_plugin_core::tab::{describe_all, inspect_tab_folder};
+use cadencr_plugin_core::tab::{
+    describe_all, inspect_tab_folder, TabAccessLevel, TabBackend, TabManifest,
+};
 
 use crate::{operation_error, Diagnostic};
 
@@ -30,6 +32,7 @@ pub(crate) fn validate(
         report.directory.display(),
         manifest.permissions_hash()
     );
+    message.push_str(&access_note(manifest));
     if !report.entry_present {
         message.push_str(&format!(
             "; note: entry `{}` is not built yet (run `npm run build`)",
@@ -41,6 +44,28 @@ pub(crate) fn validate(
         message.push_str(&describe_all(&report.findings.warnings));
     }
     Ok(Some(message))
+}
+
+/// The tab's level, spelled out: what beyond its page it may run.
+fn access_note(manifest: &TabManifest) -> String {
+    match manifest.access_level() {
+        TabAccessLevel::Ui => "; access: page only".into(),
+        TabAccessLevel::Commands => {
+            let programs: Vec<&str> = manifest
+                .commands
+                .iter()
+                .map(|command| command.program.as_str())
+                .collect();
+            format!("; access: runs commands ({})", programs.join(", "))
+        }
+        TabAccessLevel::Backend => {
+            let backend = manifest
+                .backend
+                .as_ref()
+                .map_or_else(String::new, TabBackend::command_line);
+            format!("; access: native backend `{backend}`, which runs with the user's rights")
+        }
+    }
 }
 
 pub(crate) fn pack(

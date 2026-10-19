@@ -153,13 +153,13 @@ fn validate_executable(folder: &Path, path: &Path) -> Result<(), PluginValidatio
 }
 
 #[cfg(unix)]
-fn executable_mode(path: &Path) -> bool {
+pub(crate) fn executable_mode(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(path).is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
 }
 
 #[cfg(not(unix))]
-fn executable_mode(_path: &Path) -> bool {
+pub(crate) fn executable_mode(_path: &Path) -> bool {
     true
 }
 

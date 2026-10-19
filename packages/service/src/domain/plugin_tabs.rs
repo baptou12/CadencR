@@ -15,13 +15,19 @@
 //! - [`grants::GrantStore`] + [`principal::authorize`] + [`policy::POLICY`] —
 //!   the plugin token, checked by `auth_middleware` (§4.3);
 //! - [`surface::plugin_surface`] — the filtered OpenAPI document the SDK's
-//!   typed client is generated from.
+//!   typed client is generated from;
+//! - [`exec::run`] / [`backend::BackendSupervisor`] — the tabs that run
+//!   commands or a native backend (§4.6, §4.7), recorded in
+//!   [`activity::ActivityLog`].
 
+pub mod activity;
 pub mod assets;
 pub mod authoring;
+pub mod backend;
 pub mod config;
 pub mod consent;
 pub mod enablement;
+pub mod exec;
 pub mod grants;
 pub mod managed;
 pub mod models;
@@ -32,6 +38,7 @@ pub mod policy;
 pub mod principal;
 pub mod registry;
 pub mod routes;
+pub mod runtime_routes;
 pub mod scaffold;
 pub mod socket;
 pub mod storage;

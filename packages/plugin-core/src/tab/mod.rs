@@ -7,6 +7,7 @@
 //! whether a tab is valid.
 
 mod configuration;
+mod execution;
 mod folder;
 mod hash;
 mod issues;
@@ -19,10 +20,14 @@ mod validate;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 
-pub use folder::{inspect_tab_folder, read_tab_manifest, TabFolderReport};
+pub use execution::{
+    is_denied_program, is_valid_program_name, DENIED_PROGRAMS, MAX_BACKEND_ARGS, MAX_COMMANDS,
+};
+pub use folder::{inspect_tab_folder, read_tab_manifest, resolve_backend_file, TabFolderReport};
 pub use issues::{describe_all, TabFindings, TabIssue, TabIssueCode};
 pub use manifest::{
-    TabConfigField, TabConfigFieldType, TabConfigScope, TabManifest, TabNetwork, TabSection,
+    BackendTarget, TabAccessLevel, TabBackend, TabCommand, TabConfigField, TabConfigFieldType,
+    TabConfigScope, TabManifest, TabNetwork, TabSection,
 };
 pub use validate::{
     is_clean_relative_path, is_valid_tab_id, validate_manifest, MAX_DESCRIPTION_CHARS,

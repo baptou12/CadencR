@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 pub use cadencr_plugin_core::tab::{
-    TabConfigField, TabConfigFieldType, TabConfigScope, TabIssue, TabIssueCode,
+    TabAccessLevel, TabBackend, TabCommand, TabConfigField, TabConfigFieldType, TabConfigScope,
+    TabIssue, TabIssueCode,
 };
 
 /// One local custom tab, valid or not.
@@ -31,6 +32,13 @@ pub struct PluginTabSummary {
     pub permissions: Vec<String>,
     pub network: PluginTabNetwork,
     pub configuration: Vec<TabConfigField>,
+    /// Programs the tab may ask Cadencr to run.
+    pub commands: Vec<TabCommand>,
+    /// The native process the tab ships, which runs with the user's rights.
+    pub backend: Option<TabBackend>,
+    /// How far the tab reaches: its page only, commands, or a native backend.
+    /// `ui` when the manifest is unreadable (such a tab cannot run).
+    pub access_level: TabAccessLevel,
     /// What consent is recorded against; `None` when the manifest is unreadable.
     pub permissions_hash: Option<String>,
     pub status: PluginTabStatus,

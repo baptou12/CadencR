@@ -126,6 +126,10 @@ pub struct AppState {
     pub plugin_tab_events_tx: broadcast::Sender<crate::domain::plugin_tabs::PluginTabChangedEvent>,
     /// In-memory plugin tokens of live custom tab instances (never persisted).
     pub plugin_tab_grants: crate::domain::plugin_tabs::grants::GrantStore,
+    /// The commands custom tabs ran, for their Activity dialog (memory only).
+    pub plugin_tab_activity: crate::domain::plugin_tabs::activity::ActivityLog,
+    /// Custom tabs' native backend processes.
+    pub plugin_tab_backends: crate::domain::plugin_tabs::backend::BackendSupervisor,
     /// Broadcast when `alacritty.toml` changes on disk. Drives the frontend
     /// to re-fetch `GET /api/terminal/alacritty-config` live.
     pub alacritty_config_events_tx:
@@ -310,6 +314,8 @@ impl AppState {
             theme_events_tx,
             plugin_tab_events_tx,
             plugin_tab_grants: Default::default(),
+            plugin_tab_activity: Default::default(),
+            plugin_tab_backends: Default::default(),
             alacritty_config_events_tx,
             remote_events_tx,
             storage_maintenance_events_tx,
@@ -396,6 +402,8 @@ impl AppState {
             theme_events_tx,
             plugin_tab_events_tx,
             plugin_tab_grants: Default::default(),
+            plugin_tab_activity: Default::default(),
+            plugin_tab_backends: Default::default(),
             alacritty_config_events_tx,
             remote_events_tx,
             storage_maintenance_events_tx,
