@@ -30,6 +30,10 @@ unused_variables = "deny"
 [profile.dev]
 debug = false
 incremental = false
+# Cargo otherwise strips debuginfo implicitly when debug is disabled. Rust/LLVM
+# can misalign Mach-O dylibs during stripping, so macOS 27 rejects proc macros.
+# https://github.com/rust-lang/rust/issues/157750
+strip = "none"
 
 [profile.test]
 debug = false
@@ -50,3 +54,7 @@ opt-level = "s"
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+# Proc macros must load on the build host; only strip the shipped binaries.
+[profile.release.build-override]
+strip = "none"
