@@ -120,7 +120,8 @@ Rules (validated by `cadencr-plugin-core::tab`, the service and
   (`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`, no path, no arguments), unique
   case-insensitively, resolved on the user's `PATH` at run time; `reasoning`
   1–280 chars, required. General-purpose launchers are refused
-  (`COMMAND_NOT_ALLOWED`): shells (`sh`, `bash`, `zsh`, `pwsh`, `cmd`…),
+  (`COMMAND_NOT_ALLOWED`): shells and script hosts (`sh`, `bash`, `zsh`,
+  `pwsh`, `cmd`, `wscript`, `mshta`…),
   interpreters and runtimes (`node`, `python`, `ruby`, `perl`, `deno`, `bun`,
   `java`, `dotnet`…), package runners (`npx`, `npm`, `pnpm`, `yarn`, `uvx`,
   `pipx`…) and launchers/privilege tools (`env`, `sudo`, `xargs`, `nohup`,

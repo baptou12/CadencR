@@ -38,6 +38,9 @@ pub const DENIED_PROGRAMS: &[&str] = &[
     "pwsh",
     "powershell",
     "cmd",
+    "wscript",
+    "cscript",
+    "mshta",
     "wsl",
     "osascript",
     // interpreters and runtimes
@@ -49,11 +52,15 @@ pub const DENIED_PROGRAMS: &[&str] = &[
     "python2",
     "python3",
     "py",
+    "pyw",
+    "pythonw",
     "pypy",
     "pypy3",
     "ruby",
+    "rubyw",
     "irb",
     "perl",
+    "wperl",
     "php",
     "lua",
     "luajit",
@@ -92,6 +99,8 @@ pub const DENIED_PROGRAMS: &[&str] = &[
     "open",
     "start",
     "launchctl",
+    "rundll32",
+    "regsvr32",
     "systemd-run",
     "script",
 ];
@@ -267,6 +276,9 @@ mod tests {
             "Python3.11.EXE",
         ] {
             assert!(is_denied_program(versioned), "{versioned}");
+        }
+        for windows in ["pythonw.exe", "wscript", "mshta.exe", "rundll32.EXE"] {
+            assert!(is_denied_program(windows), "{windows}");
         }
         assert!(!is_denied_program("gitk"));
         assert!(!is_denied_program("nodemon-free"));
