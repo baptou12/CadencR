@@ -82,7 +82,13 @@ export class NotchController {
       screen.on("display-added", this.onDisplaysChanged);
       screen.on("display-removed", this.onDisplaysChanged);
       screen.on("display-metrics-changed", this.onDisplayMetricsChanged);
-      await this.place();
+      try {
+        await this.place();
+      } catch (error) {
+        // Stay off so the renderer's next configure retries from scratch.
+        await this.setEnabled(false);
+        throw error;
+      }
       return;
     }
     screen.off("display-added", this.onDisplaysChanged);

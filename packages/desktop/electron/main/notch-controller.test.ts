@@ -38,6 +38,7 @@ const mock = vi.hoisted(() => {
     listeners: new Map<string, (...args: unknown[]) => void>(),
     cursor: { x: -1000, y: -1000 },
     probe: vi.fn<() => Promise<null>>(() => Promise.resolve(null)),
+    preventAppActivation: vi.fn<(win: MockWindow) => void>(),
   };
 });
 
@@ -62,6 +63,7 @@ vi.mock("./notch-geometry", async (importOriginal) => ({
   probeHardwareNotches: mock.probe,
 }));
 vi.mock("./notifications", () => ({ sendNotificationClick: vi.fn() }));
+vi.mock("./mac-window", () => ({ preventAppActivation: mock.preventAppActivation }));
 
 import { NotchController } from "./notch-window";
 
@@ -97,6 +99,7 @@ beforeEach(() => {
   mock.primary = primary;
   mock.cursor = { x: -1000, y: -1000 };
   mock.probe.mockReset().mockResolvedValue(null);
+  mock.preventAppActivation.mockReset();
   controller = new NotchController({ getMainWindow: () => null });
 });
 
@@ -117,6 +120,26 @@ describe("NotchController display lifecycle", () => {
     expect(builtInWindow.destroyed).toBe(true);
     expect(mock.windows[1].destroyed).toBe(false);
     expect(mock.windows[1].bounds).toMatchObject({ x: 920, y: 0, width: 720 });
+  });
+
+  it("keeps a click on any island from activating the app", async () => {
+    await configure("both");
+    expect(mock.windows).toHaveLength(2);
+    mock.windows.forEach((win, i) =>
+      expect(mock.preventAppActivation).toHaveBeenNthCalledWith(i + 1, win),
+    );
+  });
+
+  it("turns back off when an island's activation guard fails, so a retry works", async () => {
+    mock.preventAppActivation.mockImplementationOnce(() => {
+      throw new Error("addon missing");
+    });
+    await expect(configure("primary")).rejects.toThrow("addon missing");
+    expect(mock.windows[0].destroyed).toBe(true);
+    expect(mock.listeners.size).toBe(0);
+    await configure("primary");
+    expect(mock.windows).toHaveLength(2);
+    expect(mock.windows[1].destroyed).toBe(false);
   });
 
   it("routes each renderer's ready and hot rect to its own island", async () => {

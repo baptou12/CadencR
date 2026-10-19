@@ -15,6 +15,7 @@
     "src/**/*.{ts,tsx}"
   ],
   "ignoreBinaries": [
+    "clang",
     "oxfmt",
     "security",
     "spctl",
