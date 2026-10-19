@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PluginTabBroker } from "./broker";
 import type { GrantDeps } from "./broker-grant";
 import type { FetchLike } from "./broker-http";
+import type { PresenceDeps } from "./broker-presence";
 import type { SocketFactory } from "./broker-streams";
 import { FakePluginSocket } from "./plugin-socket-fixtures";
 import { usePluginTabRuntimeStore } from "./runtime-store";
@@ -71,12 +72,24 @@ function grantDeps(overrides: Partial<GrantDeps> = {}): GrantDeps {
   };
 }
 
+function presenceDeps(): PresenceDeps {
+  return {
+    renew: vi.fn(async () => undefined),
+    release: vi.fn(async () => undefined),
+    report: vi.fn(),
+    newLeaseId: () => "lease-1",
+  };
+}
+
 function createBroker(
   options: {
     instanceId?: string;
     fetch?: FetchLike;
     grant?: GrantDeps;
+    presence?: PresenceDeps;
     origins?: string[];
+    hasCommands?: boolean;
+    hasBackend?: boolean;
     socket?: SocketFactory;
     visible?: boolean;
   } = {},
@@ -90,12 +103,15 @@ function createBroker(
         name: "Graph",
         version: "0.1.0",
         allowedOrigins: options.origins ?? [],
+        hasCommands: options.hasCommands ?? false,
+        hasBackend: options.hasBackend ?? false,
       },
       context: CONTEXT,
       visible: options.visible ?? true,
     },
     {
       grant: options.grant ?? grantDeps(),
+      presence: options.presence ?? presenceDeps(),
       fetch: options.fetch ?? vi.fn(),
       theme: () => THEME,
       windowPorts: false,
@@ -149,6 +165,17 @@ describe("PluginTabBroker handshake", () => {
     expect(capabilities).toContain("git:read");
     // No allowed origins in the manifest: no egress.
     expect(capabilities).not.toContain("net.fetch");
+    // Neither commands nor a backend: a page-only tab.
+    expect(capabilities).not.toContain("exec.run");
+    expect(capabilities).not.toContain("backend.request");
+  });
+
+  it("offers exec.run and backend.request only when the manifest declares them", async () => {
+    const guest = connect(createBroker({ hasCommands: true, hasBackend: true }));
+    const result = ok(await guest.request("hello", { sdkVersion: "0.1.0", apiVersions: [1, 1] }));
+    const capabilities = (result as { capabilities: string[] }).capabilities;
+    expect(capabilities).toContain("exec.run");
+    expect(capabilities).toContain("backend.request");
   });
 
   it("tells a page recreated while hidden that it is hidden", async () => {
@@ -506,5 +533,126 @@ describe("PluginTabBroker guest lifecycle", () => {
     const [pending] = usePluginTabRuntimeStore.getState().externalOpens;
     pending?.resolve(false);
     expect(errorCode(await first)).toBe("CAPABILITY_DENIED");
+  });
+});
+
+describe("PluginTabBroker exec.run and backend.request", () => {
+  it("lets the service refuse an undeclared program, so the attempt is recorded", async () => {
+    const fetch = vi.fn<FetchLike>(async () =>
+      Response.json({ error: "not listed", code: "PLUGIN_EXEC_DENIED" }, { status: 403 }),
+    );
+    const guest = connect(createBroker({ fetch, hasCommands: true }));
+    expect(errorCode(await guest.request("exec.run", { program: "bash" }))).toBe(
+      "PLUGIN_EXEC_DENIED",
+    );
+    expect(new URL(String(fetch.mock.calls[0]?.[0])).pathname).toBe("/api/plugin-tabs/self/exec");
+  });
+
+  it("refuses malformed params without calling the service", async () => {
+    const fetch = vi.fn<FetchLike>();
+    const guest = connect(createBroker({ fetch, hasCommands: true, hasBackend: true }));
+    expect(errorCode(await guest.request("exec.run", { program: 42 }))).toBe("BAD_REQUEST");
+    expect(errorCode(await guest.request("exec.run", { program: "git", args: "log" }))).toBe(
+      "BAD_REQUEST",
+    );
+    expect(errorCode(await guest.request("backend.request", { method: "m", params: 1n }))).toBe(
+      "BAD_REQUEST",
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("leaves bounds to the service, which records the refusal", async () => {
+    const fetch = vi.fn<FetchLike>(async () =>
+      Response.json({ error: "Bad request: timeout_ms", code: "BAD_REQUEST" }, { status: 400 }),
+    );
+    const guest = connect(createBroker({ fetch, hasCommands: true }));
+    expect(errorCode(await guest.request("exec.run", { program: "git", timeoutMs: 0 }))).toBe(
+      "BAD_REQUEST",
+    );
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
+      program: "git",
+      args: [],
+      timeout_ms: 0,
+    });
+  });
+
+  it("relays exec.run and maps the result to the SDK's shape", async () => {
+    const fetch = vi.fn<FetchLike>(async () =>
+      Response.json({ exit_code: 0, success: true, stdout: "main\n", stderr: "", duration_ms: 4 }),
+    );
+    const guest = connect(createBroker({ fetch, hasCommands: true }));
+    const result = ok(
+      await guest.request("exec.run", { program: "git", args: ["branch", "--show-current"] }),
+    );
+    expect(result).toEqual({
+      exitCode: 0,
+      success: true,
+      stdout: "main\n",
+      stderr: "",
+      durationMs: 4,
+    });
+    const [url, init] = fetch.mock.calls[0] ?? [];
+    expect(new URL(String(url)).pathname).toBe("/api/plugin-tabs/self/exec");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      program: "git",
+      args: ["branch", "--show-current"],
+    });
+  });
+
+  it("passes the service's refusal through with its code", async () => {
+    const fetch = vi.fn<FetchLike>(async () =>
+      Response.json({ error: "not found", code: "PLUGIN_EXEC_NOT_FOUND" }, { status: 422 }),
+    );
+    const guest = connect(createBroker({ fetch, hasCommands: true }));
+    expect(errorCode(await guest.request("exec.run", { program: "kubectl" }))).toBe(
+      "PLUGIN_EXEC_NOT_FOUND",
+    );
+  });
+
+  it("relays backend.request and returns the backend's answer as is", async () => {
+    const fetch = vi.fn<FetchLike>(async () =>
+      Response.json({ error: { code: "NOPE", message: "m" } }),
+    );
+    const guest = connect(createBroker({ fetch, hasBackend: true }));
+    const result = ok(
+      await guest.request("backend.request", { method: "ports", params: { all: true } }),
+    );
+    expect(result).toEqual({ error: { code: "NOPE", message: "m" } });
+    const [url, init] = fetch.mock.calls[0] ?? [];
+    expect(new URL(String(url)).pathname).toBe("/api/plugin-tabs/self/backend");
+    expect(JSON.parse(String(init?.body))).toEqual({ method: "ports", params: { all: true } });
+  });
+});
+
+describe("PluginTabBroker presence", () => {
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const identity = (hasBackend: boolean) => ({
+    id: "graph",
+    name: "Graph",
+    version: "0.1.0",
+    allowedOrigins: [],
+    hasCommands: false,
+    hasBackend,
+  });
+
+  it("holds a lease only while the tab declares a backend, and drops it on close", async () => {
+    const presence = presenceDeps();
+    const broker = createBroker({ presence });
+    expect(presence.renew).not.toHaveBeenCalled();
+    broker.setPlugin(identity(true));
+    expect(presence.renew).toHaveBeenCalledWith("graph", "lease-1", 7);
+    broker.setPlugin(identity(true));
+    expect(presence.renew).toHaveBeenCalledTimes(1);
+    broker.dispose();
+    await settle();
+    expect(presence.release).toHaveBeenCalledWith("graph", "lease-1");
+  });
+
+  it("releases the lease when the backend leaves tab.json", async () => {
+    const presence = presenceDeps();
+    const broker = createBroker({ presence, hasBackend: true });
+    broker.setPlugin(identity(false));
+    await settle();
+    expect(presence.release).toHaveBeenCalledTimes(1);
   });
 });

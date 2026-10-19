@@ -100,3 +100,8 @@ export function toWireError(error: unknown): WireError {
 export function badRequest(message: string): BrokerError {
   return new BrokerError("BAD_REQUEST", message);
 }
+
+/** The service answered `method` with a body the broker does not recognize. */
+export function unexpectedShape(method: string): BrokerError {
+  return new BrokerError("HOST_ERROR", `The service answered ${method} with an unexpected shape`);
+}

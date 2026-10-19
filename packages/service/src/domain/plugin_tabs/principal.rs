@@ -25,6 +25,9 @@ pub const PLUGIN_TOKEN_HEADER: &str = "x-cadencr-plugin-token";
 pub struct PluginPrincipal {
     pub plugin_id: String,
     pub project_id: i64,
+    /// The feature the grant is bound to: where `exec` runs and which
+    /// backend `backend.request` reaches.
+    pub feature_id: i64,
     /// The hash the grant was consented under; self routes refuse to act on a
     /// manifest whose hash has moved since (`plugin_routes::granted_manifest`).
     pub permissions_hash: String,
@@ -37,6 +40,7 @@ impl From<&Grant> for PluginPrincipal {
         Self {
             plugin_id: grant.plugin_id.clone(),
             project_id: grant.project_id,
+            feature_id: grant.feature_id,
             permissions_hash: grant.permissions_hash.clone(),
             grant_key: grant.key.clone(),
         }

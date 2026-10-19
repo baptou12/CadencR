@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 
-import { usePluginTabList } from "@/api/generated";
+import { usePluginTabList, type PluginTabSummary } from "@/api/generated";
 import type { FeatureTabDef } from "@/components/feature-layout/types";
 import { pluginTabInstanceId } from "@/lib/plugin-tabs/instance-id";
 import { clearInstanceState, usePluginTabRuntimeStore } from "@/lib/plugin-tabs/runtime-store";
@@ -13,6 +13,7 @@ import {
 import { selectFeatureLayout, useFeatureLayoutStore } from "@/stores/feature-layout-store";
 import { getPluginTabs } from "@/stores/feature-layout-tree";
 
+import { PluginTabAccessMark } from "./PluginTabAccess";
 import { PluginTabIcon } from "./PluginTabIcon";
 import { PluginTabView } from "./PluginTabView";
 import { usePluginTabContext, type PluginTabContextData } from "./usePluginTabContext";
@@ -93,6 +94,18 @@ function PluginTabBadge({ text }: { text: string }) {
   return <span className="font-mono text-[11px] tabular-nums text-primary">{text}</span>;
 }
 
+/** The tab's own badge, after the mark of a tab that runs commands or native code. */
+function triggerBadge(summary: PluginTabSummary, text: string | undefined): ReactNode {
+  const level = summary.access_level;
+  if (level === "ui") return text ? <PluginTabBadge text={text} /> : undefined;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <PluginTabAccessMark level={level} />
+      {text ? <PluginTabBadge text={text} /> : null}
+    </span>
+  );
+}
+
 /**
  * Tab definitions for every custom tab placed in this feature's layout whose
  * plugin the project lists — valid or not, on or off: the tab body explains
@@ -131,7 +144,7 @@ export function usePluginTabDefs({
         label: summary.label,
         iconNode: <PluginTabIcon svg={summary.icon_svg} />,
         closable: true,
-        badge: badge ? <PluginTabBadge text={badge} /> : undefined,
+        badge: triggerBadge(summary, badge),
         content: <PluginTabView featureId={featureId} summary={summary} context={context} />,
       };
     }

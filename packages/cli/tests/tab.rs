@@ -58,6 +58,32 @@ fn actual_cli_validates_custom_tab_folders() {
     );
     assert!(message.contains("not built yet"), "{message}");
     assert!(message.contains("ORIGIN_INSECURE_LOCALHOST"), "{message}");
+    assert!(message.contains("access: page only"), "{message}");
+
+    let mut runner = manifest("changed-files-graph");
+    runner["commands"] = json!([{ "program": "git", "reasoning": "history" }]);
+    std::fs::write(&path, serde_json::to_vec(&runner).unwrap()).unwrap();
+    let message = serde_json::from_slice::<Value>(&validate(&folder).stdout).unwrap()["message"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(message.contains("access: runs commands (git)"), "{message}");
+    runner["commands"] = json!([{ "program": "bash", "reasoning": "anything" }]);
+    std::fs::write(&path, serde_json::to_vec(&runner).unwrap()).unwrap();
+    let refused = validate(&folder);
+    assert_eq!(refused.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("COMMAND_NOT_ALLOWED"));
+    runner["commands"] = json!([]);
+    runner["backend"] = json!({ "command": "node", "args": ["server.mjs"], "reasoning": "ports" });
+    std::fs::write(&path, serde_json::to_vec(&runner).unwrap()).unwrap();
+    let message = serde_json::from_slice::<Value>(&validate(&folder).stdout).unwrap()["message"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        message.contains("native backend `node server.mjs`, which runs with the user's rights"),
+        "{message}"
+    );
 
     std::fs::write(&path, serde_json::to_vec(&manifest("other-id")).unwrap()).unwrap();
     let mismatch = validate(&folder);

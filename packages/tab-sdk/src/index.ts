@@ -16,6 +16,12 @@ export type {
   CadencrUi,
   NetFetchInit,
 } from "./namespaces.js";
+export type {
+  BackendRequestOptions,
+  CadencrBackend,
+  CadencrExec,
+  ExecRunOptions,
+} from "./execution.js";
 export { CadencrError, isCadencrError, toCadencrError } from "./errors.js";
 export { createPluginFetch, pluginFetch, type PluginFetch } from "./fetcher.js";
 export { applyTheme, themeToCss, themeVariables, THEME_VARIABLE_PREFIX } from "./theme.js";

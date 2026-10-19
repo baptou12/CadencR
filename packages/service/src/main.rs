@@ -274,6 +274,9 @@ async fn main() -> anyhow::Result<()> {
                 state.plugin_tab_grants.clone(),
                 state.plugin_tab_events_tx.subscribe(),
             ));
+            state
+                .plugin_tab_backends
+                .spawn_reaper(&state.plugin_tab_presence);
 
             // A theme is built in a project named after it, and renaming a theme
             // is editing its file — so the same event that reloads the theme
@@ -335,6 +338,7 @@ async fn main() -> anyhow::Result<()> {
 
             let pty_manager = state.pty_manager.clone();
             let remote_for_shutdown = state.remote.clone();
+            let backends_for_shutdown = state.plugin_tab_backends.clone();
             let write_pool_for_shutdown = state.write_pool.clone();
             let maintenance_pool = state.write_pool.clone();
             let maintenance_events = state.storage_maintenance_events_tx.clone();
@@ -370,6 +374,7 @@ async fn main() -> anyhow::Result<()> {
                 drain_rx,
                 pty_manager,
                 remote_for_shutdown,
+                backends_for_shutdown,
                 write_pool_for_shutdown,
             )
             .await?;

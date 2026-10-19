@@ -17,6 +17,7 @@ use super::grants::{GrantRequest, Minted};
 use super::models::{CreatePluginTabGrantRequest, PluginNetFetchQuery, PluginTabGrant};
 use super::policy::Scope;
 use super::principal::{token_invalid, PluginPrincipal};
+use super::registry::LocalTab;
 use super::storage::{self, StorageScope};
 use super::{config, enablement, net, registry, socket};
 use crate::app_state::AppState;
@@ -53,6 +54,7 @@ pub fn plugin_tabs_loopback_router() -> Router<AppState> {
                 .layer(DefaultBodyLimit::max(net::MAX_REQUEST_BYTES)),
         )
         .route(socket::SOCKET_PATH, get(socket::plugin_tab_socket_handler))
+        .merge(super::runtime_routes::plugin_tab_runtime_router())
 }
 
 /// Mint a plugin token for one tab instance in `feature_id`. 404 when the tab
@@ -84,11 +86,7 @@ pub async fn plugin_tab_create_grant_handler(
             format!("custom tab `{id}` is not enabled for this project"),
         ));
     }
-    let scopes: Vec<Scope> = manifest
-        .permissions
-        .iter()
-        .filter_map(|scope| Scope::parse(scope))
-        .collect();
+    let scopes = Scope::parse_all(&manifest.permissions);
     let Minted {
         token,
         grant,
@@ -102,6 +100,11 @@ pub async fn plugin_tab_create_grant_handler(
             .permissions_hash(permissions_hash)
             .build(),
     );
+    let Some(expires_at) = expires_at else {
+        return Err(AppError::Internal(
+            "a tab grant was minted without expiry".into(),
+        ));
+    };
     Ok(Json(PluginTabGrant {
         token,
         expires_at: expires_at.to_rfc3339_opts(SecondsFormat::Secs, true),
@@ -265,13 +268,26 @@ pub async fn plugin_tab_self_net_fetch_handler(
 /// but asynchronously (and only if it saw the edit); a self route must never
 /// act on, say, a widened `allowed_origins` meanwhile — the grant is revoked
 /// on the spot instead.
-async fn granted_manifest(
+pub(super) async fn granted_manifest(
     state: &AppState,
     principal: &PluginPrincipal,
 ) -> Result<TabManifest, AppError> {
+    granted_tab(state, principal)
+        .await
+        .map(|(_, manifest)| manifest)
+}
+
+/// [`granted_manifest`], with the tab folder it was read from.
+pub(super) async fn granted_tab(
+    state: &AppState,
+    principal: &PluginPrincipal,
+) -> Result<(LocalTab, TabManifest), AppError> {
     let tab = registry::get(&principal.plugin_id).await?;
     match tab.require_valid() {
-        Ok((manifest, hash)) if hash == principal.permissions_hash => Ok(manifest.clone()),
+        Ok((manifest, hash)) if hash == principal.permissions_hash => {
+            let manifest = manifest.clone();
+            Ok((tab, manifest))
+        }
         _ => {
             state.plugin_tab_grants.revoke_key(&principal.grant_key);
             Err(token_invalid())

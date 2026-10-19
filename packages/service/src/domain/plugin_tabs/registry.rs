@@ -38,6 +38,14 @@ impl LocalTab {
         self.manifest().map(TabManifest::permissions_hash)
     }
 
+    /// Installed from the marketplace (under the managed root), not authored
+    /// locally.
+    pub fn is_managed(&self) -> bool {
+        self.report
+            .directory
+            .starts_with(super::managed::storage::root())
+    }
+
     /// The valid manifest and its hash, or `PLUGIN_TAB_INVALID`.
     pub fn require_valid(&self) -> Result<(&TabManifest, String), AppError> {
         let manifest = self.valid_manifest().ok_or_else(|| {

@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use super::issues::{TabFindings, TabIssue, TabIssueCode as Code};
-use super::manifest::TabManifest;
+use super::manifest::{BackendTarget, TabBackend, TabManifest};
 use super::validate::{is_clean_relative_path, validate_manifest};
 use super::{MANIFEST_FILE_NAME, MAX_ICON_BYTES, MAX_MANIFEST_BYTES};
 
@@ -78,6 +78,9 @@ pub fn inspect_tab_folder(directory: &Path) -> TabFolderReport {
     report.icon_svg = load_icon(&root, manifest.icon.as_deref(), &mut report.findings);
     report.entry_present =
         is_clean_relative_path(&manifest.entry) && resolve_file(&root, &manifest.entry).is_some();
+    if let Some(backend) = &manifest.backend {
+        check_backend_file(&root, backend, &mut report.findings);
+    }
     report.manifest = Some(manifest);
     report
 }
@@ -127,6 +130,32 @@ fn load_icon(root: &Path, icon: Option<&str>, findings: &mut TabFindings) -> Opt
             None
         }
     }
+}
+
+/// A backend launched from the tab folder must be there, and executable, when
+/// the tab is loaded. A warning, like a missing build: the author may not have
+/// built it yet. A bare program name is looked up on `PATH` at launch instead.
+fn check_backend_file(root: &Path, backend: &TabBackend, findings: &mut TabFindings) {
+    let BackendTarget::FolderFile(command) = backend.target() else {
+        return;
+    };
+    if !is_clean_relative_path(command) {
+        return;
+    }
+    if let Err(reason) = resolve_backend_file(root, command) {
+        findings.warning(Code::BackendUnavailable, "backend.command", reason);
+    }
+}
+
+/// The executable file `relative` names inside the tab folder `root`
+/// (canonical), or why it cannot be launched.
+pub fn resolve_backend_file(root: &Path, relative: &str) -> Result<PathBuf, String> {
+    let path = resolve_file(root, relative)
+        .ok_or_else(|| format!("`{relative}` does not exist in the tab folder"))?;
+    if !crate::folder::executable_mode(&path) {
+        return Err(format!("`{relative}` is not executable (chmod +x)"));
+    }
+    Ok(path)
 }
 
 /// `root/relative` when it canonicalizes to a regular file inside `root`.
@@ -256,6 +285,33 @@ mod tests {
         let report = inspect_tab_folder(&dir);
         assert!(report.findings.is_valid(), "{:?}", report.findings);
         assert!(report.icon_svg.is_some());
+    }
+
+    #[test]
+    fn a_folder_backend_must_exist_and_be_executable() {
+        let backend = json!({"command": "bin/backend", "reasoning": "r"});
+        let (_root, dir) = folder("changed-files-graph", json!({"backend": backend}));
+        std::fs::write(dir.join("icon.svg"), "<svg></svg>").unwrap();
+        let missing = inspect_tab_folder(&dir);
+        assert!(missing.findings.is_valid());
+        assert_eq!(codes(&missing.findings.warnings), ["BACKEND_UNAVAILABLE"]);
+        std::fs::create_dir(dir.join("bin")).unwrap();
+        std::fs::write(dir.join("bin/backend"), "#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                codes(&inspect_tab_folder(&dir).findings.warnings),
+                ["BACKEND_UNAVAILABLE"]
+            );
+            let executable = std::fs::Permissions::from_mode(0o755);
+            std::fs::set_permissions(dir.join("bin/backend"), executable).unwrap();
+        }
+        assert!(inspect_tab_folder(&dir).findings.warnings.is_empty());
+        let program = json!({"command": "node", "args": ["x.mjs"], "reasoning": "r"});
+        let (_other, dir) = folder("changed-files-graph", json!({"backend": program}));
+        std::fs::write(dir.join("icon.svg"), "<svg></svg>").unwrap();
+        assert!(inspect_tab_folder(&dir).findings.warnings.is_empty());
     }
 
     #[cfg(unix)]

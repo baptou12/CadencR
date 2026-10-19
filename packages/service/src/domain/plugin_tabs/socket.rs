@@ -111,7 +111,12 @@ async fn run(socket: WebSocket, state: AppState, grant: Grant) {
     let (close_tx, close_rx) = oneshot::channel();
     let mut writer = tokio::spawn(outbound::write(sink, out_rx, out.shared(), close_rx));
     let mut subscriptions = Subscriptions::new(state, grant.clone(), out);
-    let expiry = tokio::time::sleep_until(Instant::from_std(grant.expires));
+    let expiry = async {
+        match grant.expires {
+            Some(expires) => tokio::time::sleep_until(Instant::from_std(expires)).await,
+            None => std::future::pending().await,
+        }
+    };
     tokio::pin!(expiry);
     let mut budget = InboundBudget::new();
     let mut writer_done = false;

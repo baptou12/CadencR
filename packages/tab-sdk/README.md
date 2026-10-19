@@ -74,27 +74,29 @@ Cadencr custom tab).
 
 ### `CadencrClient`
 
-| Member                                                                | Description                                                                                                       |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `context`, `onContextChange(cb)`                                      | Project, feature, pull request and session of the tab (`TabContext`).                                             |
-| `theme`, `onThemeChange(cb)`                                          | The Cadencr theme (`ThemeSnapshot`: `id`, `appearance`, `tokens`).                                                |
-| `visible`, `onVisibilityChange(cb)`                                   | Whether the tab is shown. Pause expensive work while hidden.                                                      |
-| `instanceId`, `plugin`, `apiVersion`                                  | From the handshake.                                                                                               |
-| `capabilities.list`, `capabilities.isSupported(name)`                 | Capabilities the host announced.                                                                                  |
-| `api.request({ method, path, query?, body? })`                        | Call the plugin surface of the Cadencr service. Resolves an `ApiResponse` for every status.                       |
-| `api.get/post/put/patch/delete<T>(path, …)`                           | JSON helpers: resolve the body, throw `CadencrError` (service `code`, `status`) on non-2xx.                       |
-| `streams.subscribe(topic, handler, { params?, onResync?, onError? })` | Live events. Returns `{ unsubscribe() }`. A `seq` gap, a host resync or a reconnect calls `onResync`: refetch.    |
-| `storage.get/set/delete/list`                                         | The plugin's key/value store, per project (JSON values, ≤ 256 KiB each). Writes to one key run in call order.     |
-| `state.get/set`                                                       | Per-instance state in host memory; survives the view being recreated.                                             |
-| `config.get()`                                                        | Non-secret configuration from the manifest's `configuration` fields.                                              |
-| `net.fetch(url, { method?, headers?, body?, timeoutMs? })`            | Fetch from an origin in `network.allowed_origins`. `{{secret:<key>}}` in header values is filled in server-side.  |
-| `ui.toast({ title, description?, variant? })`                         | Show a Cadencr toast.                                                                                             |
-| `ui.openExternal(url)`                                                | Open an `https:` URL in the browser, after the user confirms.                                                     |
-| `ui.setBadge(text \| null)`                                           | Up to 4 characters on the tab trigger.                                                                            |
-| `connected`, `onConnectionChange(cb)`                                 | Port lost (`false`) / re-established (`true`).                                                                    |
-| `onError(cb)`                                                         | Background failures nobody else handled. Without a listener they are re-thrown asynchronously (`window.onerror`). |
-| `call(method, params, { timeoutMs? })`                                | Raw protocol call.                                                                                                |
-| `close()`                                                             | Unsubscribe streams and stop talking to the host.                                                                 |
+| Member                                                                | Description                                                                                                                                                            |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `context`, `onContextChange(cb)`                                      | Project, feature, pull request and session of the tab (`TabContext`).                                                                                                  |
+| `theme`, `onThemeChange(cb)`                                          | The Cadencr theme (`ThemeSnapshot`: `id`, `appearance`, `tokens`).                                                                                                     |
+| `visible`, `onVisibilityChange(cb)`                                   | Whether the tab is shown. Pause expensive work while hidden.                                                                                                           |
+| `instanceId`, `plugin`, `apiVersion`                                  | From the handshake.                                                                                                                                                    |
+| `capabilities.list`, `capabilities.isSupported(name)`                 | Capabilities the host announced.                                                                                                                                       |
+| `api.request({ method, path, query?, body? })`                        | Call the plugin surface of the Cadencr service. Resolves an `ApiResponse` for every status.                                                                            |
+| `api.get/post/put/patch/delete<T>(path, …)`                           | JSON helpers: resolve the body, throw `CadencrError` (service `code`, `status`) on non-2xx.                                                                            |
+| `streams.subscribe(topic, handler, { params?, onResync?, onError? })` | Live events. Returns `{ unsubscribe() }`. A `seq` gap, a host resync or a reconnect calls `onResync`: refetch.                                                         |
+| `storage.get/set/delete/list`                                         | The plugin's key/value store, per project (JSON values, ≤ 256 KiB each). Writes to one key run in call order.                                                          |
+| `state.get/set`                                                       | Per-instance state in host memory; survives the view being recreated.                                                                                                  |
+| `config.get()`                                                        | Non-secret configuration from the manifest's `configuration` fields.                                                                                                   |
+| `net.fetch(url, { method?, headers?, body?, timeoutMs? })`            | Fetch from an origin in `network.allowed_origins`. `{{secret:<key>}}` in header values is filled in server-side.                                                       |
+| `exec.run(program, args?, { timeoutMs? })`                            | Run a program listed in `tab.json` `commands`, without a shell, in the conversation's folder. Resolves `{exitCode, success, stdout, stderr, durationMs}` for any exit. |
+| `backend.request<T>(method, params?, { timeoutMs? })`                 | Call the tab's native `backend` (started on first use). Resolves its `result`; its `error` rejects with the backend's own `code`.                                      |
+| `ui.toast({ title, description?, variant? })`                         | Show a Cadencr toast.                                                                                                                                                  |
+| `ui.openExternal(url)`                                                | Open an `https:` URL in the browser, after the user confirms.                                                                                                          |
+| `ui.setBadge(text \| null)`                                           | Up to 4 characters on the tab trigger.                                                                                                                                 |
+| `connected`, `onConnectionChange(cb)`                                 | Port lost (`false`) / re-established (`true`).                                                                                                                         |
+| `onError(cb)`                                                         | Background failures nobody else handled. Without a listener they are re-thrown asynchronously (`window.onerror`).                                                      |
+| `call(method, params, { timeoutMs? })`                                | Raw protocol call.                                                                                                                                                     |
+| `close()`                                                             | Unsubscribe streams and stop talking to the host.                                                                                                                      |
 
 `ApiResponse` mirrors `fetch`'s `Response`: `status`, `ok`, `headers`
 (lower-cased), `json()`, `text()`, `arrayBuffer()`.

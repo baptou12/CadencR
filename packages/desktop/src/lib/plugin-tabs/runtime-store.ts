@@ -15,16 +15,25 @@ interface PluginTabRuntimeState {
   badges: Record<string, string>;
   /** Pending `ui.openExternal` confirmations, oldest first. */
   externalOpens: ExternalOpenRequest[];
+  /** The instance whose Activity dialog is open, if any. */
+  activityOpen: string | null;
 }
 
 /**
- * Renderer-side state of live custom tabs that React renders: tab badges and
- * link confirmations. Brokers write it; tab triggers and dialogs read it.
+ * Renderer-side state of live custom tabs that React renders: tab badges,
+ * link confirmations and the open Activity dialog. Brokers and menus write
+ * it; tab triggers and dialogs read it.
  */
 export const usePluginTabRuntimeStore = create<PluginTabRuntimeState>(() => ({
   badges: {},
   externalOpens: [],
+  activityOpen: null,
 }));
+
+/** Show what the tab ran in its conversation (`null` closes the dialog). */
+export function setPluginTabActivityOpen(instanceId: string | null): void {
+  usePluginTabRuntimeStore.setState({ activityOpen: instanceId });
+}
 
 export function setPluginTabBadge(instanceId: string, text: string | null): void {
   usePluginTabRuntimeStore.setState((state) => {

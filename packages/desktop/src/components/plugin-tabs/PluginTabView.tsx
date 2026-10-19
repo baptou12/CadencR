@@ -14,6 +14,7 @@ import {
   useFeatureLayoutStore,
 } from "@/stores/feature-layout-store";
 
+import { PluginTabActivityDialog } from "./PluginTabActivityDialog";
 import { PluginTabExternalOpenDialog } from "./PluginTabExternalOpenDialog";
 import { PluginTabOverlay, type PluginTabOverlayState } from "./PluginTabOverlay";
 import { usePluginTabGuest, type GuestPhase } from "./usePluginTabGuest";
@@ -126,6 +127,7 @@ export const PluginTabView = memo(function PluginTabView({
         </div>
       )}
       {blocked === null && <PluginTabExternalOpenDialog instanceId={instanceId} />}
+      <PluginTabActivityDialog instanceId={instanceId} featureId={featureId} summary={summary} />
     </div>
   );
 });
@@ -135,8 +137,21 @@ function usePluginIdentity(summary: PluginTabSummary): PluginIdentity {
   const { id, name } = summary;
   const version = summary.version ?? "0.0.0";
   const origins = summary.network.allowed_origins.join("\n");
+  const hasCommands = summary.commands.length > 0;
+  const hasBackend = summary.backend != null;
   return useMemo(
-    () => ({ id, name, version, allowedOrigins: origins === "" ? [] : origins.split("\n") }),
-    [id, name, origins, version],
+    () => ({
+      id,
+      name,
+      version,
+      allowedOrigins: lines(origins),
+      hasCommands,
+      hasBackend,
+    }),
+    [id, name, origins, version, hasCommands, hasBackend],
   );
+}
+
+function lines(joined: string): string[] {
+  return joined === "" ? [] : joined.split("\n");
 }

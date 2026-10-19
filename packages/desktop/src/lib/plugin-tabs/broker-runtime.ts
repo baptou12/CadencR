@@ -11,6 +11,10 @@ export interface PluginIdentity {
   name: string;
   version: string;
   allowedOrigins: readonly string[];
+  /** Whether tab.json lists `commands` (`exec.run`); the service checks which. */
+  hasCommands: boolean;
+  /** Whether tab.json declares a `backend` (`backend.request`). */
+  hasBackend: boolean;
 }
 
 /** Everything a method handler may use; one per broker. */

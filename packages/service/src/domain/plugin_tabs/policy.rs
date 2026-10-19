@@ -46,6 +46,14 @@ impl Scope {
     pub fn parse(value: &str) -> Option<Scope> {
         Scope::ALL.into_iter().find(|scope| scope.as_str() == value)
     }
+
+    /// The scopes a manifest's `permissions` grant; unknown names grant none.
+    pub fn parse_all(permissions: &[String]) -> Vec<Scope> {
+        permissions
+            .iter()
+            .filter_map(|scope| Scope::parse(scope))
+            .collect()
+    }
 }
 
 /// How a request is tied to the grant. `FeaturePath("id")` = the `{id}` path
@@ -191,6 +199,10 @@ pub static POLICY: &[PolicyEntry] = &[
     own("PUT", "/api/plugin-tabs/self/storage/{key}"),
     own("DELETE", "/api/plugin-tabs/self/storage/{key}"),
     own("POST", "/api/plugin-tabs/self/net/fetch"),
+    // Gated by the manifest instead of a scope: the program must be listed in
+    // `commands`, and `backend` must be declared (§4.6, §4.7).
+    own("POST", "/api/plugin-tabs/self/exec"),
+    own("POST", "/api/plugin-tabs/self/backend"),
     own("DELETE", "/api/plugin-tabs/grants/current"),
 ];
 

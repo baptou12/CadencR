@@ -33,7 +33,8 @@ pub struct Grant {
     /// and minted under. A manifest whose hash moves away from it revokes the
     /// grant, and every self route re-checks it (`plugin_routes`).
     pub permissions_hash: String,
-    pub expires: Instant,
+    /// `None`: until revoked (a backend's grant, see [`Lifetime`]).
+    pub expires: Option<Instant>,
     /// SHA-256 (hex) of the token: the store key, never the token itself.
     pub key: String,
     /// Cancelled on revocation.
@@ -46,8 +47,18 @@ impl Grant {
     }
 
     fn is_live(&self, now: Instant) -> bool {
-        now < self.expires && !self.revoked.is_cancelled()
+        self.expires.is_none_or(|expires| now < expires) && !self.revoked.is_cancelled()
     }
+}
+
+/// How long a grant lives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lifetime {
+    /// A tab instance's: the broker mints a fresh one before it lapses.
+    Expires(Duration),
+    /// A backend's: as long as its process, which revokes it when it stops.
+    /// The backend cannot renew it, and its tab may stay open for days.
+    UntilRevoked,
 }
 
 /// What a grant is minted for.
@@ -58,13 +69,16 @@ pub struct GrantRequest {
     pub feature_id: i64,
     pub scopes: Vec<Scope>,
     pub permissions_hash: String,
+    #[builder(default = Lifetime::Expires(GRANT_TTL))]
+    pub lifetime: Lifetime,
 }
 
 /// A freshly minted grant: the raw token is shown once, to the broker.
 pub struct Minted {
     pub token: String,
     pub grant: Grant,
-    pub expires_at: DateTime<Utc>,
+    /// `None` for a [`Lifetime::UntilRevoked`] grant.
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 /// The grants of this process. Cheap to clone.
@@ -78,13 +92,17 @@ impl GrantStore {
     pub fn mint(&self, request: GrantRequest) -> Minted {
         let token = mint_raw_token();
         let now = Instant::now();
+        let ttl = match request.lifetime {
+            Lifetime::Expires(ttl) => Some(ttl),
+            Lifetime::UntilRevoked => None,
+        };
         let grant = Grant {
             plugin_id: request.plugin_id,
             project_id: request.project_id,
             feature_id: request.feature_id,
             scopes: request.scopes,
             permissions_hash: request.permissions_hash,
-            expires: now + GRANT_TTL,
+            expires: ttl.map(|ttl| now + ttl),
             key: token_key(&token),
             revoked: CancellationToken::new(),
         };
@@ -94,8 +112,10 @@ impl GrantStore {
         Minted {
             token,
             grant,
-            expires_at: Utc::now()
-                + chrono::Duration::from_std(GRANT_TTL).expect("the TTL fits a chrono duration"),
+            expires_at: ttl.map(|ttl| {
+                Utc::now()
+                    + chrono::Duration::from_std(ttl).expect("the TTL fits a chrono duration")
+            }),
         }
     }
 
@@ -272,7 +292,7 @@ mod tests {
         assert_eq!((resolved.project_id, resolved.feature_id), (1, 2));
         assert!(resolved.has_scope(Scope::GitRead) && !resolved.has_scope(Scope::FilesRead));
         assert!(store.resolve("not-a-token").is_none());
-        let remaining = expires_at - Utc::now();
+        let remaining = expires_at.unwrap() - Utc::now();
         assert!(remaining <= chrono::Duration::minutes(15));
         assert!(remaining > chrono::Duration::minutes(14));
     }
@@ -303,10 +323,32 @@ mod tests {
     }
 
     #[test]
+    fn a_grant_minted_until_revoked_never_expires() {
+        let store = GrantStore::default();
+        let minted = store.mint(
+            GrantRequest::builder()
+                .plugin_id("graph".into())
+                .project_id(1)
+                .feature_id(2)
+                .scopes(vec![])
+                .permissions_hash("h".into())
+                .lifetime(Lifetime::UntilRevoked)
+                .build(),
+        );
+        assert_eq!((minted.grant.expires, minted.expires_at), (None, None));
+        // Pruned along with the others on every mint, yet kept.
+        store.mint(request("graph", "h"));
+        assert!(store.resolve(&minted.token).is_some());
+        store.revoke_key(&minted.grant.key);
+        assert!(store.resolve(&minted.token).is_none());
+    }
+
+    #[test]
     fn expired_grants_are_pruned_and_cancelled() {
         let store = GrantStore::default();
         let Minted { token, grant, .. } = store.mint(request("graph", "h1"));
-        store.lock().get_mut(&grant.key).unwrap().expires = Instant::now() - Duration::from_secs(1);
+        store.lock().get_mut(&grant.key).unwrap().expires =
+            Some(Instant::now() - Duration::from_secs(1));
         assert!(store.resolve(&token).is_none());
         assert!(grant.revoked.is_cancelled());
         assert_eq!(store.len(), 0);

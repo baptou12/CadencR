@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use cadencr_plugin_core::tab::{TabAccessLevel, TabManifest};
 use sqlx::SqlitePool;
 
 use super::models::{PluginTabEnablement, PluginTabNetwork, PluginTabStatus, PluginTabSummary};
@@ -63,14 +64,12 @@ fn build(
     } else {
         PluginTabStatus::Invalid
     };
+    let managed = tab.is_managed();
     let report = tab.report;
     let manifest = report.manifest.as_ref();
     let name = manifest.map_or_else(|| tab.id.clone(), |manifest| manifest.name.clone());
     PluginTabSummary {
-        managed: report
-            .directory
-            .starts_with(super::managed::storage::root())
-            .then_some(true),
+        managed: managed.then_some(true),
         label: manifest.map_or_else(|| name.clone(), |manifest| manifest.label().to_string()),
         version: manifest.map(|manifest| manifest.version.clone()),
         description: manifest.and_then(|manifest| manifest.description.clone()),
@@ -89,6 +88,11 @@ fn build(
         configuration: manifest
             .map(|manifest| manifest.configuration.clone())
             .unwrap_or_default(),
+        commands: manifest
+            .map(|manifest| manifest.commands.clone())
+            .unwrap_or_default(),
+        backend: manifest.and_then(|manifest| manifest.backend.clone()),
+        access_level: manifest.map_or(TabAccessLevel::Ui, TabManifest::access_level),
         name,
         icon_svg: report.icon_svg,
         entry_present: report.entry_present,
@@ -116,6 +120,7 @@ async fn authoring_projects(pool: &SqlitePool) -> Result<HashMap<String, i64>, A
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::plugin_tabs::models;
     use crate::domain::plugin_tabs::test_support::{pool, write_tab};
 
     #[tokio::test]
@@ -139,6 +144,8 @@ mod tests {
         assert_eq!(graph.status, PluginTabStatus::Valid);
         assert_eq!(graph.label, "Graph");
         assert_eq!(graph.permissions, ["features:read", "git:read"]);
+        assert_eq!(graph.access_level, models::TabAccessLevel::Ui);
+        assert!(graph.commands.is_empty() && graph.backend.is_none());
         assert!(graph.enablement.consent_required && !graph.enablement.effective);
         assert_eq!(graph.authoring_project_id, None);
         assert_eq!(get(&pool, "graph", Some(1)).await.unwrap().id, "graph");

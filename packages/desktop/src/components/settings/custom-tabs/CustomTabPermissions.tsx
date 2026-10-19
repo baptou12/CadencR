@@ -1,16 +1,17 @@
 import { Globe, ShieldCheck } from "lucide-react";
 import type { PluginTabSummary } from "@/api/generated";
 import { describeScope } from "./custom-tab-model";
+import { CustomTabExecution } from "./CustomTabExecution";
 
 /**
- * What a tab may read and which sites it may reach, in plain words. The same
- * list the consent dialog asks the user to accept, so the card and the dialog
- * never describe one permission two ways.
+ * What a tab may read, which sites it may reach and what it may run, in plain
+ * words. The same list the consent dialog asks the user to accept, so the
+ * card and the dialog never describe one permission two ways.
  */
 export function CustomTabPermissions({
   tab,
 }: {
-  tab: Pick<PluginTabSummary, "permissions" | "network">;
+  tab: Pick<PluginTabSummary, "permissions" | "network" | "commands" | "backend">;
 }): React.JSX.Element {
   const origins = tab.network.allowed_origins;
   return (
@@ -44,6 +45,7 @@ export function CustomTabPermissions({
         </ul>
       )}
       <NetworkAccess origins={origins} reasoning={tab.network.reasoning ?? null} />
+      <CustomTabExecution tab={tab} />
     </div>
   );
 }

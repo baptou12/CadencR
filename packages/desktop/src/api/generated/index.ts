@@ -3428,6 +3428,169 @@ export interface PermissionRespondPayload {
   updated_input?: unknown;
 }
 
+export interface PluginBackendCallError {
+  code: string;
+  message: string;
+}
+
+export type PluginBackendRequestParams = { [key: string]: unknown };
+
+/**
+ * `POST /api/plugin-tabs/self/backend`.
+ */
+export interface PluginBackendRequest {
+  /** The backend's own method name, 1–128 characters. */
+  method: string;
+  params?: PluginBackendRequestParams;
+  /**
+   * 1 ms – 120 s; 30 s when omitted.
+   * @minimum 0
+   * @nullable
+   */
+  timeout_ms?: number | null;
+}
+
+export type PluginBackendResponseError = null | PluginBackendCallError;
+
+export type PluginBackendResponseResultAnyOf = { [key: string]: unknown };
+
+/**
+ * @nullable
+ */
+export type PluginBackendResponseResult = PluginBackendResponseResultAnyOf | null;
+
+/**
+ * The backend's answer: exactly one of `result` and `error`. A backend
+ * error is the backend's own (`{code, message}`), passed through as is;
+ * failures of the relay itself are ordinary `{error, code}` HTTP errors.
+ */
+export interface PluginBackendResponse {
+  error?: PluginBackendResponseError;
+  /** @nullable */
+  result?: PluginBackendResponseResult;
+}
+
+/**
+ * `POST /api/plugin-tabs/self/exec`.
+ */
+export interface PluginExecRequest {
+  args?: string[];
+  /** Exactly as listed in the manifest's `commands[].program`. */
+  program: string;
+  /**
+   * 1 ms – 120 s; 30 s when omitted.
+   * @minimum 0
+   * @nullable
+   */
+  timeout_ms?: number | null;
+}
+
+/**
+ * The finished command. A non-zero exit is a result, not an error.
+ */
+export interface PluginExecResult {
+  /** @minimum 0 */
+  duration_ms: number;
+  /**
+   * `None` when the process was ended by a signal.
+   * @nullable
+   */
+  exit_code?: number | null;
+  stderr: string;
+  /** UTF-8, lossily decoded; each stream is at most 1 MiB. */
+  stdout: string;
+  success: boolean;
+}
+
+export type PluginTabBackendState =
+  (typeof PluginTabBackendState)[keyof typeof PluginTabBackendState];
+
+export const PluginTabBackendState = {
+  running: "running",
+  stopped: "stopped",
+  crashed: "crashed",
+} as const;
+
+/**
+ * One tab's backend in one conversation, as the Activity dialog shows it.
+ */
+export interface PluginTabBackendStatus {
+  /** @nullable */
+  exit_code?: number | null;
+  /**
+   * Why the last run ended, in words.
+   * @nullable
+   */
+  exit_reason?: string | null;
+  /** @nullable */
+  exited_at?: string | null;
+  /**
+   * @minimum 0
+   * @nullable
+   */
+  pid?: number | null;
+  /**
+   * RFC 3339, of the current or last run.
+   * @nullable
+   */
+  started_at?: string | null;
+  /**
+   * How many times it was started since Cadencr launched.
+   * @minimum 0
+   */
+  starts: number;
+  state: PluginTabBackendState;
+  /** The last lines it wrote to stderr (its log), oldest first. */
+  stderr_tail: string[];
+}
+
+export type PluginTabActivityBackend = null | PluginTabBackendStatus;
+
+/**
+ * How one requested command ended.
+ */
+export type PluginTabExecOutcome = (typeof PluginTabExecOutcome)[keyof typeof PluginTabExecOutcome];
+
+export const PluginTabExecOutcome = {
+  exited: "exited",
+  refused: "refused",
+  timed_out: "timed_out",
+  failed: "failed",
+} as const;
+
+/**
+ * One command a tab asked Cadencr to run.
+ */
+export interface PluginTabExecRecord {
+  /**
+   * At most [`MAX_RECORDED_ARGS_CHARS`] characters; a cut argument ends
+   * with `…` and the ones after it are left out.
+   */
+  args: string[];
+  /** @minimum 0 */
+  duration_ms: number;
+  /**
+   * Why it was refused or failed.
+   * @nullable
+   */
+  error?: string | null;
+  /** @nullable */
+  exit_code?: number | null;
+  outcome: PluginTabExecOutcome;
+  program: string;
+  /** RFC 3339. */
+  started_at: string;
+}
+
+/**
+ * What a tab ran in one conversation since Cadencr started.
+ */
+export interface PluginTabActivity {
+  backend?: PluginTabActivityBackend;
+  /** The commands it asked Cadencr to run, newest first (at most 50). */
+  commands: PluginTabExecRecord[];
+}
+
 export type PluginTabConfigurationGlobal = { [key: string]: unknown };
 
 /**
@@ -3538,12 +3701,63 @@ export interface PluginTabNetwork {
   reasoning?: string | null;
 }
 
+/**
+ * The conversation an open tab instance shows.
+ */
+export interface PluginTabPresenceRequest {
+  feature_id: number;
+}
+
 export type PluginTabStatus = (typeof PluginTabStatus)[keyof typeof PluginTabStatus];
 
 export const PluginTabStatus = {
   valid: "valid",
   invalid: "invalid",
 } as const;
+
+/**
+ * The tab's native backend process (`backend`).
+ */
+export interface TabBackend {
+  args?: string[];
+  /**
+   * A path inside the tab folder (`bin/backend`) or a bare program name
+   * looked up on `PATH` (`node`, with the script in `args`).
+   */
+  command: string;
+  /**
+   * Shown to the user at consent time; required.
+   * @nullable
+   */
+  reasoning?: string | null;
+}
+
+export type PluginTabSummaryBackend = null | TabBackend;
+
+/**
+ * How far a tab reaches beyond its page, from least to most. Shown on the
+ * tab's card and drives how insistent the consent dialog is.
+ */
+export type TabAccessLevel = (typeof TabAccessLevel)[keyof typeof TabAccessLevel];
+
+export const TabAccessLevel = {
+  ui: "ui",
+  commands: "commands",
+  backend: "backend",
+} as const;
+
+/**
+ * One program a tab may ask Cadencr to run (`commands[]`).
+ */
+export interface TabCommand {
+  /** A bare program name looked up on `PATH`, e.g. `git`. */
+  program: string;
+  /**
+   * Shown to the user at consent time; required.
+   * @nullable
+   */
+  reasoning?: string | null;
+}
 
 export type TabIssueCode = (typeof TabIssueCode)[keyof typeof TabIssueCode];
 
@@ -3579,6 +3793,15 @@ export const TabIssueCode = {
   CONFIG_OPTION_INVALID: "CONFIG_OPTION_INVALID",
   CONFIG_SECRET_DEFAULT: "CONFIG_SECRET_DEFAULT",
   CONFIG_DEFAULT_INVALID: "CONFIG_DEFAULT_INVALID",
+  COMMANDS_TOO_MANY: "COMMANDS_TOO_MANY",
+  COMMAND_INVALID: "COMMAND_INVALID",
+  COMMAND_DUPLICATE: "COMMAND_DUPLICATE",
+  COMMAND_NOT_ALLOWED: "COMMAND_NOT_ALLOWED",
+  COMMAND_REASONING_REQUIRED: "COMMAND_REASONING_REQUIRED",
+  BACKEND_COMMAND_INVALID: "BACKEND_COMMAND_INVALID",
+  BACKEND_ARGS_INVALID: "BACKEND_ARGS_INVALID",
+  BACKEND_REASONING_REQUIRED: "BACKEND_REASONING_REQUIRED",
+  BACKEND_UNAVAILABLE: "BACKEND_UNAVAILABLE",
 } as const;
 
 /**
@@ -3597,6 +3820,11 @@ export interface TabIssue {
  */
 export interface PluginTabSummary {
   /**
+   * How far the tab reaches: its page only, commands, or a native backend.
+   * `ui` when the manifest is unreadable (such a tab cannot run).
+   */
+  access_level: TabAccessLevel;
+  /**
    * @minimum 0
    * @nullable
    */
@@ -3606,6 +3834,9 @@ export interface PluginTabSummary {
    * @nullable
    */
   authoring_project_id?: number | null;
+  backend?: PluginTabSummaryBackend;
+  /** Programs the tab may ask Cadencr to run. */
+  commands: TabCommand[];
   configuration: TabConfigField[];
   /** @nullable */
   description?: string | null;
@@ -6013,6 +6244,10 @@ export type PluginTabSelfNetFetchParams = {
 
 export type PluginTabGetParams = {
   project_id?: number;
+};
+
+export type PluginTabActivityParams = {
+  feature_id: number;
 };
 
 export type PluginTabGetConfigurationParams = {
@@ -21986,6 +22221,96 @@ export const usePluginTabRevokeCurrentGrant = <TError = ErrorType<unknown>, TCon
 };
 
 /**
+ * @summary Send one request to the tab's native backend, starting it if it is not
+running (plugin token). A backend error is a 200 with `error`. 403
+`PLUGIN_BACKEND_UNDECLARED` / `PLUGIN_BACKEND_UNSUPPORTED`, 422
+`PLUGIN_BACKEND_UNAVAILABLE`, 429 `PLUGIN_BACKEND_BUSY`, 503
+`PLUGIN_BACKEND_CRASHING`, 504 `PLUGIN_BACKEND_TIMEOUT`, 502
+`PLUGIN_BACKEND_EXITED`.
+ */
+export const pluginTabSelfBackend = (
+  pluginBackendRequest: PluginBackendRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<PluginBackendResponse>({
+    url: `/api/plugin-tabs/self/backend`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: pluginBackendRequest,
+    signal,
+  });
+};
+
+export const getPluginTabSelfBackendMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabSelfBackend>>,
+    TError,
+    PluginTabSelfBackendMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabSelfBackend>>,
+  TError,
+  PluginTabSelfBackendMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabSelfBackend"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabSelfBackend>>,
+    PluginTabSelfBackendMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return pluginTabSelfBackend(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabSelfBackendMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfBackend>>
+>;
+export type PluginTabSelfBackendMutationBody = PluginBackendRequest;
+export type PluginTabSelfBackendMutationError = ErrorType<unknown>;
+export type PluginTabSelfBackendMutationVariables = { data: PluginBackendRequest };
+
+/**
+ * @summary Send one request to the tab's native backend, starting it if it is not
+running (plugin token). A backend error is a 200 with `error`. 403
+`PLUGIN_BACKEND_UNDECLARED` / `PLUGIN_BACKEND_UNSUPPORTED`, 422
+`PLUGIN_BACKEND_UNAVAILABLE`, 429 `PLUGIN_BACKEND_BUSY`, 503
+`PLUGIN_BACKEND_CRASHING`, 504 `PLUGIN_BACKEND_TIMEOUT`, 502
+`PLUGIN_BACKEND_EXITED`.
+ */
+export const usePluginTabSelfBackend = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabSelfBackend>>,
+      TError,
+      PluginTabSelfBackendMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabSelfBackend>>,
+  TError,
+  PluginTabSelfBackendMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabSelfBackendMutationOptions(options), queryClient);
+};
+
+/**
  * @summary The tab's non-secret settings for its project: project values over global
 over declared defaults (plugin token).
  */
@@ -22102,6 +22427,91 @@ export function usePluginTabSelfConfiguration<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * @summary Run one of the tab's declared `commands` in its conversation's folder,
+without a shell (plugin token). A non-zero exit is a 200 result. 403
+`PLUGIN_EXEC_DENIED` for an undeclared program, 422
+`PLUGIN_EXEC_NOT_FOUND`, 429 `PLUGIN_EXEC_BUSY`, 504 `PLUGIN_EXEC_TIMEOUT`,
+502 `PLUGIN_EXEC_OUTPUT_TOO_LARGE` / `PLUGIN_EXEC_FAILED`.
+ */
+export const pluginTabSelfExec = (pluginExecRequest: PluginExecRequest, signal?: AbortSignal) => {
+  return customInstance<PluginExecResult>({
+    url: `/api/plugin-tabs/self/exec`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: pluginExecRequest,
+    signal,
+  });
+};
+
+export const getPluginTabSelfExecMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabSelfExec>>,
+    TError,
+    PluginTabSelfExecMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabSelfExec>>,
+  TError,
+  PluginTabSelfExecMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabSelfExec"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabSelfExec>>,
+    PluginTabSelfExecMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return pluginTabSelfExec(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabSelfExecMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfExec>>
+>;
+export type PluginTabSelfExecMutationBody = PluginExecRequest;
+export type PluginTabSelfExecMutationError = ErrorType<unknown>;
+export type PluginTabSelfExecMutationVariables = { data: PluginExecRequest };
+
+/**
+ * @summary Run one of the tab's declared `commands` in its conversation's folder,
+without a shell (plugin token). A non-zero exit is a 200 result. 403
+`PLUGIN_EXEC_DENIED` for an undeclared program, 422
+`PLUGIN_EXEC_NOT_FOUND`, 429 `PLUGIN_EXEC_BUSY`, 504 `PLUGIN_EXEC_TIMEOUT`,
+502 `PLUGIN_EXEC_OUTPUT_TOO_LARGE` / `PLUGIN_EXEC_FAILED`.
+ */
+export const usePluginTabSelfExec = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabSelfExec>>,
+      TError,
+      PluginTabSelfExecMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabSelfExec>>,
+  TError,
+  PluginTabSelfExecMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabSelfExecMutationOptions(options), queryClient);
+};
 
 /**
  * @summary The egress relay (§4.5, plugin token). The body is sent upstream as is;
@@ -22710,6 +23120,202 @@ export function usePluginTabGet<
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+export const pluginTabActivity = (
+  id: string,
+  params: PluginTabActivityParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<PluginTabActivity>({
+    url: `/api/plugin-tabs/${id}/activity`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getPluginTabActivityQueryKey = (id: string, params?: PluginTabActivityParams) => {
+  return [`/api/plugin-tabs/${id}/activity`, ...(params ? [params] : [])] as const;
+};
+
+export const getPluginTabActivityQueryOptions = <
+  TData = Awaited<ReturnType<typeof pluginTabActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: PluginTabActivityParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabActivity>>, TError, TData>>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPluginTabActivityQueryKey(id, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof pluginTabActivity>>> = ({ signal }) =>
+    pluginTabActivity(id, params, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof pluginTabActivity>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type PluginTabActivityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabActivity>>
+>;
+export type PluginTabActivityQueryError = ErrorType<unknown>;
+
+export function usePluginTabActivity<
+  TData = Awaited<ReturnType<typeof pluginTabActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: PluginTabActivityParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabActivity>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabActivity>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabActivity>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabActivity<
+  TData = Awaited<ReturnType<typeof pluginTabActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: PluginTabActivityParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabActivity>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabActivity>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabActivity>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabActivity<
+  TData = Awaited<ReturnType<typeof pluginTabActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: PluginTabActivityParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabActivity>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function usePluginTabActivity<
+  TData = Awaited<ReturnType<typeof pluginTabActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: PluginTabActivityParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabActivity>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPluginTabActivityQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Stop the tab's backend in one conversation and clear its crash history:
+the tab's next request starts it afresh.
+ */
+export const pluginTabStopBackend = (id: string, featureId: number, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/api/plugin-tabs/${id}/backends/${featureId}`,
+    method: "DELETE",
+    signal,
+  });
+};
+
+export const getPluginTabStopBackendMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabStopBackend>>,
+    TError,
+    PluginTabStopBackendMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabStopBackend>>,
+  TError,
+  PluginTabStopBackendMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabStopBackend"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabStopBackend>>,
+    PluginTabStopBackendMutationVariables
+  > = (props) => {
+    const { id, featureId } = props ?? {};
+
+    return pluginTabStopBackend(id, featureId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabStopBackendMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabStopBackend>>
+>;
+
+export type PluginTabStopBackendMutationError = ErrorType<unknown>;
+export type PluginTabStopBackendMutationVariables = { id: string; featureId: number };
+
+/**
+ * @summary Stop the tab's backend in one conversation and clear its crash history:
+the tab's next request starts it afresh.
+ */
+export const usePluginTabStopBackend = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabStopBackend>>,
+      TError,
+      PluginTabStopBackendMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabStopBackend>>,
+  TError,
+  PluginTabStopBackendMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabStopBackendMutationOptions(options), queryClient);
+};
+
 export const pluginTabGetConfiguration = (
   id: string,
   params?: PluginTabGetConfigurationParams,
@@ -23201,6 +23807,175 @@ export const usePluginTabCreateGrant = <TError = ErrorType<unknown>, TContext = 
   TContext
 > => {
   return useMutation(getPluginTabCreateGrantMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Take or renew a presence lease: an instance of the tab is open in the
+conversation, so its backend keeps running, idle or not. The desktop
+renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
+malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases.
+ */
+export const pluginTabRenewPresence = (
+  id: string,
+  leaseId: string,
+  pluginTabPresenceRequest: PluginTabPresenceRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/api/plugin-tabs/${id}/presence/${leaseId}`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: pluginTabPresenceRequest,
+    signal,
+  });
+};
+
+export const getPluginTabRenewPresenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+    TError,
+    PluginTabRenewPresenceMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+  TError,
+  PluginTabRenewPresenceMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabRenewPresence"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+    PluginTabRenewPresenceMutationVariables
+  > = (props) => {
+    const { id, leaseId, data } = props ?? {};
+
+    return pluginTabRenewPresence(id, leaseId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabRenewPresenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabRenewPresence>>
+>;
+export type PluginTabRenewPresenceMutationBody = PluginTabPresenceRequest;
+export type PluginTabRenewPresenceMutationError = ErrorType<unknown>;
+export type PluginTabRenewPresenceMutationVariables = {
+  id: string;
+  leaseId: string;
+  data: PluginTabPresenceRequest;
+};
+
+/**
+ * @summary Take or renew a presence lease: an instance of the tab is open in the
+conversation, so its backend keeps running, idle or not. The desktop
+renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
+malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases.
+ */
+export const usePluginTabRenewPresence = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+      TError,
+      PluginTabRenewPresenceMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+  TError,
+  PluginTabRenewPresenceMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabRenewPresenceMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Release a presence lease: that instance closed. Its backend stops 30 s
+after the conversation's last lease goes.
+ */
+export const pluginTabReleasePresence = (id: string, leaseId: string, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/api/plugin-tabs/${id}/presence/${leaseId}`,
+    method: "DELETE",
+    signal,
+  });
+};
+
+export const getPluginTabReleasePresenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+    TError,
+    PluginTabReleasePresenceMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+  TError,
+  PluginTabReleasePresenceMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabReleasePresence"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+    PluginTabReleasePresenceMutationVariables
+  > = (props) => {
+    const { id, leaseId } = props ?? {};
+
+    return pluginTabReleasePresence(id, leaseId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabReleasePresenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabReleasePresence>>
+>;
+
+export type PluginTabReleasePresenceMutationError = ErrorType<unknown>;
+export type PluginTabReleasePresenceMutationVariables = { id: string; leaseId: string };
+
+/**
+ * @summary Release a presence lease: that instance closed. Its backend stops 30 s
+after the conversation's last lease goes.
+ */
+export const usePluginTabReleasePresence = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+      TError,
+      PluginTabReleasePresenceMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+  TError,
+  PluginTabReleasePresenceMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabReleasePresenceMutationOptions(options), queryClient);
 };
 
 /**

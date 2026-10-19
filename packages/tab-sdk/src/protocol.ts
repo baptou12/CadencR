@@ -179,6 +179,39 @@ export interface NetFetchResult {
   body: ArrayBuffer;
 }
 
+/** `exec.run`: one of the programs listed in `tab.json` `commands`. */
+export interface ExecRunParams {
+  program: string;
+  args?: string[];
+  /** 1 ms – 120 s; 30 s when omitted. */
+  timeoutMs?: number;
+}
+
+/** A finished command. A non-zero exit is a result, not an error. */
+export interface ExecRunResult {
+  /** `null` when the process was ended by a signal. */
+  exitCode: number | null;
+  success: boolean;
+  /** UTF-8, at most 1 MiB per stream. */
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+}
+
+/** `backend.request`: a call to the tab's own native backend. */
+export interface BackendRequestParams {
+  method: string;
+  params?: JsonValue;
+  /** 1 ms – 120 s; 30 s when omitted. */
+  timeoutMs?: number;
+}
+
+/** Exactly one of `result` and `error`; `error` is the backend's own. */
+export interface BackendRequestResult {
+  result?: JsonValue;
+  error?: { code: string; message: string };
+}
+
 export interface ToastParams {
   title: string;
   description?: string;
@@ -207,6 +240,8 @@ export interface MethodMap {
   "state.set": { params: { value: JsonValue }; result: null };
   "config.get": { params: NoParams; result: Record<string, unknown> };
   "net.fetch": { params: NetFetchParams; result: NetFetchResult };
+  "exec.run": { params: ExecRunParams; result: ExecRunResult };
+  "backend.request": { params: BackendRequestParams; result: BackendRequestResult };
   "ui.toast": { params: ToastParams; result: null };
   "ui.openExternal": { params: { url: string }; result: null };
   "ui.setBadge": { params: { text: string | null }; result: null };
@@ -229,6 +264,8 @@ export const METHOD_NAMES = [
   "state.set",
   "config.get",
   "net.fetch",
+  "exec.run",
+  "backend.request",
   "ui.toast",
   "ui.openExternal",
   "ui.setBadge",

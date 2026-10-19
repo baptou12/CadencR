@@ -56,12 +56,12 @@ to approve, enable and develop it.
 
 ## Files
 
-| File                                     | Role                                                                    |
-| ---------------------------------------- | ----------------------------------------------------------------------- |
-| `src/useChangedFiles.ts`                 | Typed API call, `git.status` subscription, coalescing, unchanged-skip   |
-| `src/useFileDiff.ts`, `src/diff.ts`      | One file's diff (refetched only when that file changes), diff parser    |
-| `src/model.ts`, `src/kind.tsx`           | Status classification, grouping, totals, color table, swatch and counts |
-| `src/squarify.ts`                        | Squarified treemap layout (no chart library)                            |
-| `src/Treemap.tsx`, `src/FileList.tsx`    | The two views (memoized: hovering re-renders only the tooltip)          |
-| `src/Header.tsx`, `src/FileTooltip.tsx`  | Toolbar (scope select, view tabs), hover card                           |
-| `src/DiffPanel.tsx`, `src/states.tsx`    | Diff panel (capped at 2,000 lines), loading / empty / error states      |
+| File                                    | Role                                                                    |
+| --------------------------------------- | ----------------------------------------------------------------------- |
+| `src/useChangedFiles.ts`                | Typed API call, `git.status` subscription, coalescing, unchanged-skip   |
+| `src/useFileDiff.ts`, `src/diff.ts`     | One file's diff (refetched only when that file changes), diff parser    |
+| `src/model.ts`, `src/kind.tsx`          | Status classification, grouping, totals, color table, swatch and counts |
+| `src/squarify.ts`                       | Squarified treemap layout (no chart library)                            |
+| `src/Treemap.tsx`, `src/FileList.tsx`   | The two views (memoized: hovering re-renders only the tooltip)          |
+| `src/Header.tsx`, `src/FileTooltip.tsx` | Toolbar (scope select, view tabs), hover card                           |
+| `src/DiffPanel.tsx`, `src/states.tsx`   | Diff panel (capped at 2,000 lines), loading / empty / error states      |

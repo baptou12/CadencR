@@ -5,7 +5,8 @@ import type { MarketplaceListing } from "@/lib/marketplace-listings";
 import { openExternalUrl } from "@/lib/open-external";
 import { cn } from "@/lib/utils";
 import { useMarketplaceState } from "./MarketplaceContext";
-import { formatAgo, formatDay } from "./PluginBits";
+import { formatAgo } from "@/lib/date-utils";
+import { formatDay } from "./PluginBits";
 
 function Section({
   title,
