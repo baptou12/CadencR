@@ -21,6 +21,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use axum::http::StatusCode;
 use cadencr_plugin_core::tab::{resolve_backend_file, BackendTarget, TabBackend};
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
@@ -116,10 +117,17 @@ impl Slot {
     }
 }
 
+#[derive(Default)]
+struct Slots {
+    by_key: HashMap<Key, Slot>,
+    /// Set by [`BackendSupervisor::shutdown`]: nothing starts after it.
+    closed: bool,
+}
+
 /// Every tab backend of this process. Cheap to clone.
 #[derive(Clone, Default)]
 pub struct BackendSupervisor {
-    slots: Arc<Mutex<HashMap<Key, Slot>>>,
+    slots: Arc<Mutex<Slots>>,
 }
 
 impl BackendSupervisor {
@@ -141,7 +149,15 @@ impl BackendSupervisor {
         launch: &BackendLaunch,
     ) -> Result<Arc<Running>, AppError> {
         let mut slots = self.slots.lock().await;
+        if slots.closed {
+            return Err(AppError::coded(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "PLUGIN_BACKEND_UNAVAILABLE",
+                "Cadencr is quitting",
+            ));
+        }
         let slot = slots
+            .by_key
             .entry(Key {
                 plugin_id: launch.plugin_id.clone(),
                 feature_id: launch.feature_id,
@@ -163,7 +179,7 @@ impl BackendSupervisor {
     /// The backend of `plugin_id` in `feature_id`; `None` if it never started.
     pub async fn status(&self, plugin_id: &str, feature_id: i64) -> Option<PluginTabBackendStatus> {
         let slots = self.slots.lock().await;
-        let slot = slots.get(&Key {
+        let slot = slots.by_key.get(&Key {
             plugin_id: plugin_id.to_string(),
             feature_id,
         })?;
@@ -173,7 +189,7 @@ impl BackendSupervisor {
     /// Stop it, and forget recent crashes so the next request starts afresh.
     pub async fn stop(&self, plugin_id: &str, feature_id: i64) {
         let mut slots = self.slots.lock().await;
-        let Some(slot) = slots.get_mut(&Key {
+        let Some(slot) = slots.by_key.get_mut(&Key {
             plugin_id: plugin_id.to_string(),
             feature_id,
         }) else {
@@ -190,7 +206,7 @@ impl BackendSupervisor {
     /// instance renewing its grant.
     async fn reap(&self, grants: &GrantStore) {
         let mut slots = self.slots.lock().await;
-        for (key, slot) in slots.iter_mut() {
+        for (key, slot) in slots.by_key.iter_mut() {
             let Some(running) = slot.usable().cloned() else {
                 slot.orphaned_since = None;
                 continue;
@@ -209,6 +225,33 @@ impl BackendSupervisor {
                 running.request_stop("its tab was closed");
                 slot.orphaned_since = None;
             }
+        }
+    }
+
+    /// Cadencr is quitting: stop every backend and wait, bounded, for each
+    /// process tree to be gone — dropping the supervising tasks with the
+    /// runtime would only kill each backend's main process.
+    pub async fn shutdown(&self) {
+        let running: Vec<Arc<Running>> = {
+            let mut slots = self.slots.lock().await;
+            slots.closed = true;
+            slots
+                .by_key
+                .values()
+                .filter_map(Slot::live)
+                .cloned()
+                .collect()
+        };
+        for backend in &running {
+            backend.request_stop("Cadencr quit");
+        }
+        let exited =
+            futures::future::join_all(running.iter().map(|backend| backend.exited.cancelled()));
+        if tokio::time::timeout(process::STOP_DEADLINE, exited)
+            .await
+            .is_err()
+        {
+            tracing::warn!("some custom tab backends had not exited when Cadencr quit");
         }
     }
 }
@@ -251,6 +294,117 @@ mod tests {
         }
     }
 
+    fn launch_in(dir: &std::path::Path, command: &str) -> BackendLaunch {
+        BackendLaunch {
+            plugin_id: "tab".into(),
+            plugin_version: "0.1.0".into(),
+            project_id: 1,
+            feature_id: 2,
+            plugin_dir: dir.to_path_buf(),
+            worktree: dir.to_path_buf(),
+            backend: TabBackend {
+                command: command.into(),
+                args: vec![],
+                reasoning: Some("r".into()),
+            },
+            scopes: vec![Scope::FeaturesRead],
+            permissions_hash: "h".into(),
+            api_base_url: "http://127.0.0.1:1".into(),
+        }
+    }
+
+    /// A tab folder whose backend never reads stdin and leaves a child
+    /// process (its pid in `child.pid`) behind it.
+    #[cfg(unix)]
+    fn deaf_backend() -> (tempfile::TempDir, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().canonicalize().unwrap();
+        std::fs::create_dir(dir.join("bin")).unwrap();
+        let script = dir.join("bin/backend");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\n/bin/sleep 300 &\necho $! > child.pid\nexec /bin/sleep 300\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        (root, dir)
+    }
+
+    #[cfg(unix)]
+    fn is_alive(pid: &str) -> bool {
+        std::process::Command::new("kill")
+            .args(["-0", pid])
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_backend_that_stops_reading_times_requests_out() {
+        let (_root, dir) = deaf_backend();
+        let (supervisor, grants) = (BackendSupervisor::default(), GrantStore::default());
+        // Big enough to fill the stdin pipe, then the request queue behind it.
+        let params = json!("x".repeat(MAX_PARAMS_BYTES - 16));
+        let calls = async {
+            for _ in 0..process::MAX_PENDING + 4 {
+                let error = supervisor
+                    .request(
+                        &grants,
+                        launch_in(&dir, "bin/backend"),
+                        request("m", params.clone(), Some(50)),
+                    )
+                    .await
+                    .unwrap_err();
+                assert!(
+                    matches!(
+                        error,
+                        AppError::Coded {
+                            code: "PLUGIN_BACKEND_TIMEOUT",
+                            ..
+                        }
+                    ),
+                    "{error:?}"
+                );
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(20), calls)
+            .await
+            .expect("every request ends at its own deadline");
+        supervisor.shutdown().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn shutdown_stops_whole_backend_trees_and_refuses_new_ones() {
+        let (_root, dir) = deaf_backend();
+        let (supervisor, grants) = (BackendSupervisor::default(), GrantStore::default());
+        let call = || {
+            supervisor.request(
+                &grants,
+                launch_in(&dir, "bin/backend"),
+                request("m", Value::Null, Some(200)),
+            )
+        };
+        assert!(call().await.is_err(), "the backend never answers");
+        let child = std::fs::read_to_string(dir.join("child.pid")).unwrap();
+        let child = child.trim();
+        assert!(is_alive(child));
+        supervisor.shutdown().await;
+        assert!(
+            !is_alive(child),
+            "the backend's child outlived the shutdown"
+        );
+        let refused = call().await.unwrap_err();
+        assert!(matches!(
+            refused,
+            AppError::Coded {
+                code: "PLUGIN_BACKEND_UNAVAILABLE",
+                ..
+            }
+        ));
+    }
+
     #[test]
     fn requests_are_bounded() {
         assert_eq!(
@@ -282,22 +436,7 @@ mod tests {
             std::fs::set_permissions(dir.join("bin/backend"), executable).unwrap();
         }
         std::fs::write(root.path().join("outside"), "x").unwrap();
-        let launch = |command: &str| BackendLaunch {
-            plugin_id: "tab".into(),
-            plugin_version: "0.1.0".into(),
-            project_id: 1,
-            feature_id: 2,
-            plugin_dir: dir.clone(),
-            worktree: dir.clone(),
-            backend: TabBackend {
-                command: command.into(),
-                args: vec![],
-                reasoning: Some("r".into()),
-            },
-            scopes: vec![Scope::FeaturesRead],
-            permissions_hash: "h".into(),
-            api_base_url: "http://127.0.0.1:1".into(),
-        };
+        let launch = |command: &str| launch_in(&dir, command);
         assert_eq!(
             launch("bin/backend").executable().unwrap(),
             dir.join("bin/backend")

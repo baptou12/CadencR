@@ -34,6 +34,8 @@ struct State {
     exited_at: Option<String>,
     last_exit: Option<ExitRecord>,
     crashes: VecDeque<Instant>,
+    /// Tripped by a crash loop; only [`History::reset_crashes`] clears it.
+    blocked: bool,
 }
 
 #[derive(Default)]
@@ -86,11 +88,14 @@ impl History {
 
     /// Forget recent crashes: the user asked for a fresh start.
     pub fn reset_crashes(&self) {
-        self.lock().crashes.clear();
+        let mut state = self.lock();
+        state.crashes.clear();
+        state.blocked = false;
     }
 
     /// 503 `PLUGIN_BACKEND_CRASHING` after [`MAX_CRASHES`] crashes within
-    /// [`CRASH_WINDOW`]; the Activity dialog's **Restart** clears it.
+    /// [`CRASH_WINDOW`], until the Activity dialog's **Restart** clears it —
+    /// the crashes ageing out of the window does not.
     pub fn check_not_crash_looping(&self) -> Result<(), AppError> {
         let mut state = self.lock();
         while state
@@ -100,7 +105,10 @@ impl History {
         {
             state.crashes.pop_front();
         }
-        if state.crashes.len() < MAX_CRASHES {
+        if state.crashes.len() >= MAX_CRASHES {
+            state.blocked = true;
+        }
+        if !state.blocked {
             return Ok(());
         }
         let reason = state
@@ -176,6 +184,12 @@ mod tests {
                 ..
             }
         ));
+        // The crashes ageing out of the window does not lift the block.
+        let aged = Instant::now()
+            .checked_sub(CRASH_WINDOW + Duration::from_secs(1))
+            .expect("the clock is past the window");
+        history.lock().crashes.iter_mut().for_each(|at| *at = aged);
+        assert!(history.check_not_crash_looping().is_err());
         history.reset_crashes();
         assert!(history.check_not_crash_looping().is_ok());
     }

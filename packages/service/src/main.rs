@@ -340,6 +340,7 @@ async fn main() -> anyhow::Result<()> {
 
             let pty_manager = state.pty_manager.clone();
             let remote_for_shutdown = state.remote.clone();
+            let backends_for_shutdown = state.plugin_tab_backends.clone();
             let write_pool_for_shutdown = state.write_pool.clone();
             let maintenance_pool = state.write_pool.clone();
             let maintenance_events = state.storage_maintenance_events_tx.clone();
@@ -375,6 +376,7 @@ async fn main() -> anyhow::Result<()> {
                 drain_rx,
                 pty_manager,
                 remote_for_shutdown,
+                backends_for_shutdown,
                 write_pool_for_shutdown,
             )
             .await?;

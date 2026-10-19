@@ -32,6 +32,8 @@ pub const BACKEND_GRANT_TTL: Duration = Duration::from_secs(12 * 60 * 60);
 /// How long a backend has to exit after its stdin closes.
 const EXIT_GRACE: Duration = Duration::from_secs(2);
 const TERMINATE_GRACE: Duration = Duration::from_secs(3);
+/// Upper bound on one stop: both graces, plus the tree cleanup.
+pub const STOP_DEADLINE: Duration = Duration::from_secs(8);
 
 /// A live backend process.
 pub(super) struct Running {
@@ -95,13 +97,20 @@ impl Running {
             id: &id,
         };
         let line = json!({"type": "request", "id": id, "method": method, "params": params});
-        if self.stdin.send(line.to_string()).await.is_err() {
-            return Err(exited_error("the backend is not running"));
-        }
-        match tokio::time::timeout(timeout, rx).await {
-            Ok(Ok(Reply::Response(response))) => Ok(response),
-            Ok(Ok(Reply::Exited(reason))) => Err(exited_error(&reason)),
-            Ok(Err(_)) => Err(exited_error("the backend stopped")),
+        // One deadline for both: a backend that stops reading stdin fills the
+        // queue, and `send` would otherwise wait on it forever.
+        let exchange = async {
+            if self.stdin.send(line.to_string()).await.is_err() {
+                return Err(exited_error("the backend is not running"));
+            }
+            match rx.await {
+                Ok(Reply::Response(response)) => Ok(response),
+                Ok(Reply::Exited(reason)) => Err(exited_error(&reason)),
+                Err(_) => Err(exited_error("the backend stopped")),
+            }
+        };
+        match tokio::time::timeout(timeout, exchange).await {
+            Ok(result) => result,
             Err(_) => Err(AppError::coded(
                 StatusCode::GATEWAY_TIMEOUT,
                 "PLUGIN_BACKEND_TIMEOUT",
