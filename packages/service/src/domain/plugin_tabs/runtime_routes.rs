@@ -1,10 +1,11 @@
 //! Routes of the two tab levels past the page (`docs/CUSTOM_TABS.md` §4.6,
 //! §4.7): `exec` and `backend` for the tab (plugin token), and the activity
-//! the user sees (main token). Loopback only, like every custom-tab route.
+//! the user sees and the presence leases that keep a backend running (main
+//! token). Loopback only, like every custom-tab route.
 
 use axum::extract::{Json, Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -37,6 +38,10 @@ pub fn plugin_tab_runtime_router() -> Router<AppState> {
         .route(
             "/api/plugin-tabs/{id}/backends/{feature_id}",
             delete(plugin_tab_stop_backend_handler),
+        )
+        .route(
+            "/api/plugin-tabs/{id}/presence/{lease_id}",
+            put(plugin_tab_renew_presence_handler).delete(plugin_tab_release_presence_handler),
         )
 }
 
@@ -178,5 +183,49 @@ pub async fn plugin_tab_stop_backend_handler(
     Path((id, feature_id)): Path<(String, i64)>,
 ) -> StatusCode {
     state.plugin_tab_backends.stop(&id, feature_id).await;
+    StatusCode::NO_CONTENT
+}
+
+/// The conversation an open tab instance shows.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PluginTabPresenceRequest {
+    pub feature_id: i64,
+}
+
+/// Take or renew a presence lease: an instance of the tab is open in the
+/// conversation, so its backend keeps running, idle or not. The desktop
+/// renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
+/// malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases.
+#[utoipa::path(
+    put,
+    path = "/api/plugin-tabs/{id}/presence/{lease_id}",
+    params(("id" = String, Path,), ("lease_id" = String, Path,)),
+    request_body = PluginTabPresenceRequest,
+    responses((status = 204))
+)]
+pub async fn plugin_tab_renew_presence_handler(
+    State(state): State<AppState>,
+    Path((id, lease_id)): Path<(String, String)>,
+    Json(body): Json<PluginTabPresenceRequest>,
+) -> Result<StatusCode, AppError> {
+    state
+        .plugin_tab_presence
+        .renew(&lease_id, &id, body.feature_id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Release a presence lease: that instance closed. Its backend stops 30 s
+/// after the conversation's last lease goes.
+#[utoipa::path(
+    delete,
+    path = "/api/plugin-tabs/{id}/presence/{lease_id}",
+    params(("id" = String, Path,), ("lease_id" = String, Path,)),
+    responses((status = 204))
+)]
+pub async fn plugin_tab_release_presence_handler(
+    State(state): State<AppState>,
+    Path((id, lease_id)): Path<(String, String)>,
+) -> StatusCode {
+    state.plugin_tab_presence.release(&lease_id, &id);
     StatusCode::NO_CONTENT
 }

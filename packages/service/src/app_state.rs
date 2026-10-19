@@ -130,6 +130,8 @@ pub struct AppState {
     pub plugin_tab_activity: crate::domain::plugin_tabs::activity::ActivityLog,
     /// Custom tabs' native backend processes.
     pub plugin_tab_backends: crate::domain::plugin_tabs::backend::BackendSupervisor,
+    /// Open custom tab instances (presence leases); a backend stops with its tab.
+    pub plugin_tab_presence: crate::domain::plugin_tabs::presence::PresenceStore,
     /// Broadcast when `alacritty.toml` changes on disk. Drives the frontend
     /// to re-fetch `GET /api/terminal/alacritty-config` live.
     pub alacritty_config_events_tx:
@@ -316,6 +318,7 @@ impl AppState {
             plugin_tab_grants: Default::default(),
             plugin_tab_activity: Default::default(),
             plugin_tab_backends: Default::default(),
+            plugin_tab_presence: Default::default(),
             alacritty_config_events_tx,
             remote_events_tx,
             storage_maintenance_events_tx,
@@ -404,6 +407,7 @@ impl AppState {
             plugin_tab_grants: Default::default(),
             plugin_tab_activity: Default::default(),
             plugin_tab_backends: Default::default(),
+            plugin_tab_presence: Default::default(),
             alacritty_config_events_tx,
             remote_events_tx,
             storage_maintenance_events_tx,

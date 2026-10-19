@@ -3701,6 +3701,13 @@ export interface PluginTabNetwork {
   reasoning?: string | null;
 }
 
+/**
+ * The conversation an open tab instance shows.
+ */
+export interface PluginTabPresenceRequest {
+  feature_id: number;
+}
+
 export type PluginTabStatus = (typeof PluginTabStatus)[keyof typeof PluginTabStatus];
 
 export const PluginTabStatus = {
@@ -23800,6 +23807,175 @@ export const usePluginTabCreateGrant = <TError = ErrorType<unknown>, TContext = 
   TContext
 > => {
   return useMutation(getPluginTabCreateGrantMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Take or renew a presence lease: an instance of the tab is open in the
+conversation, so its backend keeps running, idle or not. The desktop
+renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
+malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases.
+ */
+export const pluginTabRenewPresence = (
+  id: string,
+  leaseId: string,
+  pluginTabPresenceRequest: PluginTabPresenceRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/api/plugin-tabs/${id}/presence/${leaseId}`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: pluginTabPresenceRequest,
+    signal,
+  });
+};
+
+export const getPluginTabRenewPresenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+    TError,
+    PluginTabRenewPresenceMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+  TError,
+  PluginTabRenewPresenceMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabRenewPresence"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+    PluginTabRenewPresenceMutationVariables
+  > = (props) => {
+    const { id, leaseId, data } = props ?? {};
+
+    return pluginTabRenewPresence(id, leaseId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabRenewPresenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabRenewPresence>>
+>;
+export type PluginTabRenewPresenceMutationBody = PluginTabPresenceRequest;
+export type PluginTabRenewPresenceMutationError = ErrorType<unknown>;
+export type PluginTabRenewPresenceMutationVariables = {
+  id: string;
+  leaseId: string;
+  data: PluginTabPresenceRequest;
+};
+
+/**
+ * @summary Take or renew a presence lease: an instance of the tab is open in the
+conversation, so its backend keeps running, idle or not. The desktop
+renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
+malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases.
+ */
+export const usePluginTabRenewPresence = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+      TError,
+      PluginTabRenewPresenceMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+  TError,
+  PluginTabRenewPresenceMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabRenewPresenceMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Release a presence lease: that instance closed. Its backend stops 30 s
+after the conversation's last lease goes.
+ */
+export const pluginTabReleasePresence = (id: string, leaseId: string, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/api/plugin-tabs/${id}/presence/${leaseId}`,
+    method: "DELETE",
+    signal,
+  });
+};
+
+export const getPluginTabReleasePresenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+    TError,
+    PluginTabReleasePresenceMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+  TError,
+  PluginTabReleasePresenceMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabReleasePresence"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+    PluginTabReleasePresenceMutationVariables
+  > = (props) => {
+    const { id, leaseId } = props ?? {};
+
+    return pluginTabReleasePresence(id, leaseId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabReleasePresenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabReleasePresence>>
+>;
+
+export type PluginTabReleasePresenceMutationError = ErrorType<unknown>;
+export type PluginTabReleasePresenceMutationVariables = { id: string; leaseId: string };
+
+/**
+ * @summary Release a presence lease: that instance closed. Its backend stops 30 s
+after the conversation's last lease goes.
+ */
+export const usePluginTabReleasePresence = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+      TError,
+      PluginTabReleasePresenceMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+  TError,
+  PluginTabReleasePresenceMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabReleasePresenceMutationOptions(options), queryClient);
 };
 
 /**

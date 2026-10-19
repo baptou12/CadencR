@@ -17,6 +17,7 @@ import { z } from "zod";
 import { BrokerError, badRequest, toWireError } from "./broker-errors";
 import { GrantHolder, type GrantDeps } from "./broker-grant";
 import { createPluginHttp, type FetchLike } from "./broker-http";
+import { PresenceLease, type PresenceDeps } from "./broker-presence";
 import { DATA_METHODS } from "./broker-methods-data";
 import { RUN_METHODS } from "./broker-methods-run";
 import { UI_METHODS } from "./broker-methods-ui";
@@ -43,6 +44,7 @@ export interface PluginTabBrokerOptions {
 /** Seams for tests; production uses the real service, socket and theme. */
 export interface PluginTabBrokerDeps {
   grant?: GrantDeps;
+  presence?: PresenceDeps;
   fetch?: FetchLike;
   socket?: SocketFactory;
   theme?: () => ThemeSnapshot;
@@ -76,12 +78,18 @@ export class PluginTabBroker {
   private readonly methods: ReadonlyMap<string, MethodHandler>;
   private readonly theme: () => ThemeSnapshot;
   private readonly cleanups: Array<() => void> = [];
+  private readonly featureId: number;
+  private readonly presenceDeps: PresenceDeps | undefined;
+  /** Held while the plugin declares a backend: it runs while the tab is open. */
+  private presence: PresenceLease | null = null;
 
   constructor(options: PluginTabBrokerOptions, deps: PluginTabBrokerDeps = {}) {
     this.context = options.context;
     this.contextKey = JSON.stringify(options.context);
     this.visible = options.visible;
     this.theme = deps.theme ?? currentPluginTabTheme;
+    this.featureId = options.featureId;
+    this.presenceDeps = deps.presence;
     const grant = new GrantHolder(options.plugin.id, options.featureId, deps.grant);
     const streams = new PluginStreamSocket({
       instanceId: options.instanceId,
@@ -117,6 +125,7 @@ export class PluginTabBroker {
       );
     }
     this.cleanups.push(subscribePluginTabTheme((theme) => this.emit("theme.changed", { theme })));
+    this.syncPresence();
   }
 
   get instanceId(): string {
@@ -141,6 +150,7 @@ export class PluginTabBroker {
   /** Name/version/origins/levels after a manifest change (hot reload). */
   setPlugin(plugin: PluginIdentity): void {
     this.runtime.plugin = plugin;
+    this.syncPresence();
   }
 
   /** Pushes `context.changed` only when the context actually differs. */
@@ -184,8 +194,22 @@ export class PluginTabBroker {
     this.detachPort();
     this.runtime.streams.dispose();
     this.runtime.grant.dispose();
+    this.presence?.dispose();
+    this.presence = null;
     releasePluginTabInstance(this.instanceId);
     setPluginTabBadge(this.instanceId, null);
+  }
+
+  /** Take the lease when the plugin declares a backend, release it when it no longer does. */
+  private syncPresence(): void {
+    const { id, name, hasBackend } = this.runtime.plugin;
+    if (this.disposed || hasBackend === (this.presence !== null)) return;
+    if (hasBackend) {
+      this.presence = new PresenceLease(id, this.featureId, name, this.presenceDeps);
+    } else {
+      this.presence?.dispose();
+      this.presence = null;
+    }
   }
 
   private detachPort(): void {

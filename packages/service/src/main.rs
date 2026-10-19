@@ -276,7 +276,7 @@ async fn main() -> anyhow::Result<()> {
             ));
             state
                 .plugin_tab_backends
-                .spawn_reaper(&state.plugin_tab_grants);
+                .spawn_reaper(&state.plugin_tab_presence);
 
             // A theme is built in a project named after it, and renaming a theme
             // is editing its file — so the same event that reloads the theme

@@ -6,9 +6,10 @@
 //! open instances of the tab. It runs with the user's rights — Cadencr does
 //! not sandbox it — but it never receives the main token: its first stdin line
 //! carries its own grant, with the tab's consented scopes, bound to the
-//! conversation. It is stopped when the last instance closes
-//! ([`reap_orphans`]), when its grant is revoked (permissions changed, tab
-//! turned off), or from the tab's Activity dialog.
+//! conversation. It is stopped once no instance holds a presence lease
+//! ([`reap_orphans`], however long the tab stays open before that), when its
+//! grant is revoked (permissions changed, tab turned off), or from the tab's
+//! Activity dialog.
 
 mod history;
 mod launch;
@@ -30,11 +31,13 @@ use self::models::{PluginBackendRequest, PluginBackendResponse, PluginTabBackend
 use self::process::Running;
 use super::exec::request_timeout;
 use super::grants::GrantStore;
+use super::presence::PresenceStore;
 use crate::error::AppError;
 
 pub const MAX_METHOD_CHARS: usize = 128;
 pub const MAX_PARAMS_BYTES: usize = 1024 * 1024;
-/// How long a backend survives with no open instance of its tab.
+/// How long a backend survives with no open instance of its tab: covers a
+/// tab moved between panes, which releases its lease and takes a new one.
 const ORPHAN_GRACE: Duration = Duration::from_secs(30);
 const REAP_INTERVAL: Duration = Duration::from_secs(10);
 
@@ -147,17 +150,16 @@ impl BackendSupervisor {
         }
     }
 
-    /// Stop the backends whose tab has had no open instance (no live grant
-    /// besides the backend's own) for [`ORPHAN_GRACE`]. The grace covers an
-    /// instance renewing its grant.
-    async fn reap(&self, grants: &GrantStore) {
+    /// Stop the backends whose tab has had no open instance (no presence
+    /// lease) in their conversation for [`ORPHAN_GRACE`].
+    async fn reap(&self, presence: &PresenceStore) {
         let mut slots = self.slots.lock().await;
         for (key, slot) in slots.by_key.iter_mut() {
             let Some(running) = slot.usable().cloned() else {
                 slot.orphaned_since = None;
                 continue;
             };
-            if grants.has_other_live(&key.plugin_id, key.feature_id, &running.grant_key) {
+            if presence.is_open(&key.plugin_id, key.feature_id) {
                 slot.orphaned_since = None;
                 continue;
             }
@@ -213,17 +215,17 @@ impl BackendSupervisor {
 
     /// Start [`reap_orphans`] for the life of the service: a tab's backend
     /// stops once no instance of the tab is open.
-    pub fn spawn_reaper(&self, grants: &GrantStore) {
-        tokio::spawn(reap_orphans(self.clone(), grants.clone()));
+    pub fn spawn_reaper(&self, presence: &PresenceStore) {
+        tokio::spawn(reap_orphans(self.clone(), presence.clone()));
     }
 }
 
 /// Runs for the life of the service: see [`BackendSupervisor::reap`].
-async fn reap_orphans(supervisor: BackendSupervisor, grants: GrantStore) {
+async fn reap_orphans(supervisor: BackendSupervisor, presence: PresenceStore) {
     let mut interval = tokio::time::interval(REAP_INTERVAL);
     loop {
         interval.tick().await;
-        supervisor.reap(&grants).await;
+        supervisor.reap(&presence).await;
     }
 }
 
@@ -351,6 +353,38 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_backend_stops_only_once_its_tab_holds_no_lease() {
+        let (_root, dir) = deaf_backend();
+        let (supervisor, grants) = (BackendSupervisor::default(), GrantStore::default());
+        let presence = PresenceStore::default();
+        presence.renew("lease", "tab", 2).unwrap();
+        let _ = supervisor
+            .request(
+                &grants,
+                launch_in(&dir, "bin/backend"),
+                request("m", Value::Null, Some(50)),
+            )
+            .await;
+        let running = || async {
+            let slots = supervisor.slots.lock().await;
+            slots.by_key.values().find_map(Slot::usable).is_some()
+        };
+        // Its grant never lapses and the tab, however idle, holds a lease.
+        supervisor.reap(&presence).await;
+        assert!(running().await);
+        presence.release("lease", "tab");
+        supervisor.reap(&presence).await;
+        assert!(running().await, "the grace has not run out yet");
+        for slot in supervisor.slots.lock().await.by_key.values_mut() {
+            slot.orphaned_since = Instant::now().checked_sub(ORPHAN_GRACE);
+        }
+        supervisor.reap(&presence).await;
+        assert!(!running().await);
+        supervisor.shutdown().await;
     }
 
     #[test]

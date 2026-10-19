@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PluginTabBroker } from "./broker";
 import type { GrantDeps } from "./broker-grant";
 import type { FetchLike } from "./broker-http";
+import type { PresenceDeps } from "./broker-presence";
 import type { SocketFactory } from "./broker-streams";
 import { FakePluginSocket } from "./plugin-socket-fixtures";
 import { usePluginTabRuntimeStore } from "./runtime-store";
@@ -71,11 +72,21 @@ function grantDeps(overrides: Partial<GrantDeps> = {}): GrantDeps {
   };
 }
 
+function presenceDeps(): PresenceDeps {
+  return {
+    renew: vi.fn(async () => undefined),
+    release: vi.fn(async () => undefined),
+    report: vi.fn(),
+    newLeaseId: () => "lease-1",
+  };
+}
+
 function createBroker(
   options: {
     instanceId?: string;
     fetch?: FetchLike;
     grant?: GrantDeps;
+    presence?: PresenceDeps;
     origins?: string[];
     hasCommands?: boolean;
     hasBackend?: boolean;
@@ -100,6 +111,7 @@ function createBroker(
     },
     {
       grant: options.grant ?? grantDeps(),
+      presence: options.presence ?? presenceDeps(),
       fetch: options.fetch ?? vi.fn(),
       theme: () => THEME,
       windowPorts: false,
@@ -609,5 +621,38 @@ describe("PluginTabBroker exec.run and backend.request", () => {
     const [url, init] = fetch.mock.calls[0] ?? [];
     expect(new URL(String(url)).pathname).toBe("/api/plugin-tabs/self/backend");
     expect(JSON.parse(String(init?.body))).toEqual({ method: "ports", params: { all: true } });
+  });
+});
+
+describe("PluginTabBroker presence", () => {
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const identity = (hasBackend: boolean) => ({
+    id: "graph",
+    name: "Graph",
+    version: "0.1.0",
+    allowedOrigins: [],
+    hasCommands: false,
+    hasBackend,
+  });
+
+  it("holds a lease only while the tab declares a backend, and drops it on close", async () => {
+    const presence = presenceDeps();
+    const broker = createBroker({ presence });
+    expect(presence.renew).not.toHaveBeenCalled();
+    broker.setPlugin(identity(true));
+    expect(presence.renew).toHaveBeenCalledWith("graph", "lease-1", 7);
+    broker.setPlugin(identity(true));
+    expect(presence.renew).toHaveBeenCalledTimes(1);
+    broker.dispose();
+    await settle();
+    expect(presence.release).toHaveBeenCalledWith("graph", "lease-1");
+  });
+
+  it("releases the lease when the backend leaves tab.json", async () => {
+    const presence = presenceDeps();
+    const broker = createBroker({ presence, hasBackend: true });
+    broker.setPlugin(identity(false));
+    await settle();
+    expect(presence.release).toHaveBeenCalledTimes(1);
   });
 });

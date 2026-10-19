@@ -18,7 +18,8 @@
 //!   typed client is generated from;
 //! - [`exec::run`] / [`backend::BackendSupervisor`] — the tabs that run
 //!   commands or a native backend (§4.6, §4.7), recorded in
-//!   [`activity::ActivityLog`].
+//!   [`activity::ActivityLog`]; [`presence::PresenceStore`] says which tabs
+//!   are open, so a backend stops with its tab.
 
 pub mod activity;
 pub mod assets;
@@ -35,6 +36,7 @@ pub mod net;
 pub mod paths;
 pub mod plugin_routes;
 pub mod policy;
+pub mod presence;
 pub mod principal;
 pub mod registry;
 pub mod routes;

@@ -22,13 +22,11 @@ use crate::domain::agents::acp::process_tree::ProcessTreeControl;
 use crate::domain::agents::providers::installed::managed::process_policy::{
     managed_command, managed_process_tree_policy,
 };
-use crate::domain::plugin_tabs::grants::{GrantRequest, GrantStore};
+use crate::domain::plugin_tabs::grants::{GrantRequest, GrantStore, Lifetime};
 use crate::error::AppError;
 
 /// Requests one backend may have in flight.
 pub const MAX_PENDING: usize = 16;
-/// A backend's API grant lives as long as its process, capped here.
-pub const BACKEND_GRANT_TTL: Duration = Duration::from_secs(12 * 60 * 60);
 /// How long a backend has to exit after its stdin closes.
 const EXIT_GRACE: Duration = Duration::from_secs(2);
 const TERMINATE_GRACE: Duration = Duration::from_secs(3);
@@ -193,7 +191,7 @@ pub(super) fn spawn(
             .feature_id(launch.feature_id)
             .scopes(launch.scopes.clone())
             .permissions_hash(launch.permissions_hash.clone())
-            .ttl(BACKEND_GRANT_TTL)
+            .lifetime(Lifetime::UntilRevoked)
             .build(),
     );
     let run = history.record_start();

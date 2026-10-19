@@ -306,6 +306,7 @@ async fn custom_tab_levels_end_to_end() {
     fixture.enable("native").await;
     commands(&fixture).await;
     backend(&fixture).await;
+    presence(&fixture).await;
 }
 
 async fn summaries(fixture: &Fixture) {
@@ -510,4 +511,32 @@ async fn backend(fixture: &Fixture) {
         off["exit_reason"],
         "its permissions changed or it was turned off"
     );
+}
+
+/// Presence leases are the desktop's (main token): a tab cannot keep a
+/// backend alive by itself.
+async fn presence(fixture: &Fixture) {
+    let lease = "/api/plugin-tabs/native/presence/0b6f3a52-6c1e-4f1e";
+    let body = || Some(json!({ "feature_id": FEATURE }));
+    let renewed = fixture.send(Method::PUT, lease, None, body()).await;
+    assert_eq!(renewed.status, StatusCode::NO_CONTENT);
+    let malformed = fixture
+        .send(
+            Method::PUT,
+            "/api/plugin-tabs/native/presence/not%20an%20id",
+            None,
+            body(),
+        )
+        .await;
+    assert_eq!(malformed.status, StatusCode::BAD_REQUEST);
+    fixture.enable("runner").await;
+    let token = fixture.token("runner").await;
+    let by_a_tab = fixture.send(Method::PUT, lease, Some(&token), body()).await;
+    assert!(
+        by_a_tab.status.is_client_error() && by_a_tab.status != StatusCode::BAD_REQUEST,
+        "{}",
+        by_a_tab.status
+    );
+    let released = fixture.send(Method::DELETE, lease, None, None).await;
+    assert_eq!(released.status, StatusCode::NO_CONTENT);
 }

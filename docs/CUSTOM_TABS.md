@@ -375,13 +375,18 @@ conversation's open instances.
   the tab's consented scopes, bound to the conversation and its project,
   checked by the same policy table (§4.3, §6.1). It is never the main token,
   is passed on stdin (never in arguments or the environment), lives as long
-  as the process (≤ 12 h) and is revoked when it stops.
+  as the process — however long that is — and is revoked when it stops.
 - **Answers.** 200 `{result}` or `{error: {code, message}}` — the backend's
   own error, passed through. Relay failures: 429 `PLUGIN_BACKEND_BUSY` (≤ 16
   in flight), 504 `PLUGIN_BACKEND_TIMEOUT` (`timeout_ms` 1–120 000, default
   30 000), 502 `PLUGIN_BACKEND_EXITED` (it exited before answering). `method`
   is 1–128 chars, `params` ≤ 1 MiB of JSON.
-- **Lifecycle.** Stopped when no instance of the tab has been open in its
+- **Lifecycle.** An open instance of a tab with a backend holds a presence
+  lease (`PUT /api/plugin-tabs/{id}/presence/{lease_id}` `{feature_id}`, main
+  token): the desktop takes it when the tab opens, renews it every minute
+  while the tab stays open — shown or hidden, idle or not — and releases it
+  (`DELETE`) when the tab closes; unrenewed, it lapses after 3 minutes. The
+  backend is stopped when no instance of the tab has held a lease in its
   conversation for 30 s, when its grant is revoked (permissions changed, tab
   turned off or removed), or from the Activity dialog; the Activity says which
   (`exit_reason`: "its tab was closed", "its permissions changed", "stopped

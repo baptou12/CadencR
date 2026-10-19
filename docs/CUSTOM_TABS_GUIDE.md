@@ -215,7 +215,8 @@ declare a backend:
 
 `command` is a file in the tab folder (`bin/backend`) or a program on your
 `PATH`. Cadencr starts it, with the tab folder as working directory, on the
-tab's first `client.backend.request(method, params)`, and stops it once the
+tab's first `client.backend.request(method, params)`, keeps it running as
+long as the tab stays open — hidden or idle included — and stops it once the
 tab is closed. It speaks JSON lines on stdio: the first line it reads is a
 `hello` with the conversation, its folder and a Cadencr API token limited to
 the tab's permissions; then `request` lines it answers with `response` lines;
