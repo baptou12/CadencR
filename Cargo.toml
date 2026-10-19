@@ -41,6 +41,9 @@ incremental = false
 
 [profile.test.package."*"]
 debug = false
+# A package override's `debug = false` re-arms the implicit strip for every
+# dependency, proc macros included; see [profile.dev].
+strip = "none"
 
 [profile.test-debug]
 inherits = "test"

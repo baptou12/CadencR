@@ -9,7 +9,7 @@
     "packages/registry-publisher/**",
     "tooling/marketplace-registry/tests/contribution.test.mjs"
   ],
-  "globalPassThroughEnv": ["RUSTC_WRAPPER"],
+  "globalPassThroughEnv": ["RUSTC_WRAPPER", "TMPDIR"],
   "tasks": {
     "transit": {
       "dependsOn": [
