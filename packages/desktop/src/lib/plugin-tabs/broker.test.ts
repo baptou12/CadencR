@@ -77,6 +77,8 @@ function createBroker(
     fetch?: FetchLike;
     grant?: GrantDeps;
     origins?: string[];
+    hasCommands?: boolean;
+    hasBackend?: boolean;
     socket?: SocketFactory;
     visible?: boolean;
   } = {},
@@ -90,6 +92,8 @@ function createBroker(
         name: "Graph",
         version: "0.1.0",
         allowedOrigins: options.origins ?? [],
+        hasCommands: options.hasCommands ?? false,
+        hasBackend: options.hasBackend ?? false,
       },
       context: CONTEXT,
       visible: options.visible ?? true,
@@ -149,6 +153,17 @@ describe("PluginTabBroker handshake", () => {
     expect(capabilities).toContain("git:read");
     // No allowed origins in the manifest: no egress.
     expect(capabilities).not.toContain("net.fetch");
+    // Neither commands nor a backend: a page-only tab.
+    expect(capabilities).not.toContain("exec.run");
+    expect(capabilities).not.toContain("backend.request");
+  });
+
+  it("offers exec.run and backend.request only when the manifest declares them", async () => {
+    const guest = connect(createBroker({ hasCommands: true, hasBackend: true }));
+    const result = ok(await guest.request("hello", { sdkVersion: "0.1.0", apiVersions: [1, 1] }));
+    const capabilities = (result as { capabilities: string[] }).capabilities;
+    expect(capabilities).toContain("exec.run");
+    expect(capabilities).toContain("backend.request");
   });
 
   it("tells a page recreated while hidden that it is hidden", async () => {
@@ -506,5 +521,93 @@ describe("PluginTabBroker guest lifecycle", () => {
     const [pending] = usePluginTabRuntimeStore.getState().externalOpens;
     pending?.resolve(false);
     expect(errorCode(await first)).toBe("CAPABILITY_DENIED");
+  });
+});
+
+describe("PluginTabBroker exec.run and backend.request", () => {
+  it("lets the service refuse an undeclared program, so the attempt is recorded", async () => {
+    const fetch = vi.fn<FetchLike>(async () =>
+      Response.json({ error: "not listed", code: "PLUGIN_EXEC_DENIED" }, { status: 403 }),
+    );
+    const guest = connect(createBroker({ fetch, hasCommands: true }));
+    expect(errorCode(await guest.request("exec.run", { program: "bash" }))).toBe(
+      "PLUGIN_EXEC_DENIED",
+    );
+    expect(new URL(String(fetch.mock.calls[0]?.[0])).pathname).toBe("/api/plugin-tabs/self/exec");
+  });
+
+  it("refuses malformed params without calling the service", async () => {
+    const fetch = vi.fn<FetchLike>();
+    const guest = connect(createBroker({ fetch, hasCommands: true, hasBackend: true }));
+    expect(errorCode(await guest.request("exec.run", { program: 42 }))).toBe("BAD_REQUEST");
+    expect(errorCode(await guest.request("exec.run", { program: "git", args: "log" }))).toBe(
+      "BAD_REQUEST",
+    );
+    expect(errorCode(await guest.request("backend.request", { method: "m", params: 1n }))).toBe(
+      "BAD_REQUEST",
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("leaves bounds to the service, which records the refusal", async () => {
+    const fetch = vi.fn<FetchLike>(async () =>
+      Response.json({ error: "Bad request: timeout_ms", code: "BAD_REQUEST" }, { status: 400 }),
+    );
+    const guest = connect(createBroker({ fetch, hasCommands: true }));
+    expect(errorCode(await guest.request("exec.run", { program: "git", timeoutMs: 0 }))).toBe(
+      "BAD_REQUEST",
+    );
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
+      program: "git",
+      args: [],
+      timeout_ms: 0,
+    });
+  });
+
+  it("relays exec.run and maps the result to the SDK's shape", async () => {
+    const fetch = vi.fn<FetchLike>(async () =>
+      Response.json({ exit_code: 0, success: true, stdout: "main\n", stderr: "", duration_ms: 4 }),
+    );
+    const guest = connect(createBroker({ fetch, hasCommands: true }));
+    const result = ok(
+      await guest.request("exec.run", { program: "git", args: ["branch", "--show-current"] }),
+    );
+    expect(result).toEqual({
+      exitCode: 0,
+      success: true,
+      stdout: "main\n",
+      stderr: "",
+      durationMs: 4,
+    });
+    const [url, init] = fetch.mock.calls[0] ?? [];
+    expect(new URL(String(url)).pathname).toBe("/api/plugin-tabs/self/exec");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      program: "git",
+      args: ["branch", "--show-current"],
+    });
+  });
+
+  it("passes the service's refusal through with its code", async () => {
+    const fetch = vi.fn<FetchLike>(async () =>
+      Response.json({ error: "not found", code: "PLUGIN_EXEC_NOT_FOUND" }, { status: 422 }),
+    );
+    const guest = connect(createBroker({ fetch, hasCommands: true }));
+    expect(errorCode(await guest.request("exec.run", { program: "kubectl" }))).toBe(
+      "PLUGIN_EXEC_NOT_FOUND",
+    );
+  });
+
+  it("relays backend.request and returns the backend's answer as is", async () => {
+    const fetch = vi.fn<FetchLike>(async () =>
+      Response.json({ error: { code: "NOPE", message: "m" } }),
+    );
+    const guest = connect(createBroker({ fetch, hasBackend: true }));
+    const result = ok(
+      await guest.request("backend.request", { method: "ports", params: { all: true } }),
+    );
+    expect(result).toEqual({ error: { code: "NOPE", message: "m" } });
+    const [url, init] = fetch.mock.calls[0] ?? [];
+    expect(new URL(String(url)).pathname).toBe("/api/plugin-tabs/self/backend");
+    expect(JSON.parse(String(init?.body))).toEqual({ method: "ports", params: { all: true } });
   });
 });

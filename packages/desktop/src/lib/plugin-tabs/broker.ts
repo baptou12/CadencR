@@ -18,6 +18,7 @@ import { BrokerError, badRequest, toWireError } from "./broker-errors";
 import { GrantHolder, type GrantDeps } from "./broker-grant";
 import { createPluginHttp, type FetchLike } from "./broker-http";
 import { DATA_METHODS } from "./broker-methods-data";
+import { RUN_METHODS } from "./broker-methods-run";
 import { UI_METHODS } from "./broker-methods-ui";
 import {
   parseParams,
@@ -103,7 +104,12 @@ export class PluginTabBroker {
     // A Map, not an object: a guest naming `constructor` or `toString` must
     // not reach an Object.prototype function.
     this.methods = new Map(
-      Object.entries({ ...DATA_METHODS, ...UI_METHODS, ...this.streamMethods() }),
+      Object.entries({
+        ...DATA_METHODS,
+        ...RUN_METHODS,
+        ...UI_METHODS,
+        ...this.streamMethods(),
+      }),
     );
     if (deps.windowPorts !== false) {
       this.cleanups.push(
@@ -132,7 +138,7 @@ export class PluginTabBroker {
     };
   }
 
-  /** Name/version/origins after a manifest change (hot reload). */
+  /** Name/version/origins/levels after a manifest change (hot reload). */
   setPlugin(plugin: PluginIdentity): void {
     this.runtime.plugin = plugin;
   }
@@ -240,13 +246,16 @@ export class PluginTabBroker {
     return { result };
   }
 
-  /** Every method this host serves, plus the scopes the grant carries. */
+  /** Every method this tab may use, plus the scopes the grant carries. */
   private async capabilities(): Promise<string[]> {
-    const methods = METHOD_NAMES.filter(
-      (method) =>
-        method !== "hello" &&
-        (method !== "net.fetch" || this.runtime.plugin.allowedOrigins.length > 0),
-    );
+    const plugin = this.runtime.plugin;
+    const declared: Partial<Record<string, boolean>> = {
+      hello: false,
+      "net.fetch": plugin.allowedOrigins.length > 0,
+      "exec.run": plugin.hasCommands,
+      "backend.request": plugin.hasBackend,
+    };
+    const methods = METHOD_NAMES.filter((method) => declared[method] ?? true);
     try {
       return [...methods, ...(await this.runtime.grant.get()).scopes];
     } catch {

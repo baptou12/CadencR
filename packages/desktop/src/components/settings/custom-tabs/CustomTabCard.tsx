@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { ChevronRight, ShieldAlert } from "lucide-react";
 import type { PluginTabSummary, Project } from "@/api/generated";
+import { PluginTabAccessBadge } from "@/components/plugin-tabs/PluginTabAccess";
 import { PluginTabIcon } from "@/components/plugin-tabs/PluginTabIcon";
 import { cn } from "@/lib/utils";
 import {
@@ -62,6 +63,7 @@ export function CustomTabCard(props: CustomTabCardProps): React.JSX.Element {
               </span>
             ) : null}
             <CustomTabStatusBadge status={customTabStatus(tab)} />
+            <PluginTabAccessBadge level={tab.access_level} />
           </span>
           <span className="mt-0.5 block truncate text-xs text-muted-foreground">
             {tab.description || tab.id}

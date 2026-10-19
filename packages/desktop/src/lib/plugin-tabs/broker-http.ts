@@ -1,7 +1,45 @@
 import { resolveApiBaseUrlSync } from "@/api/client";
 
-import { BrokerError, errorFromResponse, toBrokerError } from "./broker-errors";
+import { BrokerError, badRequest, errorFromResponse, toBrokerError } from "./broker-errors";
 import { PLUGIN_TOKEN_HEADER, type GrantHolder } from "./broker-grant";
+
+/** The routes a tab reaches as itself (plugin token). */
+export const SELF = "/api/plugin-tabs/self";
+/**
+ * Largest body a guest may hand to `api.request` / `net.fetch`: the service's
+ * default request-body limit. Refused here, before the renderer copies it.
+ */
+export const MAX_RELAY_BODY_BYTES = 2 * 1024 * 1024;
+/**
+ * `value` as JSON text, refused unless it is JSON and fits `maxBytes` (UTF-8).
+ * One `JSON.stringify` is both the JSON check and the size source; the string
+ * is only encoded when its length cannot settle the size on its own.
+ */
+export function jsonText(value: unknown, maxBytes: number, method: string): string {
+  let text: string | undefined;
+  try {
+    text = JSON.stringify(value);
+  } catch (error) {
+    throw badRequest(`${method}: the value is not JSON (${String(error)})`);
+  }
+  if (text === undefined) throw badRequest(`${method}: the value is not JSON`);
+  const tooLarge =
+    text.length > maxBytes ||
+    (text.length * 3 > maxBytes && new TextEncoder().encode(text).byteLength > maxBytes);
+  if (tooLarge) throw badRequest(`${method}: the value is over ${maxBytes / 1024} KiB of JSON`);
+  return text;
+}
+
+/** Service JSON (config, storage values, relay envelopes) — never `api.request` bodies. */
+export async function readJson(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (text === "") return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new BrokerError("HOST_ERROR", "The service answered with invalid JSON");
+  }
+}
 
 export interface PluginHttpRequest {
   method: string;

@@ -1,5 +1,6 @@
 import { useState, type ReactElement, type ReactNode } from "react";
 import {
+  ActivityIcon,
   BugIcon,
   CheckIcon,
   FolderGit2Icon,
@@ -28,6 +29,7 @@ import { SuppressBrowserViewWhileOpen } from "@/lib/browser-suppression";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { pluginTabInstanceId } from "@/lib/plugin-tabs/instance-id";
 import { refreshPluginTabsOrToast, reloadLivePluginTab } from "@/lib/plugin-tabs/live-instances";
+import { setPluginTabActivityOpen } from "@/lib/plugin-tabs/runtime-store";
 import { pluginIdOfTab, pluginTabKind } from "@/stores/feature-layout-schema";
 import {
   getFocusedTab,
@@ -35,7 +37,9 @@ import {
   useFeatureLayoutStore,
 } from "@/stores/feature-layout-store";
 
+import { PluginTabAccessMark } from "./PluginTabAccess";
 import { PluginTabIcon } from "./PluginTabIcon";
+import { ACCESS_LEVEL_COPY } from "./plugin-tab-access";
 import { usePlacedPluginTabsKey, useProjectPluginTabs } from "./usePluginTabDefs";
 import { usePluginTabNavigation, type PluginTabNavigation } from "./usePluginTabNavigation";
 
@@ -165,7 +169,10 @@ function AvailableTabs({
       >
         <PluginTabIcon svg={tab.icon_svg} className="mt-0.5" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate">{tab.label}</span>
+          <span className="flex items-center gap-1.5">
+            <span className="truncate">{tab.label}</span>
+            <PluginTabAccessMark level={tab.access_level} />
+          </span>
           {tab.description ? (
             <span className="line-clamp-2 text-xs text-muted-foreground">{tab.description}</span>
           ) : null}
@@ -199,6 +206,15 @@ function FocusedTabActions({
         <RotateCwIcon />
         Reload
       </DropdownMenuItem>
+      {tab.access_level !== "ui" && (
+        <DropdownMenuItem
+          onSelect={() => setPluginTabActivityOpen(instanceId)}
+          title={ACCESS_LEVEL_COPY[tab.access_level].summary}
+        >
+          <ActivityIcon />
+          Activity…
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem
         onSelect={() => {
           void desktopBridge.pluginTabs

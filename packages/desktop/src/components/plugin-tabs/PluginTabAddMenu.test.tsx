@@ -7,6 +7,7 @@ import {
 } from "@/lib/desktop-bridge";
 import { selectFeatureLayout, useFeatureLayoutStore } from "@/stores/feature-layout-store";
 import { getPluginTabs } from "@/stores/feature-layout-tree";
+import { usePluginTabRuntimeStore } from "@/lib/plugin-tabs/runtime-store";
 import { render, screen } from "@/test-utils";
 
 import { createPluginTabsBridgeMock, pluginTabSummary } from "./plugin-tab-fixtures";
@@ -105,6 +106,27 @@ describe("PluginTabAddMenu", () => {
     expect(screen.getByRole("menuitem", { name: "Open source project" })).toBeInTheDocument();
     await user.click(screen.getByRole("menuitem", { name: "Open DevTools" }));
     expect(bridge.openDevTools).toHaveBeenCalledWith("7:plugin:graph");
+  });
+
+  it("marks tabs that run commands or native code and opens their Activity", async () => {
+    mocks.tabs = [
+      pluginTabSummary(),
+      pluginTabSummary({ id: "runner", label: "Reviewers", access_level: "commands" }),
+      pluginTabSummary({ id: "native", label: "Ports", access_level: "backend" }),
+    ];
+    useFeatureLayoutStore.getState().addTab(7, "plugin:native");
+    const { user } = await openMenu();
+    expect(screen.getByRole("img", { name: "Runs commands" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Native code" })).toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: "Activity…" }));
+    expect(usePluginTabRuntimeStore.getState().activityOpen).toBe("7:plugin:native");
+  });
+
+  it("offers no Activity for a read-only tab", async () => {
+    useFeatureLayoutStore.getState().addTab(7, "plugin:graph");
+    await openMenu();
+    expect(screen.queryByRole("menuitem", { name: "Activity…" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Runs commands" })).not.toBeInTheDocument();
   });
 
   it("says so when no tab is on for the project", async () => {

@@ -2,6 +2,7 @@ import { createApi, type CadencrApi } from "./api.js";
 import { Connection } from "./connection.js";
 import { Emitter } from "./emitter.js";
 import { CadencrError } from "./errors.js";
+import { createBackend, createExec, type CadencrBackend, type CadencrExec } from "./execution.js";
 import { releaseDefaultClient } from "./fetcher.js";
 import {
   createConfig,
@@ -49,6 +50,10 @@ export class CadencrClient {
   readonly state: CadencrState;
   readonly config: CadencrConfig;
   readonly net: CadencrNet;
+  /** The programs listed in `tab.json` `commands`; see `capabilities`. */
+  readonly exec: CadencrExec;
+  /** The tab's native `backend`, when it declares one. */
+  readonly backend: CadencrBackend;
   readonly ui: CadencrUi;
   readonly capabilities: CadencrCapabilities;
 
@@ -86,6 +91,8 @@ export class CadencrClient {
     this.state = createState(send);
     this.config = createConfig(send);
     this.net = createNet(send);
+    this.exec = createExec(send);
+    this.backend = createBackend(send);
     this.ui = createUi(send);
     const capabilities = (): readonly string[] => this.hello?.capabilities ?? [];
     this.capabilities = {

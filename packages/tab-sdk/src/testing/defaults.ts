@@ -37,7 +37,8 @@ type Handlers = {
 };
 
 /** Sensible answers for every method: in-memory storage/state, routed
- *  `api.request`, recorded subscriptions, denied `net.fetch`. */
+ *  `api.request`, recorded subscriptions, denied `net.fetch`, `exec.run` and
+ *  `backend.request` (a test installs a handler with `host.handle`). */
 export function createDefaultHandlers(state: HostState): Handlers {
   return {
     hello: ({ apiVersions }) => {
@@ -94,6 +95,15 @@ export function createDefaultHandlers(state: HostState): Handlers {
     "config.get": () => state.config,
     "net.fetch": ({ url }) => {
       throw new CadencrError("PLUGIN_NETWORK_DENIED", `No test handler for net.fetch ${url}`);
+    },
+    "exec.run": ({ program }) => {
+      throw new CadencrError("PLUGIN_EXEC_DENIED", `No test handler for exec.run ${program}`);
+    },
+    "backend.request": ({ method }) => {
+      throw new CadencrError(
+        "PLUGIN_BACKEND_UNDECLARED",
+        `No test handler for backend.request ${method}`,
+      );
     },
     "ui.toast": () => null,
     "ui.openExternal": () => null,

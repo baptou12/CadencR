@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { BrokerError, badRequest, errorFromResponse } from "./broker-errors";
+import { BrokerError, badRequest, errorFromResponse, unexpectedShape } from "./broker-errors";
+import { MAX_RELAY_BODY_BYTES, SELF, jsonText, readJson } from "./broker-http";
 import {
   NULL_OUTCOME,
   parseParams,
@@ -12,17 +13,11 @@ import { readInstanceState, writeInstanceState } from "./runtime-store";
 
 /** `state.set` cap (§7): 1 MiB of serialized JSON per instance. */
 const MAX_INSTANCE_STATE_BYTES = 1024 * 1024;
-/**
- * Largest body a guest may hand to `api.request` / `net.fetch`: the service's
- * default request-body limit. Refused here, before the renderer copies it.
- */
-const MAX_RELAY_BODY_BYTES = 2 * 1024 * 1024;
 /** Cap of the `x-cadencr-net-headers` request header (§4.5). */
 const MAX_NET_HEADERS_CHARS = 16 * 1024;
 const NET_STATUS_HEADER = "x-cadencr-net-status";
 const NET_HEADERS_HEADER = "x-cadencr-net-headers";
 const STORAGE_NOT_FOUND = "PLUGIN_TAB_STORAGE_NOT_FOUND";
-const SELF = "/api/plugin-tabs/self";
 
 /**
  * A service path the WHATWG parser leaves exactly as written: under `/api/`,
@@ -57,43 +52,12 @@ const netFetchSchema = z.object({
 
 const netHeadersSchema = z.record(z.string(), z.string());
 
-/**
- * `value` as JSON text, refused unless it is JSON and fits `maxBytes` (UTF-8).
- * One `JSON.stringify` is both the JSON check and the size source; the string
- * is only encoded when its length cannot settle the size on its own.
- */
-function jsonText(value: unknown, maxBytes: number, method: string): string {
-  let text: string | undefined;
-  try {
-    text = JSON.stringify(value);
-  } catch (error) {
-    throw badRequest(`${method}: the value is not JSON (${String(error)})`);
-  }
-  if (text === undefined) throw badRequest(`${method}: the value is not JSON`);
-  const tooLarge =
-    text.length > maxBytes ||
-    (text.length * 3 > maxBytes && new TextEncoder().encode(text).byteLength > maxBytes);
-  if (tooLarge) throw badRequest(`${method}: the value is over ${maxBytes / 1024} KiB of JSON`);
-  return text;
-}
-
 function headersOf(response: Response): Record<string, string> {
   const headers: Record<string, string> = {};
   response.headers.forEach((value, name) => {
     headers[name] = value;
   });
   return headers;
-}
-
-/** Service JSON (config, storage values, relay envelopes) — never `api.request` bodies. */
-async function readJson(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (text === "") return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new BrokerError("HOST_ERROR", "The service answered with invalid JSON");
-  }
 }
 
 async function apiRequest(params: unknown, runtime: BrokerRuntime): Promise<MethodOutcome> {
@@ -159,10 +123,7 @@ async function storageList(_params: unknown, runtime: BrokerRuntime): Promise<Me
   const response = await runtime.http.sendOk({ method: "GET", path: `${SELF}/storage` });
   const keys = z.array(z.string()).safeParse(await readJson(response));
   if (!keys.success) {
-    throw new BrokerError(
-      "HOST_ERROR",
-      "The service answered storage.list with an unexpected shape",
-    );
+    throw unexpectedShape("storage.list");
   }
   return { result: keys.data };
 }
@@ -171,7 +132,7 @@ async function configGet(_params: unknown, runtime: BrokerRuntime): Promise<Meth
   const response = await runtime.http.sendOk({ method: "GET", path: `${SELF}/configuration` });
   const body = await readJson(response);
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    throw new BrokerError("HOST_ERROR", "The service answered config.get with an unexpected shape");
+    throw unexpectedShape("config.get");
   }
   return { result: body };
 }
@@ -187,7 +148,7 @@ function relayedHead(response: Response): { status: number; headers: Record<stri
   }
   const parsed = netHeadersSchema.safeParse(headers);
   if (!Number.isInteger(status) || status < 100 || status > 599 || !parsed.success) {
-    throw new BrokerError("HOST_ERROR", "The service answered net.fetch with an unexpected shape");
+    throw unexpectedShape("net.fetch");
   }
   return { status, headers: parsed.data };
 }
