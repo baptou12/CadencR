@@ -11,8 +11,8 @@ use url::Url;
 use crate::fs::{private_create, remove_owned, Identity};
 use crate::{DownloadRequest, Downloaded, Downloader, PublisherError};
 
-mod discovery;
-pub(crate) use discovery::DiscoveryDownloader;
+pub(crate) mod discovery;
+pub(crate) use discovery::{DiscoveryDownloader, DiscoveryObservation, DiscoveryReader};
 
 const MAX_REDIRECTS: usize = 3;
 const TIMEOUT: Duration = Duration::from_secs(120);
@@ -103,10 +103,20 @@ fn fetch_final(
 }
 
 fn stream_to_file(
-    mut response: Response,
+    response: Response,
     request: &DownloadRequest<'_>,
     expected: &str,
 ) -> Result<Downloaded, PublisherError> {
+    stream_to_file_with(response, request, |value, declared| {
+        verify(value, declared, expected)
+    })
+}
+
+fn stream_to_file_with<T>(
+    mut response: Response,
+    request: &DownloadRequest<'_>,
+    validate: impl FnOnce(Downloaded, Option<u64>) -> Result<T, PublisherError>,
+) -> Result<T, PublisherError> {
     let declared = validate_response(response.status(), response.headers(), request.max_bytes)?;
     let mut file = private_create(&request.output)
         .map_err(|error| PublisherError::io("create archive output", error))?;
@@ -116,7 +126,7 @@ fn stream_to_file(
             .map_err(|error| PublisherError::io("inspect archive output", error))?,
     );
     let result = stream(&mut response, &mut file, request.max_bytes)
-        .and_then(|downloaded| verify(downloaded, declared, expected))
+        .and_then(|downloaded| validate(downloaded, declared))
         .and_then(|downloaded| {
             file.sync_all()
                 .map_err(|error| PublisherError::io("sync archive", error))?;

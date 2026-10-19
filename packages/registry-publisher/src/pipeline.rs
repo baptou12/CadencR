@@ -108,7 +108,7 @@ fn run(
     prepared: &PreparedPipeline,
     client: &impl PipelineClient,
     downloader: &impl Downloader,
-    discovery: &impl Downloader,
+    discovery: &impl crate::download::DiscoveryReader,
 ) -> Result<PipelineReceipt, PublisherError> {
     request::revalidate(prepared)?;
     state::ensure_directory(&prepared.directory)?;
@@ -130,7 +130,7 @@ fn run_locked(
     prepared: &PreparedPipeline,
     client: &impl PipelineClient,
     downloader: &impl Downloader,
-    discovery: &impl Downloader,
+    discovery: &impl crate::download::DiscoveryReader,
 ) -> Result<PipelineReceipt, PublisherError> {
     state::materialize(prepared)?;
     let published = staging::inspect_all(prepared, client)?;
