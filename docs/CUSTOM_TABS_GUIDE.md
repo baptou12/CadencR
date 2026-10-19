@@ -14,14 +14,31 @@ are in [`examples/custom-tabs`](../examples/custom-tabs/README.md).
 Custom tabs are desktop only for now. The phone and remote views show a
 placeholder instead.
 
+## Three levels
+
+Every custom tab is one of three levels. Cadencr shows the level wherever the
+tab appears, so you always know what you are allowing.
+
+| Level             | What the tab can do                                                                                                                                       | Where you see it                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **Read-only**     | Show a page that reads Cadencr data through its permissions, and reach the websites it declares. Nothing else.                                            | A "Read-only" badge in Settings.                                                      |
+| **Runs commands** | Also ask Cadencr to run the programs it lists (for example `git`) in the conversation's folder, without a shell.                                          | A "Runs commands" badge, a terminal glyph on the tab, every command in **Activity…**. |
+| **Native code**   | Also run its own program on your computer, **with your user rights**. Cadencr does not sandbox it: it can read and change your files and use the network. | A "Native code" badge, a chip glyph on the tab, its state and log in **Activity…**.   |
+
+Whatever the level, the tab's access to Cadencr itself stays limited to its
+permissions: even a native backend gets its own scoped token, never yours.
+Only allow a "Runs commands" tab you trust, and a "Native code" tab only if
+you would install it as an app. Marketplace tabs cannot ship native code.
+
 ## Using a custom tab
 
 1. **Turn it on.** Open **Settings → Custom tabs**. Each tab lists what it can
    read (its permissions) and which websites it may contact. Enable it for every
    project with **Enable in all projects**, or per project with
    **Inherit / On / Off**. The first time, Cadencr asks you to accept its
-   permissions. If a later version asks for more, the tab pauses until you
-   accept again.
+   permissions, the programs it runs and, for native code, tick
+   **I trust this code to run on my computer with my rights**. If a later
+   version asks for more, the tab pauses until you accept again.
 2. **Add it to a conversation.** Click **+** at the end of the tab strip and
    pick the tab. It behaves like the built-in tabs: drag it into a split, move
    it between panes, close it with **×**. Closing removes it from that
@@ -32,7 +49,9 @@ placeholder instead.
    [Network access and secrets](#network-access-and-secrets)).
 
 The **+** menu also shows actions for the focused custom tab: **Reload**,
-**Open DevTools** and **Open source project**.
+**Open DevTools**, **Open source project** and, for a tab that runs commands
+or native code, **Activity…**: every command it ran (or was refused) in this
+conversation, and its backend's state and log, with **Stop**.
 
 When a tab can't run, it says why in place: not built yet, invalid
 `tab.json`, turned off for this project, crashed (with **Reload**), or not
@@ -161,6 +180,49 @@ Use its components (`Button`, `Card`, `Badge`, `Tabs`, `Tooltip`, `Select`,
 `bg-chart-2`…). They are built from Cadencr's own design system and follow the
 user's theme, light or dark, live. Never hardcode colors.
 
+### Running commands
+
+To run a program, list it with a reason:
+
+```json
+"commands": [
+  { "program": "git", "reasoning": "Reads who changed the files of this branch." }
+]
+```
+
+```ts
+const { stdout, success } = await client.exec.run("git", ["log", "--format=%an", "--", path]);
+```
+
+Cadencr runs it without a shell, in the conversation's folder, finds it on
+your `PATH`, stops it after 30 s (`timeoutMs`, up to 120 s) or 1 MiB of
+output, and records it in **Activity**. Shells, interpreters and package
+runners (`bash`, `node`, `python`, `npx`…) cannot be listed: they would run
+anything. A tab that needs one ships a backend instead.
+
+### Shipping a native backend
+
+When a tab needs a long-running process, its own dependencies or many tools,
+declare a backend:
+
+```json
+"backend": {
+  "command": "node",
+  "args": ["backend/server.mjs"],
+  "reasoning": "Lists the processes listening on local ports."
+}
+```
+
+`command` is a file in the tab folder (`bin/backend`) or a program on your
+`PATH`. Cadencr starts it, with the tab folder as working directory, on the
+tab's first `client.backend.request(method, params)`, and stops it once the
+tab is closed. It speaks JSON lines on stdio: the first line it reads is a
+`hello` with the conversation, its folder and a Cadencr API token limited to
+the tab's permissions; then `request` lines it answers with `response` lines;
+stderr is its log. [CUSTOM_TABS.md §4.7](./CUSTOM_TABS.md#47-native-backend-backendrequest)
+has the protocol; [`examples/custom-tabs/port-monitor`](../examples/custom-tabs/port-monitor)
+is a working one.
+
 ### Network access and secrets
 
 A tab has no network of its own. To call another service, declare its origin
@@ -182,6 +244,9 @@ response. The tab code never sees the token. Requests to other origins, and to
 private network addresses, are refused.
 
 ## Limits in this version
+
+- Native backends are not sandboxed. They run with your user rights; only their
+  access to Cadencr is limited.
 
 - Desktop only. The phone and remote views show a placeholder.
 - At most six custom tabs stay alive at once; a hidden one beyond that is

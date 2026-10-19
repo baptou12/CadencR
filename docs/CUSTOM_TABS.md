@@ -11,6 +11,13 @@ This document is the contract shared by the service, the Electron host, the
 renderer broker, `@cadencr/tab-sdk` and `@cadencr/tab-kit`. Change it first,
 then the code.
 
+A tab is one of three **levels** (§6.2), from least to most reach: a page
+that only reads Cadencr data (**read-only**), a page that also asks Cadencr to
+run the programs it lists (**runs commands**, §4.6), and a page with its own
+native process that runs with the user's rights (**native code**, §4.7).
+Cadencr does not sandbox native code (decision 2026-10-18); what it always
+enforces is the tab's access to Cadencr itself.
+
 ## 1. Model
 
 | Term             | Meaning                                                                                                                                                             |
@@ -78,9 +85,17 @@ sibling of `plugins/themes`. Cadencr rescans it on startup and watches it
       "options": ["directory", "extension"],
       "default": "directory"
     }
-  ]
+  ],
+  "commands": [{ "program": "git", "reasoning": "Reads who changed these files." }],
+  "backend": {
+    "command": "node",
+    "args": ["backend/server.mjs"],
+    "reasoning": "Lists the processes listening on local ports."
+  }
 }
 ```
+
+`commands` and `backend` are optional; most tabs declare neither.
 
 Rules (validated by `cadencr-plugin-core::tab`, the service and
 `cadencr plugin validate --kind tab`):
@@ -101,11 +116,32 @@ Rules (validated by `cadencr-plugin-core::tab`, the service and
   ∈ `string | number | boolean | select | secret`; `scope` ∈ `global | project`;
   `select` requires non-empty `options`, none blank or repeated; `secret`
   cannot have a `default`.
+- `commands`: ≤ 16 entries; `program` is a bare file name
+  (`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`, no path, no arguments), unique
+  case-insensitively, resolved on the user's `PATH` at run time; `reasoning`
+  1–280 chars, required. General-purpose launchers are refused
+  (`COMMAND_NOT_ALLOWED`): shells (`sh`, `bash`, `zsh`, `pwsh`, `cmd`…),
+  interpreters and runtimes (`node`, `python`, `ruby`, `perl`, `deno`, `bun`,
+  `java`, `dotnet`…), package runners (`npx`, `npm`, `pnpm`, `yarn`, `uvx`,
+  `pipx`…) and launchers/privilege tools (`env`, `sudo`, `xargs`, `nohup`,
+  `open`, `start`…), with or without a Windows suffix
+  (`cadencr_plugin_core::tab::DENIED_PROGRAMS`). Listing a program names
+  _which_ program runs, not what it does with its arguments.
+- `backend.command`: a clean relative path inside the tab folder (contains a
+  `/`, e.g. `bin/backend`) or a bare program name looked up on `PATH` (`node`,
+  with the script in `args`). `args` ≤ 32, each ≤ 4096 chars without NUL.
+  `reasoning` 1–280 chars, required. A folder command that is missing or not
+  executable is a warning (`BACKEND_UNAVAILABLE`), like an unbuilt entry.
 - Unknown top-level keys are errors (the format is closed until it is published).
 
 **Permissions hash**: SHA-256 (hex) over the canonical JSON
-`{"permissions":[sorted],"allowed_origins":[sorted]}`. Consent is recorded
-against this hash; a widened manifest requires a new consent.
+`{"permissions":[sorted],"allowed_origins":[sorted]}`, extended with
+`"commands":[sorted programs]` when `commands` is non-empty and
+`"backend":{"command":…,"args":[…]}` when a backend is declared (each key
+omitted otherwise, so a tab declaring neither keeps its hash). Consent is
+recorded against this hash; a widened manifest — a new scope, origin,
+program, or backend launch line — requires a new consent. Reasons, labels and
+versions do not.
 
 ## 4. Service
 
@@ -134,23 +170,26 @@ manifest.
 
 ### 4.2 Host API (main token, `x-cadencr-token`)
 
-| Method & path                                             | Purpose                                                                                                                            |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/plugin-tabs?project_id=`                        | List local tabs with manifest, validation, enablement.                                                                             |
-| `GET /api/plugin-tabs/{id}?project_id=`                   | One tab.                                                                                                                           |
-| `PUT /api/plugin-tabs/{id}/enablement`                    | `{project_id: number\|null, enabled: boolean\|null}`; `null` clears a project override. Enabling needs consent.                    |
-| `PUT /api/plugin-tabs/{id}/consent`                       | `{permissions_hash}`; must equal the current hash (409 `PLUGIN_TAB_CONSENT_STALE`).                                                |
-| `GET/PUT /api/plugin-tabs/{id}/configuration?project_id=` | Settings form values; secrets come back as `{ "is_set": true }`.                                                                   |
-| `GET /api/plugin-tabs/{id}/assets/{*path}`                | Static bytes from the plugin folder with CSP headers (§5.2). Empty path = `entry`.                                                 |
-| `POST /api/plugin-tabs/{id}/grants`                       | `{feature_id}` → `{token, expires_at, scopes, api_version}`. 403 `PLUGIN_TAB_DISABLED` if not effective for the feature's project. |
-| `POST /api/plugin-tabs/authoring`                         | `{name, description?}` → `{plugin_id, project_id, feature_id, dir}`. Creates the authoring project (§8).                           |
+| Method & path                                             | Purpose                                                                                                                              |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/plugin-tabs?project_id=`                        | List local tabs with manifest, validation, enablement.                                                                               |
+| `GET /api/plugin-tabs/{id}?project_id=`                   | One tab.                                                                                                                             |
+| `PUT /api/plugin-tabs/{id}/enablement`                    | `{project_id: number\|null, enabled: boolean\|null}`; `null` clears a project override. Enabling needs consent.                      |
+| `PUT /api/plugin-tabs/{id}/consent`                       | `{permissions_hash}`; must equal the current hash (409 `PLUGIN_TAB_CONSENT_STALE`).                                                  |
+| `GET/PUT /api/plugin-tabs/{id}/configuration?project_id=` | Settings form values; secrets come back as `{ "is_set": true }`.                                                                     |
+| `GET /api/plugin-tabs/{id}/assets/{*path}`                | Static bytes from the plugin folder with CSP headers (§5.2). Empty path = `entry`.                                                   |
+| `POST /api/plugin-tabs/{id}/grants`                       | `{feature_id}` → `{token, expires_at, scopes, api_version}`. 403 `PLUGIN_TAB_DISABLED` if not effective for the feature's project.   |
+| `POST /api/plugin-tabs/authoring`                         | `{name, description?}` → `{plugin_id, project_id, feature_id, dir}`. Creates the authoring project (§8).                             |
+| `GET /api/plugin-tabs/{id}/activity?feature_id=`          | What the tab ran in that conversation since launch: `{commands: PluginTabExecRecord[] (newest first, ≤ 50), backend: status\|null}`. |
+| `DELETE /api/plugin-tabs/{id}/backends/{feature_id}`      | Stop the tab's backend there and clear its crash history; the tab's next request starts it again.                                    |
 
 Summary shape (`PluginTabSummary`): `id, name, version, description, label,
 icon_svg (string|null), api_version, entry, entry_present, permissions,
 network {allowed_origins, reasoning}, configuration, permissions_hash, status
 ("valid"|"invalid"), errors[], warnings[], dir, authoring_project_id|null,
 enablement {global: bool|null, project: bool|null, effective: bool,
-consent_required: bool}`.
+consent_required: bool}, commands[], backend|null, access_level
+("ui"|"commands"|"backend"|null)`.
 
 ### 4.3 Plugin API (grant token, `x-cadencr-plugin-token`)
 
@@ -185,6 +224,8 @@ Plugin-only routes (`binding = SelfPlugin`, no scope required):
 | `GET /api/plugin-tabs/self/storage`                  | List keys.                                                           |
 | `GET/PUT/DELETE /api/plugin-tabs/self/storage/{key}` | Own key/value store (value ≤ 256 KiB, ≤ 500 keys).                   |
 | `POST /api/plugin-tabs/self/net/fetch`               | Egress relay (§4.5).                                                 |
+| `POST /api/plugin-tabs/self/exec`                    | Run one of the tab's `commands` (§4.6).                              |
+| `POST /api/plugin-tabs/self/backend`                 | One request to the tab's native backend (§4.7).                      |
 | `GET /api/plugin-tabs/ws`                            | Plugin socket (§4.4); token in subprotocol `cadencr-plugin.<token>`. |
 
 The policy table (`domain/plugin_tabs/policy.rs`) is one ordered list of
@@ -278,6 +319,78 @@ allows the request header and exposes both response headers.
   with the plugin's secret config values; unknown secrets are a 400.
   Hop-by-hop and `cookie` headers are stripped from both directions.
 
+### 4.6 Commands (`exec.run`)
+
+`POST /api/plugin-tabs/self/exec` `{program, args?: string[], timeout_ms?}`
+(plugin token) runs `program` for the tab:
+
+- `program` must equal one of the granted manifest's `commands[].program`
+  (403 `PLUGIN_EXEC_DENIED`), and is resolved on the service's `PATH` — the
+  user's login-shell `PATH` (422 `PLUGIN_EXEC_NOT_FOUND`).
+- No shell: `args` are passed as is (≤ 256, ≤ 128 KiB in total, no NUL). The
+  working directory is the grant's conversation folder (its worktree, or the
+  project folder without one).
+- The same direct-exec policy as managed providers: `CADENCR_*` and `VITE_*`
+  variables removed, CPU/memory limits, the whole process tree killed when the
+  command times out (`timeout_ms` 1–120 000, default 30 000; 504
+  `PLUGIN_EXEC_TIMEOUT`) or writes more than 1 MiB to a stream (502
+  `PLUGIN_EXEC_OUTPUT_TOO_LARGE`). ≤ 4 commands at a time per tab (429
+  `PLUGIN_EXEC_BUSY`); any other failure to run is 502 `PLUGIN_EXEC_FAILED`.
+- 200 `{exit_code: number|null, success, stdout, stderr, duration_ms}` for any
+  exit status; output is UTF-8, lossily decoded.
+
+Every request — run, refused or failed — is recorded in memory for the tab
+and conversation (program, arguments cut to 1 024 characters, outcome, exit
+code, duration; the last 50) and shown to the user in the tab's **Activity**
+dialog (`GET /api/plugin-tabs/{id}/activity`). A tab cannot read that log. The
+renderer checks only a request's shape; every bound is the service's, so a
+refused request is recorded too.
+
+### 4.7 Native backend (`backend.request`)
+
+`POST /api/plugin-tabs/self/backend` `{method, params?, timeout_ms?}` (plugin
+token) relays one request to the tab's backend, starting it first if it is
+not running. One backend runs per tab and conversation, shared by that
+conversation's open instances.
+
+- 403 `PLUGIN_BACKEND_UNDECLARED` without a `backend` in the granted manifest;
+  403 `PLUGIN_BACKEND_UNSUPPORTED` for a marketplace (managed) tab, which may
+  not ship one (the installer refuses such packages too).
+- **Launch.** The program (folder path, or bare name on `PATH`) runs without
+  a shell, working directory = the tab folder, through the same direct-exec
+  policy as §4.6 (no `CADENCR_*`/`VITE_*` variables, resource limits, process
+  tree owned and terminated with it). 422 `PLUGIN_BACKEND_UNAVAILABLE` when it
+  cannot start.
+- **Stdio protocol** (version 1), one JSON object per line:
+  - host → backend, first line:
+    `{"type":"hello","protocol":1,"plugin":{"id","version"},"project_id","feature_id","worktree","scopes":[…],"api":{"base_url","token_header":"x-cadencr-plugin-token","token"}}`;
+  - host → backend: `{"type":"request","id":"<n>","method","params"}`;
+  - backend → host on stdout: `{"type":"response","id","result"}` or
+    `{"type":"response","id","error":{"code","message"}}` (any other line is
+    ignored and noted in the log; a line over 4 MiB is dropped);
+  - stderr is the backend's log: the last 200 lines are kept and shown;
+  - stdin closing means "exit now"; after 2 s the process tree is terminated.
+- **Its own Cadencr access.** `api.token` is a grant minted for the backend:
+  the tab's consented scopes, bound to the conversation and its project,
+  checked by the same policy table (§4.3, §6.1). It is never the main token,
+  is passed on stdin (never in arguments or the environment), lives as long
+  as the process (≤ 12 h) and is revoked when it stops.
+- **Answers.** 200 `{result}` or `{error: {code, message}}` — the backend's
+  own error, passed through. Relay failures: 429 `PLUGIN_BACKEND_BUSY` (≤ 16
+  in flight), 504 `PLUGIN_BACKEND_TIMEOUT` (`timeout_ms` 1–120 000, default
+  30 000), 502 `PLUGIN_BACKEND_EXITED` (it exited before answering). `method`
+  is 1–128 chars, `params` ≤ 1 MiB of JSON.
+- **Lifecycle.** Stopped when no instance of the tab has been open in its
+  conversation for 30 s, when its grant is revoked (permissions changed, tab
+  turned off or removed), or from the Activity dialog; the Activity says which
+  (`exit_reason`: "its tab was closed", "its permissions changed", "stopped
+  from the tab's Activity", "exited with status N", …). After 3 crashes within
+  a minute it is not restarted (503 `PLUGIN_BACKEND_CRASHING`) until the user
+  clears it from the Activity dialog (`DELETE …/backends/{feature_id}`).
+
+The backend is **not sandboxed**: it can do anything the user can. The policy
+table bounds only what it can reach _through Cadencr_.
+
 ## 5. Electron host
 
 ### 5.1 Guest views
@@ -354,7 +467,8 @@ instance and waits for `hello`.
 | `workspace:read` | Projects and features across the workspace; `session.status`.          |
 
 Always available, no scope: context, theme, `state`, `storage`, `config`,
-`ui.*`. `net.fetch` requires `network.allowed_origins`.
+`ui.*`. `net.fetch` requires `network.allowed_origins`, `exec.run` a listed
+program in `commands`, `backend.request` a `backend`.
 
 ### 6.1 Policy table (v1)
 
@@ -407,7 +521,39 @@ name the grant's.
 | PUT    | `/api/plugin-tabs/self/storage/{key}`        | —                | SelfPlugin               |
 | DELETE | `/api/plugin-tabs/self/storage/{key}`        | —                | SelfPlugin               |
 | POST   | `/api/plugin-tabs/self/net/fetch`            | —                | SelfPlugin               |
+| POST   | `/api/plugin-tabs/self/exec`                 | —                | SelfPlugin               |
+| POST   | `/api/plugin-tabs/self/backend`              | —                | SelfPlugin               |
 | DELETE | `/api/plugin-tabs/grants/current`            | —                | SelfPlugin               |
+
+### 6.2 Levels
+
+What a tab may do is the union of its manifest's declarations, summarized as
+one level (`TabAccessLevel`, `access_level` in the summary) that every surface
+names the same way:
+
+| Level         | `access_level` | Declares                         | What Cadencr enforces                                                                                   | What it does not                                                    |
+| ------------- | -------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Read-only     | `ui`           | neither `commands` nor `backend` | Everything: the guest has no network or process of its own; every byte goes through the policy table.   | —                                                                   |
+| Runs commands | `commands`     | `commands`                       | Only the listed programs run, without a shell, in the conversation's folder, bounded and logged (§4.6). | What a listed program does with the arguments the tab chooses.      |
+| Native code   | `backend`      | `backend`                        | Its Cadencr access (own grant, scopes, binding); its lifecycle (§4.7).                                  | Anything else: it runs with the user's rights, outside any sandbox. |
+
+The user is told at every step:
+
+- **Consent** (Settings): the dialog leads with the level, lists the programs
+  with their reasons and what running them means, and for native code shows
+  the launch line, says it is not sandboxed, and requires ticking "I trust
+  this code to run on my computer with my rights" before **Allow**.
+- **Settings card**: a level badge (Read-only / Runs commands / Native code)
+  beside the status badge; the permissions block repeats the consent lists.
+- **Tab strip**: a terminal glyph (commands) or a chip glyph (native code) on
+  the tab trigger and in the **+** menu.
+- **Activity** (**+** menu → **Activity…** on a focused commands or native
+  tab): every command run or refused in this conversation, and the backend's
+  state, pid, exit reason and stderr tail, with **Stop**.
+- `cadencr plugin validate --kind tab` prints the level.
+
+A marketplace tab may declare `commands` but not a `backend` (no verified
+publisher review exists yet).
 
 ## 7. Wire protocol (guest ⇄ broker)
 
@@ -442,6 +588,8 @@ type HostToGuest =
 | `state.get` / `state.set`                                         | `{}` → `unknown` / `{value}` (per instance, host memory, ≤ 1 MiB)                                                                        |
 | `config.get`                                                      | `{}` → `Record<string, unknown>`                                                                                                         |
 | `net.fetch`                                                       | `{url, method?, headers?, body?: ArrayBuffer}` → `{status, headers, body: ArrayBuffer}`                                                  |
+| `exec.run`                                                        | `{program, args?, timeoutMs?}` → `{exitCode: number\|null, success, stdout, stderr, durationMs}` (§4.6)                                  |
+| `backend.request`                                                 | `{method, params?, timeoutMs?}` → `{result?}` or `{error?: {code, message}}` — the backend's own answer (§4.7)                           |
 | `ui.toast`                                                        | `{title, description?, variant?: "default"\|"success"\|"error"}`                                                                         |
 | `ui.openExternal`                                                 | `{url}` — `https:` only, after a host confirmation                                                                                       |
 | `ui.setBadge`                                                     | `{text: string\|null}` — ≤ 4 chars, shown on the tab trigger                                                                             |
@@ -459,7 +607,11 @@ should refetch), `stream.error {subscriptionId, error}`.
 
 Error codes: `PLUGIN_API_UNSUPPORTED`, `CAPABILITY_DENIED`,
 `PLUGIN_SCOPE_DENIED`, `PLUGIN_BINDING_DENIED`, `PLUGIN_NETWORK_DENIED`,
-`NOT_FOUND`, `BAD_REQUEST`, `TIMEOUT`, `DISCONNECTED`, `HOST_ERROR`.
+`PLUGIN_EXEC_DENIED`, `PLUGIN_BACKEND_UNDECLARED`, `NOT_FOUND`, `BAD_REQUEST`,
+`TIMEOUT`, `DISCONNECTED`, `HOST_ERROR` — plus the service codes of §4.6/§4.7
+passed through. `hello.capabilities` lists `net.fetch`, `exec.run` and
+`backend.request` only when the manifest declares origins, commands or a
+backend.
 
 ```ts
 interface TabContext {
