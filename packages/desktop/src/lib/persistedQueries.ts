@@ -84,6 +84,9 @@ function matchesPersistPrefix(url: string): boolean {
  */
 export function shouldDehydrateQuery(query: Query): boolean {
   if (query.state.status !== "success") return false;
+  // Bytes serialize to `{}`: a restored image query would hand `{}` to
+  // `URL.createObjectURL` and throw on the next launch.
+  if (query.state.data instanceof Blob) return false;
   const head = query.queryKey[0];
   if (typeof head !== "string") return false;
   if (isExplicitlyForbidden(head)) return false;

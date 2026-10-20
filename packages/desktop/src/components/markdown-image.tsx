@@ -1,11 +1,13 @@
 import {
   createContext,
   useContext,
+  useState,
   type ComponentType,
   type ReactElement,
   type ReactEventHandler,
   type ReactNode,
 } from "react";
+import { ImageOffIcon, Loader2Icon } from "lucide-react";
 
 export interface MarkdownImageProps {
   src?: string;
@@ -18,9 +20,9 @@ export interface MarkdownImageProps {
 /**
  * Component the Markdown renderer delegates `<img>` rendering to. Provided
  * where images need fetching outside the renderer's CSP (the editor preview
- * resolves repo-relative paths to files; pull requests and the changelog proxy
- * remote images); left null elsewhere (agent chat), where images are rendered
- * as a plain `<img>`.
+ * resolves repo-relative paths to files; agent chat loads the local paths an
+ * agent posts; pull requests and the changelog proxy remote images); left null
+ * elsewhere, where images are rendered as a plain `<img>`.
  */
 export type MarkdownImageRenderer = ComponentType<MarkdownImageProps>;
 
@@ -81,6 +83,46 @@ export function MarkdownImageNotice({
       <span className="truncate">{label}</span>
     </span>
   );
+}
+
+/**
+ * A markdown image whose bytes came through a proxy: a chip while `url` is
+ * pending, a chip carrying `errorMessage` once the fetch failed, else the image.
+ */
+export function ProxiedMarkdownImage({
+  url,
+  errorMessage,
+  ...props
+}: MarkdownImageProps & { url: string | null; errorMessage: string | null }): ReactElement {
+  const label = props.alt || props.src || "image";
+  if (errorMessage) {
+    return (
+      <MarkdownImageNotice title={errorMessage} label={label}>
+        <ImageOffIcon className="size-3.5 shrink-0" aria-hidden />
+      </MarkdownImageNotice>
+    );
+  }
+  if (!url) {
+    return (
+      <MarkdownImageNotice label={label}>
+        <Loader2Icon className="size-3.5 shrink-0 animate-spin" aria-hidden />
+      </MarkdownImageNotice>
+    );
+  }
+  return <DecodedMarkdownImage key={url} {...props} src={url} />;
+}
+
+/** Fetching bytes can succeed even when the browser cannot decode them. */
+export function DecodedMarkdownImage(props: MarkdownImageProps): ReactElement {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <MarkdownImageNotice title="Could not display this image." label={props.alt || "image"}>
+        <ImageOffIcon className="size-3.5 shrink-0" aria-hidden />
+      </MarkdownImageNotice>
+    );
+  }
+  return <PlainMarkdownImage {...props} onError={() => setFailed(true)} />;
 }
 
 /**
