@@ -29,20 +29,24 @@ export const DEFAULT_PROMPT_COMMAND_POLICY: PromptCommandPolicy = {
 };
 
 const ALL_COMMAND_KINDS = ["command", "skill", "cadencr"] as const;
-const NATIVE_COMMAND_KINDS = ["command", "skill"] as const;
 
 export function promptCommandTriggers(
   policy: PromptCommandPolicy,
 ): readonly PromptCommandTriggerPolicy[] {
   const skillsUseSlash = policy.skillReferenceTrigger === "slash";
+  const nativeCommandsAnywhere = policy.slashCommandPlacement === "anywhere";
+  // Cadencr expands its own virtual skills before the message reaches the
+  // provider, so the provider's placement rule for native commands (a CLI only
+  // parses `/compact` at the start of a turn) never restricts them mid-prompt.
   const slashTrigger: PromptCommandTriggerPolicy = {
     triggerChar: "/",
     commandKindsAtPromptStart: skillsUseSlash ? ALL_COMMAND_KINDS : ["command"],
-    commandKindsMidPrompt:
-      policy.slashCommandPlacement === "anywhere"
-        ? skillsUseSlash
-          ? NATIVE_COMMAND_KINDS
-          : ["command"]
+    commandKindsMidPrompt: skillsUseSlash
+      ? nativeCommandsAnywhere
+        ? ALL_COMMAND_KINDS
+        : ["cadencr"]
+      : nativeCommandsAnywhere
+        ? ["command"]
         : [],
   };
   if (skillsUseSlash) return [slashTrigger];
@@ -51,7 +55,7 @@ export function promptCommandTriggers(
     {
       triggerChar: "$",
       commandKindsAtPromptStart: ["skill", "cadencr"],
-      commandKindsMidPrompt: ["skill"],
+      commandKindsMidPrompt: ["skill", "cadencr"],
     },
   ];
 }
