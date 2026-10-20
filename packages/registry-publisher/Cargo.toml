@@ -1,15 +1,19 @@
 [package]
 name = "cadencr-registry-publisher"
-version = "0.13.0"
+version = "0.14.0"
 edition = "2021"
 license.workspace = true
 
 [dependencies]
 base64 = "0.23.1"
 bon.workspace = true
+bytes = "1"
+futures = "0.3"
+percent-encoding = "2"
+tokio = { version = "1", features = ["rt"] }
 cadencr-registry-core = { path = "../registry-core" }
 libc = "0.2"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
 sha1 = "0.11"
@@ -21,5 +25,7 @@ tempfile = "3"
 workspace = true
 
 [dev-dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
 chrono = "0.4"
 cadencr-plugin-core = { path = "../plugin-core" }

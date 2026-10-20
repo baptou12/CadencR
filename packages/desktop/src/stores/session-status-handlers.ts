@@ -8,8 +8,10 @@
  */
 import { invalidateByExactUrl, invalidateByUrlPrefix, queryClient } from "@/lib/queryClient";
 import { createLeadingSettleCoalescer } from "@/lib/coalesceInvalidation";
+import { invalidateChangedDocuments } from "@/lib/document-file";
 import { scheduleSettingsInvalidation } from "@/lib/settingsInvalidation";
 import { scheduleThemeInvalidation } from "@/lib/themeInvalidation";
+import { handlePluginTabChanged } from "@/lib/plugin-tabs/live-instances";
 import {
   getAlacrittyConfigRouteQueryKey,
   getListFeaturesQueryKey,
@@ -18,10 +20,12 @@ import {
 import { invalidateScheduleLists } from "@/lib/schedules/invalidate";
 import { GLOBAL_FEATURE_LIST_URLS, invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { isViewingFeature, notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
+import { openingClearsForMe } from "@/stores/for-me-ack";
 import { useUnreadStore } from "@/stores/unread-store";
 import { handleGitEnvelope } from "@/stores/ws-git-status-handler";
 import { showRemoteConnectedToast } from "@/lib/remote/connection-toast";
 import { applyStorageMaintenanceEvent } from "@/stores/storage-maintenance-store";
+import { applyProviderUpdatesEvent } from "@/stores/provider-updates";
 import type { LiveAgentStatus, PendingKind } from "@/types/agent";
 import type { SessionStatusEntry } from "@/stores/session-status-store";
 
@@ -36,12 +40,21 @@ export function isPendingKind(val: unknown): val is PendingKind {
   return typeof val === "string" && (PENDING_KIND_VALUES as string[]).includes(val);
 }
 
+function isFeatureList(data: Feature[] | object | undefined): data is Feature[] {
+  return Array.isArray(data);
+}
+
 /** A feature's record from any loaded project list, without a request. */
 export function lookupFeature(featureId: number): Feature | undefined {
   // Prefix-match all per-project listFeatures caches via the orval-generated key.
-  const queries = queryClient.getQueriesData<Feature[]>({ queryKey: getListFeaturesQueryKey() });
+  // Other per-feature queries share the prefix (a pending gate is
+  // `["/api/features", id, "pending-gate", …]`): only lists hold features.
+  const queries = queryClient.getQueriesData<Feature[] | object>({
+    queryKey: getListFeaturesQueryKey(),
+  });
   for (const [, data] of queries) {
-    const feature = data?.find((f) => f.id === featureId);
+    if (!isFeatureList(data)) continue;
+    const feature = data.find((f) => f.id === featureId);
     if (feature) return feature;
   }
   return undefined;
@@ -73,8 +86,9 @@ export function notifyTransition(
 /**
  * Flag a turn that ended while the user wasn't looking: unread when it
  * completed, failed when it stopped on an error. (If they're already viewing
- * it, there's nothing unseen.) Independent of the feature lists, so a
- * collapsed project's conversations are flagged too.
+ * it, there's nothing unseen, unless For me clears only when done: then the
+ * outcome waits in For me until marked done, viewed or not.) Independent of
+ * the feature lists, so a collapsed project's conversations are flagged too.
  */
 function markUnseenOutcome(
   featureId: number,
@@ -87,21 +101,35 @@ function markUnseenOutcome(
     marks.clearFailed(featureId);
     return;
   }
-  if (!endedTurn || isViewingFeature(featureId)) return;
+  if (!endedTurn || (isViewingFeature(featureId) && openingClearsForMe())) return;
   if (failed) marks.markFailed(featureId);
   else marks.markUnread(featureId);
 }
 
+/** Where a snapshot sits in the server's event stream. */
+export function snapshotCursor(payload: Record<string, unknown>): {
+  seq: number;
+  epoch: number | null;
+} {
+  return {
+    seq: typeof payload.seq === "number" ? payload.seq : 0,
+    epoch: typeof payload.epoch === "number" ? payload.epoch : null,
+  };
+}
+
 /**
  * Apply a `session_status.snapshot` envelope to the per-session map. Pure
- * over `prev` — see store comments for the seq-merge invariants.
+ * over `current` — see store comments for the seq-merge invariants.
  */
 export function applySnapshot(
-  prev: Record<number, SessionStatusEntry>,
+  current: Record<number, SessionStatusEntry>,
   payload: Record<string, unknown>,
+  previousEpoch: number | null = null,
 ): Record<number, SessionStatusEntry> {
   const rawStates = (payload.states ?? {}) as Record<string, unknown>;
-  const snapshotSeq = typeof payload.seq === "number" ? payload.seq : 0;
+  const { seq: snapshotSeq, epoch } = snapshotCursor(payload);
+  // A restarted server's seqs start over: nothing from before compares.
+  const prev = epoch != null && previousEpoch != null && epoch !== previousEpoch ? {} : current;
   const next: Record<number, SessionStatusEntry> = {};
 
   for (const [idKey, entryRaw] of Object.entries(rawStates)) {
@@ -161,6 +189,7 @@ export function applySnapshot(
 export function applyUpdate(
   prev: Record<number, SessionStatusEntry>,
   payload: Record<string, unknown>,
+  snapshotSeq = 0,
 ): {
   next: Record<number, SessionStatusEntry> | null;
   sessionId: number | null;
@@ -203,13 +232,13 @@ export function applyUpdate(
   const failed = payload.status === "idle" && payload.outcome === "failed";
 
   const existing = prev[sessionId];
-  if (existing && seq <= existing.seq) {
-    // Out-of-order — drop.
+  if ((existing && seq <= existing.seq) || seq <= snapshotSeq) {
+    // Out-of-order, or already folded into the last snapshot — drop.
     return {
       next: null,
       sessionId,
       featureId,
-      prevStatus: existing.status,
+      prevStatus: existing?.status,
       nextStatus: null,
       failed: false,
       entry: null,
@@ -220,6 +249,7 @@ export function applyUpdate(
     existing?.status === payload.status &&
     (existing?.kind ?? null) === kind &&
     (existing?.requestId ?? null) === requestId &&
+    (existing?.turnStartedAtMs ?? null) === turnStartedAtMs &&
     existing?.featureId === featureId;
 
   if (sameValue) {
@@ -309,6 +339,8 @@ export function handleAppEnvelope(
     // file-tree change was a second, unprotected route to the exact storm that
     // path already guards against.
     scheduleEditorInvalidation();
+    // Document previews refetch only for the documents the event names.
+    invalidateChangedDocuments(queryClient, payload);
     return true;
   }
   if (domain === "git") {
@@ -317,6 +349,10 @@ export function handleAppEnvelope(
   }
   if (domain === "app" && action === "remote_connected") {
     showRemoteConnectedToast();
+    return true;
+  }
+  if (domain === "app" && action === "provider_updates") {
+    applyProviderUpdatesEvent(payload);
     return true;
   }
   if (domain === "app" && action === "storage_maintenance") {
@@ -352,6 +388,10 @@ export function handleAppEnvelope(
     // The same file holds the label the theme's project is named after, so the
     // sidebar's list is refetched with it.
     scheduleThemeInvalidation(queryClient, typeof payload.id === "string" ? payload.id : undefined);
+    return true;
+  }
+  if (domain === "app" && action === "plugin_tab_changed") {
+    handlePluginTabChanged(payload);
     return true;
   }
   if (domain === "app" && action === "alacritty_config_event") {

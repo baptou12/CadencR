@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
 use super::{
@@ -42,43 +41,8 @@ pub fn validate_theme_folder(directory: &Path) -> Result<ValidatedThemeFolder, V
 }
 
 fn read_regular(path: &Path, limit: usize) -> Result<Vec<u8>, Vec<ThemeIssue>> {
-    let before = std::fs::symlink_metadata(path)
-        .map_err(|error| issue(format!("cannot inspect {}: {error}", path.display())))?;
-    if !before.is_file() || before.file_type().is_symlink() || before.len() > limit as u64 {
-        return Err(issue(format!(
-            "{} must be a bounded regular file, not a symlink",
-            path.display()
-        )));
-    }
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    }
-    let file = options
-        .open(path)
-        .map_err(|error| issue(error.to_string()))?;
-    let after = file.metadata().map_err(|error| issue(error.to_string()))?;
-    if !after.is_file() || after.len() > limit as u64 {
-        return Err(issue("theme input is not a bounded regular file"));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt as _;
-        if before.dev() != after.dev() || before.ino() != after.ino() {
-            return Err(issue("theme input changed while opening"));
-        }
-    }
-    let mut bytes = Vec::new();
-    file.take(limit as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| issue(error.to_string()))?;
-    if bytes.len() > limit {
-        return Err(issue("theme input exceeds its byte budget"));
-    }
-    Ok(bytes)
+    crate::read_regular_bounded(path, limit as u64)
+        .map_err(|error| issue(format!("{}: {error}", path.display())))
 }
 
 fn issue(message: impl Into<String>) -> Vec<ThemeIssue> {

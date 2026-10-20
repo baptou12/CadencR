@@ -10,6 +10,7 @@
 //! `--version`, and lets the caller pick the best (highest semver). It also
 //! exposes the full candidate list so the host app can render a picker UI.
 
+mod path_lookup;
 mod shell;
 mod shell_exec;
 mod types;
@@ -19,6 +20,7 @@ mod walk;
 #[cfg(test)]
 mod tests_support;
 
+pub use path_lookup::find_on_path;
 pub use shell::login_shell_path;
 pub use shell_exec::{login_shell_command, login_shell_exec_command, shell_quote};
 pub use types::{Candidate, CandidateSource, DiscoverySpec, VersionKey};
@@ -60,7 +62,8 @@ pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) ->
                 return vec![Candidate {
                     path: path.to_path_buf(),
                     canonical,
-                    version: probe.and_then(|probe| probe.version),
+                    version: probe.as_ref().and_then(|probe| probe.version),
+                    version_text: probe.and_then(|probe| probe.version_text),
                     source: CandidateSource::Override,
                 }];
             }
@@ -128,7 +131,10 @@ pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) ->
                     return None;
                 }
             }
-            candidate.version = probe.and_then(|probe| probe.version);
+            if let Some(probe) = probe {
+                candidate.version = probe.version;
+                candidate.version_text = probe.version_text;
+            }
             Some(candidate)
         })
         .collect()
@@ -213,12 +219,14 @@ mod tests {
                 path: PathBuf::from("/a/thing"),
                 canonical: PathBuf::from("/a/thing"),
                 version: Some(VersionKey(1, 4, 3)),
+                version_text: None,
                 source: CandidateSource::WellKnown,
             },
             Candidate {
                 path: PathBuf::from("/b/thing"),
                 canonical: PathBuf::from("/b/thing"),
                 version: Some(VersionKey(1, 1, 65)),
+                version_text: None,
                 source: CandidateSource::EnvPath,
             },
         ];
@@ -232,12 +240,14 @@ mod tests {
                 path: PathBuf::from("/a/thing"),
                 canonical: PathBuf::from("/a/thing"),
                 version: Some(VersionKey(1, 0, 0)),
+                version_text: None,
                 source: CandidateSource::WellKnown,
             },
             Candidate {
                 path: PathBuf::from("/b/thing"),
                 canonical: PathBuf::from("/b/thing"),
                 version: Some(VersionKey(1, 0, 0)),
+                version_text: None,
                 source: CandidateSource::EnvPath,
             },
         ];
@@ -255,12 +265,14 @@ mod tests {
                 path: PathBuf::from("/a/thing"),
                 canonical: PathBuf::from("/a/thing"),
                 version: None,
+                version_text: None,
                 source: CandidateSource::Override,
             },
             Candidate {
                 path: PathBuf::from("/b/thing"),
                 canonical: PathBuf::from("/b/thing"),
                 version: Some(VersionKey(0, 0, 1)),
+                version_text: None,
                 source: CandidateSource::WellKnown,
             },
         ];

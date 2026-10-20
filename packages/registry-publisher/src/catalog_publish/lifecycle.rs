@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use super::*;
+use crate::mirror::artifacts::validated_assets_with_policy;
 
 pub(crate) fn publish_with(
     snapshot: &cadencr_registry_core::CatalogSnapshot,
@@ -49,7 +50,13 @@ fn publish_locked(
     verify_tag(client, snapshot, "before publication")?;
     let mut release = resolve_release(client, snapshot, prior.as_ref(), freshness)?;
     let release_id = release.id;
-    let mut assets = catalog_assets(client.list_assets(release_id)?, &expected, false)?;
+    let policy = asset_url_policy(&release, snapshot)?;
+    let mut assets = validated_assets_with_policy(
+        client.list_assets(release_id)?,
+        std::slice::from_ref(&expected),
+        false,
+        policy,
+    )?;
     if !release.draft && assets.is_empty() {
         return Err(PublisherError::new(
             "published catalog release is missing managed-index.json",
@@ -64,8 +71,14 @@ fn publish_locked(
             &expected,
             std::slice::from_ref(&expected),
             directory,
+            policy,
         )?;
-        assets = catalog_assets(client.list_assets(release_id)?, &expected, true)?;
+        assets = validated_assets_with_policy(
+            client.list_assets(release_id)?,
+            std::slice::from_ref(&expected),
+            true,
+            policy,
+        )?;
         recovered
     } else {
         None
@@ -78,37 +91,26 @@ fn publish_locked(
                 ));
             }
         } else {
-            crate::mirror::artifacts::verify_present(
+            crate::mirror::artifacts::verify_present_with_policy(
                 client,
                 &assets,
                 std::slice::from_ref(&expected),
                 directory,
+                policy,
             )?;
         }
     }
     let verified_asset = assets[0].clone();
     if release.draft {
-        validate_current(client, snapshot, release_id, true)?;
-        let current_assets = catalog_assets(client.list_assets(release_id)?, &expected, true)?;
-        if current_assets != [verified_asset.clone()] {
-            return Err(PublisherError::new(
-                "catalog release asset changed before publication",
-            ));
-        }
-        verify_tag(client, snapshot, "before publication PATCH")?;
-        freshness()?;
-        release = match client.publish_draft(release_id) {
-            Ok(value) => value,
-            Err(primary) => match client.find_release(snapshot.tag())? {
-                Some(value)
-                    if validate_release(&value, snapshot, Some(release_id), Some(false))
-                        .is_ok() =>
-                {
-                    value
-                }
-                _ => return Err(primary),
-            },
-        };
+        release = publish_verified_draft()
+            .client(client)
+            .snapshot(snapshot)
+            .release_id(release_id)
+            .expected(&expected)
+            .verified_asset(&verified_asset)
+            .policy(policy)
+            .freshness(freshness)
+            .call()?;
     }
     validate_release(&release, snapshot, Some(release_id), Some(false))?;
     verify_final()

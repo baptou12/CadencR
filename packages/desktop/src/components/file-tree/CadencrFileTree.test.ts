@@ -83,6 +83,19 @@ describe("CadencrFileTree model contract", () => {
     unmount();
   });
 
+  it("defaults to pierre's compact density and lets callers override it", () => {
+    const compact = renderHook(() => useCadencrFileTree({ paths: ["a.ts"], iconSet: "standard" }));
+    expect(compact.result.current.model.getItemHeight()).toBe(24);
+    expect(compact.result.current.model.getDensityFactor()).toBe(0.8);
+    compact.unmount();
+
+    const relaxed = renderHook(() =>
+      useCadencrFileTree({ paths: ["a.ts"], density: "relaxed", iconSet: "standard" }),
+    );
+    expect(relaxed.result.current.model.getItemHeight()).toBe(36);
+    relaxed.unmount();
+  });
+
   it("skips equivalent path resets while honoring an explicit reset version", () => {
     const initialPaths = ["src/", "src/a.ts"] as const;
     const { result, rerender, unmount } = renderHook(

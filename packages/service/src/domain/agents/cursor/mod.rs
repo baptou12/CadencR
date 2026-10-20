@@ -10,6 +10,7 @@ mod catalog;
 mod commands;
 mod permissions;
 mod runtime_error;
+pub mod updates;
 mod worktree_config;
 
 use async_trait::async_trait;

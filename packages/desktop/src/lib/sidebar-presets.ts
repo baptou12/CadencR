@@ -67,12 +67,13 @@ const PRESET_DEFINITIONS: readonly SidebarPresetDefinition[] = [
     label: "Supervise",
     tagline: "Many agents at once",
     description:
-      "Each agent's model, last reply and todo progress, an In progress block on top. Git details step aside.",
+      "Each agent's model, last reply and todo progress, an In progress block on top, every next action in For me. Git details step aside.",
     overrides: {
       preview: "last_message",
       todos: true,
       provider: "logo_model",
       workingBlock: true,
+      forMeLimit: "all",
       diff: false,
       pr: false,
       ports: false,
@@ -114,6 +115,7 @@ const BEHAVIOUR_OPTIONS: ReadonlySet<SidebarOptionId> = new Set([
   "conversationSort",
   "projectSort",
   "stickyHeaders",
+  "forMeAck",
 ]);
 
 const PRESET_OPTION_IDS = (Object.keys(SIDEBAR_OPTIONS) as SidebarOptionId[]).filter(

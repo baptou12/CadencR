@@ -47,7 +47,6 @@ function RecentBlock({ activeFeatureId, onSelectFeature }: SectionProps): ReactE
           : undefined
       }
       empty="No conversation yet"
-      showCount={false}
       activeFeatureId={activeFeatureId}
       onSelectFeature={onSelectFeature}
     />

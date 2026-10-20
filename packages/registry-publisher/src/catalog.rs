@@ -69,14 +69,17 @@ pub(crate) fn prepare(
     let mut packages = Vec::with_capacity(entries.len());
     let mut verifications = Vec::with_capacity(entries.len());
     for entry in entries {
-        let theme =
-            cadencr_registry_core::marketplace_package_kind(&entry.package) == Some("theme");
+        let kind = cadencr_registry_core::marketplace_package_kind(&entry.package)
+            .unwrap_or("provider")
+            .to_owned();
         packages.push(entry.package);
-        verifications.push((entry.directory, entry.expected, theme));
+        verifications.push((entry.directory, entry.expected, kind));
     }
     let payload = baseline::prepare(&manifest, base, packages, generated_at, expires_at)?;
-    for (directory, expected, theme) in verifications {
-        if theme {
+    for (directory, expected, kind) in verifications {
+        if kind == "tab" {
+            crate::promote::public::verify_tab_package(&expected, &directory, downloader)?;
+        } else if kind == "theme" {
             crate::promote::public::verify_theme_package(&expected, &directory, downloader)?;
         } else {
             crate::promote::public::verify(&expected, &directory, downloader)?;
@@ -253,57 +256,66 @@ mod tests {
             .downloader(&fixture.downloader)
             .call()
             .unwrap();
-        let module = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tooling/marketplace-registry/scripts/publication/catalog.mjs");
+        let captured: Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/legacy-v1/catalog-input.json"
+        ))
+        .unwrap();
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(&fixture.manifest).unwrap()).unwrap();
+        assert_eq!(manifest, captured["manifest"]);
+        for (name, expected) in captured["files"].as_object().unwrap() {
+            let actual: Value =
+                serde_json::from_slice(&std::fs::read(root.join(name)).unwrap()).unwrap();
+            assert_eq!(&actual, expected, "legacy catalog input {name} drifted");
+        }
         let encoded: HashMap<_, _> = fixture
             .downloader
             .values
             .iter()
             .map(|(key, value)| (key, crate::hex(value)))
             .collect();
-        let script = r#"import{pathToFileURL}from'node:url';import{readFile,writeFile}from'node:fs/promises';const{readPublicationManifest,preparePublishedCatalog}=await import(pathToFileURL(process.argv[1]));const manifest=await readPublicationManifest(process.argv[2]);const values=JSON.parse(process.argv[3]);const payload=await preparePublishedCatalog(manifest,{baseDirectory:process.argv[4],generatedAt:process.argv[5],expiresAt:process.argv[6],now:new Date(),download:async({url,outputPath})=>{const bytes=Buffer.from(values[url],'hex');await writeFile(outputPath,bytes,{flag:'wx'});return{size:bytes.length}}});process.stdout.write(JSON.stringify(payload));"#;
-        let output = Command::new("node")
-            .args(["--input-type=module", "-e", script])
-            .arg(module)
-            .arg(&fixture.manifest)
-            .arg(serde_json::to_string(&encoded).unwrap())
-            .arg(root)
-            .arg(generated)
-            .arg(expires)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        assert_eq!(serde_json::to_value(encoded).unwrap(), captured["values"]);
+        let mut normalized: Value = serde_json::from_slice(rust.canonical_payload()).unwrap();
+        // Only these wall-clock fields vary. Every package and other wire field
+        // must remain exactly equal to the independent legacy capture.
+        normalized["generated_at"] = "2026-01-01T00:01:00Z".into();
+        normalized["expires_at"] = "2026-01-02T00:00:00Z".into();
         assert_eq!(
-            serde_json::from_slice::<Value>(rust.canonical_payload()).unwrap(),
-            serde_json::from_slice::<Value>(&output.stdout).unwrap()
+            cadencr_registry_core::canonical_json_bytes(&normalized),
+            include_bytes!("../tests/fixtures/legacy-v1/catalog-payload.json")
         );
+        let canonical_payload = rust.canonical_payload().to_vec();
         // Synthetic fixture key; never used as a release credential.
         let key = root.join("private.pem");
         std::fs::write(&key, "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH\n-----END PRIVATE KEY-----\n").unwrap();
         let rust_envelope =
             cadencr_registry_core::sign_prepared_index(rust, &key, "test-key").unwrap();
-        let signing = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tooling/marketplace-registry/scripts/publication/signing.mjs");
-        let library = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tooling/marketplace-registry/scripts/lib.mjs");
-        let sign_script = r#"import{pathToFileURL}from'node:url';const{signIndexPayload}=await import(pathToFileURL(process.argv[1]));const{canonicalJson}=await import(pathToFileURL(process.argv[2]));const envelope=await signIndexPayload(JSON.parse(process.argv[3]),{privateKeyFile:process.argv[4],keyId:'test-key'});process.stdout.write(`${canonicalJson(envelope)}\n`);"#;
-        let javascript_envelope = Command::new("node")
-            .args(["--input-type=module", "-e", sign_script])
-            .arg(signing)
-            .arg(library)
-            .arg(String::from_utf8(output.stdout).unwrap())
+        // Node's built-in Ed25519 implementation independently signs the exact
+        // fresh canonical Rust payload. No legacy business module runs here.
+        let signature = Command::new("node")
+            .args(["--input-type=module", "-e",
+                "import{sign}from'node:crypto';import{readFileSync}from'node:fs';process.stdout.write(sign(null,Buffer.from(process.argv[2],'hex'),readFileSync(process.argv[1])).toString('base64'))"])
             .arg(&key)
-            .output()
-            .unwrap();
+            .arg(crate::hex(&canonical_payload))
+            .output().unwrap();
         assert!(
-            javascript_envelope.status.success(),
+            signature.status.success(),
             "{}",
-            String::from_utf8_lossy(&javascript_envelope.stderr)
+            String::from_utf8_lossy(&signature.stderr)
         );
-        assert_eq!(rust_envelope, javascript_envelope.stdout);
+        let envelope: Value = serde_json::from_slice(&rust_envelope).unwrap();
+        assert_eq!(
+            envelope["signature"]["value"],
+            String::from_utf8(signature.stdout).unwrap()
+        );
+        assert_eq!(envelope["signature"]["algorithm"], "ed25519");
+        assert_eq!(envelope["signature"]["key_id"], "test-key");
+        assert_eq!(
+            envelope["signed"],
+            serde_json::from_slice::<Value>(&canonical_payload).unwrap()
+        );
+        let mut canonical_envelope = cadencr_registry_core::canonical_json_bytes(&envelope);
+        canonical_envelope.push(b'\n');
+        assert_eq!(rust_envelope, canonical_envelope);
     }
 }

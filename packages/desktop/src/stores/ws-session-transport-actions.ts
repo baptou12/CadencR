@@ -7,6 +7,7 @@ import {
 import { clearReconnect, unregisterReconnector } from "@/lib/ws-reconnect";
 import { useConnectionStatusStore } from "@/stores/connection-status-store";
 import { discardStreamDeltas } from "./ws-delta-coalescer";
+import { SESSION_CLOSED_BEFORE_DELIVERY, failPromptDelivery } from "./ws-session-prompt-delivery";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import type { SessionEntry, WsSessionStore } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
@@ -41,6 +42,7 @@ export function createWsSessionTransportActions(deps: TransportActionDeps): Tran
       // (it early-returns on `intentional`), so resolve in-flight requests now
       // rather than leaving permission/worktree calls hanging until the timeout.
       if (session) rejectPendingRequests(session);
+      failPromptDelivery(sessionId, SESSION_CLOSED_BEFORE_DELIVERY);
       if (session?.conn) {
         if (session.serverSessionId) {
           session.conn.sendJson(createDestroy(session.serverSessionId));
@@ -95,10 +97,10 @@ export function createWsSessionTransportActions(deps: TransportActionDeps): Tran
       if (config.thinkingEffort) {
         sessionPatch.currentThinkingEffort = config.thinkingEffort;
       }
-      if (Object.keys(sessionPatch).length > 0) {
-        set(updateSession(get(), sessionId, sessionPatch));
-      }
-      sendRaw(sessionId, createSessionInit(config));
+      const envelope = createSessionInit(config);
+      sessionPatch.initRequestId = envelope.id;
+      set(updateSession(get(), sessionId, sessionPatch));
+      sendRaw(sessionId, envelope);
     },
   };
 }

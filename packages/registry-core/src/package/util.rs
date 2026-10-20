@@ -55,13 +55,9 @@ pub(crate) fn valid_url(value: &str) -> bool {
     url::Url::parse(value).is_ok()
 }
 pub(crate) fn valid_relative_path(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 1024
-        && !value.contains(['\\', '\0'])
-        && !value.starts_with('/')
-        && value
-            .split('/')
-            .all(|part| !matches!(part, "" | "." | ".."))
+    // The portable relative-path grammar belongs to plugin-core, which custom
+    // tab manifests share.
+    cadencr_plugin_core::is_normalized_relative_path(value)
 }
 pub(crate) fn credential_name(value: &str) -> bool {
     let text = value

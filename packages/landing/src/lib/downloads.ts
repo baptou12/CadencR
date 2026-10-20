@@ -29,51 +29,51 @@ function releaseAssetUrl(assetName: string): string {
   return `${releaseBaseUrl}/${assetName}`;
 }
 
+type MacArch = Exclude<DetectedArch, "unknown">;
+
+/** Up to this release the Intel build shipped without an arch suffix. */
+const LAST_UNSUFFIXED_INTEL_RELEASE = "0.13.0";
+
+/** `version` is a parameter only so tests can cover both naming schemes. */
+export function macReleaseAssetName(version: string, arch: MacArch, kind: DownloadKind): string {
+  const archSuffix = arch === "x64" && version === LAST_UNSUFFIXED_INTEL_RELEASE ? "" : `-${arch}`;
+  return `Cadencr-${version}${archSuffix}${kind === "installer" ? ".dmg" : "-mac.zip"}`;
+}
+
+function macAsset(
+  arch: MacArch,
+  kind: DownloadKind,
+  display: Pick<DownloadAsset, "href" | "label" | "size">,
+): DownloadAsset {
+  const assetName = macReleaseAssetName(appVersion, arch, kind);
+  return { ...display, assetName, arch, kind, os: "macos", url: releaseAssetUrl(assetName) };
+}
+
 export const LATEST_RELEASE_URL: string =
   "https://github.com/merkr-software/CadencR/releases/latest";
 export const DISPLAY_VERSION: string = releaseTag;
 
 export const DOWNLOAD_ASSETS: DownloadAsset[] = [
-  {
-    assetName: `Cadencr-${appVersion}-arm64.dmg`,
-    arch: "arm64",
+  macAsset("arm64", "installer", {
     href: "#macos-arm64-dmg",
-    kind: "installer",
     label: "macOS Apple Silicon DMG",
-    os: "macos",
     size: "146 MB",
-    url: releaseAssetUrl(`Cadencr-${appVersion}-arm64.dmg`),
-  },
-  {
-    assetName: `Cadencr-${appVersion}.dmg`,
-    arch: "x64",
+  }),
+  macAsset("x64", "installer", {
     href: "#macos-intel-dmg",
-    kind: "installer",
     label: "macOS Intel DMG",
-    os: "macos",
     size: "152 MB",
-    url: releaseAssetUrl(`Cadencr-${appVersion}.dmg`),
-  },
-  {
-    assetName: `Cadencr-${appVersion}-arm64-mac.zip`,
-    arch: "arm64",
+  }),
+  macAsset("arm64", "archive", {
     href: "#macos-arm64-zip",
-    kind: "archive",
     label: "macOS Apple Silicon ZIP",
-    os: "macos",
     size: "140 MB",
-    url: releaseAssetUrl(`Cadencr-${appVersion}-arm64-mac.zip`),
-  },
-  {
-    assetName: `Cadencr-${appVersion}-mac.zip`,
-    arch: "x64",
+  }),
+  macAsset("x64", "archive", {
     href: "#macos-intel-zip",
-    kind: "archive",
     label: "macOS Intel ZIP",
-    os: "macos",
     size: "147 MB",
-    url: releaseAssetUrl(`Cadencr-${appVersion}-mac.zip`),
-  },
+  }),
 ];
 
 /**

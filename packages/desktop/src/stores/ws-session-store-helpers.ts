@@ -1,10 +1,11 @@
 import type { SessionEntry } from "./ws-session-types";
 import type { PromptDispatchOptions, WsEnvelope } from "@/lib/ws-envelope";
-import { createModeSet, createPromptSend } from "@/lib/ws-envelope";
+import { createAccessModeSet, createModeSet, createPromptSend } from "@/lib/ws-envelope";
 import type { QueuedPrompt } from "./ws-session-types";
 import { blocksPatchWithDerived } from "./ws-block-mutations";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { getProviderModes } from "@/lib/provider-modes";
+import { providerAccessModeConfig } from "@/lib/provider-access-modes";
 export { buildSlashCommandsKey } from "@/lib/slash-command-key";
 
 /**
@@ -83,6 +84,11 @@ export function buildQueuedInitEnvelopes(session: SessionEntry): WsEnvelope[] {
   const providerId = session.currentSelection?.providerId;
   if (!providerId || getProviderModes(providerId).length > 0) {
     envelopes.push(createModeSet(session.serverSessionId, session.permissionMode));
+  }
+  // Initialization reports the persisted mode, which can predate a chip change.
+  // Replay the explicit pre-init choice before the first prompt starts Codex.
+  if (session.pendingInitAccessMode && (!providerId || providerAccessModeConfig(providerId))) {
+    envelopes.push(createAccessModeSet(session.serverSessionId, session.pendingInitAccessMode));
   }
   for (const prompt of session.queuedPrompts) {
     envelopes.push(

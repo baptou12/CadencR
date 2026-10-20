@@ -299,7 +299,7 @@ pub(super) async fn recompute_for_path(
                     .unwrap_or_else(|_| "main".to_string());
             match git_status::compute_status_or_empty(&path, fid, &target).await {
                 Ok(mut snap) => {
-                    crate::domain::git::workflow_service::enrich_with_sharing(
+                    crate::domain::git::workflow_service::enrich_snapshot(
                         &state,
                         &mut snap,
                         &path.to_string_lossy(),

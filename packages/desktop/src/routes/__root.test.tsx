@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("@tanstack/react-router", () => ({
   createRootRoute: (opts: { component: unknown }) => ({ options: opts }),
   Outlet: () => <div data-testid="outlet">outlet content</div>,
+  useMatch: () => undefined,
   useNavigate: () => mocks.mockNavigate,
   useRouterState: (options?: {
     select?: (state: {

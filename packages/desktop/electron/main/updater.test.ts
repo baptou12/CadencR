@@ -3,8 +3,12 @@ import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
 
 const electronState = vi.hoisted(() => ({
   isPackaged: true,
-  handlers: new Map<string, (event: IpcMainInvokeEvent) => Promise<void> | void>(),
+  handlers: new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown>(),
 }));
+
+const imageState = vi.hoisted(() => ({ fetchChangelogImage: vi.fn() }));
+
+vi.mock("./changelog-images", () => ({ fetchChangelogImage: imageState.fetchChangelogImage }));
 
 const updaterState = vi.hoisted(() => ({
   quitAndInstall: vi.fn(),
@@ -21,7 +25,7 @@ vi.mock("electron", () => ({
   },
   ipcMain: {
     handle: vi.fn(
-      (channel: string, handler: (event: IpcMainInvokeEvent) => Promise<void> | void) => {
+      (channel: string, handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown) => {
         electronState.handlers.set(channel, handler);
       },
     ),
@@ -50,8 +54,6 @@ vi.mock("electron-updater", () => ({
   },
 }));
 
-import { registerAutoUpdaterIpc } from "./updater";
-
 function trustedEvent(): IpcMainInvokeEvent {
   return {
     sender: { id: 7 },
@@ -68,14 +70,17 @@ function mainWindow(): BrowserWindow {
 
 describe("auto-updater IPC", () => {
   beforeEach(() => {
+    vi.resetModules();
     electronState.isPackaged = true;
     electronState.handlers.clear();
     updaterState.quitAndInstall.mockClear();
     updaterState.checkForUpdates.mockClear();
     updaterState.on.mockClear();
+    imageState.fetchChangelogImage.mockReset();
   });
 
   it("runs install preparation before quitAndInstall", async () => {
+    const { registerAutoUpdaterIpc } = await import("./updater");
     const calls: string[] = [];
 
     registerAutoUpdaterIpc({
@@ -93,5 +98,32 @@ describe("auto-updater IPC", () => {
 
     expect(calls).toEqual(["prepare", "quitAndInstall"]);
     expect(updaterState.quitAndInstall).toHaveBeenCalledWith(false, true);
+  });
+
+  it("rejects malformed image arguments before fetching", async () => {
+    const { registerAutoUpdaterIpc } = await import("./updater");
+    registerAutoUpdaterIpc({ getMainWindow: mainWindow });
+    const handler = electronState.handlers.get("app:fetch-changelog-image");
+    expect(handler).toBeDefined();
+
+    for (const source of [undefined, null, 42, {}, []]) {
+      await expect(handler?.(trustedEvent(), source)).rejects.toThrow(
+        "Image source must be a string.",
+      );
+    }
+    expect(imageState.fetchChangelogImage).not.toHaveBeenCalled();
+  });
+
+  it("fetches a validated image source from a trusted sender", async () => {
+    const { registerAutoUpdaterIpc } = await import("./updater");
+    registerAutoUpdaterIpc({ getMainWindow: mainWindow });
+    const source = "https://raw.githubusercontent.com/merkr-software/cadencr/v0.13.1/docs/shot.png";
+    const response = { data: new Uint8Array([137, 80, 78, 71]), mimeType: "image/png" };
+    imageState.fetchChangelogImage.mockResolvedValue(response);
+    const handler = electronState.handlers.get("app:fetch-changelog-image");
+    expect(handler).toBeDefined();
+
+    await expect(handler?.(trustedEvent(), source)).resolves.toEqual(response);
+    expect(imageState.fetchChangelogImage).toHaveBeenCalledWith(source);
   });
 });

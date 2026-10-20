@@ -4,7 +4,7 @@ import { SidebarPendingGatePopover } from "@/components/SidebarPendingGatePopove
 import { useAttentionFlash } from "@/hooks/useAttentionFlash";
 import { isStrongAttention, type Attention } from "@/lib/sidebar-attention";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
-import { useOwnsGateAutoOpen } from "@/stores/sidebar-surface-store";
+import { useOwnsGateAutoOpen } from "@/hooks/useOwnsGateAutoOpen";
 
 /**
  * Fixed leading slot: status stays legible even when provider branding is

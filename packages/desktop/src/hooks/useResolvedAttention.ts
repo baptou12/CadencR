@@ -6,8 +6,15 @@ import { FeatureStatus, getGetFeatureQueryOptions, type Feature } from "@/api/ge
 import { useAttentionIndex } from "@/hooks/useAttentionIndex";
 import { apiErrorMessage } from "@/lib/api-errors";
 import type { ActiveAttentionState, AttentionEntry } from "@/lib/attention-index";
+import {
+  deriveNextActions,
+  type NextActionEntry,
+  type ResolvedNextAction,
+} from "@/lib/next-actions";
 import { needsUser } from "@/lib/sidebar-attention";
 import { lookupFeature } from "@/stores/session-status-handlers";
+import { useUnreadStore } from "@/stores/unread-store";
+import { usePrStatusStore } from "@/stores/usePrStatusStore";
 
 export interface ResolvedAttention {
   feature: Feature;
@@ -34,6 +41,13 @@ export interface ResolvedAttentionResult {
    * order: a surface waits only on the states it shows.
    */
   loadingStates: readonly ActiveAttentionState[];
+  /**
+   * The "For me" action list, most urgent first: the attention index plus what
+   * each conversation's pull request asks for, one action per conversation.
+   */
+  actions: readonly ResolvedNextAction[];
+  /** Whether a conversation in the action list is still being looked up. */
+  actionsLoading: boolean;
 }
 
 interface FeatureResult {
@@ -51,20 +65,39 @@ const ERROR_TOAST_ID = "sidebar-attention-load-error";
  * list was never fetched. A conversation already in a loaded project list
  * starts from that record; the others cost one small request each, cached and
  * shared by every surface. Archived and deleted conversations drop out.
+ *
+ * The same lookups resolve the "For me" action list, whose pull request
+ * actions can name a conversation the attention index doesn't hold; those
+ * actions stay out of `items`, so badges and the rail only count attention.
  */
 export function useResolvedAttention(): ResolvedAttentionResult {
   const entries = useAttentionIndex();
+  // The store keeps `byFeature` while pushes change nothing, so this re-derives
+  // only on a real pull request change.
+  const prByFeature = usePrStatusStore((state) => state.byFeature);
+  const prAcks = useUnreadStore((state) => state.prAcks);
+  const actionEntries = useMemo(
+    () => deriveNextActions(entries, prByFeature, prAcks),
+    [entries, prByFeature, prAcks],
+  );
+  // Conversations with only a dismissed pull request action are looked up
+  // too, so their dismissal goes with them once they are archived.
+  const ackedIds = useMemo(() => Object.keys(prAcks).map(Number), [prAcks]);
+  const ids = useMemo(
+    () => lookupIds(entries, actionEntries, ackedIds),
+    [entries, actionEntries, ackedIds],
+  );
   const combine = useCallback(
-    (results: FeatureResult[]) => resolveEntries(entries, results),
-    [entries],
+    (results: FeatureResult[]) => resolveAll(entries, actionEntries, ackedIds, ids, results),
+    [entries, actionEntries, ackedIds, ids],
   );
   const resolved = useQueries({
-    queries: entries.map((entry) =>
-      getGetFeatureQueryOptions(entry.featureId, {
+    queries: ids.map((featureId) =>
+      getGetFeatureQueryOptions(featureId, {
         query: {
           staleTime: FEATURE_STALE_MS,
           retry: false,
-          initialData: () => lookupFeature(entry.featureId),
+          initialData: () => lookupFeature(featureId),
         },
       }),
     ),
@@ -77,6 +110,7 @@ export function useResolvedAttention(): ResolvedAttentionResult {
       });
     }
   }, [resolved.error]);
+  useClearGoneMarks(resolved.goneMarks);
   const byProject = useStableProjectCounts(resolved.items);
   const queue = useMemo(
     () => resolved.items.filter((item) => needsUser(item.state)),
@@ -89,27 +123,122 @@ export function useResolvedAttention(): ResolvedAttentionResult {
       queue,
       byProject,
       loadingStates: resolved.loadingStates,
+      actions: resolved.actions,
+      actionsLoading: resolved.actionsLoading,
     }),
-    [entries, resolved.items, queue, byProject, resolved.loadingStates],
+    [
+      entries,
+      resolved.items,
+      queue,
+      byProject,
+      resolved.loadingStates,
+      resolved.actions,
+      resolved.actionsLoading,
+    ],
   );
 }
 
-function resolveEntries(entries: readonly AttentionEntry[], results: FeatureResult[]) {
-  const items: ResolvedAttention[] = [];
-  let error: unknown = null;
-  // An array, not a Set: `combine`'s structural sharing keeps it stable while equal.
-  const loadingStates: ActiveAttentionState[] = [];
-  results.forEach((result, index) => {
-    const entry = entries[index];
-    if (!entry) return;
-    if (result.isPending && !loadingStates.includes(entry.state)) loadingStates.push(entry.state);
-    if (result.error && !isNotFound(result.error)) error ??= result.error;
-    const feature = result.data;
-    if (feature && feature.status !== FeatureStatus.archived) {
-      items.push({ feature, state: entry.state });
+/**
+ * A persisted unread or failure mark can outlive its conversation: once the
+ * lookup finds it archived or deleted, the mark goes (with any pull request
+ * action marked done), so it never resurfaces.
+ */
+function useClearGoneMarks(featureIds: readonly number[]): void {
+  useEffect(() => {
+    const { forget } = useUnreadStore.getState();
+    for (const featureId of featureIds) forget(featureId);
+  }, [featureIds]);
+}
+
+/** Every conversation to look up, once: the attention index, then PR-only actions. */
+function lookupIds(
+  entries: readonly AttentionEntry[],
+  actions: readonly NextActionEntry[],
+  ackedIds: readonly number[],
+): number[] {
+  const ids = entries.map((entry) => entry.featureId);
+  const seen = new Set(ids);
+  for (const featureId of [...actions.map((action) => action.featureId), ...ackedIds]) {
+    if (!seen.has(featureId)) {
+      seen.add(featureId);
+      ids.push(featureId);
     }
+  }
+  return ids;
+}
+
+function resolveAll(
+  entries: readonly AttentionEntry[],
+  actionEntries: readonly NextActionEntry[],
+  ackedIds: readonly number[],
+  ids: readonly number[],
+  results: FeatureResult[],
+) {
+  const byId = new Map<number, FeatureResult>();
+  results.forEach((result, index) => {
+    const featureId = ids[index];
+    if (featureId != null) byId.set(featureId, result);
   });
-  return { items, error, loadingStates };
+  const resolvedEntries = resolveEntries(entries, byId);
+  const goneMarks = [...resolvedEntries.goneMarks];
+  for (const featureId of ackedIds) {
+    const result = byId.get(featureId);
+    if (result && isGone(result) && !goneMarks.includes(featureId)) goneMarks.push(featureId);
+  }
+  return {
+    ...resolvedEntries,
+    goneMarks,
+    ...resolveActions(actionEntries, byId),
+    error: firstError(results),
+  };
+}
+
+function resolveEntries(entries: readonly AttentionEntry[], byId: Map<number, FeatureResult>) {
+  const items: ResolvedAttention[] = [];
+  // Arrays, not Sets: `combine`'s structural sharing keeps them stable while equal.
+  const loadingStates: ActiveAttentionState[] = [];
+  const goneMarks: number[] = [];
+  for (const entry of entries) {
+    const result = byId.get(entry.featureId);
+    if (!result) continue;
+    if (result.isPending && !loadingStates.includes(entry.state)) loadingStates.push(entry.state);
+    const feature = activeFeature(result);
+    if (feature) items.push({ feature, state: entry.state });
+    else if (isGone(result) && (entry.state === "failed" || entry.state === "unread")) {
+      goneMarks.push(entry.featureId);
+    }
+  }
+  return { items, loadingStates, goneMarks };
+}
+
+function resolveActions(
+  actionEntries: readonly NextActionEntry[],
+  byId: Map<number, FeatureResult>,
+) {
+  const actions: ResolvedNextAction[] = [];
+  let actionsLoading = false;
+  for (const { featureId, kind } of actionEntries) {
+    const result = byId.get(featureId);
+    if (!result) continue;
+    if (result.isPending) actionsLoading = true;
+    const feature = activeFeature(result);
+    if (feature) actions.push({ feature, kind });
+  }
+  return { actions, actionsLoading };
+}
+
+/** The conversation's record, unless it was archived or deleted since. */
+function activeFeature(result: FeatureResult): Feature | undefined {
+  return isGone(result) ? undefined : result.data;
+}
+
+/** Archived, or deleted (404): the conversation has left for good. */
+function isGone(result: FeatureResult): boolean {
+  return result.data?.status === FeatureStatus.archived || isNotFound(result.error);
+}
+
+function firstError(results: readonly FeatureResult[]): unknown {
+  return results.find((result) => result.error && !isNotFound(result.error))?.error ?? null;
 }
 
 /** A deleted conversation can keep a status or unread mark: it simply leaves. */

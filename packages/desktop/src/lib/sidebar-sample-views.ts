@@ -1,10 +1,11 @@
-import type { Feature } from "@/api/generated";
+import type { Feature, PrStatusSnapshot } from "@/api/generated";
 import {
   countByProject,
   type ResolvedAttention,
   type ResolvedAttentionResult,
 } from "@/hooks/useResolvedAttention";
 import { buildAttentionIndex } from "@/lib/attention-index";
+import { deriveNextActions, type NextActionKind } from "@/lib/next-actions";
 import { needsUser, type AttentionState } from "@/lib/sidebar-attention";
 import { lastActivityOf, newestFirst } from "@/lib/sidebar-lens";
 import type { SampleConversation } from "@/lib/sidebar-sample-data";
@@ -15,10 +16,16 @@ export interface SampleRow {
   state: AttentionState;
 }
 
+/** A "For me" sample: the row and what it asks the user to do. */
+export interface SampleAction {
+  row: SampleRow;
+  kind: NextActionKind;
+}
+
 export interface SampleViews {
-  /** What the collapsed rail and the folded projects' badges read, as the live sidebar resolves it. */
+  /** What the collapsed rail, the folded projects' badges and For me read, as the live sidebar resolves it. */
   attention: ResolvedAttentionResult;
-  forMe: readonly SampleRow[];
+  forMe: readonly SampleAction[];
   working: readonly SampleRow[];
   recent: readonly SampleRow[];
   pinned: readonly SampleRow[];
@@ -50,11 +57,32 @@ export function sampleViews(rows: readonly SampleRow[], recentCount: number): Sa
   const queue = items.filter((item) => needsUser(item.state));
   const rowsOf = (list: readonly ResolvedAttention[]) =>
     list.flatMap((item) => byId.get(item.feature.id) ?? []);
+  const forMe = deriveNextActions(entries, pullRequests(rows)).flatMap((action) => {
+    const row = byId.get(action.featureId);
+    return row ? [{ row, kind: action.kind }] : [];
+  });
+  const actions = forMe.map(({ row, kind }) => ({ feature: row.conversation.feature, kind }));
   return {
-    attention: { entries, items, queue, byProject: countByProject(items), loadingStates: [] },
-    forMe: rowsOf(queue),
+    attention: {
+      entries,
+      items,
+      queue,
+      byProject: countByProject(items),
+      loadingStates: [],
+      actions,
+      actionsLoading: false,
+    },
+    forMe,
     working: rowsOf(items.filter((item) => item.state === "working")),
     recent: oldestFirst.slice(Math.max(0, oldestFirst.length - recentCount)).reverse(),
     pinned: rows.filter((row) => row.conversation.feature.is_pinned),
   };
+}
+
+function pullRequests(rows: readonly SampleRow[]): Record<number, PrStatusSnapshot> {
+  return Object.fromEntries(
+    rows.flatMap(({ conversation }) =>
+      conversation.prStatus ? [[conversation.feature.id, conversation.prStatus]] : [],
+    ),
+  );
 }

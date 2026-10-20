@@ -4,12 +4,9 @@
 
 use cadencr_service::{api, app_state, config, dev_env, domain, remote, shared, shutdown};
 
-use axum::http::header::{HeaderName, CONTENT_TYPE};
-use axum::http::Method;
 use axum::serve::ListenerExt;
 use clap::Parser;
 use std::path::PathBuf;
-use tower_http::cors::CorsLayer;
 use tracing::info;
 
 use app_state::AppState;
@@ -245,6 +242,17 @@ async fn main() -> anyhow::Result<()> {
                 .remote_data_dir(&remote_data_dir)
                 .build();
 
+            // Gates persisted by the previous process must still show: seed the
+            // live status book (the snapshot every client reads) before any
+            // client can connect. Stale `running` rows were reset above.
+            let persisted_statuses =
+                domain::sessions::repository::get_session_status_snapshot(&state.read_pool)
+                    .await
+                    .map_err(|error| anyhow::anyhow!("failed to seed session statuses: {error}"))?;
+            state
+                .session_status_tx
+                .seed(persisted_statuses.into_values());
+
             // Watch the settings dir so external edits to the JSON files push a
             // live refresh to connected clients.
             domain::settings_store::watcher::start(&settings_dir, state.settings_events_tx.clone());
@@ -255,6 +263,20 @@ async fn main() -> anyhow::Result<()> {
                 &domain::themes::paths::themes_dir(),
                 state.theme_events_tx.clone(),
             );
+
+            domain::plugin_tabs::watcher::start(
+                &domain::plugin_tabs::paths::tabs_dir(),
+                state.plugin_tab_events_tx.clone(),
+            );
+            // A manifest edit that changes a tab's permissions revokes its
+            // live grants (a `dist/` rebuild does not).
+            tokio::spawn(domain::plugin_tabs::grants::revoke_on_manifest_change(
+                state.plugin_tab_grants.clone(),
+                state.plugin_tab_events_tx.subscribe(),
+            ));
+            state
+                .plugin_tab_backends
+                .spawn_reaper(&state.plugin_tab_presence);
 
             // A theme is built in a project named after it, and renaming a theme
             // is editing its file — so the same event that reloads the theme
@@ -281,6 +303,7 @@ async fn main() -> anyhow::Result<()> {
             // process, which needs to honor the override on first launch.
             domain::agents::apply_binary_overrides_from_settings(&state.read_pool).await;
             domain::agents::spawn_runtime_startup_warmups();
+            state.provider_updates.spawn_periodic_checks();
             domain::agents::providers::installed::managed::service::spawn_startup_blocklist_refresh(
             );
 
@@ -301,6 +324,7 @@ async fn main() -> anyhow::Result<()> {
             domain::schedules::scheduler::spawn(state.clone());
             domain::mcp::control::message_queue::spawn(state.clone());
             domain::git::forge::spawn(state.clone());
+            domain::git::linked_branches::spawn(state.clone());
 
             // Auto-start remote access if the user left it enabled (persisted
             // setting). Failures are non-fatal — the loopback server must come
@@ -314,10 +338,12 @@ async fn main() -> anyhow::Result<()> {
 
             let pty_manager = state.pty_manager.clone();
             let remote_for_shutdown = state.remote.clone();
+            let backends_for_shutdown = state.plugin_tab_backends.clone();
             let write_pool_for_shutdown = state.write_pool.clone();
             let maintenance_pool = state.write_pool.clone();
             let maintenance_events = state.storage_maintenance_events_tx.clone();
-            let app = api::build_router(state).layer(build_cors_layer(config.frontend_port));
+            let app =
+                api::build_router(state).layer(api::cors::build_cors_layer(config.frontend_port));
 
             let addr = format!("127.0.0.1:{}", config.port);
             info!("Cadencr service listening on {addr}");
@@ -348,6 +374,7 @@ async fn main() -> anyhow::Result<()> {
                 drain_rx,
                 pty_manager,
                 remote_for_shutdown,
+                backends_for_shutdown,
                 write_pool_for_shutdown,
             )
             .await?;
@@ -355,36 +382,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn build_cors_layer(frontend_port: u16) -> CorsLayer {
-    let mut origins = vec!["null".parse().expect("static origin")];
-    if cfg!(debug_assertions) {
-        origins.push(
-            format!("http://localhost:{frontend_port}")
-                .parse()
-                .expect("frontend origin"),
-        );
-        origins.push(
-            format!("http://127.0.0.1:{frontend_port}")
-                .parse()
-                .expect("frontend origin"),
-        );
-    }
-
-    CorsLayer::new()
-        .allow_origin(origins)
-        .allow_headers([
-            HeaderName::from_static(api::middleware::AUTH_HEADER),
-            CONTENT_TYPE,
-        ])
-        .allow_methods([
-            Method::GET,
-            Method::POST,
-            Method::PUT,
-            Method::DELETE,
-            Method::PATCH,
-        ])
 }
 
 /// MCP subprocess mode writes to stderr to keep stdout clean for JSON-RPC.

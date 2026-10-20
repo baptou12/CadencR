@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{
@@ -76,20 +76,45 @@ impl Requester {
         self.send::<(), T>(Method::GET, path, None, StatusCode::OK)
     }
 
-    pub(super) fn get_catalog_blob<T: DeserializeOwned>(
+    pub(super) fn get_with_deadline<T: DeserializeOwned>(
         &self,
         path: &str,
+        deadline: Option<Instant>,
     ) -> Result<T, PublisherError> {
-        let response = self
-            .client
-            .get(format!("{}{path}", self.base))
-            .headers(self.headers.clone())
-            .send()
-            .map_err(network)?;
+        self.get_bounded(path, MAX_JSON_BYTES, deadline)
+    }
+
+    pub(super) fn get_catalog_blob_with_deadline<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        deadline: Option<Instant>,
+    ) -> Result<T, PublisherError> {
         // Base64, newline wrapping and a bounded JSON metadata allowance.
         let limit =
             (cadencr_registry_core::MAX_CATALOG_BYTES as u64).div_ceil(3) * 4 + 2 * 1024 * 1024;
-        decode_bounded(response, StatusCode::OK, limit)
+        self.get_bounded(path, limit, deadline)
+    }
+
+    fn get_bounded<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        limit: u64,
+        deadline: Option<Instant>,
+    ) -> Result<T, PublisherError> {
+        let mut request = self
+            .client
+            .get(format!("{}{path}", self.base))
+            .headers(self.headers.clone());
+        if let Some(deadline) = deadline {
+            let remaining = deadline
+                .checked_duration_since(Instant::now())
+                .filter(|remaining| !remaining.is_zero())
+                .ok_or_else(|| error("GitHub discovery verification deadline exceeded"))?;
+            request = request.timeout(remaining.min(TIMEOUT));
+        }
+        let result = decode_bounded(request.send().map_err(network)?, StatusCode::OK, limit);
+        check_deadline(deadline)?;
+        result
     }
 
     pub(super) fn get_optional<T: DeserializeOwned>(
@@ -151,11 +176,12 @@ impl Requester {
     }
 
     pub(super) fn asset_response(&self, path: &str) -> Result<AssetResponse, PublisherError> {
+        let mut headers = self.headers.clone();
+        headers.insert(ACCEPT, HeaderValue::from_static("application/octet-stream"));
         let response = self
             .client
             .get(format!("{}{path}", self.base))
-            .headers(self.headers.clone())
-            .header(ACCEPT, "application/octet-stream")
+            .headers(headers)
             .header(ACCEPT_ENCODING, "identity")
             .send()
             .map_err(network)?;
@@ -213,6 +239,13 @@ fn network(_: reqwest::Error) -> PublisherError {
 
 use std::io::Read as _;
 
+pub(super) fn check_deadline(deadline: Option<Instant>) -> Result<(), PublisherError> {
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        return Err(error("GitHub discovery verification deadline exceeded"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::{Read, Write};
@@ -231,6 +264,46 @@ mod tests {
             String::from_utf8_lossy(&bytes[..count]).into_owned()
         });
         (format!("http://{address}"), handle)
+    }
+
+    #[test]
+    fn asset_accept_replaces_json_without_mutating_json_requests() {
+        for response in [
+            b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabc".as_slice(),
+            b"HTTP/1.1 302 Found\r\nLocation: https://release-assets.githubusercontent.com/x\r\nContent-Length: 0\r\n\r\n".as_slice(),
+        ] {
+            let (base, observed) = serve(response);
+            let mut requester = Requester::fixture("very-secret", base).unwrap();
+            match requester.asset_response("/asset").unwrap() {
+                AssetResponse::Bytes(response) => assert_eq!(response.bytes().unwrap(), "abc"),
+                AssetResponse::Redirect(location) => {
+                    assert_eq!(location, "https://release-assets.githubusercontent.com/x");
+                }
+            }
+            let request = observed.join().unwrap();
+            let accepts: Vec<_> = request
+                .lines()
+                .filter(|line| line.to_ascii_lowercase().starts_with("accept:"))
+                .collect();
+            assert_eq!(accepts, ["accept: application/octet-stream"]);
+            assert!(!request.contains("application/vnd.github+json"));
+            assert!(request.contains("accept-encoding: identity"));
+            assert!(request.contains("authorization: Bearer very-secret"));
+            assert!(request.contains(&format!("x-github-api-version: {API_VERSION}")));
+            assert!(request.contains(&format!("user-agent: {USER_AGENT_VALUE}")));
+            assert!(requester.headers[AUTHORIZATION].is_sensitive());
+
+            let (base, observed) = serve(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}");
+            requester.base = base;
+            requester.get::<serde_json::Value>("/json").unwrap();
+            let request = observed.join().unwrap();
+            let accepts: Vec<_> = request
+                .lines()
+                .filter(|line| line.to_ascii_lowercase().starts_with("accept:"))
+                .collect();
+            assert_eq!(accepts, ["accept: application/vnd.github+json"]);
+            assert!(!request.contains("application/octet-stream"));
+        }
     }
 
     #[test]

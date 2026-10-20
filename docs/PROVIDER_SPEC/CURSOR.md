@@ -1,5 +1,10 @@
 # Provider status — Cursor
 
+> Reviewed against v0.13.0 source and release changes on 2026-10-13. This is a
+> source review, not a new end-to-end parity certification of every local CLI.
+
+![Current provider settings](../../packages/landing/src/assets/docs/v0.13.0/provider-cursor.png)
+
 Status of the Cursor adapter against [`FEATURES.md`](./FEATURES.md).
 
 The adapter lives in `packages/service/src/domain/agents/cursor/` and starts
@@ -24,7 +29,7 @@ agent login
 | 1   | Modes: default / plan / ask              | ✅     | Cadencr `Default` maps to Cursor ACP `agent`; `Plan` maps to `plan`; `Ask` maps to `ask`. `AcceptEdits` and Cursor CLI Debug are not exposed by Cursor ACP.                                                                                                                                                                           |
 | 2   | Thinking                                 | ✅     | Standard ACP `agent_thought_chunk` updates map to dedicated runtime thinking deltas.                                                                                                                                                                                                                                                  |
 | 3   | Partial / streaming messages             | ✅     | Shared ACP message/block indexer maps message, thought, tool-call, and completion updates.                                                                                                                                                                                                                                            |
-| 4   | Bash tool calls + outputs                | ✅     | Cursor `shell` / `terminal` / `shellToolCall` normalize to `Bash`; ACP terminal requests run through the sandboxed terminal registry.                                                                                                                                                                                                 |
+| 4   | Bash tool calls + outputs                | ✅     | Cursor `shell` / `terminal` / `shellToolCall` normalize to `Bash`; ACP terminals run in the session working directory. The native access policy determines permissions. |
 | 5   | Edits / Writes / Patch                   | ✅     | Cursor names normalize to `Write`, `Edit`, and `ApplyPatch`; `path`, `fileText`, `oldText`, and `newText` normalize to Cadencr's canonical input keys.                                                                                                                                                                                |
 | 6   | Sub-agents                               | 🟡     | Composer's `Task: Subagent task` call renders immediately as a canonical `Agent` block; `cursor/task` completion metadata enriches that same block with prompt/type/model/agent details. Cursor does not expose a live child event stream or final child text in this extension.                                                      |
 | 7   | Todo                                     | ✅     | `cursor/update_todos` maps to `TodoWrite`; stable `toolCallId`s are retained and statuses normalize to the canonical runtime shape.                                                                                                                                                                                                   |
@@ -138,9 +143,9 @@ folding unsafe execution into `RuntimePermissionMode`:
 Cursor ACP currently advertises only `mode` and `model` as session config
 options, so approval mode cannot be changed through
 `session/set_config_option`. The adapter therefore owns the launch-flag
-mapping. Changing access mode on a live conversation records the desired mode;
-the shared runtime resumes the Cursor session with the new flag before the next
-prompt. The workspace default is stored under `cursor_access_mode`.
+mapping. Default ↔ Auto Review changes update the adapter policy for the next permission
+request. Transitions that change sandbox launch flags restart/resume safely
+before the next prompt. The workspace default is stored under `cursor_access_mode`.
 
 Cursor Agent `2026.07.09-a3815c0` parses `--auto-review`, but its ACP session
 bootstrap only persists the `--force` path and otherwise leaves the session in
@@ -190,3 +195,16 @@ fully reports ACP-provided server state, Cadencr shows their status as
    the extension for a given turn; a prompt cannot force an unavailable tool.
 6. Read/Search starts currently omit ACP `locations` and raw arguments, so the
    required title is the only trustworthy tool description available.
+
+## Model changes and current defaults
+
+Fast/thinking companion options are resolved again after changing the base model.
+Switching to Auto or another model that lacks the old option must clear that
+unsupported value rather than send stale configuration and fail session startup.
+Only acknowledged session configuration is presented as active.
+
+A new conversation's provider/model follows the last accepted manual prompt
+across projects, with explicit conversation overrides taking priority.
+Cursor does not currently implement the `SessionBranching` capability for
+[Rewind & Fork](../REWIND_AND_FORK.md). Its `cursor/ask_question` bridge exists;
+whether a specific model/turn emits it is a separate upstream limitation.

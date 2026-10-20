@@ -1,15 +1,18 @@
-import type { ReactElement } from "react";
+import { useMemo, type ReactElement, type ReactNode } from "react";
 import { HistoryIcon, InboxIcon, LoaderIcon, PinIcon, type LucideIcon } from "lucide-react";
 import { SidebarBlock } from "@/components/SidebarBlock";
 import { SidebarSampleRow } from "@/components/SidebarSampleRow";
 import { useSamplePreview } from "@/components/SidebarSampleProvider";
+import { SidebarShowMoreButton } from "@/components/SidebarShowMore";
+import { useForMeShowMore } from "@/hooks/useForMeShowMore";
+import { isStrongAction, type NextActionKind } from "@/lib/next-actions";
 import { isStrongAttention } from "@/lib/sidebar-attention";
-import type { SampleRow } from "@/lib/sidebar-sample-views";
+import type { SampleAction, SampleRow } from "@/lib/sidebar-sample-views";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import {
   SidebarSurfaceContext,
   useSidebarBlockFold,
-  type SidebarFoldableBlock,
+  type SidebarBlockId,
 } from "@/stores/sidebar-surface-store";
 
 /** The blocks above the projects (For me, In progress, Recent, Pinned), filled with samples. */
@@ -20,41 +23,34 @@ export function SidebarSampleBlocks(): ReactElement {
   const recentOn = useSidebarOption("recentBlock");
   return (
     <>
-      {forMeOn && (
-        <FoldableSampleBlock
-          label="For me"
-          icon={InboxIcon}
-          block="for-me"
-          rows={views.forMe}
-          empty="Nothing waiting on you"
-          strongCount={views.forMe.filter((row) => isStrongAttention(row.state)).length}
-        />
-      )}
+      {forMeOn && <SampleForMeBlock actions={views.forMe} />}
       {workingOn && (
-        <FoldableSampleBlock
+        <SampleBlock
           label="In progress"
           icon={LoaderIcon}
           block="working"
           rows={views.working}
+          count={views.working.length}
           empty="No agent at work"
         />
       )}
       {recentOn && (
-        <FoldableSampleBlock
+        <SampleBlock
           label="Recent"
           icon={HistoryIcon}
           block="recent"
           rows={views.recent}
           empty="No conversation yet"
-          showCount={false}
         />
       )}
-      <FoldableSampleBlock
+      <SampleBlock
         label="Pinned"
         icon={PinIcon}
         block="pinned"
         rows={views.pinned}
+        count={views.pinned.length}
         empty="Pin a conversation to keep it here"
+        strongCount={views.pinned.filter((row) => isStrongAttention(row.state)).length}
       />
     </>
   );
@@ -62,19 +58,41 @@ export function SidebarSampleBlocks(): ReactElement {
 
 interface SampleBlockProps {
   label: string;
+  block: SidebarBlockId;
   icon: LucideIcon;
   rows: readonly SampleRow[];
   empty: string;
-  showCount?: boolean;
+  /** The header's counter; omitted for blocks whose size is fixed (Recent). */
+  count?: number;
   strongCount?: number;
+  /** Each row's next action, named under its title (For me). */
+  nextActions?: ReadonlyMap<number, NextActionKind>;
+  footer?: ReactNode;
 }
 
-/** Folds with the live block of the same name: the preview is the user's sidebar. */
-function FoldableSampleBlock(
-  props: SampleBlockProps & { block: SidebarFoldableBlock },
-): ReactElement | null {
-  const fold = useSidebarBlockFold(props.block);
-  return <SampleBlock {...props} fold={fold} />;
+/** For me's next actions, limited like the live block: the same action lines and "Show more". */
+function SampleForMeBlock({ actions }: { actions: readonly SampleAction[] }): ReactElement {
+  const more = useForMeShowMore(actions.length);
+  const { rows, kinds } = useMemo(() => {
+    const shown = actions.slice(0, more.visibleCount);
+    return {
+      rows: shown.map((action) => action.row),
+      kinds: new Map(shown.map((action) => [action.row.conversation.feature.id, action.kind])),
+    };
+  }, [actions, more.visibleCount]);
+  return (
+    <SampleBlock
+      label="For me"
+      icon={InboxIcon}
+      block="for-me"
+      rows={rows}
+      count={actions.length}
+      nextActions={kinds}
+      footer={<SidebarShowMoreButton more={more} />}
+      empty="Nothing waiting on you"
+      strongCount={actions.filter(isStrongAction).length}
+    />
+  );
 }
 
 function SampleBlock({
@@ -83,14 +101,14 @@ function SampleBlock({
   block,
   rows,
   empty,
-  showCount = true,
+  count,
   strongCount,
-  fold,
-}: SampleBlockProps & {
-  block: SidebarFoldableBlock;
-  fold?: { expanded: boolean; toggle: () => void };
-}): ReactElement | null {
+  nextActions,
+  footer,
+}: SampleBlockProps): ReactElement | null {
   const preview = useSamplePreview();
+  // Folds with the live block of the same name: the preview is the user's sidebar.
+  const fold = useSidebarBlockFold(block);
   const hideEmpty = useSidebarOption("hideEmptyBlocks");
   if (rows.length === 0 && hideEmpty) return null;
   return (
@@ -98,12 +116,12 @@ function SampleBlock({
       block={block}
       label={label}
       icon={icon}
-      count={showCount ? rows.length : undefined}
+      count={count}
       strongCount={strongCount}
       fold={fold}
       empty={empty}
       isEmpty={rows.length === 0}
-      capped={fold !== undefined}
+      capped
     >
       {/* Pinned rows belong to the tree's surface. */}
       <SidebarSurfaceContext.Provider value={block === "pinned" ? "tree" : block}>
@@ -114,8 +132,10 @@ function SampleBlock({
             variant="block"
             isActive={row.conversation.feature.id === preview.activeFeatureId}
             onSelect={preview.select}
+            nextAction={nextActions?.get(row.conversation.feature.id)}
           />
         ))}
+        {footer}
       </SidebarSurfaceContext.Provider>
     </SidebarBlock>
   );

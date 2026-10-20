@@ -23,6 +23,8 @@ const guestShortcutBindingsSchema = z
     responsive: shortcutBindingSchema,
     devtools: shortcutBindingSchema,
     zoomReset: shortcutBindingSchema,
+    navigateBack: shortcutBindingSchema,
+    navigateForward: shortcutBindingSchema,
   })
   .strict();
 

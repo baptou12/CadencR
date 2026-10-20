@@ -12,12 +12,9 @@
 //! Liveness always comes from the owner's handle (we store a `Weak`, never a
 //! clone of the query/channel), so a turn that ended or a connection that
 //! dropped is reflected automatically — there is no stale channel to send to.
-//! It also stores the server-stamped turn start time so every client renders
-//! a synchronized elapsed timer (single source of truth).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::Mutex;
 
@@ -34,8 +31,6 @@ struct ActiveTurn {
     /// Weak so a dropped connection's map is freed and this entry becomes
     /// inert automatically — no manual teardown on every exit path.
     owner: Weak<SdkSessionsInner>,
-    /// Server wall-clock (epoch ms) when the current turn started.
-    started_at_ms: i64,
     /// Monotonic logical-turn generation. A stop can race with a new prompt;
     /// the generation lets the old turn finish without marking the newer turn
     /// idle.
@@ -63,16 +58,10 @@ impl ActiveTurnRegistry {
         Self::default()
     }
 
-    /// Record that `owner`'s connection is driving a turn for `db_session_id`,
-    /// stamping a fresh start time. Called at every turn start
-    /// (`mark_agent_running`); a mid-turn respawn keeps the same owner map, so
-    /// it does not need to touch the registry.
-    pub(crate) async fn begin_turn(
-        &self,
-        db_session_id: i64,
-        owner: &SdkSessions,
-        started_at_ms: i64,
-    ) {
+    /// Record that `owner`'s connection is driving a turn for `db_session_id`.
+    /// Called at every turn start (`mark_agent_running`); a mid-turn respawn
+    /// keeps the same owner map, so it does not need to touch the registry.
+    pub(crate) async fn begin_turn(&self, db_session_id: i64, owner: &SdkSessions) {
         let mut turns = self.turns.lock().await;
         let (generation, interrupted_turn) = turns
             .get(&db_session_id)
@@ -87,7 +76,6 @@ impl ActiveTurnRegistry {
             db_session_id,
             ActiveTurn {
                 owner: Arc::downgrade(owner),
-                started_at_ms,
                 generation,
                 interrupted_turn,
             },
@@ -157,14 +145,6 @@ impl ActiveTurnRegistry {
             .await
             .get(&db_session_id)
             .is_some_and(|turn| turn.generation == generation)
-    }
-
-    /// The server-stamped start time for a session's live turn, if its owner
-    /// is still connected. Used to hydrate a (re)connecting client's timer.
-    pub(crate) async fn started_at(&self, db_session_id: i64) -> Option<i64> {
-        let turns = self.turns.lock().await;
-        let entry = turns.get(&db_session_id)?;
-        entry.owner.upgrade().map(|_| entry.started_at_ms)
     }
 
     /// Resolve the owning connection's session map for a session, if the owner
@@ -248,16 +228,6 @@ impl ActiveTurnRegistry {
     }
 }
 
-/// Server wall-clock in epoch milliseconds. Matches the frontend's
-/// `Date.now()` reference so the synchronized timer's only error is device
-/// clock skew (a constant per-device offset).
-pub(crate) fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,12 +238,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn begin_turn_records_owner_and_start() {
+    async fn begin_turn_records_owner() {
         let reg = ActiveTurnRegistry::new();
         let owner = empty_sessions();
-        reg.begin_turn(42, &owner, 1_000).await;
+        reg.begin_turn(42, &owner).await;
 
-        assert_eq!(reg.started_at(42).await, Some(1_000));
         assert!(reg.owner_sessions(42).await.is_some());
     }
 
@@ -282,10 +251,10 @@ mod tests {
         let reg = ActiveTurnRegistry::new();
         let owner = empty_sessions();
         let runtime = runtime_session();
-        reg.begin_turn(42, &owner, 1_000).await;
+        reg.begin_turn(42, &owner).await;
         let interrupted = reg.request_interruption(42, &runtime).await.unwrap();
 
-        reg.begin_turn(42, &owner, 2_000).await;
+        reg.begin_turn(42, &owner).await;
 
         assert_eq!(
             reg.take_interruption(42, &Arc::downgrade(&runtime)).await,
@@ -300,12 +269,12 @@ mod tests {
         let owner = empty_sessions();
         let interrupted_runtime = runtime_session();
         let replacement_runtime = runtime_session();
-        reg.begin_turn(42, &owner, 1_000).await;
+        reg.begin_turn(42, &owner).await;
         let interrupted = reg
             .request_interruption(42, &interrupted_runtime)
             .await
             .unwrap();
-        reg.begin_turn(42, &owner, 2_000).await;
+        reg.begin_turn(42, &owner).await;
 
         assert_eq!(
             reg.take_interruption(42, &Arc::downgrade(&replacement_runtime))
@@ -324,7 +293,7 @@ mod tests {
         let reg = ActiveTurnRegistry::new();
         let owner = empty_sessions();
         let runtime = runtime_session();
-        reg.begin_turn(42, &owner, 1_000).await;
+        reg.begin_turn(42, &owner).await;
         let interrupted = reg.request_interruption(42, &runtime).await.unwrap();
 
         assert!(reg.clear_interruption(42, interrupted, &runtime).await);
@@ -339,10 +308,9 @@ mod tests {
     async fn dropped_owner_makes_entry_inert() {
         let reg = ActiveTurnRegistry::new();
         let owner = empty_sessions();
-        reg.begin_turn(7, &owner, 5).await;
+        reg.begin_turn(7, &owner).await;
         drop(owner);
 
-        assert_eq!(reg.started_at(7).await, None);
         assert!(reg.owner_sessions(7).await.is_none());
     }
 
@@ -351,8 +319,8 @@ mod tests {
         let reg = ActiveTurnRegistry::new();
         let a = empty_sessions();
         let b = empty_sessions();
-        reg.begin_turn(1, &a, 0).await;
-        reg.begin_turn(2, &b, 0).await;
+        reg.begin_turn(1, &a).await;
+        reg.begin_turn(2, &b).await;
 
         reg.remove_owned_by(&a).await;
 

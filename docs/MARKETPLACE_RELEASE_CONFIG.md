@@ -1,17 +1,34 @@
 # Marketplace desktop build configuration
 
-## v0.13.0: preparation only, no activation
+## After v0.13.0: populate the registry, no desktop activation
 
-Keep marketplace entry points hidden and official marketplace build trust/feed
-variables unset for this milestone. The configuration below describes a **later**
-authorized deployment; it is not an instruction to enable it now.
+v0.13.0 is released with marketplace entry points hidden. The next milestone
+publishes reviewed themes and Pi to the registry before a future activation
+release. Keep official marketplace desktop build trust/feed variables unset;
+publishing registry contents does not expose or configure the desktop UI.
+The configuration below describes the later authorized desktop deployment.
+
+Graphite, Ember and Fjord now pass isolated current-source UI/editor/terminal QA,
+including persisted theme selection and author-project flags after service restart.
+This is local-authoring evidence only: no public archive/install or packaged-client
+acceptance is inferred. See the [current delivery checklist](./MARKETPLACE_V1.md)
+for scoped evidence and the remaining publication gates.
 
 Read-only CLI preparation CI and downloaded checksum verification are complete
 ([run 38214595106](https://github.com/merkr-software/CadencR/actions/runs/38214595106),
 source `6d0e2b6ed39ceb22d9fd1fa785d5cb5fa8a09f93`). Its `v0.12.1`
-artifact label matches current source, not a selected future release. Actual CLI
-release, distributed-binary qualification, registry pins, JavaScript removal,
-plugin publication and official trust activation remain pending.
+artifact label belonged to preparation only. The actual
+[v0.13.0 release](https://github.com/merkr-software/CadencR/releases/tag/v0.13.0)
+contains the original Linux Rust CLI and checksums. The latest CLI-only delivery,
+`0.13.1-dev.39144478778.1`, includes the remaining standalone Rust diagnostics.
+See its [dated qualification record](./MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-18.md)
+for exact provider/theme/tab runs and failure history. These use inert fixtures
+and QA-only trust, not production credentials or runtime certification.
+JavaScript business implementations and executable legacy test oracles are
+removed from the source template; thin orchestration and frozen test data remain.
+The candidate registry pin still targets an older CLI. Reviewing its replacement,
+regenerating delivery approvals, actual registry deployment and official-plugin
+publication remain pending. Desktop activation is separate.
 
 Internal QA can opt in with `VITE_INTERNAL_MARKETPLACE=true` in a DEV renderer
 only; production builds cannot expose the marketplace through that environment
@@ -201,9 +218,22 @@ not an ordinary delegated-key rotation.
 
 ## Deployment cutover still pending
 
-These changes do not publish a CLI release, populate `PENDING` binary pins, switch
-remote registry workflows, provision official roots/feeds or certify a packaged
-client. Verify the real distributed Rust binary first, then pin both registry
-workflows and commands, then remove replaced JavaScript implementations. The
-transitional JavaScript validator is not a supported substitute for schema-2 mixed
-contributions or the trust-generation publication protocol.
+The candidate template pins qualified `0.13.1-dev.39108033875.1` for existing
+contribution/build/publication commands; see its exact
+[qualification evidence](MARKETPLACE_CLI_QUALIFICATION_2026-10-18.md). The source
+now removes replaced JavaScript business tooling and adds Rust standalone
+metadata/submission/expiry commands. **Those new commands need a new CLI release
+and qualification before full template deployment.** The older binary is not a
+replacement pin for this expanded contract.
+
+Merge/release/qualify the updated CLI, review the exact source/version/tag/digest,
+and regenerate all registry delivery payload hashes. Reinspect actual remote
+`main` and protections rather than reuse stale bootstrap approvals. If the trusted
+base lacks helpers, deliver them first while preserving validation; then switch
+workflows from that merged base and observe real hosted three-kind checks.
+Preserve the required checks and explicitly agreed governance. No source cleanup
+performs that deployment, assigns authority or activates desktop UI.
+
+Author pins, official roots/feeds, signing environments, initial plugin releases
+and packaged-client certification remain separate gates. Fresh runners rebuild
+proof from verified remote evidence; raw recovery state is never uploaded/restored.

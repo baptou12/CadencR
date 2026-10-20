@@ -62,7 +62,9 @@ jobs:
 
   release:
     needs: cli-linux
-    runs-on: macos-14
+    # arm64 runner (build:macos-sidecars cross-compiles x64). macos-14 is
+    # retired on 2026-11-02.
+    runs-on: macos-15
     timeout-minutes: 60
     env:
       # Public host-owned trust only; empty repository variables keep acquisition
@@ -123,14 +125,18 @@ jobs:
       - name: Validate marketplace build configuration
         run: node scripts/validate-marketplace-build-env.mjs
 
-      - name: Build Rust service sidecar
-        run: node scripts/validate-marketplace-build-env.mjs -- pnpm --filter @cadencr/service build
+      - name: Build Rust service sidecars (arm64 + x64)
+        run: node scripts/validate-marketplace-build-env.mjs -- pnpm --filter @cadencr/service build:macos-sidecars
 
-      - name: Verify service sidecar runtime dependencies
-        run: pnpm --filter @cadencr/service check:macos-runtime-deps
+      - name: Ensure Rosetta for the x64 sidecar smoke test
+        run: arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
 
       - name: Smoke test packaged service sidecar startup
-        run: pnpm --filter @cadencr/service smoke:packaged-sidecar
+        run: |
+          for arch in arm64 x64; do
+            pnpm --filter @cadencr/service smoke:packaged-sidecar \
+              "$GITHUB_WORKSPACE/packages/desktop/resources/bin/$arch/cadencr-service"
+          done
 
       - name: Build renderer + main bundles
         run: pnpm --filter @cadencr/desktop exec electron-vite build
@@ -209,10 +215,10 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           dist_dir="packages/desktop/dist-electron"
           expected_assets=(
-            "Cadencr-${version}.dmg"
-            "Cadencr-${version}.dmg.blockmap"
-            "Cadencr-${version}-mac.zip"
-            "Cadencr-${version}-mac.zip.blockmap"
+            "Cadencr-${version}-x64.dmg"
+            "Cadencr-${version}-x64.dmg.blockmap"
+            "Cadencr-${version}-x64-mac.zip"
+            "Cadencr-${version}-x64-mac.zip.blockmap"
             "Cadencr-${version}-arm64.dmg"
             "Cadencr-${version}-arm64.dmg.blockmap"
             "Cadencr-${version}-arm64-mac.zip"
@@ -227,9 +233,9 @@ jobs:
             fi
           done
 
-          grep -F "Cadencr-${version}-mac.zip" "$dist_dir/latest-mac.yml" >/dev/null
+          grep -F "Cadencr-${version}-x64-mac.zip" "$dist_dir/latest-mac.yml" >/dev/null
           grep -F "Cadencr-${version}-arm64-mac.zip" "$dist_dir/latest-mac.yml" >/dev/null
-          grep -F "Cadencr-${version}.dmg" "$dist_dir/latest-mac.yml" >/dev/null
+          grep -F "Cadencr-${version}-x64.dmg" "$dist_dir/latest-mac.yml" >/dev/null
           grep -F "Cadencr-${version}-arm64.dmg" "$dist_dir/latest-mac.yml" >/dev/null
 
       - name: Extract GitHub release notes
@@ -252,10 +258,10 @@ jobs:
           dist_dir="packages/desktop/dist-electron"
           gh release upload "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
-            "$dist_dir/Cadencr-${version}.dmg" \
-            "$dist_dir/Cadencr-${version}.dmg.blockmap" \
-            "$dist_dir/Cadencr-${version}-mac.zip" \
-            "$dist_dir/Cadencr-${version}-mac.zip.blockmap" \
+            "$dist_dir/Cadencr-${version}-x64.dmg" \
+            "$dist_dir/Cadencr-${version}-x64.dmg.blockmap" \
+            "$dist_dir/Cadencr-${version}-x64-mac.zip" \
+            "$dist_dir/Cadencr-${version}-x64-mac.zip.blockmap" \
             "$dist_dir/Cadencr-${version}-arm64.dmg" \
             "$dist_dir/Cadencr-${version}-arm64.dmg.blockmap" \
             "$dist_dir/Cadencr-${version}-arm64-mac.zip" \
@@ -269,10 +275,10 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           expected_assets=(
-            "Cadencr-${version}.dmg"
-            "Cadencr-${version}.dmg.blockmap"
-            "Cadencr-${version}-mac.zip"
-            "Cadencr-${version}-mac.zip.blockmap"
+            "Cadencr-${version}-x64.dmg"
+            "Cadencr-${version}-x64.dmg.blockmap"
+            "Cadencr-${version}-x64-mac.zip"
+            "Cadencr-${version}-x64-mac.zip.blockmap"
             "Cadencr-${version}-arm64.dmg"
             "Cadencr-${version}-arm64.dmg.blockmap"
             "Cadencr-${version}-arm64-mac.zip"

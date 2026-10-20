@@ -32,6 +32,7 @@ import {
 } from "./ws-session-actions";
 import { loadSessionPromptTurn } from "./ws-session-prompt-turn";
 import { discardStreamDeltas } from "./ws-delta-coalescer";
+import { SESSION_CLOSED_BEFORE_DELIVERY, failPromptDelivery } from "./ws-session-prompt-delivery";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import { parseErrorPayload, parseFastModePayload } from "./ws-envelope-payload";
 import { resyncMessagesOnReconnect } from "./ws-session-resync";
@@ -109,6 +110,9 @@ function createLifecycleActions(deps: SimpleSessionActionDeps) {
       // callers hanging until the timeout after a deliberate close().
       session?.outboundQueue.splice(0);
       if (session) rejectPendingRequests(session);
+      if (session?.queuedPrompts.length)
+        set(updateSession(get(), sessionId, { queuedPrompts: [] }));
+      failPromptDelivery(sessionId, SESSION_CLOSED_BEFORE_DELIVERY);
       if (!session?.conn) return;
 
       if (session.serverSessionId) {
@@ -234,7 +238,7 @@ function createConfigurationActions(deps: SimpleSessionActionDeps) {
         sendRaw(sessionId, createAccessModeSet(session.serverSessionId, mode));
         return;
       }
-      set(updateSession(get(), sessionId, { accessMode: mode }));
+      set(updateSession(get(), sessionId, { accessMode: mode, pendingInitAccessMode: mode }));
     },
   };
 }

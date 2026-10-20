@@ -101,9 +101,13 @@
 /* ── Floating overlays ───────────────────────────────────────────────────
  * The hand-rolled popovers (slash-command, @-file mention, filter
  * suggestions) share the `.glass-surface` utility; in the CadencR pair they
- * get a real overlay lift instead of the flat hairline-only look. */
+ * and the toasts get a real overlay lift instead of the flat hairline-only
+ * look. */
 :root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
-  .glass-surface.absolute {
+  .glass-surface.absolute,
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-sonner-toaster]
+  [data-sonner-toast][data-styled="true"] {
   box-shadow: var(--glass-shadow-overlay);
 }
 

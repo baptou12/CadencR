@@ -28,6 +28,7 @@ async fn migration_counts_existing_prompts_into_the_usage_buckets() {
          message_uuid TEXT, created_at TEXT NOT NULL); \
          CREATE TABLE agent_message_origins (message_id INTEGER PRIMARY KEY \
          REFERENCES agent_messages(id) ON DELETE CASCADE, origin_kind TEXT NOT NULL); \
+         CREATE TABLE schedules (id INTEGER PRIMARY KEY AUTOINCREMENT); \
          CREATE TABLE provider_usage_stats (day TEXT NOT NULL, provider_id TEXT NOT NULL, \
          model_id TEXT NOT NULL DEFAULT '', thinking_effort TEXT NOT NULL DEFAULT '', \
          input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, \
@@ -66,6 +67,7 @@ async fn migration_counts_existing_prompts_into_the_usage_buckets() {
     .await
     .unwrap();
     seed_applied_migrations_before(&pool, TARGET_VERSION).await;
+    super::test_fixtures::ensure_project_authoring_marker(&pool).await;
 
     run_migrations(&MigrationContext::pool_only(&pool))
         .await

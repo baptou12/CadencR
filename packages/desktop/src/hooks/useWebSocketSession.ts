@@ -114,6 +114,8 @@ export interface UseWebSocketSessionReturn {
   ) => Promise<void>;
   setProvider: (providerId: string, modelId?: string) => void;
   sendPrompt: (text: string, options?: PromptDispatchOptions) => void;
+  /** `sendPrompt` that settles once the prompt is on the wire (see the store action). */
+  deliverPrompt: (text: string, options?: PromptDispatchOptions) => Promise<void>;
   respondToPermission: (
     requestId: string,
     decision: PermissionDecisionValue,
@@ -136,6 +138,7 @@ type SessionActions = Pick<
   | "loadOlderMessages"
   | "loadPromptTurn"
   | "sendPrompt"
+  | "deliverPrompt"
   | "respondToPermission"
   | "respondToQuestion"
   | "interrupt"
@@ -280,6 +283,8 @@ function useSessionActions(sessionId: string): SessionActions {
         s.loadPromptTurn(sessionId, messageDbId, displayMode),
       sendPrompt: (text: string, options?: PromptDispatchOptions): void =>
         s.sendPrompt(sessionId, text, options),
+      deliverPrompt: (text: string, options?: PromptDispatchOptions): Promise<void> =>
+        s.deliverPrompt(sessionId, text, options),
       respondToPermission: (
         requestId: string,
         decision: PermissionDecisionValue,

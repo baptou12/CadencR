@@ -1,10 +1,12 @@
 import type {
   AllocatedPort,
+  CiState,
   Feature,
   FeaturePendingGateResponse,
   FeatureWorktreeInfo,
   GitStats,
   PrStatusSnapshot,
+  ReviewState,
 } from "@/api/generated";
 import { PROVIDER_IDS } from "@/lib/providers";
 import type { AttentionState } from "@/lib/sidebar-attention";
@@ -16,7 +18,9 @@ import { sampleLogoUrl, type SampleLogo } from "@/lib/sidebar-sample-logos";
  * and conversations that between them hit every case an option changes
  * (each status, a pending permission and question, worktrees, labels, diff,
  * pull requests, ports, shells, a child conversation, idle ones old enough to
- * fold, a long title). Ids are negative so they can never meet a real one.
+ * fold, a long title), and between them every next action "For me" names
+ * (approve, answer, check an error, fix CI, review a reply, merge). Ids are
+ * negative so they can never meet a real one.
  */
 
 export interface SampleProject {
@@ -91,7 +95,7 @@ const SPECS: readonly SampleSpec[] = [
     feature: { runtime_provider: PROVIDER_IDS.CODEX_CLI, model_session: "gpt-5" },
     worktree: worktree(-12, "web-app", "feat/dark-mode"),
     gitStats: { insertions: 318, deletions: 54, files_changed: 12 },
-    prStatus: pullRequest(-12, 128, "feat/dark-mode", "open", "running"),
+    prStatus: pullRequest(-12, 128, "feat/dark-mode", { state: "open", ci: "running" }),
     shellCount: 1,
     browserCount: 1,
     ports: [{ pid: 4242, port: 5173, process: "vite", source: "terminal" }],
@@ -118,7 +122,11 @@ const SPECS: readonly SampleSpec[] = [
       model_session: "sonnet",
     },
     worktree: worktree(-14, "web-app", "refactor/session-middleware"),
-    prStatus: pullRequest(-14, 121, "refactor/session-middleware", "merged", "passing"),
+    prStatus: pullRequest(-14, 121, "refactor/session-middleware", {
+      state: "merged",
+      ci: "passing",
+      review: "approved",
+    }),
   },
   {
     id: -15,
@@ -148,6 +156,9 @@ const SPECS: readonly SampleSpec[] = [
     state: "unread",
     before: "working",
     feature: { runtime_provider: PROVIDER_IDS.CURSOR },
+    // A failing check outranks the unread reply: For me asks to fix CI.
+    worktree: worktree(-22, "billing-api", "docs/release-2.4"),
+    prStatus: pullRequest(-22, 57, "docs/release-2.4", { state: "open", ci: "failing" }),
   },
   {
     id: -23,
@@ -157,6 +168,13 @@ const SPECS: readonly SampleSpec[] = [
     state: "idle",
     before: "idle",
     feature: { runtime_provider: PROVIDER_IDS.OPENCODE },
+    // Approved with green checks: For me asks to merge it.
+    worktree: worktree(-23, "billing-api", "chore/stripe-sdk-14"),
+    prStatus: pullRequest(-23, 54, "chore/stripe-sdk-14", {
+      state: "open",
+      ci: "passing",
+      review: "approved",
+    }),
   },
   {
     id: -24,
@@ -311,8 +329,11 @@ function pullRequest(
   featureId: number,
   number: number,
   branch: string,
-  state: "open" | "merged",
-  ci: "running" | "passing",
+  {
+    state,
+    ci,
+    review = "pending",
+  }: { state: "open" | "merged"; ci: CiState; review?: ReviewState },
 ): PrStatusSnapshot {
   return {
     feature_id: featureId,
@@ -325,7 +346,7 @@ function pullRequest(
       title: branch,
       source_branch: branch,
       target_branch: "main",
-      review_state: state === "merged" ? "approved" : "pending",
+      review_state: review,
       pr_label: "Pull request",
       author: { username: "you" },
       body_markdown: "",

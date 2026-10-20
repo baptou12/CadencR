@@ -39,6 +39,6 @@ about: Submit immutable metadata for one provider version
 - [ ] Every checksum was calculated from the linked release asset.
 - [ ] Archives contain no credentials; users authenticate through the native CLI.
 - [ ] `version`, model discovery, ACP v1 runtime, and prompt-free conformance pass.
-- [ ] I ran `npm test`, `npm run validate`, and the contribution validator locally.
+- [ ] I ran the Rust submission preflight and base/candidate contribution validator locally; see `CONTRIBUTING.md`.
 - [ ] I understand CI validates inert metadata only; maintainers separately verify publisher authority and provenance.
 - [ ] I understand maintainers review executable changes and may reject or revoke a version.

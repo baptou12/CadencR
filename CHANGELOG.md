@@ -1,5 +1,73 @@
 # Changelog
 
+## v0.14.0 - 2026-10-20
+
+Previous release: v0.13.1 - 2026-10-15
+
+![CadencR v0.14.0 custom tabs announcement, with a large emerald plus and abstract overlapping tabs](https://raw.githubusercontent.com/merkr-software/cadencr/v0.14.0/docs/changelog/v0.14.0/everyday-improvements.png)
+
+### ✨ Added
+
+- [**Desktop**] Added local custom tabs alongside the built-in workspace tabs, with tools to create or import a tab project, choose where it is available, and configure it globally or per project. Tabs can use scoped Cadencr data, request permission to run declared commands, or bring a trusted native backend; access badges, consent controls, and an Activity view make their access visible. An SDK, design kit, authoring guide, and examples help you build tools that fit the workspace — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added a Preview tab for PDF, Word, Excel, PowerPoint, CSV, and TSV documents, also accessible from file links and the editor. Documents written by an agent can open beside the conversation automatically; spreadsheet previews calculate missing formula results when supported and flag formulas they could not compute — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added support for displaying local images and screenshots posted by agents when using Cadencr remotely, so conversation visuals remain available from another device — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added provider version checks and updates in Settings, showing installed and available versions, notifying you when updates are available, and offering a version picker for supported providers. Remote clients can inspect versions while updates run from the host — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added tracking for every branch a conversation works on, with controls to link or unlink branches and switch between their pull requests inside the Git tab. The conversation header follows the checked-out branch, and sidebar PR badges open the corresponding review — [@rle-mino](https://github.com/rle-mino).
+- [**Backend**] Added command-gated schedules that send a prompt only when a check fails, including the command's output. Agents can create one-time or recurring schedules, then list, update, pause, or delete schedules targeting their own conversation; checks are skipped while that conversation is busy or needs your input, and timeouts stop child processes even after their launcher exits — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added manual conversation ordering within sidebar groups through drag-and-drop or keyboard shortcuts, with saved ordering shared by the project tree, Pinned, and filtered views — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added back and forward navigation through conversations, focused workspace tabs, and pages with Cmd+[ / Cmd+] on macOS or Ctrl+[ / Ctrl+] elsewhere — [@baptou12](https://github.com/baptou12), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added macOS notch controls to show the island on the built-in display, primary display, or both, with thin activity strips, a full notch style, or hidden compact status on screens without a hardware notch — [@edjubert](https://github.com/edjubert).
+
+### 🔧 Changed
+
+- [**Desktop**] Made For me a prioritized list of next actions: answer requests, inspect failed turns, address pull-request checks or feedback, review replies, and merge ready proposals. Choose 3, 5, or all actions, and optionally keep entries until marked done; unread and failed-turn markers survive a reload — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Improved Mermaid diagram readability with theme-aware rendering, less aggressive shrinking in messages, and a full-screen view with pan, zoom, and keyboard controls — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Redesigned the Commits view around commit messages and push state, with distinct branch and tag labels, explicit Not pushed indicators, and remote ahead/behind counts; pushing now refreshes the graph immediately — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Improved pull-request readability with clearer headings, separated review threads, quieter successful checks, and accessible status colors. Review badges, images, and external-link indicators now stay inline in Markdown — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Made file trees more compact and readable, fixed overlapping long filenames on transparent themes, and simplified Git status colors while keeping deleted files and staging controls distinct — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Restyled notifications and placed them above the sidebar footer so they leave the workspace visible, with a top-center fallback when the sidebar is collapsed or on mobile — [@rle-mino](https://github.com/rle-mino).
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed prompts sent from Agents-view cards remaining undelivered until the individual conversation was opened, including after a restart or reconnect. Sending stays visibly pending, preserves drafts until delivery, and restores text and attachments on failure — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed agent statuses and working timers disagreeing between devices or staying stale after a service restart; opening an already running conversation now shows its actual elapsed time, and pending requests retain their attention indicators after a reload — [@rle-mino](https://github.com/rle-mino).
+- [**Backend**] Fixed merges reporting success without including changes after an agent switched branches inside its worktree; merges now use the checked-out branch and reject sources with nothing new to merge — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed split-pane keyboard shortcuts leaving focus in the previous pane, and docking a split tab unexpectedly switching the main tab; the dock control also uses a clearer icon and tooltip — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed sidebar conversation rows disappearing into a blank area when sections above them changed height, without requiring a scroll to restore them — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed closing a terminal shell triggering false backend-disconnection messages or attempts to restart the exited shell — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed closing or snoozing a macOS notch notification bringing the main window to the foreground; Cadencr activates only when opening a conversation — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed notification and menu clicks dragging the application window — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed the mobile keyboard remaining open after submitting a prompt — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed invalid image requests and image-decoding failures lacking a clear error in changelogs, pull requests, and image previews; replacing a failed image source now retries the new image — [@rle-mino](https://github.com/rle-mino).
+
+## v0.13.1 - 2026-10-15
+
+Previous release: v0.13.0 - 2026-10-13
+
+### ✨ Added
+
+- [**Desktop**] Added an Archive all sessions action to project menus, with confirmation and a count of archived and retained conversations; pinned conversations, running agents, and pending questions or permission requests are kept — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added a 5-minute to 2-hour snooze for macOS notch notifications, with early resume and continued access to the agent list on hover; notification previews can also be closed without opening their conversation — [@rle-mino](https://github.com/rle-mino).
+
+### 🔧 Changed
+
+- [**Desktop**] Made Pinned foldable while keeping attention indicators visible, kept projects reachable beneath long sidebar sections, and added conversation menus, label editing, and row shortcuts to Pinned, For me, In progress, Recent, and cross-project views. Opening a pinned conversation now leaves its parent project folded, and sticky project headers stay readable on iOS — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Improved terminal wheel and trackpad scrolling, Zellij scrollback, selection anchoring and drag-to-scroll, and recovery from WebGPU glyph upload failures; terminal color queries now receive immediate theme-aware replies, avoiding startup delays in tools such as Vibe — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Reduced the installed application's size by removing duplicate copies of libraries already bundled into the interface — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Refreshed the user guides and screenshots for the current interface, clarified provider capabilities and branching behavior, and improved full-size screenshot viewing and wide tables on mobile — [@rle-mino](https://github.com/rle-mino).
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed the Mac Intel application launching without a working backend by packaging the service for the matching processor; Intel downloads now include an explicit x64 suffix — [@rle-mino](https://github.com/rle-mino).
+- [**provider:codex**] Fixed new conversations unexpectedly reverting from AutoReview to Default access mode because of legacy project settings or a selection made before initialization; existing conversations keep their saved mode — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed imported Alacritty font and color settings being ignored, including nested imports and partial palettes; edits to imported files now reload live, and configuration or watcher failures are visible — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed terminal applications reducing truecolor themes to 256 colors, restoring accurate colors in tools such as Vibe — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed newly opened terminal panes missing keyboard focus while their engine initializes, so terminal shortcuts work without an extra click and delayed focus requests are cancelled when you move elsewhere — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Backend**] Fixed installed ACP providers ignoring built-in and custom conversation auto-naming instructions — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed recent settings edits being lost when leaving the page or overwritten by older saves; failed saves report an error and restore the last confirmed value — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed page headers shifting and sidebar controls appearing twice when collapsing the sidebar on macOS; native window controls now align with the page header — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed compact notch agent indicators and their overflow count disappearing beneath the hardware cutout when several agents are active — [@rle-mino](https://github.com/rle-mino).
+
 ## v0.13.0 - 2026-10-13
 
 Previous release: v0.12.1 - 2026-10-10
@@ -71,7 +139,7 @@ Previous release: v0.12.0 - 2026-09-21
 
 ## v0.12.0 - 2026-09-21
 
-Previous release: v0.11.5 - 2026-09-05
+Previous release: v0.11.5 - 2026-09-02
 
 ### ✨ Added
 

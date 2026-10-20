@@ -3,9 +3,12 @@ import { ChevronDown, ChevronRight, type LucideIcon } from "lucide-react";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { cn } from "@/lib/utils";
-import type { SidebarFoldableBlock } from "@/stores/sidebar-surface-store";
+import type { SidebarBlockId } from "@/stores/sidebar-surface-store";
 
-/** The sidebar's section label type: blocks and the Projects header. */
+/**
+ * The design system's `eyebrow` (DESIGN.md): the sidebar's blocks and Projects
+ * header, and the PR pane's section labels (Description, Review threads).
+ */
 export const EYEBROW_TEXT_CLASS =
   "text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/65";
 
@@ -16,7 +19,7 @@ export const EYEBROW_CLASS = `flex items-center gap-1.5 rounded-md px-2 py-1 ${E
 
 interface SidebarBlockProps {
   /** Names the block for the display options' highlight (`sidebar-rows.css`). */
-  block: SidebarFoldableBlock;
+  block: SidebarBlockId;
   label: string;
   icon: LucideIcon;
   /** Shown per the "Block counters" option; omit for blocks whose size is fixed. */
@@ -28,7 +31,11 @@ interface SidebarBlockProps {
   /** The line shown instead of the rows when there are none. */
   empty: string;
   isEmpty: boolean;
-  /** Caps the rows so a long block scrolls on its own instead of pushing the projects away. */
+  /**
+   * On desktop, caps the rows so a long block scrolls on its own instead of
+   * pushing the projects away. Phones scroll the whole sidebar as one: a
+   * nested scroller there traps the swipe.
+   */
   capped?: boolean;
   ref?: Ref<HTMLElement>;
   children: ReactNode;
@@ -74,7 +81,9 @@ export function SidebarBlock({
         </p>
       )}
       {!isEmpty && (
-        <div className={cn("flex flex-col gap-0.5", capped && "max-h-[40vh] overflow-y-auto")}>
+        <div
+          className={cn("flex flex-col gap-0.5", capped && "md:max-h-[40vh] md:overflow-y-auto")}
+        >
           {children}
         </div>
       )}

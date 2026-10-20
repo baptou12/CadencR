@@ -287,7 +287,10 @@ function useEditorPreview(
 ) {
   const [content, setContent] = useState<string | null>(null);
   const kind = getPreviewKind(props.filePath);
-  const supported = kind !== null && !data.largeFile.largeMode;
+  // The table is virtualized and its parse is capped (100k rows × 200
+  // columns) behind a loading state, so a CSV keeps its preview in large-file
+  // mode — where a big export needs it most.
+  const supported = kind !== null && (kind === "csv" || !data.largeFile.largeMode);
   const toggle = useCallback((): void => {
     if (!supported) return;
     setContent((previous) =>

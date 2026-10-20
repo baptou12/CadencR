@@ -4,7 +4,7 @@ import { WebSocketSessionFeatureBlock } from "@/components/WebSocketSessionFeatu
 import { FeatureWorkspaceSkeleton } from "@/components/FeatureWorkspaceSkeleton";
 import { ResolvedModelProvider } from "@/contexts/ResolvedModelContext";
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
-import { useMarkFeatureRead } from "@/stores/unread-store";
+import { useMarkFeatureRead } from "@/stores/for-me-ack";
 import {
   getFocusedTab,
   selectFeatureLayout,
@@ -25,7 +25,7 @@ function WebSocketSessionPage() {
   const layoutState = useFeatureLayoutStore(selectFeatureLayout(featureId));
   const focusedTabId = getFocusedTab(layoutState) ?? "agent";
   useSaveLastOpenedFeature(projectId, featureId, focusedTabId);
-  // Opening a conversation reads it: clear any pending unread dot.
+  // Opening a conversation reads it (unless For me clears only when done).
   useMarkFeatureRead(featureId);
   // Mounting the whole workspace (agent Virtuoso + Lexical composer + the staged
   // side panels) in the switch's commit is what drives the switch INP up. Paint

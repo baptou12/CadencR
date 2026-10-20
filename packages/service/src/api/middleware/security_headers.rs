@@ -18,6 +18,9 @@ use axum::response::Response;
 /// robust. CeleriTTY fetches its bundled WASM from a `data:` URL, then compiles
 /// it, so both `data:` connections and `'wasm-unsafe-eval'` are needed, just as
 /// in the packaged Electron renderer CSP. JavaScript eval stays disabled.
+/// The Office document preview starts its parser workers from `blob:` URLs the
+/// library mints itself, hence `worker-src 'self' blob:` (`script-src` keeps
+/// refusing `blob:`), matching the Electron renderer CSP.
 /// When the `Host` is missing or malformed we omit the WebSocket origin (the
 /// request is about to be 421'd by the auth layer anyway).
 fn content_security_policy(host: Option<&str>) -> String {
@@ -27,8 +30,8 @@ fn content_security_policy(host: Option<&str>) -> String {
     };
     format!(
         "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; \
-         img-src 'self' data: blob:; font-src 'self' data:; {connect}; object-src 'none'; \
-         base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+         img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; {connect}; \
+         object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     )
 }
 
@@ -166,6 +169,10 @@ mod tests {
             assert!(
                 directives.contains(&"script-src 'self' 'wasm-unsafe-eval'"),
                 "Allow WASM compilation without enabling JavaScript eval or inline scripts: {csp}"
+            );
+            assert!(
+                directives.contains(&"worker-src 'self' blob:"),
+                "Allow the document preview's blob: workers: {csp}"
             );
             assert!(
                 directives.contains(&expected_connect),

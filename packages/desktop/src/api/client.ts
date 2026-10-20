@@ -110,13 +110,25 @@ axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 // where the launch token never 401s mid-session.
 axiosInstance.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
+  async (error: AxiosError) => {
     if (error.response?.status === 401 && isBrowserRemote()) {
       clearDeviceToken();
     }
+    await decodeBlobErrorBody(error);
     return Promise.reject(error);
   },
 );
+
+/**
+ * A `responseType: "blob"` request receives its `{error, code}` body as a Blob
+ * too. Decode it, so `apiErrorMessage` / `apiErrorCode` name the service's
+ * reason instead of falling back to axios's bare status line.
+ */
+async function decodeBlobErrorBody(error: AxiosError): Promise<void> {
+  const response = error.response;
+  if (!(response?.data instanceof Blob) || response.data.type !== "application/json") return;
+  response.data = JSON.parse(await response.data.text());
+}
 
 /**
  * Endpoints that drive long-running processes. The 30 s default is way too
@@ -262,6 +274,15 @@ export async function customInstance<T>(config: AxiosRequestConfig): Promise<T> 
   }
   const response = await axiosInstance(finalConfig);
   return response.data;
+}
+
+/**
+ * A plain GET through the authenticated client that resolves the whole
+ * response, for byte routes whose headers describe the body. None of
+ * `customInstance`'s caching or dedupe applies to these.
+ */
+export function customInstanceResponse<T>(config: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+  return axiosInstance<T>({ ...config, method: "GET" });
 }
 
 function isWorkspaceSettingsWrite(config: Pick<AxiosRequestConfig, "method" | "url">): boolean {

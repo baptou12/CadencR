@@ -89,36 +89,6 @@ writeFileSync(join(base,'request.json'),JSON.stringify({schema_version:1,reposit
     );
     let mut request: Value =
         serde_json::from_slice(&std::fs::read(base.join("request.json")).unwrap()).unwrap();
-    let javascript_rejects = |message: &str| {
-        // Exercise the existing private JS validator through its public pipeline entry point.
-        let script = r#"
-import {runPublicationPipeline} from './tooling/marketplace-registry/scripts/publication/pipeline.mjs';
-import {readFileSync,existsSync} from 'node:fs';
-import {createHash} from 'node:crypto';
-import {join} from 'node:path';
-const base=process.argv[1], expected=process.argv[2];
-const client=Object.fromEntries(['ensurePublicationTag','findRelease','createDraft','listAssets','uploadAsset','verifyAsset','getTagCommit','publishDraft','getDiscovery','setDiscovery'].map(name=>[name,()=>{throw new Error('unexpected network access')} ]));
-try {
-  await runPublicationPipeline({requestFile:join(base,'request.json'),directory:join(base,'js-state'),repository:'cadencr/registry',registryCommit:'b'.repeat(40),privateKeyFile:join(base,'private.pem'),confirmRequestSha256:createHash('sha256').update(readFileSync(join(base,'request.json'))).digest('hex'),client});
-  throw new Error('unexpected schema acceptance');
-} catch(error) {
-  if(!error.message.includes(expected)) throw error;
-}
-if(existsSync(join(base,'js-state'))) throw new Error('unexpected state write');
-"#;
-        let output = Command::new("node")
-            .current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
-            .args(["--input-type=module", "-e", script])
-            .arg(&base)
-            .arg(message)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    };
     // Accepted entries finish local preflight, while malformed entries fail before credentials.
     let original = request.clone();
     for commit in [None, Some(json!("a".repeat(40)))] {
@@ -137,34 +107,43 @@ if(existsSync(join(base,'js-state'))) throw new Error('unexpected state write');
         );
         assert!(!base.join("state").exists());
     }
-    for commit in [Value::Null, json!(false), json!(40), json!([]), json!({})] {
-        request = original.clone();
-        request["publications"][0]["registry_commit"] = commit;
-        std::fs::write(
-            base.join("request.json"),
-            serde_json::to_vec(&request).unwrap(),
-        )
-        .unwrap();
-        javascript_rejects("registry_commit is invalid");
-        diagnostic(
-            run(&hash(), "cadencr/registry"),
-            "request schema is invalid",
-        );
-        assert!(!base.join("state").exists());
+    // Captured legacy pipeline rejections are immutable independent expectations;
+    // no registry JavaScript implementation executes during this test.
+    let oracle: Value = serde_json::from_slice(include_bytes!(
+        "fixtures/legacy-v1/pipeline-schema-rejections.json"
+    ))
+    .unwrap();
+    let mut fixed_request = original.clone();
+    for field in ["generated_at", "expires_at"] {
+        fixed_request[field] = oracle["base_request"][field].clone();
     }
-    for field in ["publication", "request"] {
+    assert_eq!(fixed_request, oracle["base_request"]);
+    let cases = oracle["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 7);
+    for case in cases {
         request = original.clone();
-        if field == "publication" {
-            request["publications"][0]["unknown"] = json!(true);
-        } else {
-            request["unknown"] = json!(true);
-        }
+        let (parent, field) = case["path"].as_str().unwrap().rsplit_once('/').unwrap();
+        request
+            .pointer_mut(parent)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .insert(field.into(), case["value"].clone());
+        assert_eq!(case["network_calls"], 0);
+        assert_eq!(case["state_created"], false);
+        assert!(case["legacy_error"]
+            .as_str()
+            .unwrap()
+            .contains(if field == "registry_commit" {
+                "registry_commit is invalid"
+            } else {
+                "unknown is not allowed"
+            }));
         std::fs::write(
             base.join("request.json"),
             serde_json::to_vec(&request).unwrap(),
         )
         .unwrap();
-        javascript_rejects("unknown is not allowed");
         diagnostic(
             run(&hash(), "cadencr/registry"),
             "request schema is invalid",

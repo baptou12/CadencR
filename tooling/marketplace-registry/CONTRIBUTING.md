@@ -1,123 +1,82 @@
-# Contributing a Provider Version
+# Contributing a Provider, Theme or Custom Tab
 
-## Current scope: contributor preparation, not public intake
+## Before public activation
 
-v0.13.0 keeps marketplace UI hidden. Do not publish remote plugin releases or
-submit production registry updates as part of this milestone. Rust command
-examples below may be exercised locally from a reviewed build; there is no
-qualified distributed CLI pin yet. The `PENDING` pin preserves schema-1
-JavaScript CI; it **does not support mixed schema-2 themes or trust generations**.
+The next milestone populates reviewed themes and Pi before a separately authorized
+desktop activation. Local validation is not publication authority. All business
+validation/packaging/publication uses the Rust CLI, not registry JavaScript.
+The standalone preflight and expiry commands need the **next qualified CLI release**;
+`0.13.1-dev.39108033875.1` supports existing CI commands but not those additions.
+See [runtime and deployment gates](README.md#status-and-runtime).
 
-### Rust provider and theme paths
+## First submission
 
-| Step                  | ACP provider                                                                                                                                       | Declarative theme                                                                                                    |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Validate locally      | `cadencr plugin validate <folder> --descriptor <reviewed-descriptor.json>`                                                                         | `cadencr plugin validate <folder> --kind theme`                                                                      |
-| Package inert staging | `cadencr registry pack-provider --package <metadata.json> --target <target> --directory <staging> --output <new.tar.gz>` for every declared target | `cadencr registry pack-theme --directory <staging> --output <new.tar.gz>`                                            |
-| Review contract       | Complete target set, source commit/tag, archive hashes and ACP launch metadata; no credentials                                                     | Explicit schema-2 `kind: "theme"`, closed `theme.json` and optional declared raster asset; no executable/ACP surface |
-| Candidate review      | `cadencr registry validate --base <accepted-tree> --candidate <candidate-tree>` using trusted Rust tooling                                         | Same Rust gate; never use legacy JavaScript to claim schema-2 acceptance                                             |
+1. Build and test the plugin in Cadencr. Do not embed credentials, tokens or private
+   keys in its metadata, archive, arguments or environment declarations.
+2. Stage distributable files only and use the appropriate Rust packaging command.
+3. Publish immutable assets in your public author repository. Record each exact
+   SHA-256, full source commit and release tag; never submit placeholders.
+4. Add `packages/<plugin-id>-<exact-version>.json` and the matching
+   `submissions/<plugin-id>-<exact-version>.json` to a registry PR.
+5. Validate the complete candidate against the accepted base with trusted Rust
+   tooling, then request maintainer ownership/provenance and security review.
 
-See the [CLI contract](../../packages/cli/README.md) for exact submission,
-schema-upgrade, bounds and diagnostics. Stage only distribution content; authoring
-projects may contain files that a distributable theme must not contain.
-Packaging and local validation are not source-ownership checks or permission to
-sign/publish. Maintainers independently review contributor ownership, immutable
-source bindings, licenses, declared permissions and all platform/theme bytes.
-The legacy provider-only procedure below is retained for current templates,
-not a theme contribution route.
+| Kind              | Validate locally                                                  | Package                                                                                                                                           |
+| ----------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ACP provider      | `cadencr plugin validate <folder> --descriptor <descriptor.json>` | `cadencr registry pack-provider --package <metadata.json> --target <target> --directory <staging> --output <new.tar.gz>` for each declared target |
+| Declarative theme | `cadencr plugin validate <folder> --kind theme`                   | `cadencr registry pack-theme --directory <staging> --output <new.tar.gz>`                                                                         |
+| Custom tab        | `cadencr plugin validate <folder> --kind tab`                     | `cadencr registry pack-tab --directory <compiled-staging> --output <new.tar.gz>`                                                                  |
 
-## Before opening a pull request
+Providers must implement the documented executable/ACP contract and pass native
+runtime/conformance tests on every declared platform. A theme remains declarative
+with no ACP execution surface. A tab declares reviewed permissions/origins and
+contains its built distribution, not an arbitrary source checkout. Packaging is
+inert; it does not run a build or prove a plugin safe.
 
-1. Implement and test `version`, `models --format acp-config-options-v1`, and
-   `run --protocol acp-v1` as documented by Cadencr's provider package contract.
-2. Configure and authenticate any native provider CLI outside the package.
-   Never put credentials, tokens, auth methods, or private keys in metadata,
-   archives, arguments, or environment entries.
-3. Build immutable archives for each declared platform and publish them under an
-   exact version in the author's repository.
-4. Record the SHA-256 of each exact archive and pin the source commit and release
-   tag in the pull-request description.
-5. Add `packages/<provider-id>-<exact-version>.json`, using
-   `packages/example-provider-0.1.0.json` as a shape example only, and a matching
-   `submissions/<provider-id>-<exact-version>.json` source-pinned envelope.
-6. Run `npm test` and `npm run validate` here. To exercise index creation, pass
-   explicit `--generated-at` and `--expires-at` timestamps as shown in `README.md`.
-
-## Identity and ownership
-
-The contribution gate compares the proposed tree with the accepted base tree.
-It refuses removed or changed accepted versions, missing/orphaned submissions,
-package/submission mismatches and silent publisher/source-repository changes.
-Whitespace and JSON key ordering are not version changes; metadata values are.
-Unchanged legacy entries are retained without inventing source provenance.
-
-Run the trusted checkout's contribution command against both snapshots:
-
-```bash
-npm run validate:contribution -- \
-  --base /path/to/base-registry \
-  --candidate /path/to/candidate-registry
+```sh
+# Next qualified release required for the standalone submission command.
+cadencr registry validate-submission /path/to/submission.json
+cadencr registry validate --base /path/to/base --candidate /path/to/candidate
 ```
 
-This does not authorize the GitHub account opening the PR. Maintainers still
-verify control of the source repository. The normal contribution gate has no
-ownership-transfer bypass; deliberate transfers require a separate reviewed
-administrative procedure, not a package-version PR.
+Use the [CLI contract](../../packages/cli/README.md) for the exact kind-specific
+submission envelopes. Legacy providers use schema 1; mixed entries/submissions use
+explicit schema-2 kinds. The reference schemas alone do not implement the complete
+semantic policy. Maintainers separately check that the source tag resolves to the
+pinned commit, inspect build provenance and confirm the submitter's authority.
 
-### Source-pinned submission preflight
+## Updating a plugin
 
-Before review, prepare a `provider-submission-v1` JSON document containing:
+1. Increment to a new exact semantic version; build/test and publish new immutable
+   author assets.
+2. Add the new package and matching source-pinned submission in a new registry PR.
+3. Run the same base/candidate validation and independent maintainer review.
 
-- `schema_version: 1`;
-- `package`: the existing managed provider package (its installation contract is unchanged);
-- `source.repository`: the canonical `https://github.com/owner/repository` URL;
-- `source.commit`: the full, lowercase 40-character source commit;
-- `source.tag`: the exact release tag;
-- `changelog`: a non-empty description of the version's changes.
+Previously accepted versions cannot be modified or removed through this path.
+Changing JSON whitespace/key order is not a semantic change; changing a checksum,
+URL, permissions, publisher or any other metadata value is. Correct mistakes with
+a new version, never by replacing accepted assets or metadata. The publisher also
+checks continuity against the authenticated prior signed catalog.
 
-Run `npm run validate:submission -- /path/to/submission.json`. This command is
-local and inert: it does not fetch archives, execute code, contact GitHub, create
-releases or submit a PR. Archive URLs must identify GitHub Release assets in the
-declared source repository and tag. Public V1 submissions use built binary
-archives, not package-manager installation at runtime.
+## Identity, ownership and licensing
 
-The JSON Schema describes structure, not the complete acceptance policy. Always
-run the semantic CLI as well: reserved identities, cross-field repository/tag
-binding and Git ref rules cannot be inferred from a schema-only pass.
+- IDs use `^[a-z][a-z0-9-]*$`; normalized collisions and reserved identities fail.
+- New identities require proof of authority over the linked source project.
+- A normal version PR cannot silently transfer publisher/source ownership.
+  Transfers need a separate explicit administrative procedure and independent
+  evidence; there is no ordinary contribution bypass.
+- Declare the required license/provenance and include the distributable license
+  and documentation. Review dependencies, privileges, setup and all target bytes.
+- Acceptance is not a safety certificate or a promise of permanent listing.
 
-This preflight proves declared metadata consistency only. Reviewers must independently
-verify that the tag resolves to the declared commit, inspect the source/build
-provenance and check the submitter's authority. A checksum alone does not prove
-which source produced an archive. Keep the source submission as review evidence;
-the signed installation index continues to contain managed package entries only.
+After approval, the protected registry publisher mirrors the exact archives to
+registry-owned GitHub Releases and publishes the signed catalog. Authors do not
+receive registry signing authority. No PR check executes contributor binaries or
+proves which source produced an archive.
 
-### Ownership review
+## Security reports
 
-- Provider IDs match `^[a-z][a-z0-9-]*$` and are permanently reserved by the
-  first accepted contribution.
-- A new ID requires proof that the submitter controls the linked source project.
-- Versions are immutable. Correct a release with a new semantic version; never
-  replace metadata or bytes for an accepted `id@version`.
-- Ownership transfers require approval from the current owner and new owner. If
-  the owner is unavailable, maintainers require independently verifiable project
-  control and may hold or reject the transfer.
-- Maintainers may reserve built-in IDs, aliases, confusing names, and IDs involved
-  in an unresolved ownership or security dispute.
-
-## Review and licensing
-
-- Declare an SPDX license identifier in `agent.license` and include the package's
-  license file through `host.assets.license`.
-- Reviewers verify source revision, provenance, dependency changes, declared
-  platform bytes, checksums, executable behavior, setup instructions, and native
-  CLI prerequisites for every version.
-- Automated conformance is evidence of compatibility, not a safety certificate.
-- Submission does not guarantee acceptance, publication, or continuing listing.
-
-## Security and takedowns
-
-Do not report vulnerabilities in a public pull request. Follow `SECURITY.md`.
-Maintainers may pause review, reject, delist, or revoke a package for malicious
-behavior, compromised provenance, legal concerns, abandoned ownership, or policy
-violations. Delisting affects discovery; execution revocation requires the
-separate signed blocklist process.
+Do not report vulnerabilities in a public PR; follow [SECURITY.md](SECURITY.md).
+Maintainers may reject, delist or revoke malicious, compromised or otherwise
+unacceptable packages. Catalog discovery and signed revocation are distinct
+controls; incidents require the protected operator procedure.

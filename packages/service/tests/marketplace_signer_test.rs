@@ -4,8 +4,7 @@ use cadencr_service::domain::agents::providers::installed::managed::{
     trust::{ManagedTrustErrorCode, ManagedTrustStore, TrustedIndexKey},
     SignedManagedProviderIndex,
 };
-use chrono::{Duration, SecondsFormat, Utc};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 const KEY_ID: &str = "marketplace-signer-test";
 
@@ -21,66 +20,45 @@ fn run_node(args: &[&str]) {
     );
 }
 
-fn generate_test_key(private_key: &Path, public_key: &Path) {
+fn sign_legacy_fixture_with_node(payload: &Path, public_key: &Path, signed: &Path) {
     let script = r#"
-const { generateKeyPairSync } = require('node:crypto');
-const { writeFileSync } = require('node:fs');
+const { generateKeyPairSync, sign } = require('node:crypto');
+const { readFileSync, writeFileSync } = require('node:fs');
+const bytes = readFileSync(process.argv[1]);
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
-writeFileSync(process.argv[1], privateKey.export({ format: 'pem', type: 'pkcs8' }), { mode: 0o600 });
 const spki = publicKey.export({ format: 'der', type: 'spki' });
 writeFileSync(process.argv[2], spki.subarray(spki.length - 32), { mode: 0o600 });
+writeFileSync(process.argv[3], JSON.stringify({
+  signed: JSON.parse(bytes),
+  signature: { algorithm: 'ed25519', key_id: process.argv[4], value: sign(null, bytes, privateKey).toString('base64') },
+}), { mode: 0o600 });
 "#;
     run_node(&[
         "-e",
         script,
-        private_key.to_str().expect("UTF-8 private-key path"),
+        payload.to_str().expect("UTF-8 payload path"),
         public_key.to_str().expect("UTF-8 public-key path"),
+        signed.to_str().expect("UTF-8 output path"),
+        KEY_ID,
     ]);
-}
-
-fn write_payload(path: &Path) {
-    let fixture: Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/managed_provider_index/v1/valid.json"
-    )))
-    .expect("parse managed-index fixture");
-    let now = Utc::now();
-    let payload = json!({
-        "schema_version": 1,
-        "generated_at": (now - Duration::minutes(1)).to_rfc3339_opts(SecondsFormat::Secs, true),
-        "expires_at": (now + Duration::days(1)).to_rfc3339_opts(SecondsFormat::Secs, true),
-        "packages": fixture["signed"]["packages"],
-    });
-    fs::write(
-        path,
-        serde_json::to_vec(&payload).expect("serialize payload"),
-    )
-    .expect("write payload");
 }
 
 #[test]
-fn node_signer_output_verifies_in_rust_and_rejects_tampering() {
+fn node_crypto_signature_over_legacy_bytes_verifies_in_rust_and_rejects_tampering() {
     let directory = tempfile::tempdir().expect("temporary directory");
     let payload = directory.path().join("index.json");
-    let private_key = directory.path().join("private.pem");
     let public_key = directory.path().join("public.raw");
     let signed = directory.path().join("signed.json");
-    write_payload(&payload);
-    generate_test_key(&private_key, &public_key);
-
-    let signer = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tooling/marketplace-registry/scripts/sign-index.mjs");
-    run_node(&[
-        signer.to_str().expect("UTF-8 signer path"),
-        "--payload",
-        payload.to_str().expect("UTF-8 payload path"),
-        "--private-key",
-        private_key.to_str().expect("UTF-8 private-key path"),
-        "--key-id",
-        KEY_ID,
-        "--output",
-        signed.to_str().expect("UTF-8 output path"),
-    ]);
+    // Frozen registry-v1 signing bytes are an independent serialization oracle.
+    let fixture = include_bytes!("fixtures/managed_provider_index/v1/valid.signing.json");
+    let canonical = fixture.strip_suffix(b"\n").unwrap_or(fixture);
+    let value: Value = serde_json::from_slice(canonical).expect("parse canonical fixture");
+    assert_eq!(
+        cadencr_registry_core::canonical_json_bytes(&value),
+        canonical
+    );
+    fs::write(&payload, canonical).expect("write exact legacy bytes");
+    sign_legacy_fixture_with_node(&payload, &public_key, &signed);
 
     let public_bytes: [u8; 32] = fs::read(public_key)
         .expect("read public key")

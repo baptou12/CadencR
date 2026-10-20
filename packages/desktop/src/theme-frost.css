@@ -439,6 +439,13 @@
   box-shadow: var(--glass-shadow-overlay);
 }
 
+/* Sonner toasts paint the translucent `--popover` too (see toast.css). */
+:root[data-theme="frost-dark"] [data-sonner-toaster] [data-sonner-toast][data-styled="true"],
+:root[data-theme="frost-light"] [data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
+  backdrop-filter: var(--glass-backdrop);
+  box-shadow: var(--glass-shadow-overlay);
+}
+
 /* The hand-rolled floating popovers (slash-command, @-file mention, filter
  * suggestions) frost via the shared `.glass-surface` utility, which carries the
  * full azure `--glass-shadow`. As floating menus they want the same softened

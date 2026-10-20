@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@/test-utils";
 import {
   clearDesktopBridgeOverrideForTests,
+  noopPluginTabs,
   setDesktopBridgeOverrideForTests,
   type BrowserStateSnapshot,
   type CadencrBrowserBridge,
@@ -78,6 +79,7 @@ function bridge(): CadencrBrowserBridge {
     notchNotify: vi.fn(() => Promise.resolve()),
     onNotchDismissed: vi.fn(() => () => undefined),
     setZoom: vi.fn(),
+    setTrafficLightsCenter: vi.fn(() => Promise.resolve()),
     currentTheme: vi.fn(),
     onThemeChange: vi.fn(() => () => undefined),
     setBusy: vi.fn(),
@@ -165,7 +167,9 @@ function bridge(): CadencrBrowserBridge {
     checkForUpdates: vi.fn(),
     installUpdate: vi.fn(),
     fetchChangelog: vi.fn(),
+    fetchChangelogImage: vi.fn(),
     onUpdateEvent: vi.fn(() => () => undefined),
+    pluginTabs: noopPluginTabs,
   };
 }
 

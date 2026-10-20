@@ -223,6 +223,8 @@ mod tests {
             "/tests/fixtures/managed_provider_index/v1/valid.json"
         )))
         .unwrap();
+        index.signed.packages[0].host.compatibility.max_app_version =
+            Some(env!("CARGO_PKG_VERSION").into());
         index.signed.generated_at = now;
         index.signed.expires_at = now + Duration::hours(2);
         index.signature.key_id = "catalog-test".into();

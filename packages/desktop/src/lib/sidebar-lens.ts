@@ -5,6 +5,7 @@ import { normalizeLabel } from "@/lib/feature-labels";
 import { getFileName } from "@/lib/file-language";
 import type { AttentionState } from "@/lib/sidebar-attention";
 import type { SidebarConfig } from "@/lib/sidebar-config";
+import { sortByManualOrder } from "@/lib/sidebar-manual-order";
 
 export type SidebarLens = SidebarConfig["lens"];
 export type ConversationSort = SidebarConfig["conversationSort"];
@@ -59,13 +60,16 @@ const createdAtOf = (feature: Feature): string => feature.created_at;
 /**
  * Orders conversations per the "Sort conversations" option. "activity" keeps
  * the given order: every list arrives last-activity first, and the project
- * tree holds that order steady while agents work.
+ * tree holds that order steady while agents work. "manual" follows the rank
+ * the user dragged into place (`manualOrder`, see `sidebar-manual-order.ts`).
  */
 export function sortConversations(
   features: readonly Feature[],
   sort: ConversationSort,
+  manualOrder: readonly number[],
 ): readonly Feature[] {
   if (sort === "activity") return features;
+  if (sort === "manual") return sortByManualOrder(features, manualOrder);
   const sorted = [...features];
   if (sort === "created") sorted.sort(newestFirst(createdAtOf));
   else sorted.sort((a, b) => NAME_COLLATOR.compare(a.title, b.title));

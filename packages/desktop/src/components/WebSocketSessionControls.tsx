@@ -59,6 +59,7 @@ interface RuntimeSelectionControls {
 }
 
 interface AccessControls {
+  ws: WsSession;
   accessMode: AccessMode;
   accessModeDefault: AccessMode;
   isAccessModePending: boolean;
@@ -67,7 +68,6 @@ interface AccessControls {
 
 export interface SessionControls
   extends WorktreePreferenceControls, RuntimeSelectionControls, AccessControls {
-  ws: WsSession;
   selectedBranch: string | null;
   setSelectedBranch: Dispatch<SetStateAction<string | null>>;
   initializedRef: RefObject<string | null>;
@@ -172,26 +172,52 @@ function useRuntimeSelection(
 function useAccessControls(ws: WsSession, providerId: string): AccessControls {
   const {
     globalAccessMode,
-    isPending: isAccessModePending,
+    isPending,
+    isLoading,
+    isError,
+    providerLabel,
     handleAccessModeChange: handleGlobalAccessModeChange,
   } = useAccessModeSetting(providerId);
   const hasStartedConversation = ws.blocks.length > 0 || ws.runtimeSessionId !== "";
-  const accessMode = hasStartedConversation ? ws.accessMode : globalAccessMode;
+  const followsDefault = !!providerLabel && !hasStartedConversation;
+  const defaultReady = followsDefault && !isError && !isLoading && !isPending;
+  const { accessMode: sessionAccessMode, setAccessMode } = ws;
+  const accessMode = defaultReady ? globalAccessMode : sessionAccessMode;
+  const isAccessModePending = isPending || (followsDefault && isLoading);
+  const promptWs = useFirstPromptAccessMode(ws, defaultReady ? accessMode : null);
   const handleAccessModeChange = useCallback(
     (mode: AccessMode): void => {
-      if (mode !== accessMode) ws.setAccessMode(mode);
+      if (mode !== sessionAccessMode) setAccessMode(mode);
       if (mode !== globalAccessMode) handleGlobalAccessModeChange(mode);
     },
-    [accessMode, globalAccessMode, handleGlobalAccessModeChange, ws],
+    [globalAccessMode, handleGlobalAccessModeChange, sessionAccessMode, setAccessMode],
   );
   return useMemo(
     () => ({
+      ws: promptWs,
       accessMode,
       accessModeDefault: globalAccessMode,
       isAccessModePending,
       handleAccessModeChange,
     }),
-    [accessMode, globalAccessMode, handleAccessModeChange, isAccessModePending],
+    [accessMode, globalAccessMode, handleAccessModeChange, isAccessModePending, promptWs],
+  );
+}
+
+function useFirstPromptAccessMode(ws: WsSession, accessMode: AccessMode | null): WsSession {
+  const { sendPrompt: dispatchPrompt, setAccessMode } = ws;
+  const sendPrompt = useCallback<WsSession["sendPrompt"]>(
+    (...args) => {
+      // Empty sessions may have initialized before the workspace default changed.
+      // Record the displayed choice even when it matches the pre-init seed.
+      if (accessMode !== null) setAccessMode(accessMode);
+      dispatchPrompt(...args);
+    },
+    [accessMode, dispatchPrompt, setAccessMode],
+  );
+  return useMemo(
+    () => (accessMode === null ? ws : { ...ws, sendPrompt }),
+    [accessMode, sendPrompt, ws],
   );
 }
 
@@ -255,7 +281,7 @@ export function useSessionControls(
     ws.sessionConfigLoading,
     ws.sessionConfigSupported,
   ]);
-  const codex = useAccessControls(ws, runtime.activeProviderId);
+  const access = useAccessControls(ws, runtime.activeProviderId);
   const handlePermissionModeToggle = usePermissionModeToggle(
     sessionId,
     runtime.activeProviderId,
@@ -264,7 +290,6 @@ export function useSessionControls(
   );
   return useMemo<SessionControls>(
     () => ({
-      ws,
       ...worktree,
       selectedBranch,
       setSelectedBranch,
@@ -274,12 +299,12 @@ export function useSessionControls(
       claudeProfile,
       supportsProfiles,
       supportsConfigInheritance,
-      ...codex,
+      ...access,
       initialCwd: effectiveCwd,
     }),
     [
       claudeProfile,
-      codex,
+      access,
       effectiveCwd,
       handlePermissionModeToggle,
       initializedRef,
@@ -288,7 +313,6 @@ export function useSessionControls(
       supportsProfiles,
       supportsConfigInheritance,
       worktree,
-      ws,
     ],
   );
 }

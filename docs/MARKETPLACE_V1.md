@@ -1,8 +1,742 @@
 # Marketplace V1 — GitHub-only distribution
 
-## Current milestone — hidden v0.13.0 preparation
+## Current source migration checkpoint — 2026-10-18
 
-This section is authoritative over the historical public-v1 delivery plan below.
+The requested full Rust cutover supersedes earlier instructions to retain legacy
+JavaScript business implementations until deployment. They are removed from this
+source template, including the expiry tool and executable legacy test helpers.
+Only thin orchestration/tests and frozen historical data remain. Production registry
+state, author authority and desktop visibility are unchanged.
+
+The candidate CI pin still references `0.13.1-dev.39108033875.1` for its existing
+commands. The replacement `0.13.1-dev.39144478778.1`, including standalone
+metadata/submission/expiry commands, is now released. Its isolated qualification
+is recorded [separately](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-18.md).
+Production pin review and rebuilt delivery payload approvals remain required;
+source tests are not distributed-binary qualification.
+See [template runtime gates](../tooling/marketplace-registry/README.md#status-and-runtime).
+
+## Remaining delivery waves — 2026-10-18
+
+This is the current ordered checklist. It supersedes older next-step lists and
+source-only completion claims below; dated evidence remains valid only for the
+exact binary, package kind and scenario it exercised. The merged custom-tab
+implementation does not retroactively qualify the older distributed CLIs.
+
+The supported publication chain must cover **providers, themes and custom tabs**.
+The initial population milestone remains reviewed Graphite, Ember, Fjord and Pi;
+publishing an official tab is optional and requires an explicitly selected source.
+Neither examples nor passing tests constitute publication approval.
+
+### Wave 1 — Close source-level gaps for all three package kinds
+
+- [x] Replace the managed-tab revision-directory ceiling with bounded retention
+      and safe cleanup. Preserve active/in-use assets, handle interrupted staging
+      explicitly, and prove that repeated updates and removal/reinstallation do
+      not exhaust storage or affect editable plugins/user data.
+- [x] Complete official preparation **and author-publication orchestration** for
+      providers and tabs, not just themes. This replaces the Pi rejection and
+      theme-only author allowlist; it does not grant publication authority.
+      Share the existing Rust rules, preserve multi-platform provider releases,
+      immutable versions and exact content/source confirmation. Build/test
+      executable contributors only in unprivileged jobs, never signing jobs.
+- [x] Correct custom-tab compatibility examples and require a real semantic
+      version before preparation. Leave selection of the actual first compatible
+      desktop release explicitly pending; do not claim released `0.13.1`
+      supports marketplace tabs or invent a future desktop version. Keep older
+      clients on compatible feeds; `min_app_version` alone cannot make an unknown
+      catalog variant acceptable to an old parser.
+- [x] Cover all three kinds in release-script rejection/acceptance tests and
+      exercise changed storage behavior through an isolated development-service
+      API. Explicit CLI paths are required because debug dotenv overrides env;
+      this is not Electron UI or remote-install qualification.
+
+### Wave 2 — Finish official source and package readiness
+
+- [x] Prepare Pi's source-owned arm64 candidate template, exact source/mode
+      allowlists, license/artwork facts and external Node/Pi prerequisites.
+      Qualify a newly packed/extracted working-tree payload against actual Pi
+      using an isolated loopback model; this is not committed-source provenance,
+      authenticated-model, tool-permission or managed-install qualification.
+- [ ] Establish Pi artwork authorship/licensing provenance and approve the
+      initial supported native target matrix. The x86_64 preparation path remains
+      unqualified; preparation/readiness facts do not constitute that approval.
+- [x] Recheck source-bound theme candidates and prepare metadata templates with
+      real digests, license and provenance; keep source, candidate and approval
+      states distinct. Official tabs use an explicit reviewed allowlist and
+      compiled payload policy, not arbitrary example folders.
+- [x] Test official tab preparation with an inert fixture even if no official
+      tab is selected for the initial public catalog.
+
+### Wave 3 — Deliver and qualify a new distributed CLI
+
+- [x] Merge the required source changes to `main`, pass canonical CI, then use
+      the existing manual **CLI-only** development release workflow. Released
+      `0.13.1-dev.39108033875.1` from `88ead507983371e5c3df468c6d9bf7c6c12e5fbb`;
+      its four downloaded assets, checksum, provenance and tag binding were
+      independently verified. This delivery does not qualify its lifecycle.
+- [x] Verify the downloaded executable's checksum and source provenance, then
+      qualify provider/theme/tab validation, packaging, contribution checks,
+      author publication/retry and mixed-catalog publication, interruption/resume,
+      fresh-runner recovery and renewal on the approved isolated public QA target.
+- [ ] Review/promote the exact registry and author executable pins with their
+      qualification evidence. Regenerate bootstrap/cutover hashes and manifests;
+      do not reuse old payload approvals after changing their bytes.
+
+#### Wave 3 qualification checkpoint — 2026-10-18
+
+- Distributed `0.13.1-dev.39108033875.1` exercised provider/theme/tab author
+  publication/retry and mixed registry publication, interruption/resume, fresh
+  recovery and renewal on the approved public QA repository. Exact runs, hashes,
+  failure history and boundaries are in the
+  [qualification record](MARKETPLACE_CLI_QUALIFICATION_2026-10-18.md).
+- Renewal initially returned an error after publication; its original cause is
+  unknown. A separately reviewed recovery reused the original request/commit and
+  verified two replays with unchanged inventory. No replacement dates, reset or
+  artifact restoration was used; the initial run is not reported as green.
+- QA harnesses include compiled-tab/provider-asset regressions, Rust publication
+  preflight, sanitized diagnostics and bounded GET-only transport retries.
+  Final local scripts: 294 passed, no skips; independent reviews found no blocker.
+- Existing default qualification, registry and author pins are unchanged. Their
+  promotion and regenerated bootstrap/cutover approvals are the **next gate**,
+  not part of the QA-only authorization. No production deployment, authority
+  change, official-plugin release or desktop activation occurred.
+
+### Wave 4 — Deploy the real registry and publication authority
+
+- [ ] Recheck public registry `main` and resolve its maintainer/approval policy
+      explicitly. A signed local merge is not a delivered bootstrap; do not
+      bypass protections or infer a governance change from implementation approval.
+- [ ] Deliver bootstrap first, then the trusted-base Rust contribution workflow;
+      observe actual hosted checks for providers, themes and tabs.
+- [ ] Separately provision reviewed production author/signing environments,
+      credentials, trust profile and renewal/revocation owners/alerts; deploy and
+      verify the protected Rust publisher. QA keys/tokens never become production
+      authority, and author publication does not grant catalog signing authority.
+
+### Wave 5 — Publish the initial plugins and populate signed feeds
+
+- [ ] Publish reviewed immutable author releases for Graphite, Ember, Fjord and
+      Pi using the qualified CLI and completed official jobs. An official tab is
+      added only if its source and release are explicitly approved.
+- [ ] Submit/review their registry entries, mirror exact approved archives into
+      registry-owned GitHub Releases, and publish/independently verify signed
+      catalogs and revocation policies. Exercise initial submission and a later
+      version; conflicting changes to an existing version must fail closed.
+
+### Wave 6 — Qualify consumer and external-author lifecycles
+
+- [ ] From clean isolated supported clients, test trusted-feed discovery,
+      install/use/update/restart/remove, theme activation, tab consent and Pi's
+      generic ACP lifecycle. Use inert signed tab fixtures if no official tab is
+      published, and exercise repeated updates beyond the former retention cap.
+- [ ] Exercise tampering, incompatible versions, local-ID conflicts, revocation,
+      expired/offline policies, interrupted operations and supported rollback
+      paths. Preserve existing projects, editable plugins and every database.
+- [ ] Verify a third-party author's initial submission and subsequent immutable
+      version update, including ownership/collision checks and retry reconciliation.
+      Record packaged-client coverage separately from dev/API-only evidence.
+
+### Wave 7 — Remove superseded tooling and stop at the hidden milestone
+
+- [x] Source migration: remove replaced JavaScript business tools and executable
+      legacy test oracles. Keep frozen compatibility data, independent crypto
+      tests and thin CI/test orchestration; shared Rust libraries/CLI are the
+      sole business implementation. Standalone metadata/submission/expiry
+      commands and native handoff fixtures replace the remaining dependencies.
+- [x] Merge the Rust-only source and release the replacement CLI
+      `0.13.1-dev.39144478778.1`, including all three standalone diagnostics.
+      Its 65 networkless checks, three-kind author lifecycle and incremental
+      registry publication pass on the actual distributed ELF; see the
+      [new qualification record](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-18.md).
+- [x] Reproduce and correct the source failure class where the stable public feed
+      still serves the reviewed predecessor after discovery advances. Only its
+      exact digest permits bounded read-only convergence; candidate bytes,
+      authenticated identity, freshness and cleanup remain mandatory. Source
+      regression is not proof of the historical hosted error's exact cause; see
+      [the source-only contract](../tooling/marketplace-registry/OPERATIONS.md#source-only-discovery-convergence-correction).
+- [ ] Merge the correction, pass canonical CI, release a new CLI and demonstrate
+      first-pass renewal plus unchanged replays/clean-runner recovery using that
+      actual distributed binary. The original failed run remains failed. Do not
+      promote production pins from source tests or successful recovery alone.
+- [ ] Review the replacement registry/author pins and regenerate bootstrap/cutover
+      payload hashes and approvals before deployment. The source candidate still
+      pins the older CLI; neither QA pins nor a manual CLI release deploy it.
+- [ ] Update final operational evidence: populated verified feeds, reproducible
+      official releases, renewal/revocation controls and exact platform limits.
+      Source documentation is migrated; live delivery/owner/alert proof is not.
+- [ ] Stop before public desktop activation. A separately authorized app release
+      supplies reviewed official trust/feed configuration and exposes UI only
+      after clean packaged-client acceptance gates pass.
+
+### Dependencies and delivery boundaries
+
+- Waves 1 and 2 can progress in parallel with disjoint ownership. Governance and
+  environment decisions from wave 4 can be prepared alongside them, without
+  changing protections or provisioning authority implicitly.
+- Wave 3 needs its required source on green `main`; waves 4–6 then consume that
+  actual qualified binary. Source cleanup is now prepared ahead of deployment; the expanded runtime
+  contract requires a newly qualified CLI and reviewed delivery before adoption.
+- A new **CLI release is required**; no public **desktop release** is required
+  to reach the populated-but-hidden milestone. Local packaged QA is not a release.
+- Implementation follows `parallel-advisor` with GPT-6.1-Sol workers; each finished
+  step receives `finish-job` review before its proposed commit. Leave changes
+  uncommitted pending approval; merge, push, release and production policy changes
+  remain separate delivery actions.
+
+### Waves 1–2 source checkpoint — 2026-10-18
+
+- The source changes are reviewed but not committed or deployed. Three separate
+  GPT-6.1-Sol `finish-job` reviews covered reuse, quality and efficiency; accepted
+  findings were corrected and checked again. No CLI pin, production authority,
+  repository protection or marketplace visibility change was made.
+- Managed-tab cleanup preserves active/leased bytes, unknown files and databases;
+  owner-local coordination avoids blocking unrelated tabs. Historical cleanup
+  no longer depends on the running host's compatibility range.
+- Official jobs reconstruct complete schema-2 package metadata and every target
+  archive for all three kinds without candidate execution. Strict JSON rejects
+  ambiguity/non-finite values; bounded Git batches replace per-blob subprocesses.
+- The official source policies bind real file digests/modes, not publication
+  approval. Templates retain `PENDING` publisher/compatibility values; Pi artwork
+  provenance and the initial public target matrix still need explicit review.
+  No production tab has been selected or silently added to the initial catalog.
+- Detailed verification and the debug-startup isolation incident are recorded in
+  [wave qualification](./qa/MARKETPLACE_WAVES_1_2_2026_10_18.md).
+
+## Current milestone — publish plugins before public activation (2026-10-13)
+
+This section supersedes the preparation-only stop below. v0.13.0 is released
+with the marketplace hidden. The next milestone is to publish reviewed original
+themes and the external Pi provider into the registry **before** exposing it in
+a future desktop release. Publication is not public UI or desktop trust activation.
+
+- [x] Start a clean delivery branch from current `origin/main` (`4a954e23e`).
+      The preceding feature branch is preserved without rewriting its history.
+- [x] Independently download the released `v0.13.0` Linux CLI and verify its
+      release checksum: `d3223e3b3ff74543595fd3354c3249f50fa01def65f376a624eb1fbc8072df2a`.
+      [Published assets](https://github.com/merkr-software/CadencR/releases/tag/v0.13.0)
+      replace preparation artifacts as the qualification input, not as proof of
+      successful publication/recovery.
+- [x] Exercise that executable on an isolated Linux runner: inert provider/theme
+      validation, deterministic packaging, signing/verification and fail-closed
+      malformed inputs. Keep test keys and any credentials out of evidence.
+- [x] Integrate official sources in `plugins/` without desktop bundling or built-in
+      registration, with independent task names, required CI and isolation tests.
+      Signed commit `f55db02a0` is delivered in
+      [draft PR #267](https://github.com/merkr-software/CadencR/pull/267).
+- [x] Implement read-only, source-bound theme release preparation and its rejection
+      tests. Namespaced tags and canonical Rust packaging do not grant publication
+      authority. Production pins remain `PENDING`; see
+      [`plugins/RELEASING.md`](../plugins/RELEASING.md).
+- [x] Add an independent, manual development CLI release path from reviewed green
+      `main`, with unique `cli/v<base>-dev.<run-id>.<attempt>` prereleases,
+      checksums and source provenance. The downloader supports these explicit
+      tags without changing existing application-release pins. This is workflow
+      implementation, not evidence of a published or qualified new binary.
+- [x] Merge and push the CLI workflow to `main`, publish a development CLI from
+      its exact green commit, and review its public binary/checksum/provenance.
+      CLI `0.13.1-dev.38974097824.1` is published from `b3e3ed5ac9d2cd4580117558a218b4c809af65d5`;
+      anonymous bytes/checksum/provenance and isolated Linux `--version` pass.
+      Its isolated GitHub lifecycle qualification is recorded below; no desktop release was triggered.
+- [x] Qualify real GitHub publication, interruption/resume, fresh-runner recovery
+      and empty-delta renewal against an explicitly reviewed isolated **public**
+      QA target. Anonymous archive/discovery verification cannot positively
+      qualify a private repository. Use inert fixtures and QA-only signing keys;
+      offline tests and source-level transport fixtures do not satisfy this gate.
+- [x] Prepare the Rust-only contribution/publisher runtime with trusted-base
+      helpers, a registry-lifecycle-qualified executable pin and fail-closed tests.
+      Contribution execution scratch is retained, including unexpected CLI state;
+      local preparation is not evidence of a deployed Rust contribution check.
+- [ ] Deliver the qualified-executable bootstrap to public registry `main`.
+      [Registry PR #1](https://github.com/merkr-software/cadencr-registry/pull/1)
+      has green required checks and a signed local merge. Non-linear history is
+      now allowed; independent approval remains required before delivery.
+- [ ] Deploy the separately prepared Rust contribution-workflow cutover after
+      that bootstrap is public; verify the real hosted contribution checks.
+- [ ] Deploy the protected Rust publisher separately, with its reviewed authority
+      and production readiness gates; verify its real execution before removing
+      replaced publication code.
+- [ ] Remove replaced JavaScript business implementations only after their
+      corresponding deployed Rust gates pass. Retain independent crypto oracles,
+      frozen legacy fixtures, transport-test helpers and metadata-expiry tooling.
+- [x] Migrate CLI contribution, packaging, signing and registry-core/publisher
+      compatibility oracles to native Rust tests or frozen legacy data; retain
+      independent Node built-in cryptography. Pipeline recovery now consumes
+      independently captured legacy state with an explicit test-only date rebase;
+      no Rust test executes the legacy publisher or downloader.
+- [x] Extract the original-author release engine into `cadencr-registry-publisher`
+      and make the service delegate to it; distinguish safe namespaced release
+      tags from asset names. This does not expose an author CLI or enable a job.
+- [x] Expose thin original-author CLI commands with a portable, content-confirmed
+      request and reuse the same release/reconciliation engine as the service.
+- [x] Implement a manually dispatched, protected official-theme author-release
+      job with independent source reconstruction and exact request confirmation.
+      Author binary pins and publication policies remain `PENDING`; no environment
+      or credential is provisioned and no publication is enabled.
+- [x] Deliver the author-capable development CLI from exact green `main`, review
+      its public assets/provenance, and exercise its credential-free commands on
+      an isolated Linux runner. This is not publication/recovery qualification.
+- [x] Qualify original-author publication, exact retries and draft interruption,
+      plus reconciliation on a separate fresh runner, with the distributed binary in
+      the approved public QA repository. Inert theme fixtures only; no official
+      plugin or production publication authority.
+- [ ] Review/promote the separate production author pin and provision the protected
+      author environment/account before enabling the official author job.
+- [ ] Harden and package the Pi draft from `plugins/providers/pi`, retaining
+      its existing `0.4.0` candidate version unless a different initial release is
+      explicitly selected. Establish source provenance, runtime prerequisites and
+      supported targets; validate the extracted payload and generic ACP host path.
+      Native arm64 packaging/extraction and prompt-free ACP lifecycle now pass
+      with real Pi and synthetic model configuration; generic service admission
+      and catalog discovery pass. Authenticated turns, managed installation and
+      x86_64 remain unqualified; the bounded generic-host runtime follow-up is
+      recorded below. See the
+      [initial native evidence](./qa/MARKETPLACE_PI_NATIVE_2026_10_17.md).
+- [x] Exercise the extracted Pi connector and real Pi against a credential-free
+      loopback model: direct ACP streaming/usage, durable connector restart/resume
+      context and cancellation pass. The actual service's generic adapter also
+      passes text streaming, interruption and a follow-up turn through API/WS.
+      This closes that bounded local runtime check, not authenticated models,
+      tool permissions, signed-feed/managed installation or x86_64; see
+      [loopback protocol evidence](./qa/MARKETPLACE_PI_LOOPBACK_2026_10_18.md).
+- [x] Validate Graphite and Ember dark themes plus Fjord light and exercise their
+      local live previews, activation, navigation persistence and invalid-creation
+      rejection in an isolated current-source dev app. See
+      [visual QA and limits](./qa/MARKETPLACE_OFFICIAL_THEMES_2026_10_17.md).
+- [ ] Publish source-pinned immutable author releases for those themes.
+      Names/version/repository remain candidates until reviewed; local visual QA
+      is not signed-feed installation or publication approval. No placeholder
+      digest or invented provenance may enter the registry.
+- [ ] Activate the protected author job only after its delivery/readiness gates;
+      finish provider/theme registry package metadata and reviewed submissions.
+      The author job does not sign catalogs or grant registry-submit authority.
+- [ ] Provision the reviewed signing/trust profile, protected publication
+      environment, renewal/revocation owners and monitoring before signed feeds
+      become operational. Never treat test keys or an unprotected workflow as
+      production authority.
+- [ ] Publish the reviewed theme/Pi contributions, independently verify public
+      metadata/archive bytes and exercise fresh install/update/removal in isolated
+      supported clients. Keep `marketplace-v2` distinct from legacy schema-1 feeds.
+- [ ] Stop with populated, verified feeds and the desktop marketplace still
+      hidden. Public UI exposure and official build roots/URLs require the later
+      activation release and a separate acceptance decision.
+
+### Current preparation checkpoint — 2026-10-17
+
+| Area                 | Prepared and checked locally                                                                                                                                                                                                                                              | Remaining acceptance gate                                                                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Marketplace redesign | Isolated current-source dev QA covers visibility gating, navigation, filters and error states. Empty installed/update views now distinguish unavailable data and filtered results from verified success.                                                                  | Positive listing, installation and update QA against real trusted feeds; no signed production feed was configured for this pass.                                                         |
+| Pi `0.4.0`           | Explicit macOS-target candidate preparation snapshots clean committed source and reuses Rust packaging twice to check determinism. Receipts explicitly retain `PENDING` publication and qualification. CI reuses the existing pinned CLI for required real archive tests. | Artwork/license review, actual Node/Pi runtime on supported native targets, generic ACP-host lifecycle and production author authority. Candidate archives are not publishable approval. |
+| Registry cleanup     | The read-only expiry diagnostic uses a neutral bounded-file reader, no longer depending on the legacy publisher directory. Its legacy re-export preserves current callers.                                                                                                | Real Rust contribution/publisher deployment and hosted checks before deleting the replaced business implementations.                                                                     |
+| Production authority | Existing fail-closed author/signing gates are preserved; QA credentials remain isolated.                                                                                                                                                                                  | Reviewed production pins, protected environments, independent owners and dedicated credentials. No production environment or signing key has been provisioned.                           |
+
+No official plugin release, registry package, signed production feed or public UI
+activation is implied by these source preparations. The marketplace remains
+hidden by default; the explicit development visibility environment flag is retained.
+
+### Author-capable binary — delivery and GitHub QA, 2026-10-17
+
+This supersedes the source-only delivery gate below, not the registry lifecycle
+qualification of the older binary. Full evidence and explicit remaining gates:
+[`docs/qa/MARKETPLACE_AUTHOR_CLI_2026_10_17.md`](./qa/MARKETPLACE_AUTHOR_CLI_2026_10_17.md).
+
+- Main `ce63c6e4d4d2060cf7b4b3d4e72c7591c37b2e7a` passed canonical CI and CodeQL.
+  [CLI-only release run](https://github.com/merkr-software/CadencR/actions/runs/39060688472)
+  published `0.13.1-dev.39060688472.1`; anonymous verification of all four assets,
+  ELF format, checksum and exact source provenance passed. No desktop release.
+- [Isolated Linux QA](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/39061002200)
+  passed real distributed-ELF theme validation/packaging, local author inspection
+  and exact wrong-confirmation rejection, without network or credentials. The
+  author-publication job was deliberately skipped, not implicitly qualified.
+- The reviewed QA harness is deployed separately in the approved public QA repo,
+  pinned to that binary and an immutable inert-theme source tag. Existing registry
+  QA code, its signing secret/pin and all seven prior releases are preserved.
+- With the dedicated QA user token provisioned by the user,
+  [publication/interruption run](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/39061810127)
+  and [separate fresh-runner replay](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/39061940386)
+  passed. An observed empty draft resumed into the same release; immutable
+  same-state/fresh-scratch retries and changed-content/request rejection passed.
+  Anonymous downloads contain only the exact inert theme and opaque QA metadata.
+  Replay preserved all eight release/asset IDs, contents and mutation timestamps.
+- The next gates are separate production pin/policy/environment review and
+  official theme/Pi readiness. Production author pins/policies stay `PENDING`,
+  official themes/Pi remain unpublished and the marketplace stays hidden.
+
+### Author CLI and guarded workflow — source implementation, 2026-10-17
+
+This update supersedes the source-only CLI/handoff follow-ups in the preceding
+delivery notes; it does not change the qualified distributed binary below.
+
+- `plugin inspect-release` locally validates a versioned portable request and
+  returns its exact-byte SHA-256. `plugin publish-release` requires that digest
+  before accessing the separate author credential, then calls the shared engine.
+  Open archive handles, streaming revalidation, bounded content, safe diagnostics
+  and namespaced tags are covered. Metadata is opaque release documentation,
+  never implicit registry package/signing authority.
+- The manual official-theme job reads candidate Git blobs through trusted-main
+  scripts, reconstructs both jobs independently, and accepts no uploaded-run
+  artifacts. The final CLI step alone receives the author user/bot credential.
+  Current publication policies, author binary pins and environment/account IDs
+  remain `PENDING`; no environment or credential was created.
+- The existing protected environment must be verified before its job is exposed:
+  numeric ID, reviewers, self-review prevention and exact `main` branch rule.
+  Because the documented API omits admin-bypass visibility, an explicit reviewed
+  no-bypass attestation is bound to that ID; an exposed bypass-enabled value fails.
+- The last Rust→legacy-business runtime dependency is removed. Pipeline recovery
+  consumes independently captured legacy inputs/disk/remote state, with exact
+  hashes, original signature checks and an explicit test-only date rebase.
+  Historical reverse-language observations are data, not a claim of live parity.
+  Legacy production tooling is retained until the real registry CI cutover passes.
+- Validation: 4,235 Rust tests passed (one pre-existing ignored), 221 root script
+  tests passed, official `pnpm lint`, workspace Clippy and desktop `ts-check` passed.
+  Three independent review agents closed the request-limit and real-script
+  integration coverage gaps. Seven local CLI QA probes used real Graphite source
+  and canonical packaging, with no credentials or remote publication.
+- Old duplicate incremental caches in this worktree were cleaned after checking
+  build ownership: about 17.9 GiB logical, keeping the newest two per crate.
+  Source, compiled binaries, databases/backups and other worktrees were preserved.
+- Next delivery gate: merge to `main`, publish a CLI-only development binary,
+  then qualify its author-publication/retry behavior against the approved isolated
+  QA target. Only subsequent reviewed pin/policy/environment promotion may enable
+  official themes; Pi still needs its native-target and ACP lifecycle qualification.
+  Marketplace visibility, production trust roots and registry signing remain unchanged.
+
+### Qualified distributed CLI — 2026-10-17
+
+This is the current delivery status; the dated failures below remain historical
+evidence, not outstanding failures of this newly distributed executable.
+
+- Main `b3e3ed5ac9d2cd4580117558a218b4c809af65d5` contains the asset `Accept`
+  correction. [CI](https://github.com/merkr-software/CadencR/actions/runs/38972301362),
+  [CodeQL](https://github.com/merkr-software/CadencR/actions/runs/38972301364) and
+  dependency audit passed before the explicit CLI-only release.
+- [CLI delivery](https://github.com/merkr-software/CadencR/actions/runs/38974097824)
+  published `0.13.1-dev.38974097824.1` with SHA-256
+  `ee3516bb5ad7ed143428f255e9e4dd24d9f13003061a803c99be8f3fd8db9a7e`.
+  Anonymous downloads verify binary, checksum, source provenance and candidate pin;
+  the actual ELF runs in network-disabled Ubuntu. Latest desktop stays `v0.13.1`.
+- [Publication/replay/fresh runner](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/38975839952)
+  passed on attempt 2. Initial publication retained draft `413501761` and archive
+  `642988641`, added the required public provenance, and published signed catalog
+  `2ec54e90993787afa7f1d7d97c95438b699fb9aac566f30a4aafaf25e1f4d9be`.
+- [Empty-delta renewal](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/38977770141)
+  passed on attempt 2, preserving the exact signed package set. Its catalog is
+  `36f07d142360b5d170c4f2c4e245d3992d559538c0fe471662385cc2a13f0353`.
+  Initial failed harness checks saw stale anonymous API inventories, not CLI
+  failures. Remote IDs/bytes were reconciled before exact-input reruns; no object
+  was deleted, replaced or pre-published to manufacture a pass.
+- [Controlled network interruption](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/38980267765)
+  passed on attempt 1 using inert theme `0.0.2`. The actual distributed ELF first
+  proved proxy traversal, then an independent observer saw managed release
+  `415453212` public before the TLS-blind proxy closed its tunnels. The CLI exited
+  normally with code `1` and released its owned lock. Same-request, same-state
+  resume retained archive `648905530` and provenance `648905637`, then completed
+  catalog/discovery. A separate clean runner reconstructed remotely without
+  restored pipeline state. This proves post-publication network interruption,
+  **not** loss of a specific HTTP mutation response or hard-kill recovery.
+- Each scenario's four successful publish/replay observations have identical
+  catalog bytes and remote inventories. Final catalog
+  `81c757faac2d2c83a3587001f70116f1f268162577b25b5d97d3bb5bc45158cd`
+  contains the unchanged original theme plus `0.0.2`. Public archive bytes and
+  provenance match the reviewed fixture/offline plan; the actual released ELF
+  independently verifies catalog signatures in network-disabled Ubuntu.
+- The QA harness now bounds inventory reads with shared deadlines, binds an
+  observed discovery head to the CLI receipt's blob, and passes only a public
+  inventory digest between jobs as an assertion. No CLI state is seeded from it.
+  API identity reads use the ephemeral QA job token; catalog acquisition remains
+  anonymous. Eighteen harness checks and three independent review passes cover
+  the delivered QA code; only allowlisted public evidence is retained.
+- Scope is the isolated public QA repository and inert declarative themes. No
+  production trust/key/pin/feed change, official theme/Pi publication, native Pi
+  runtime certification or desktop marketplace activation is implied. Production
+  registry deployment remains unchanged. The candidate template now pins this
+  qualified binary with no JavaScript fallback. Remote adoption needs a bootstrap
+  PR adding the pin/helpers while preserving validation, then a workflow cutover
+  from that merged trusted base. Deployed Rust CI and oracle migration precede
+  JavaScript removal; official-plugin publication remains a separate gate.
+
+### Rust decoupling and original-author engine — 2026-10-17
+
+- Legacy wire expectations are frozen data with source commits, capture inputs
+  and SHA-256 provenance, not Rust-regenerated expectations. Dynamic freshness,
+  signature, recovery and negative cases remain exercised separately. The CLI's
+  eight contribution safety suites are native Rust integration tests now.
+- Service signature interoperability uses Node built-in cryptography over the
+  existing exact legacy canonical fixture; no test private key is persisted.
+  Publication-package API coverage uses the shared Rust package validator and
+  also rejects a malformed exported digest.
+- Original-author inspection/publication/reconciliation lives in the shared Rust
+  publisher library; the service keeps its authentication, database, confirmation
+  and durable operation boundaries. Service status/code mapping is preserved.
+  Namespaced release-tag validation and encoded GitHub paths have focused coverage.
+- This does not delete the legacy implementation yet. The cross-language pipeline
+  handoff helper still executes it, and actual registry CI cutover remains pending
+  the bootstrap merge. No production key, workflow activation, plugin release,
+  official feed or desktop exposure is part of this wave.
+- Validation: 4,221 workspace Rust tests passed (one pre-existing ignored test),
+  219 root script tests passed, and all 16 shared author-release HTTP fixture tests
+  passed. The running isolated debug backend passed health, authentication,
+  missing-project and explicit-confirmation HTTP probes without GitHub writes.
+  It used a newly created QA database/settings directory; existing databases were
+  untouched, the owned process was stopped and the QA database was preserved.
+  Explicit debug-server CLI paths were used instead of the generic dev launcher,
+  whose package `.env` overrides parent environment values.
+- The currently distributed CLI does not expose the newly extracted author engine.
+  A thin CLI adapter, reviewed portable request and subsequent distributed-binary
+  qualification are still needed for original-author CI publication. The existing
+  qualified binary remains sufficient for the registry CI cutover.
+
+### Real GitHub qualification — 2026-10-15
+
+- The explicitly approved public target is
+  [`merkr-software/cadencr-registry-qa`](https://github.com/merkr-software/cadencr-registry-qa),
+  separate from the production registry. Its inert declarative source archive is
+  anonymously downloadable and matches the reviewed SHA-256. A distinct QA-only
+  signing key is stored in this repository's Actions secret with explicit approval;
+  no production key, user profile or database is involved.
+- [Initial run and retry](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/38695408981)
+  executed the checksum-pinned distributed `v0.13.0` Linux CLI. The first attempt
+  created a draft but failed when the subsequent release listing omitted it.
+  The retry reused that same draft and uploaded the expected archive, then failed
+  because GitHub reports an `untagged-*` browser URL while the release is a draft,
+  not its planned final URL. The draft and uploaded asset are retained; neither
+  attempt completed catalog publication or discovery.
+- Qualification remains **incomplete**: publication/replay, interrupted recovery,
+  fresh-runner restoration and empty-delta renewal are not passed. Source fixes
+  and regression tests cannot qualify the already distributed executable. A new
+  explicitly approved distributed CLI containing the fixes must repeat these gates
+  before production pins change. Do not normalize QA responses, pre-publish drafts
+  manually or fall back to source-built code to manufacture a qualification pass.
+- Production pins remain `PENDING`; JavaScript cutover/removal, real theme/Pi
+  publication, official trust and marketplace exposure remain separate gates.
+
+### Distributed development CLI QA — 2026-10-16
+
+- [CLI delivery](https://github.com/merkr-software/CadencR/actions/runs/38947325650)
+  succeeded from the exact green `main` merge. The downloaded Linux binary reports
+  `0.13.1-dev.38947325650.1`; SHA-256 is
+  `0cf516ce62da03e52d56502d6da977908282058138e62164ab65eea4982c79f3`.
+  Public binary/checksum/provenance/pin bindings were independently verified, and
+  the actual ELF passed `--version` in a network-disabled Ubuntu container.
+- The reviewed QA-only harness at `476236e1df3a766d76131acccc916514b4f1ad10`
+  pins that binary. It preserves the existing managed draft's original commit
+  binding and creates the previously absent QA `marketplace-v2` branch explicitly.
+  Two serial hosted jobs are configured for publish/replay and fresh-runner
+  reconstruction; no pipeline-state artifact is restored.
+- [Actual QA run](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/38954862458)
+  failed before promotion: the authenticated asset request appends octet-stream
+  `Accept` to the existing JSON `Accept`. GitHub selects JSON metadata instead of
+  archive bytes, causing `archive exceeds the size limit`. Anonymous comparison
+  against the same public QA source asset confirms duplicate headers return JSON
+  (`200`, 1498 bytes), while a single octet-stream header returns the asset redirect.
+- The transport correction replaces the asset request's `Accept` without relaxing
+  size, digest or URL checks. Its regression fails before the fix and passes for
+  direct bytes, redirects and subsequent ordinary JSON requests. All 281 scoped
+  CLI/core/publisher Rust tests, publisher/CLI all-target Clippy and formatting pass;
+  three independent reviewers found no remaining issue. This is source-level
+  verification, not qualification of the already published binary. Next:
+  merge/push it to green `main`, publish a **new** development CLI identity, verify
+  and pin its actual bytes in QA, then repeat publication, replay, fresh-runner,
+  interruption/resume and renewal. No desktop release is needed.
+- Post-failure reconciliation confirms managed draft `413501761` and asset
+  `642988641` (1100 bytes, unchanged digest) remain intact. No catalog release was
+  created and discovery did not advance. Production registry, keys, pins and
+  desktop visibility are unchanged. Lifecycle qualification remains incomplete.
+
+### Independent development CLI delivery — 2026-10-16
+
+The manual [`cli-dev-release.yml`](../.github/workflows/cli-dev-release.yml)
+workflow decouples marketplace qualification from desktop releases. After this
+workflow is merged and pushed to `main`, an operator supplies the full reviewed
+current `main` commit SHA. The workflow requires that exact commit's main CI to
+pass, tests/builds the Linux CLI with read-only permissions, and publishes only
+the CLI under a unique namespaced development prerelease. It never publishes
+desktop/updater assets, changes app versions, enables marketplace UI, signs a
+registry catalog or modifies registry pins.
+
+Each invocation has a new `cli/v<base>-dev.<run-id>.<attempt>` identity; the binary
+reports the same development version. A release identity is never reused or
+overwritten. Binary, checksum, provenance and candidate pin data are public;
+private keys, credentials, user profiles and databases are not release inputs.
+The generated pin is a candidate for review, **not** permission to activate the
+production registry. Existing qualification pins keep identifying the actual
+`v0.13.0` binary until a separate reviewed update selects a new executable.
+
+The corrected development CLI is now published and independently qualified in
+the isolated public QA repository; see the 2026-10-17 evidence above. Production
+pinning/JavaScript cutover remains a distinct reviewed delivery step. CLI lifecycle
+qualification does not certify official plugins, provider runtime or desktop QA.
+
+### Official source location decision — 2026-10-14
+
+Official plugins now live under `plugins/providers/` and `plugins/themes/` in
+this monorepo. Separate Git repositories are not required to preserve the
+distribution boundary. Their dedicated task names, dependency-graph checks,
+app-only Electron resource allowlists and a separate required CI job keep them
+outside the application build/bundle. Workspace membership shares dependency
+management only; it does not register, install or activate a plugin.
+
+Each plugin retains its own version and future namespaced release tag. No
+plugin tag/release or registry publication is created by importing sources.
+The previous sibling repositories are retained as untouched local baselines,
+not the authoritative location for future official-plugin development.
+Read-only CI uses the pinned released CLI for compatibility validation, not
+as a replacement for pending real GitHub lifecycle qualification. See
+[`plugins/README.md`](../plugins/README.md) for commands and publication gates.
+
+The imported theme documents and their released-CLI archive hashes are unchanged.
+The Pi import also hardens pipe-failure and session-shutdown paths: stdin/output
+failures trigger orderly cleanup, and shutdown drains late session creation and
+in-flight explicit closes, preserving native cleanup failures. Fake-only tests
+cover these regressions. Native QA scripts share a bounded ACP client/child
+shutdown helper, default to rejecting tool permissions unless the live QA's
+narrow policy is explicitly selected, and retain Pi-populated scratch directories
+instead of recursively deleting potential databases. An isolated live service
+verified normal workspace import, restart-gated registration and generic model
+discovery using fake Pi; direct connector initialize/new/close also passed.
+This does not certify real Pi compatibility or host-spawned prompt/resume behavior.
+
+The next preparation wave pins Pi protocol references to upstream `0.85.1` and
+aligns the connector's Node minimum with that pinned upstream (`22.19.0`). It
+does not upgrade Pi, certify native behavior or clear the imported icon's rights.
+Real installation/model calls remain outside fake-only qualification.
+
+### First-wave evidence — 2026-10-13
+
+- The published Linux ELF passed 20 offline checks in a fresh Ubuntu 24.04
+  container (amd64 emulation on macOS arm64), with network disabled and no host
+  credentials/profile/database mounts. Coverage includes provider/theme validation,
+  deterministic archives, mixed catalog and theme-policy signature roundtrips,
+  malformed/nested/nonfinite-input rejection, nonfinite theme colors, signed policy
+  tampering and exclusive-output rejection. Disposable test keys were removed; only
+  key-free evidence is eligible for upload. This is not a hosted CI run or real
+  GitHub publication/recovery/renewal qualification. Production pins stay `PENDING`.
+- An isolated Pi candidate retains `0.4.0` and passes 28 fake-Pi tests, lint and
+  formatting. Hardening bounds JSONL frames, surfaces shutdown failures, removes
+  an unsupported persistent permission choice, protects connector-owned flags,
+  guards billable QA, fixes canonical-path launcher detection and builds fresh
+  allowlisted payloads. Extracted launcher/model smoke passes. Reviewed corrections
+  were applied to the author draft only after original/candidate checksum guards;
+  a source-only baseline backup is retained. Real Pi compatibility and signed host
+  conformance are pending.
+- Three original theme drafts pass the released CLI validator, 40 measured
+  contrast checks per theme and deterministic closed-content packaging with that
+  released binary. Local theme tests pass (58 core and one CLI integration).
+  Sources are retained in the sibling `cadencr-plugin-themes` author folder, with
+  no public repository/commit/tag or final package metadata yet. Live visual review
+  and publication remain pending.
+- All 184 root script tests pass, including the new qualification safety tests.
+  This does not claim a new full desktop/service workspace verification.
+
+### Second-wave evidence — 2026-10-13
+
+- The approved preparation is committed: `08673d5b7` (released-CLI qualification),
+  `0dac95ada` (delivery plan), `8487b0d` (Pi author source) and `ba55310`
+  (original theme source). These are signed local commits, not published author
+  repositories, immutable release tags or a deployed registry update.
+- All three themes were created through the normal API in a fresh private dev
+  profile, with `authoring_target: theme` and their own `plugin_id`. Real UI
+  activation, editor rendering and terminal ANSI output were visually reviewed.
+  A real service restart followed by renderer reload retained Fjord's selection
+  and all three author-project flags. Fjord keeps dark editor/terminal surfaces.
+  The owned QA servers were stopped; the QA database and evidence are retained.
+  No production database/profile or model call was involved. This is current-source
+  service/Vite QA, not packaged Electron or signed marketplace-install acceptance.
+- The author theme repository now has a portable supplemental 40-pair contrast
+  gate, seven mutation tests and read-only CI. It does not replace the released
+  Rust validator, certify all rendered interaction states or sign packages.
+- The Pi live-QA harness uses a retained scratch workspace, allows only the exact
+  reviewed bash input, never transmits the process environment through ACP, and
+  requires per-turn text and correlated tool-output evidence. Thirty-five fake-only
+  tests, lint and formatting pass; real Pi/model/native-platform conformance and
+  icon-rights verification remain pending.
+- `scripts/qualify-released-cli-github.sh preflight` checks only reviewed local
+  scratch targets/inputs and the released ELF identity. It rejects credentials
+  and unsupported write phases, reports `lifecycle_qualified: false` and exits
+  `3` even when the contract checks succeed. Semantic validation, remote target
+  verification and real publication/recovery/renewal are not implemented by it.
+  The real interruption test requires separately reviewed public scratch source
+  and registry repositories, discovery-branch protections and publication/recovery
+  authority. No such resources were provisioned by this wave; production pins
+  remain `PENDING` and JavaScript cutover remains blocked on that qualification.
+  Its contract-only success path was exercised with the exact published ELF in
+  the isolated Linux container with networking disabled; the expected result
+  remains incomplete with exit code `3`, not a lifecycle pass.
+- All 194 root script tests pass. These scoped results do not claim a new full
+  desktop/service workspace verification or hosted CI execution.
+
+The follow-up finish-job on 2026-10-14 requires an actually observed, correlated
+Pi permission decision, promptly rejects process/write failures, and exercises
+bounded EOF/SIGTERM/SIGKILL teardown. All 45 fake-only Pi tests, lint and formatting
+pass. No real model call or new live desktop acceptance is inferred from this review.
+
+### Starting deployment state
+
+Read-only inspection on 2026-10-13 found the public registry at
+`24656f0f1ceb23576b0be9449c86c6d09e24f5b3`: empty `packages/` and `submissions/`,
+no releases, no protected environments, and only the initial JavaScript
+contribution workflow. The newer monorepo template is **not deployed there**.
+Publishing mixed themes/providers therefore requires a reviewed registry update;
+the app release alone did not perform that cutover.
+
+Current cutover preparation pins the qualified development CLI in the monorepo
+**candidate template only**. The inspected remote main has no `ci/released-cli.env`
+or `scripts/ci` helpers. Only `validate-provider-metadata.yml` is active;
+privileged workflows are examples under `examples/workflows`. Do not submit a
+single cutover PR that expects its new helpers to exist in the trusted base.
+
+1. Merge a bootstrap PR adding the qualified pin and three helpers, preserving the
+   existing validation workflow.
+2. Cut over validation from that merged base and verify both required checks,
+   `inert-metadata` and `contributor-tooling`, execute the released Rust binary.
+   Retain CODEOWNER approval and last-push approval requirements.
+3. After deployed Rust CI passes and executable JS test oracles are migrated,
+   remove replaced JavaScript business code. Until then it is compatibility/oracle
+   code only, not the candidate CI runtime.
+
+The candidate publisher does not upload raw recovery state. Fresh runners
+reconstruct remote publication evidence; no recovery artifact is restored.
+This work does not activate privileged workflows, change keys/trust/feed settings,
+or expose the marketplace UI.
+
+Bootstrap [registry PR #1](https://github.com/merkr-software/cadencr-registry/pull/1)
+now proposes only the pin, three helpers and source provenance at
+`93e00587ac4dfc6d10f9bd8c6aa649bd41b31821`. Both existing required checks passed
+in [run 39023006407](https://github.com/merkr-software/cadencr-registry/actions/runs/39023006407).
+These checks still execute the original JavaScript gate; they do not qualify the
+future workflow cutover. The PR is unmerged and requires independent approval:
+its author/last pusher is also the sole current CODEOWNER. No protection was
+changed or bypassed. The local candidate suite passed 271 tests; the downloaded
+Linux CLI also validated an inert theme contribution and built its schema-2 index
+through the final helper, with a PENDING pin rejected.
+
+The 2026-10-17 pre-commit review confirmed that the Rust-only cutover code is
+already prepared; no new publication engine or pin replacement is needed. The
+registry keeps its lifecycle-qualified CLI pin, separate from the newer binary's
+author-only qualification. Review found two local corrections:
+
+- Contribution validation must retain its execution scratch rather than
+  recursively deleting unexpected CLI-created state/database files. The helper
+  correction is not in bootstrap PR #1 yet.
+- The monorepo's nested registry test runner must remove inherited
+  `NODE_TEST_CONTEXT`; otherwise Node can skip all nested tests while returning
+  success. A regression now proves real execution and failure propagation. An
+  earlier green root wrapper alone was not proof that registry tests executed.
+
+After the local changes are approved/committed, refresh the bootstrap PR with the
+helper correction, obtain independent approval and merge it before the second
+trusted-base workflow cutover. Do not remove JavaScript before the deployed Rust
+checks pass; retain the expiry diagnostic and test fixtures afterward.
+
+Use GPT-6.1-Sol parallel advisors/workers and finish each wave with independent
+reuse/quality/efficiency reviews, scoped checks and a commit plan. No production
+database is involved. Initial implementation reviews stop before committing or
+pushing until the scoped plan is approved.
+
+## Completed milestone — hidden v0.13.0 preparation
+
+This section records the completed preparation scope; the current milestone above
+now governs subsequent registry delivery.
 v0.13.0 ships the marketplace implementation **hidden everywhere in the UI**.
 There is no public marketplace launch until reviewed plugins populate the registry
 and a separately authorized activation clears every gate.

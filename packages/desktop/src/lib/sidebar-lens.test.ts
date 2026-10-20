@@ -147,14 +147,18 @@ describe("sortConversations", () => {
   ];
 
   it("keeps the given activity order", () => {
-    expect(sortConversations(features, "activity")).toBe(features);
+    expect(sortConversations(features, "activity", [])).toBe(features);
   });
 
   it("sorts by creation, newest first", () => {
-    expect(sortConversations(features, "created").map((f) => f.id)).toEqual([2, 3, 1]);
+    expect(sortConversations(features, "created", []).map((f) => f.id)).toEqual([2, 3, 1]);
   });
 
   it("sorts by title, ignoring case and reading numbers as numbers", () => {
-    expect(sortConversations(features, "title").map((f) => f.id)).toEqual([3, 2, 1]);
+    expect(sortConversations(features, "title", []).map((f) => f.id)).toEqual([3, 2, 1]);
+  });
+
+  it("follows the manual rank, unranked conversations first in their given order", () => {
+    expect(sortConversations(features, "manual", [1, 3]).map((f) => f.id)).toEqual([2, 1, 3]);
   });
 });

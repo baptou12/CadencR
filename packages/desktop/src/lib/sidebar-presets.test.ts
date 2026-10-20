@@ -59,8 +59,10 @@ describe("sidebar presets", () => {
     expect(sidebarPresetValues("supervise")).toMatchObject({
       sidebar_block_working: "true",
       sidebar_block_recent: null,
+      sidebar_for_me_limit: "all",
     });
     expect(sidebarPresetValues("focus")).toMatchObject({
+      sidebar_for_me_limit: null,
       sidebar_block_counts: "dot",
       sidebar_flash_on_change: "false",
     });

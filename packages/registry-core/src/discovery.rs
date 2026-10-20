@@ -75,8 +75,6 @@ fn digest(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write as _;
-    use std::process::{Command, Stdio};
 
     use chrono::{Duration, SecondsFormat, Utc};
     use serde_json::{json, Value};
@@ -181,19 +179,11 @@ mod tests {
     }
 
     #[test]
-    fn node_oracle_matches_url_and_raw_digest() {
+    fn legacy_oracle_matches_url_and_raw_digest() {
         let source = br#"{ "z": 1, "a": {"y":2,"b":3} }"#;
-        let script = "import{discoveryUrl}from'../../tooling/marketplace-registry/scripts/publication/discovery-location.mjs';import{createHash}from'node:crypto';let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>console.log(JSON.stringify({url:discoveryUrl('cadencr/registry','catalog'),digest:createHash('sha256').update(s).digest('hex')})))";
-        let mut child = Command::new("node")
-            .args(["--input-type=module", "-e", script])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child.stdin.take().unwrap().write_all(source).unwrap();
-        let output = child.wait_with_output().unwrap();
-        assert!(output.status.success());
-        let oracle: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let oracle: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/legacy-v1/discovery.json"))
+                .unwrap();
         assert_eq!(
             oracle["url"],
             discovery_url("cadencr/registry", "catalog").unwrap()

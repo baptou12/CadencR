@@ -86,6 +86,9 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // Agents grid filter language), and the id of the one shown ("" for none).
     "sidebar_views",
     "sidebar_active_view",
+    // The "Manual" conversation order: a JSON array of conversation ids, the
+    // order every sidebar group sorts by (each group keeps its members' order).
+    "sidebar_conversation_order",
     // Sidebar display options (density, row template, filter) live in
     // `SIDEBAR_DISPLAY_KEYS` below.
     "loader_style",
@@ -148,8 +151,11 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // the compact island visible while agents are tracked, `always_animate`
     // lets the logo keep moving in the compact state. `notch_default_applied`
     // records the one-time switch of existing macOS installs to the notch.
+    // `display_mode` selects the built-in display, both, or the primary display.
     "notch_always_on",
     "notch_always_animate",
+    "notch_display_mode",
+    "notch_primary_style",
     "notch_default_applied",
     // Workspace-scope agent selection. `*_session` holds the pair the user
     // last prompted with (written by the backend, not a configured default);
@@ -274,6 +280,8 @@ pub const SIDEBAR_DISPLAY_KEYS: &[&str] = &[
     "sidebar_row_pending_request",
     "sidebar_project_badges",
     "sidebar_block_for_me",
+    "sidebar_for_me_limit",
+    "sidebar_for_me_ack",
     "sidebar_dormant_after",
     "sidebar_reveal_active",
     "sidebar_rail",

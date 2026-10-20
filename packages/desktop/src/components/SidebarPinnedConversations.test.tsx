@@ -5,32 +5,18 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Feature } from "@/api/generated";
 
-interface MutationOptions {
-  mutation: {
-    onSuccess: () => void;
-    onError: (error: unknown) => void;
-  };
-}
-
 const mocks = vi.hoisted(() => {
   const navigate = vi.fn();
-  const mutate = vi.fn();
   let pinned: Feature[] = [];
-  let captured: MutationOptions | null = null;
   return {
     navigate,
-    mutate,
-    invalidateByUrlPrefix: vi.fn(),
     skipProjectAutoExpand: vi.fn(),
+    manualOrder: [] as number[],
+    queue: [] as { feature: Feature; state: string }[],
     setPinned: (features: Feature[]) => {
       pinned = features;
     },
     getPinned: (): Feature[] => pinned,
-    useUpdateFeaturePinned: vi.fn((opts: MutationOptions) => {
-      captured = opts;
-      return { mutate };
-    }),
-    getOptions: (): MutationOptions | null => captured,
   };
 });
 
@@ -42,15 +28,14 @@ vi.mock("@/api/generated", () => ({
       { id: 9, name: "Proj Nine", path: "/p9" },
     ],
   }),
-  useUpdateFeaturePinned: mocks.useUpdateFeaturePinned,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mocks.navigate,
 }));
 
-vi.mock("@/lib/queryClient", () => ({
-  invalidateByUrlPrefix: mocks.invalidateByUrlPrefix,
+vi.mock("@/components/SidebarAttentionProvider", () => ({
+  useSidebarAttention: () => ({ queue: mocks.queue }),
 }));
 
 vi.mock("@/lib/feature-focus-handoff", () => ({
@@ -61,11 +46,14 @@ vi.mock("@/lib/project-auto-expand", () => ({
   skipProjectAutoExpand: mocks.skipProjectAutoExpand,
 }));
 
-vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
-
 // Ordering, ports, and activity have their own coverage; keep backend order and no badges.
 vi.mock("@/hooks/useStableFeatureOrder", () => ({
   useStableFeatureOrder: (features: Feature[]) => features,
+}));
+
+vi.mock("@/hooks/useManualConversationOrder", () => ({
+  useManualConversationOrder: () => mocks.manualOrder,
+  moveConversation: vi.fn(),
 }));
 
 vi.mock("@/hooks/useFeaturePorts", () => ({
@@ -84,21 +72,21 @@ vi.mock("@/hooks/usePinnedActivity", () => ({
 }));
 
 // Stub the row so this suite stays focused on the section's own behavior
-// (fetch → header/empty, navigate, unpin) without wiring every store the row
+// (fetch → header/empty, navigate) without wiring every store the row
 // reads. The stub surfaces the props the section is responsible for.
 vi.mock("@/components/PinnedConversationRow", () => ({
   PinnedConversationRow: ({
     feature,
     onNavigate,
-    onUnpin,
+    showUnpin,
   }: {
     feature: Feature;
     onNavigate: (f: Feature) => void;
-    onUnpin: (id: number) => void;
+    showUnpin: boolean;
   }) => (
     <div>
       <button onClick={() => onNavigate(feature)}>open-{feature.id}</button>
-      <button onClick={() => onUnpin(feature.id)}>unpin-{feature.id}</button>
+      {showUnpin && <span>unpin-{feature.id}</span>}
     </div>
   ),
 }));
@@ -106,6 +94,8 @@ vi.mock("@/components/PinnedConversationRow", () => ({
 import { SidebarPinnedConversations } from "./SidebarPinnedConversations";
 import { useSidebarFilterStore } from "@/stores/sidebar-filter-store";
 import { useSidebarSurfaceStore } from "@/stores/sidebar-surface-store";
+import { useSidebarConfigStore } from "@/stores/sidebar-config-store";
+import { DEFAULT_SIDEBAR_CONFIG } from "@/lib/sidebar-config";
 import {
   collectSidebarNavItems,
   useSidebarKeyboardNavigation,
@@ -148,10 +138,11 @@ function renderSection(activeFeatureId: number | null = null, withKeyboard = fal
 describe("SidebarPinnedConversations", () => {
   beforeEach(() => {
     mocks.navigate.mockClear();
-    mocks.mutate.mockClear();
-    mocks.invalidateByUrlPrefix.mockClear();
     mocks.skipProjectAutoExpand.mockClear();
+    mocks.queue = [];
+    mocks.manualOrder = [];
     mocks.setPinned([]);
+    useSidebarConfigStore.setState({ config: DEFAULT_SIDEBAR_CONFIG });
     useSidebarFilterStore.getState().close();
     useSidebarSurfaceStore.setState({
       expanded: { "for-me": true, working: true, recent: true, pinned: true },
@@ -236,6 +227,23 @@ describe("SidebarPinnedConversations", () => {
     expect(screen.getByText("open-2")).toBeInTheDocument();
   });
 
+  it("follows the manual rank under the manual sort only", () => {
+    mocks.setPinned([feature(1, 5), feature(2, 9), feature(3, 9)]);
+    mocks.manualOrder = [3, 1];
+    const openOrder = () =>
+      screen.getAllByText(/^open-\d$/).map((button) => button.textContent ?? "");
+    const { unmount } = renderSection();
+    expect(openOrder()).toEqual(["open-1", "open-2", "open-3"]);
+    unmount();
+
+    useSidebarConfigStore.setState({
+      config: { ...DEFAULT_SIDEBAR_CONFIG, conversationSort: "manual" },
+    });
+    renderSection();
+    // 2 is unranked (pinned since the last drag): it shows first.
+    expect(openOrder()).toEqual(["open-2", "open-3", "open-1"]);
+  });
+
   it("navigates to the conversation using its own project's path", async () => {
     const user = userEvent.setup();
     mocks.setPinned([feature(1, 9)]);
@@ -257,16 +265,40 @@ describe("SidebarPinnedConversations", () => {
     expect(mocks.skipProjectAutoExpand).toHaveBeenCalledWith(9);
   });
 
-  it("unpins via the feature pin column and refreshes the feature caches", async () => {
+  it("offers unpinning on its rows", () => {
+    mocks.setPinned([feature(1, 5)]);
+    renderSection();
+    expect(screen.getByText("unpin-1")).toBeInTheDocument();
+  });
+
+  it("flags a folded block's pinned conversations that need an action", async () => {
+    const user = userEvent.setup();
+    const waiting = feature(2, 9);
+    mocks.setPinned([feature(1, 5), waiting]);
+    mocks.queue = [{ feature: waiting, state: "waiting" }];
+    renderSection();
+    await user.click(screen.getByRole("button", { name: /Pinned/ }));
+    expect(screen.queryByText("open-2")).not.toBeInTheDocument();
+    expect(screen.getByText(/1 need an action/)).toBeInTheDocument();
+  });
+
+  it("folds its rows from the header", async () => {
     const user = userEvent.setup();
     mocks.setPinned([feature(1, 5)]);
     renderSection();
-    await user.click(screen.getByText("unpin-1"));
-    expect(mocks.mutate).toHaveBeenCalledWith({ id: 1, data: { pinned: false } });
+    const header = screen.getByRole("button", { name: /Pinned/ });
+    expect(header).toHaveAttribute("aria-expanded", "true");
+    await user.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("open-1")).not.toBeInTheDocument();
+  });
 
-    // onSuccess is the only refresh path — no optimistic mutation.
-    mocks.getOptions()?.mutation.onSuccess();
-    expect(mocks.invalidateByUrlPrefix).toHaveBeenCalledWith(expect.anything(), "/api/features");
+  it("holds the block open on the filter's matches, even folded", () => {
+    mocks.setPinned([{ ...feature(1, 5), title: "Login bug" }]);
+    useSidebarSurfaceStore.getState().toggleBlock("pinned");
+    useSidebarFilterStore.getState().start("login");
+    renderSection();
+    expect(screen.getByText("open-1")).toBeInTheDocument();
   });
 
   it("folds from its header", async () => {

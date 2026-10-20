@@ -4,6 +4,7 @@ import { useCallback, type ReactElement } from "react";
 import { useBrowserViewportBounds } from "./useBrowserViewportBounds";
 import {
   clearDesktopBridgeOverrideForTests,
+  noopPluginTabs,
   setDesktopBridgeOverrideForTests,
   type CadencrBrowserBridge,
 } from "@/lib/desktop-bridge";
@@ -47,6 +48,7 @@ function bridge(): CadencrBrowserBridge {
     notchNotify: vi.fn(() => Promise.resolve()),
     onNotchDismissed: vi.fn(() => () => undefined),
     setZoom: vi.fn(),
+    setTrafficLightsCenter: vi.fn(() => Promise.resolve()),
     currentTheme: vi.fn(),
     onThemeChange: vi.fn(() => () => undefined),
     setBusy: vi.fn(),
@@ -143,7 +145,9 @@ function bridge(): CadencrBrowserBridge {
     checkForUpdates: vi.fn(),
     installUpdate: vi.fn(),
     fetchChangelog: vi.fn(),
+    fetchChangelogImage: vi.fn(),
     onUpdateEvent: vi.fn(() => () => undefined),
+    pluginTabs: noopPluginTabs,
   };
 }
 

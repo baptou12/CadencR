@@ -14,10 +14,11 @@ import { parseAgentFileHref } from "@/components/prompt-editor/file-reference";
 export const AGENT_FILE_HREF_SCHEME = "cadencr-agent-file";
 const PREFIX = `${AGENT_FILE_HREF_SCHEME}:`;
 
-/** The slice of a hast tree these plugins touch. */
-interface HastNode {
+/** The slice of a hast tree these plugins (and the markdown overrides) touch. */
+export interface HastNode {
   type: string;
   tagName?: string;
+  value?: string;
   properties?: Record<string, unknown>;
   children?: HastNode[];
 }

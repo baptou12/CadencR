@@ -48,6 +48,13 @@ describe("rendererCsp", () => {
     expect(csp).toContain("http://127.0.0.1:5004");
   });
 
+  it("allows same-origin and blob: workers without loosening script-src", () => {
+    const csp = rendererCsp(true);
+    expect(csp).toContain("worker-src 'self' blob:");
+    const scriptSrcLine = csp.split("; ").find((line) => line.startsWith("script-src"));
+    expect(scriptSrcLine).not.toContain("blob:");
+  });
+
   it("allows wasm execution when packaged", () => {
     const csp = rendererCsp(true);
     expect(csp).toContain("'wasm-unsafe-eval'");

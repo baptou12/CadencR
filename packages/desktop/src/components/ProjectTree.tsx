@@ -13,7 +13,6 @@ import {
 import { useArchiveProjectSessionsAction } from "@/hooks/useArchiveProjectSessionsAction";
 import { useOrderedProjects } from "@/hooks/useOrderedProjects";
 import { useProjectExpansion } from "@/hooks/useProjectExpansion";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { ProjectRowActions, ProjectRowContextMenu } from "./ProjectRowMenus";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
@@ -206,7 +205,7 @@ export function ProjectTree(props: ProjectTreeProps) {
   useRevealActiveRow(treeRef, mode.kind === "tree" ? props.activeFeatureId : null);
   const showsSamples = useSidebarSamplePreview() !== null;
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
+    <div className="flex min-w-0 flex-col gap-2">
       <SidebarProjectsHeader
         onAddProject={controller.addProject}
         isAddingProject={
@@ -220,28 +219,26 @@ export function ProjectTree(props: ProjectTreeProps) {
         }
         isRefreshing={controller.ordered.isRefreshing}
       />
-      <ScrollArea className="flex-1 min-h-0 min-w-0 overflow-hidden">
-        {showsSamples ? (
-          <div data-sidebar-sample className="flex min-w-0 flex-col gap-0.5 px-1">
-            <SampleScope>
-              <SidebarSampleTree />
-              <SidebarSampleRail />
-            </SampleScope>
-          </div>
-        ) : (
-          <div ref={treeRef} data-sidebar-tree className="flex min-w-0 flex-col gap-0.5 px-1">
-            {mode.kind !== "tree" ? (
-              <SidebarCrossProjectList
-                mode={mode}
-                activeFeatureId={props.activeFeatureId}
-                onSelectFeature={props.onSelectFeature}
-              />
-            ) : (
-              <ProjectTreeRows props={props} controller={controller} filterQuery={filterQuery} />
-            )}
-          </div>
-        )}
-      </ScrollArea>
+      {showsSamples ? (
+        <div data-sidebar-sample className="flex min-w-0 flex-col gap-0.5 px-1">
+          <SampleScope>
+            <SidebarSampleTree />
+            <SidebarSampleRail />
+          </SampleScope>
+        </div>
+      ) : (
+        <div ref={treeRef} data-sidebar-tree className="flex min-w-0 flex-col gap-0.5 px-1">
+          {mode.kind !== "tree" ? (
+            <SidebarCrossProjectList
+              mode={mode}
+              activeFeatureId={props.activeFeatureId}
+              onSelectFeature={props.onSelectFeature}
+            />
+          ) : (
+            <ProjectTreeRows props={props} controller={controller} filterQuery={filterQuery} />
+          )}
+        </div>
+      )}
       <ProjectTreeDialogs controller={controller} />
     </div>
   );

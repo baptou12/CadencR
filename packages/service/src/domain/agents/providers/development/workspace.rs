@@ -17,7 +17,7 @@ use crate::domain::agents::providers::registry::{
 };
 use crate::domain::{features, projects, settings_store};
 use crate::error::AppError;
-use crate::shared::git_cli::{run_git, run_git_output_with_env, run_git_with_env};
+use crate::shared::git_cli::ensure_repository_with_initial_commit;
 
 use super::models::{CreateProviderWorkspaceRequest, ProviderWorkspace};
 use super::scaffold;
@@ -29,12 +29,7 @@ const MAX_DISPLAY_NAME_LENGTH: usize = 80;
 const WORKSPACES_DIR: &str = "provider-workspaces";
 const PROVIDER_VERSION: &str = "0.1.0";
 const WORKSPACE_ALREADY_EXISTS: &str = "PROVIDER_WORKSPACE_ALREADY_EXISTS";
-const COMMIT_IDENTITY: [(&str, &str); 4] = [
-    ("GIT_AUTHOR_NAME", "Cadencr"),
-    ("GIT_AUTHOR_EMAIL", "providers@cadencr.local"),
-    ("GIT_COMMITTER_NAME", "Cadencr"),
-    ("GIT_COMMITTER_EMAIL", "providers@cadencr.local"),
-];
+const COMMIT_EMAIL: &str = "providers@cadencr.local";
 
 pub(super) async fn create(
     pool: &SqlitePool,
@@ -245,27 +240,7 @@ fn ensure_workspace_directory(root: &Path, provider_id: &str) -> Result<PathBuf,
 }
 
 async fn ensure_repository(directory: &Path) -> Result<(), AppError> {
-    if !directory.join(".git").exists() {
-        run_git(&["init", "-q", "-b", "main"], directory).await?;
-    }
-    let head = run_git_output_with_env(&["rev-parse", "--verify", "HEAD"], directory, &[]).await?;
-    if head.status.success() {
-        return Ok(());
-    }
-    run_git(&["add", "-A"], directory).await?;
-    run_git_with_env(
-        &[
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "-qm",
-            "Start provider connector",
-        ],
-        directory,
-        &COMMIT_IDENTITY,
-    )
-    .await?;
-    Ok(())
+    ensure_repository_with_initial_commit(directory, COMMIT_EMAIL, "Start provider connector").await
 }
 
 async fn ensure_project_and_feature(

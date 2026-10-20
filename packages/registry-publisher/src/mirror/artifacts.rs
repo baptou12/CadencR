@@ -4,6 +4,7 @@ use sha2::Digest as _;
 
 use crate::binding::{ArtifactSource, ExpectedArtifact, MirrorReceipt, MIRROR_RECEIPT};
 use crate::fs::{hash_regular, remove_owned, write_private_synced, Identity};
+use crate::github::AssetUrlPolicy;
 use crate::github::{Asset, ReleaseClient, UploadAssetRequest, VerifyAssetRequest};
 use crate::PublisherError;
 
@@ -13,10 +14,11 @@ pub(crate) struct AssetMetadata<'a> {
     pub(crate) expected_url: &'a str,
 }
 
-pub(crate) fn validated_assets(
+pub(crate) fn validated_assets_with_policy(
     list: Vec<Asset>,
     expected: &[ExpectedArtifact],
     complete: bool,
+    policy: AssetUrlPolicy,
 ) -> Result<Vec<Asset>, PublisherError> {
     let metadata = expected
         .iter()
@@ -26,15 +28,16 @@ pub(crate) fn validated_assets(
             expected_url: &artifact.expected_url,
         })
         .collect::<Vec<_>>();
-    validated_metadata(list, &metadata, complete)
+    validated_metadata_with_policy(list, &metadata, complete, policy)
 }
 
 /// A missing expected size defers only byte length; all other asset identity
 /// checks remain identical for pre-acquisition and fully bound verification.
-pub(crate) fn validated_metadata(
+pub(crate) fn validated_metadata_with_policy(
     list: Vec<Asset>,
     expected: &[AssetMetadata<'_>],
     complete: bool,
+    policy: AssetUrlPolicy,
 ) -> Result<Vec<Asset>, PublisherError> {
     let mut output = Vec::with_capacity(list.len());
     for item in list {
@@ -47,7 +50,7 @@ pub(crate) fn validated_metadata(
                 item.name
             )));
         }
-        validate_asset_metadata(&item, expected)?;
+        validate_asset_metadata(&item, expected, policy)?;
         output.push(item);
     }
     if complete && output.len() != expected.len() {
@@ -77,12 +80,13 @@ pub(crate) fn validated_named_asset(
 fn validate_asset_metadata(
     asset: &Asset,
     expected: &AssetMetadata<'_>,
+    policy: AssetUrlPolicy,
 ) -> Result<(), PublisherError> {
     if asset.state != "uploaded" {
         return Err(PublisherError::new("release asset is not uploaded"));
     }
     if expected.size.is_some_and(|size| asset.size != size)
-        || asset.browser_download_url != expected.expected_url
+        || !policy.matches(&asset.browser_download_url, expected.expected_url)
     {
         return Err(PublisherError::new(
             "release asset metadata does not match publication",
@@ -95,15 +99,16 @@ fn asset<'a>(assets: &'a [Asset], name: &str) -> Option<&'a Asset> {
     assets.iter().find(|asset| asset.name == name)
 }
 
-pub(crate) fn verify_present(
+pub(crate) fn verify_present_with_policy(
     client: &impl ReleaseClient,
     assets: &[Asset],
     expected: &[ExpectedArtifact],
     directory: &Path,
+    policy: AssetUrlPolicy,
 ) -> Result<(), PublisherError> {
     for artifact in expected {
         if let Some(remote) = asset(assets, &artifact.name) {
-            verify_one(client, remote, artifact, directory)?;
+            verify_one(client, remote, artifact, directory, policy)?;
         }
     }
     Ok(())
@@ -114,11 +119,13 @@ fn verify_one(
     remote: &Asset,
     artifact: &ExpectedArtifact,
     directory: &Path,
+    policy: AssetUrlPolicy,
 ) -> Result<(), PublisherError> {
     let temporary = OwnedDirectory::create(directory, ".mirror-verify-")?;
     let output = temporary.path().join("asset");
     let result = client.verify_asset(
         VerifyAssetRequest::builder()
+            .url_policy(policy)
             .asset(remote)
             .expected_url(&artifact.expected_url)
             .sha256(&artifact.sha256)
@@ -136,6 +143,7 @@ pub(crate) fn upload_one(
     artifact: &ExpectedArtifact,
     expected: &[ExpectedArtifact],
     directory: &Path,
+    policy: AssetUrlPolicy,
 ) -> Result<Option<Asset>, PublisherError> {
     let mut owned = None;
     let file = match &artifact.source {
@@ -157,10 +165,15 @@ pub(crate) fn upload_one(
     ) {
         Ok(_) => Ok(None),
         Err(primary) => {
-            let assets = validated_assets(client.list_assets(release_id)?, expected, false)?;
+            let assets = validated_assets_with_policy(
+                client.list_assets(release_id)?,
+                expected,
+                false,
+                policy,
+            )?;
             match asset(&assets, &artifact.name) {
                 Some(remote) => {
-                    verify_one(client, remote, artifact, directory)?;
+                    verify_one(client, remote, artifact, directory, policy)?;
                     Ok(Some(remote.clone()))
                 }
                 None => Err(primary),
@@ -246,4 +259,35 @@ pub(crate) fn combine_cleanup<T>(
         (Err(error), Ok(())) => Err(error),
         (Err(error), Err(_)) => Err(PublisherError::cleanup(error, 1)),
     }
+}
+
+pub(crate) fn validated_assets(
+    list: Vec<Asset>,
+    expected: &[ExpectedArtifact],
+    complete: bool,
+) -> Result<Vec<Asset>, PublisherError> {
+    validated_assets_with_policy(list, expected, complete, AssetUrlPolicy::default())
+}
+
+pub(crate) fn validated_metadata(
+    list: Vec<Asset>,
+    expected: &[AssetMetadata<'_>],
+    complete: bool,
+) -> Result<Vec<Asset>, PublisherError> {
+    validated_metadata_with_policy(list, expected, complete, AssetUrlPolicy::default())
+}
+
+pub(crate) fn verify_present(
+    client: &impl ReleaseClient,
+    assets: &[Asset],
+    expected: &[ExpectedArtifact],
+    directory: &Path,
+) -> Result<(), PublisherError> {
+    verify_present_with_policy(
+        client,
+        assets,
+        expected,
+        directory,
+        AssetUrlPolicy::default(),
+    )
 }

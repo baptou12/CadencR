@@ -1,6 +1,10 @@
 import { memo, type ReactElement } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { effectiveGateKind, gatePrompt } from "@/components/sidebar-pending-gate";
+import {
+  effectiveGateKind,
+  gatePrompt,
+  PENDING_KIND_TEXT_CLASS,
+} from "@/components/sidebar-pending-gate";
 import { useFeaturePendingGate } from "@/hooks/useFeaturePendingGate";
 import type { Attention } from "@/lib/sidebar-attention";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
@@ -46,9 +50,7 @@ const PendingRequestLine = memo(function PendingRequestLine({
       title={prompt}
       className={cn(
         LINE_CLASS,
-        effectiveGateKind(gate) === "question"
-          ? "text-primary"
-          : "text-(--acc-yellow,var(--color-amber-400))",
+        PENDING_KIND_TEXT_CLASS[effectiveGateKind(gate) === "question" ? "question" : "permission"],
       )}
     >
       {prompt}

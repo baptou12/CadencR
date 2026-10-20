@@ -7,7 +7,7 @@ import type {
   NotchSnapshot,
 } from "../../src/shared/notch";
 
-type OnIpc = <T>(channel: string, cb: (payload: T) => void) => () => void;
+export type OnIpc = <T>(channel: string, cb: (payload: T) => void) => () => void;
 
 /** The app renderer's side of the notch island: it feeds state in, the island draws it. */
 export function notchHostBridge(onIpc: OnIpc) {

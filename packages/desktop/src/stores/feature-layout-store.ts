@@ -3,6 +3,8 @@ import { create } from "zustand";
 import {
   EMPTY_LAYOUT_STATE,
   flatLayoutState,
+  isPluginTabKind,
+  isTabKind,
   ROOT_LEAF_ID,
   type FeatureLayoutState,
   type LayoutLeaf,
@@ -19,6 +21,8 @@ import {
   mapSplitsAtPath,
   pluckTab,
   splitLeafAt,
+  survivingFocus,
+  withFocus,
   type SplitEdge,
   type SplitPath,
 } from "./feature-layout-tree";
@@ -51,10 +55,27 @@ interface FeatureLayoutStore {
   // ---- moves ----
   /** Drag a tab onto a pane edge; creates a new sibling pane next to `targetPaneId`. */
   splitTabAt(featureId: number, tab: TabKind, targetPaneId: string, edge: SplitEdge): void;
-  /** Drop a tab into an existing pane (center drop or strip insertion). */
-  moveTabToPane(featureId: number, tab: TabKind, targetPaneId: string, index?: number): void;
-  /** Convenience: move a tab back to the root pane's strip. */
-  dockTab(featureId: number, tab: TabKind, index?: number): void;
+  /**
+   * Drop a tab into an existing pane (center drop or strip insertion). With
+   * `activate: false` the pane keeps its current tab unless it had none.
+   */
+  moveTabToPane(
+    featureId: number,
+    tab: TabKind,
+    targetPaneId: string,
+    options?: { index?: number; activate?: boolean },
+  ): void;
+  /** Move a tab back to the root strip; the root takes focus but keeps its active tab. */
+  dockTab(featureId: number, tab: TabKind): void;
+  /**
+   * Place a tab that isn't in the layout yet (a plugin tab): appended to
+   * `opts.paneId` when that pane exists, else the focused pane, else root.
+   * Activates it (and focuses its pane) unless `activate: false`. A tab that is
+   * already placed is just activated where it is.
+   */
+  addTab(featureId: number, tab: TabKind, opts?: AddTabOptions): void;
+  /** Take a plugin tab out of the layout. Built-ins can't be removed (no-op). */
+  removeTab(featureId: number, tab: TabKind): void;
   /** Set which tab is shown inside a pane's strip. */
   setPaneActiveTab(featureId: number, paneId: string, tab: TabKind): void;
   // ---- resize ----
@@ -63,6 +84,11 @@ interface FeatureLayoutStore {
   setFocusedPane(featureId: number, paneId: string | null): void;
   // ---- saved layouts metadata ----
   setAppliedLayoutId(featureId: number, layoutId: number | null): void;
+}
+
+export interface AddTabOptions {
+  paneId?: string;
+  activate?: boolean;
 }
 
 function update(
@@ -118,7 +144,7 @@ export const useFeatureLayoutStore = create<FeatureLayoutStore>((set, get) => ({
       return { ...st, splitRoot, focusedPaneId: newLeaf.id };
     }),
 
-  moveTabToPane: (featureId, tab, targetPaneId, index) =>
+  moveTabToPane: (featureId, tab, targetPaneId, { index, activate = true } = {}) =>
     update(set, featureId, (st) => {
       const after = pluckTab(st.splitRoot, tab);
       const target = findLeafById(after, targetPaneId);
@@ -127,24 +153,32 @@ export const useFeatureLayoutStore = create<FeatureLayoutStore>((set, get) => ({
         const at = index ?? leaf.tabIds.length;
         const tabIds = [...leaf.tabIds];
         tabIds.splice(at, 0, tab);
-        return { ...leaf, tabIds, activeTabId: tab };
+        return { ...leaf, tabIds, activeTabId: activate ? tab : (leaf.activeTabId ?? tab) };
       });
       return { ...st, splitRoot, focusedPaneId: targetPaneId };
     }),
 
-  dockTab: (featureId, tab, index) => get().moveTabToPane(featureId, tab, ROOT_LEAF_ID, index),
+  addTab: (featureId, tab, opts) =>
+    update(set, featureId, (st) => (isTabKind(tab) ? withTabAdded(st, tab, opts) : st)),
+
+  removeTab: (featureId, tab) =>
+    update(set, featureId, (st) => {
+      if (!isPluginTabKind(tab)) return st;
+      const splitRoot = pluckTab(st.splitRoot, tab);
+      if (splitRoot === st.splitRoot) return st;
+      return {
+        ...st,
+        splitRoot,
+        focusedPaneId: survivingFocus(splitRoot, st.focusedPaneId, ROOT_LEAF_ID),
+      };
+    }),
+
+  // Docking puts a tab back where it came from; it is not a request to look at it.
+  dockTab: (featureId, tab) =>
+    get().moveTabToPane(featureId, tab, ROOT_LEAF_ID, { activate: false }),
 
   setPaneActiveTab: (featureId, paneId, tab) =>
-    update(set, featureId, (st) => {
-      const splitRoot = mapLeaf(st.splitRoot, paneId, (leaf) =>
-        leaf.tabIds.includes(tab) && leaf.activeTabId !== tab
-          ? { ...leaf, activeTabId: tab }
-          : leaf,
-      );
-      // Skip the rebuild entirely if neither the active tab nor focus changed.
-      if (splitRoot === st.splitRoot && st.focusedPaneId === paneId) return st;
-      return { ...st, splitRoot, focusedPaneId: paneId };
-    }),
+    update(set, featureId, (st) => withPaneActiveTab(st, paneId, tab)),
 
   setSplitSizes: (featureId, splitPath, sizes) =>
     update(set, featureId, (st) => {
@@ -163,6 +197,38 @@ export const useFeatureLayoutStore = create<FeatureLayoutStore>((set, get) => ({
   setAppliedLayoutId: (featureId, layoutId) =>
     update(set, featureId, (st) => ({ ...st, appliedLayoutId: layoutId })),
 }));
+
+function withPaneActiveTab(
+  st: FeatureLayoutState,
+  paneId: string,
+  tab: TabKind,
+): FeatureLayoutState {
+  const splitRoot = mapLeaf(st.splitRoot, paneId, (leaf) =>
+    leaf.tabIds.includes(tab) && leaf.activeTabId !== tab ? { ...leaf, activeTabId: tab } : leaf,
+  );
+  // Skip the rebuild entirely if neither the active tab nor focus changed.
+  if (splitRoot === st.splitRoot && st.focusedPaneId === paneId) return st;
+  return { ...st, splitRoot, focusedPaneId: paneId };
+}
+
+function withTabAdded(
+  st: FeatureLayoutState,
+  tab: TabKind,
+  opts: AddTabOptions = {},
+): FeatureLayoutState {
+  const activate = opts.activate ?? true;
+  const host = findPaneContaining(st.splitRoot, tab);
+  if (host) return activate ? withPaneActiveTab(st, host.id, tab) : st;
+  const requested = opts.paneId ? findLeafById(st.splitRoot, opts.paneId) : null;
+  const targetId = (requested ?? getFocusedLeaf(st))?.id ?? ROOT_LEAF_ID;
+  const splitRoot = mapLeaf(st.splitRoot, targetId, (leaf) => ({
+    ...leaf,
+    tabIds: [...leaf.tabIds, tab],
+    // Even unactivated, a tab landing in an empty pane is what it shows.
+    activeTabId: activate ? tab : (leaf.activeTabId ?? tab),
+  }));
+  return withFocus(st, splitRoot, targetId, activate);
+}
 
 // ---------------------------------------------------------------------------
 // Selectors

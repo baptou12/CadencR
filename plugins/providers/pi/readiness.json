@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "plugin": {
+    "kind": "provider",
+    "id": "pi",
+    "version": "0.4.0"
+  },
+  "source_license": {
+    "declared_spdx": "Apache-2.0",
+    "file": "LICENSE",
+    "sha256": "969e96a549b0526e1a7739d596210857bc3c67fc6337c7e032d75a6daddf4ad5",
+    "review": "declared-license-file-present-not-legal-attestation"
+  },
+  "artwork": {
+    "file": "icon.svg",
+    "sha256": "a5624bc3b8cac94de75f6f13701eca2ad3ef67bbeba286c4af3f398806f0858a",
+    "observed_content": "local-svg-rect-and-two-paths-no-external-references",
+    "authorship": "not-established-by-retained-source"
+  },
+  "runtime": {
+    "kind": "external-node-pi",
+    "node": ">=22.19.0 <23.0.0",
+    "pi": "0.85.1",
+    "bundled": false
+  },
+  "targets": {
+    "darwin-aarch64": {
+      "preparation": "external-node-pi-candidate",
+      "evidence": "historical-native-protocol-and-local-descriptor",
+      "managed_installation": "not-qualified"
+    },
+    "darwin-x86_64": {
+      "preparation": "external-node-pi-candidate",
+      "evidence": "not-qualified",
+      "managed_installation": "not-qualified"
+    }
+  },
+  "historical_protocol_evidence": {
+    "target": "darwin-aarch64",
+    "source_commit": "da8849bf4c573db1ffe27f5153e171c0aee4aaf7",
+    "archive_sha256": "0ce87b036f6e7e216816153db8960689460c3563271bd445b8f97ae68f26461f",
+    "report": "docs/qa/MARKETPLACE_PI_LOOPBACK_2026_10_18.md",
+    "scope": "isolated-loopback-and-local-descriptor-only",
+    "qualifies_current_candidate": false
+  },
+  "source_import": {
+    "recorded_commit": "95bb90c",
+    "record": "plugins/providers/pi/README.md",
+    "authority": "historical-local-source-record-not-verified-upstream"
+  },
+  "not_prepared_targets": ["linux-aarch64", "linux-x86_64", "windows-aarch64", "windows-x86_64"]
+}

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -15,10 +16,19 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
-const source = readFileSync(
-  new URL("../.github/workflows/publish-protected-catalog.yml", import.meta.url),
-  "utf8",
-);
+const exampleUrl = new URL("../examples/workflows/publish-protected-catalog.yml", import.meta.url);
+const activeUrl = new URL("../.github/workflows/publish-protected-catalog.yml", import.meta.url);
+const hasExample = existsSync(exampleUrl);
+const source = readFileSync(hasExample ? exampleUrl : activeUrl, "utf8");
+
+test("exported protected workflow remains an inert example", () => {
+  if (hasExample)
+    assert.equal(
+      existsSync(activeUrl),
+      false,
+      "protected workflow must not be activated by export",
+    );
+});
 
 const occurrences = (pattern) => [...source.matchAll(pattern)].length;
 
@@ -96,7 +106,10 @@ test("privileged command uses repository-bound environment values and reviewed c
   ])
     assert.ok(command.includes(`"--${argument}"`));
   assert.match(command, /spawnSync\(command, \[\.\.\.prefix, \.\.\.args\]/);
-  assert.doesNotMatch(source, /--public-key|npm (?:install|ci|test)|pnpm|yarn/);
+  assert.doesNotMatch(
+    source,
+    /scripts\/publish-registry\.mjs|mode === "legacy"|--public-key|npm (?:install|ci|test)|pnpm|yarn/,
+  );
   assert.doesNotMatch(source, /\$\{\{ inputs\.confirm-request-sha256 \}\}[^\n]*--/);
 });
 
@@ -113,7 +126,7 @@ test("private key stays outside recoverable state and is cleaned on every outcom
   );
   assert.match(source, /unlinkSync\(file\)/);
   assert.doesNotMatch(source, /path:.*private\.pem/);
-  assert.match(source, /path: \$\{\{ runner\.temp \}\}\/marketplace-publication-state\//);
+  assert.doesNotMatch(source, /upload-artifact|include-hidden-files/);
 });
 
 test("materialization and cleanup scripts enforce owned private key lifecycle at runtime", () => {
@@ -169,19 +182,10 @@ test("materialization and cleanup scripts enforce owned private key lifecycle at
   assert.equal(readFileSync(oversizedOutput, "utf8"), "");
 });
 
-test("failure state is uniquely preserved without automatic artifact restore", () => {
-  assert.match(
-    source,
-    /name: Preserve publication recovery state\n        if: \$\{\{ always\(\) \}\}/,
-  );
-  assert.match(
-    source,
-    /name: marketplace-publication-state-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/,
-  );
+test("raw recovery state is never uploaded or restored", () => {
   assert.match(source, /timeout-minutes: 30/);
-  assert.doesNotMatch(source, /actions\/download-artifact/);
+  assert.doesNotMatch(source, /actions\/(?:upload|download)-artifact/);
   assert.match(source, /Fresh runners reconstruct published provider state only after tag/);
-  assert.match(source, /No Actions artifact/);
 });
 
 test("each runner selects a verified runtime before state and secrets", () => {
@@ -218,10 +222,10 @@ function fixtureSelection(t, body) {
   return { result, output: readFileSync(output, "utf8"), root };
 }
 
-test("only explicit PENDING selects legacy; malformed pins and verification failures fail closed", (t) => {
+test("PENDING, malformed pins and verification failures fail closed", (t) => {
   const pending = fixtureSelection(t, "exit 3\n");
-  assert.equal(pending.result.status, 0, pending.result.stderr);
-  assert.equal(pending.output, "mode=legacy\n");
+  assert.notEqual(pending.result.status, 0);
+  assert.equal(pending.output, "");
   for (const body of ["exit 2\n", "exit 1\n", "printf injected; exit 3\n", "exit 0\n"]) {
     const failed = fixtureSelection(t, body);
     assert.notEqual(failed.result.status, 0);
@@ -234,7 +238,7 @@ test("verified CLI output must name exactly one owned executable, without output
     'mkdir "$2"\nprintf "#!/bin/sh\\nexit 0\\n" > "$2/cadencr"\nchmod 700 "$2/cadencr"\nprintf "%s/cadencr\\n" "$2"\n';
   const verified = fixtureSelection(t, body);
   assert.equal(verified.result.status, 0, verified.result.stderr);
-  assert.equal(verified.output, `mode=released\ncli_file=${verified.root}/cadencr\n`);
+  assert.equal(verified.output, `cli_file=${verified.root}/cadencr\n`);
   for (const suffix of ['printf "mode=legacy\\n"\n', 'printf "extra"\n']) {
     const injected = fixtureSelection(t, body + suffix);
     assert.notEqual(injected.result.status, 0);
@@ -304,6 +308,6 @@ test("selector binds the same committed pin and owned destination", (t) => {
     t,
     '[ "$1" = "ci/released-cli.env" ] || exit 2\ncase "$2" in /*/verified) ;; *) exit 2 ;; esac\nexit 3\n',
   );
-  assert.equal(pending.result.status, 0, pending.result.stderr);
-  assert.equal(pending.output, "mode=legacy\n");
+  assert.notEqual(pending.result.status, 0);
+  assert.equal(pending.output, "");
 });

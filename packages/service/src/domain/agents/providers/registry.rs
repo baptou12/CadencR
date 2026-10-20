@@ -21,6 +21,7 @@ use cli_discovery::DiscoverySpec;
 
 use crate::domain::agents::adapter::AgentRuntimeAdapter;
 use crate::domain::agents::runtime::ProviderOrigin;
+use crate::domain::agents::updates::ProviderUpdater;
 
 mod builtin_metadata;
 use builtin_metadata::{claude_metadata, codex_metadata, cursor_metadata, opencode_metadata};
@@ -125,6 +126,8 @@ pub struct ProviderRegistrationMetadata {
     aliases: Vec<Cow<'static, str>>,
     model_guidance: Option<Cow<'static, str>>,
     discovery: Option<ProviderDiscoveryMetadata>,
+    /// Version detection and self-update, when the provider manages it.
+    updater: Option<Arc<dyn ProviderUpdater>>,
 }
 
 impl ProviderRegistrationMetadata {
@@ -138,6 +141,10 @@ impl ProviderRegistrationMetadata {
 
     pub fn discovery(&self) -> Option<&ProviderDiscoveryMetadata> {
         self.discovery.as_ref()
+    }
+
+    pub fn updater(&self) -> Option<&Arc<dyn ProviderUpdater>> {
+        self.updater.as_ref()
     }
 }
 
@@ -167,6 +174,11 @@ impl RegisteredProvider {
 
     fn with_metadata(mut self, metadata: ProviderRegistrationMetadata) -> Self {
         self.metadata = metadata;
+        self
+    }
+
+    pub fn with_updater(mut self, updater: Arc<dyn ProviderUpdater>) -> Self {
+        self.metadata.updater = Some(updater);
         self
     }
 

@@ -16,9 +16,13 @@ function setRoute(pathname: string): void {
 }
 
 import { queryClient } from "@/lib/queryClient";
-import { getListFeaturesQueryKey, type Feature } from "@/api/generated";
+import {
+  getGetWorkspaceSettingQueryKey,
+  getListFeaturesQueryKey,
+  type Feature,
+} from "@/api/generated";
 import { useSessionStatusStore } from "@/stores/session-status-store";
-import { useIsFeatureUnread, useMarkFeatureRead, useUnreadStore } from "@/stores/unread-store";
+import { useIsFeatureUnread, useUnreadStore } from "@/stores/unread-store";
 
 class MockWebSocket {
   static CLOSED = 3;
@@ -56,7 +60,7 @@ function emitStatus(ws: MockWebSocket | undefined, payload: Record<string, unkno
 }
 
 beforeEach(() => {
-  useUnreadStore.setState({ byFeature: {}, failedByFeature: {}, markedOrder: {} });
+  useUnreadStore.setState({ byFeature: {}, failedByFeature: {}, markedOrder: {}, prAcks: {} });
   setRoute("/other");
 });
 
@@ -93,12 +97,6 @@ describe("unread store", () => {
     act(() => useUnreadStore.getState().markRead(7));
     expect(result.current).toBe(false);
   });
-
-  it("useMarkFeatureRead clears the flag when the conversation opens", () => {
-    useUnreadStore.getState().markUnread(7);
-    renderHook(() => useMarkFeatureRead(7));
-    expect(useUnreadStore.getState().byFeature[7]).toBeUndefined();
-  });
 });
 
 describe("turn completion → unread", () => {
@@ -125,6 +123,22 @@ describe("turn completion → unread", () => {
     emitStatus(ws, { session_id: 10, feature_id: 1, status: "idle", kind: null, seq: 2 });
 
     expect(useUnreadStore.getState().byFeature[1]).toBeUndefined();
+  });
+
+  it("flags unread while viewing when For me clears only when done", () => {
+    queryClient.setQueryData(getGetWorkspaceSettingQueryKey("sidebar_for_me_ack"), {
+      value: "manual",
+    });
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    setRoute("/ws-session/ws-feature-1");
+    seedFeature(1, 2);
+    useSessionStatusStore.getState().connect();
+    const ws = MockWebSocket.instances[0];
+
+    emitStatus(ws, { session_id: 10, feature_id: 1, status: "agent", kind: null, seq: 1 });
+    emitStatus(ws, { session_id: 10, feature_id: 1, status: "idle", kind: null, seq: 2 });
+
+    expect(useUnreadStore.getState().byFeature[1]).toBe(true);
   });
 
   it("flags a failed turn off-screen as failed, not unread", () => {
@@ -203,14 +217,5 @@ describe("failed and unread marks", () => {
     const { failedByFeature } = useUnreadStore.getState();
     marks.markRead(5);
     expect(useUnreadStore.getState().failedByFeature).toBe(failedByFeature);
-  });
-
-  it("a hand-marked unread survives while its conversation stays open", () => {
-    const { rerender } = renderHook(({ id }) => useMarkFeatureRead(id), {
-      initialProps: { id: 7 },
-    });
-    act(() => useUnreadStore.getState().markUnread(7));
-    rerender({ id: 7 });
-    expect(useUnreadStore.getState().byFeature[7]).toBe(true);
   });
 });

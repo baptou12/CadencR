@@ -777,6 +777,146 @@ describe("ws-session-store", () => {
     });
   });
 
+  it.each(["autoReview", "default", "fullAccess"] as const)(
+    "replays a pre-init %s access choice before the first queued prompt",
+    async (mode) => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      store.setAccessMode("s1", mode);
+      store.sendPrompt("s1", "hello");
+      const confirmedMode = mode === "default" ? "autoReview" : "default";
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1", provider: "codex_cli", access_mode: confirmedMode },
+      });
+
+      const sent = ws.sent.map((raw) => JSON.parse(raw));
+      expect(sent.map((envelope) => envelope.action)).toEqual([
+        "mode.set",
+        "access_mode.set",
+        "prompt.send",
+      ]);
+      expect(sent[1].payload).toEqual({ session_id: "srv-1", mode });
+      expect(useWsSessionStore.getState().sessions["s1"].accessMode).toBe(confirmedMode);
+      expect(useWsSessionStore.getState().sessions["s1"].pendingInitAccessMode).toBeNull();
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "access_mode.changed",
+        payload: { mode },
+      });
+      expect(useWsSessionStore.getState().sessions["s1"].accessMode).toBe(mode);
+    },
+  );
+
+  it.each(["autoReview", "default", "fullAccess"] as const)(
+    "consumes a pre-init %s choice already confirmed by initialization without replay",
+    async (mode) => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      store.setAccessMode("s1", mode);
+      store.sendPrompt("s1", "hello");
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1", provider: "codex_cli", access_mode: mode },
+      });
+
+      expect(ws.sent.map((raw) => JSON.parse(raw).action)).toEqual(["mode.set", "prompt.send"]);
+      expect(useWsSessionStore.getState().sessions["s1"].accessMode).toBe(mode);
+      expect(useWsSessionStore.getState().sessions["s1"].pendingInitAccessMode).toBeNull();
+    },
+  );
+
+  it.each([undefined, "unknown"])(
+    "replays an explicit default when initialization does not confirm its mode: %s",
+    async (reportedMode) => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      store.setAccessMode("s1", "default");
+      store.sendPrompt("s1", "hello");
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1", provider: "codex_cli", access_mode: reportedMode },
+      });
+
+      const sent = ws.sent.map((raw) => JSON.parse(raw));
+      expect(sent.map((envelope) => envelope.action)).toEqual([
+        "mode.set",
+        "access_mode.set",
+        "prompt.send",
+      ]);
+      expect(sent[1].payload.mode).toBe("default");
+      expect(useWsSessionStore.getState().sessions["s1"].pendingInitAccessMode).toBeNull();
+    },
+  );
+
+  it("consumes the latest pre-init access choice even without a queued prompt", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    store.setAccessMode("s1", "fullAccess");
+    store.setAccessMode("s1", "autoReview");
+    const initialized = {
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1", provider: "codex_cli", access_mode: "default" },
+    };
+
+    ws.simulateMessage(initialized);
+    ws.simulateMessage(initialized);
+
+    const accessChanges = ws.sent
+      .map((raw) => JSON.parse(raw))
+      .filter((envelope) => envelope.action === "access_mode.set");
+    expect(accessChanges).toHaveLength(1);
+    expect(accessChanges[0].payload.mode).toBe("autoReview");
+    expect(useWsSessionStore.getState().sessions["s1"].pendingInitAccessMode).toBeNull();
+  });
+
+  it("keeps the initialized access policy when no pre-init choice was made", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1", provider: "codex_cli", access_mode: "autoReview" },
+    });
+
+    expect(useWsSessionStore.getState().sessions["s1"].accessMode).toBe("autoReview");
+    expect(ws.sent.map((raw) => JSON.parse(raw).action)).toEqual(["mode.set"]);
+  });
+
+  it("drops a pre-init access choice if the resolved provider has no access modes", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    store.setAccessMode("s1", "autoReview");
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1", provider: "claude_code" },
+    });
+
+    expect(ws.sent.map((raw) => JSON.parse(raw).action)).toEqual(["mode.set"]);
+    expect(useWsSessionStore.getState().sessions["s1"].pendingInitAccessMode).toBeNull();
+  });
+
   // Regression test for the first-prompt permission-mode race: pre-init
   // selections for *non-plan* modes (acceptEdits, default, bypassPermissions,
   // auto) used to be silently dropped because `buildQueuedInitEnvelopes` only

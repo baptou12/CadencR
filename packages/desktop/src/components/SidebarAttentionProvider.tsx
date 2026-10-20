@@ -1,7 +1,8 @@
-import { createContext, useContext, type ReactElement, type ReactNode } from "react";
+import { createContext, useContext, useEffect, type ReactElement, type ReactNode } from "react";
 import { ProjectAttentionBadges } from "@/components/ProjectAttentionBadges";
 import { useResolvedAttention } from "@/hooks/useResolvedAttention";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
+import { reportUnreadRestoreError } from "@/stores/unread-marks-storage";
 
 type SidebarAttention = ReturnType<typeof useResolvedAttention>;
 
@@ -12,17 +13,21 @@ const NO_ATTENTION: SidebarAttention = {
   queue: [],
   byProject: new Map(),
   loadingStates: [],
+  actions: [],
+  actionsLoading: false,
 };
 
 export const SidebarAttentionContext = createContext<SidebarAttention>(NO_ATTENTION);
 
 /**
  * Resolves the attention index once for the sidebar and the collapsed rail: the
- * "For me" block, the rail and every collapsed project's badges read the same
- * result.
+ * "For me" block (and its action list), the rail and every collapsed project's
+ * badges read the same result.
  */
 export function SidebarAttentionProvider({ children }: { children: ReactNode }): ReactElement {
   const attention = useResolvedAttention();
+  // The sidebar always mounts: it surfaces marks the reload had to drop.
+  useEffect(reportUnreadRestoreError, []);
   return (
     <SidebarAttentionContext.Provider value={attention}>
       {children}

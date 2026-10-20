@@ -49,6 +49,10 @@ pub(super) fn sidebar_display_spec(key: &str) -> Option<SettingSpec> {
             ValueKind::Enum(&["projects", "conversations", "attention", "none"]),
             Some("projects"),
         ),
+        "sidebar_for_me_limit" => SettingSpec::new(ValueKind::Enum(&["3", "5", "all"]), Some("3")),
+        "sidebar_for_me_ack" => {
+            SettingSpec::new(ValueKind::Enum(&["open", "manual"]), Some("open"))
+        }
         "sidebar_recent_count" => SettingSpec::new(ValueKind::Enum(&["3", "5", "10"]), Some("5")),
         "sidebar_block_counts" => {
             SettingSpec::new(ValueKind::Enum(&["count", "dot", "none"]), Some("count"))
@@ -60,7 +64,7 @@ pub(super) fn sidebar_display_spec(key: &str) -> Option<SettingSpec> {
             Some("project"),
         ),
         "sidebar_conversation_sort" => SettingSpec::new(
-            ValueKind::Enum(&["activity", "created", "title"]),
+            ValueKind::Enum(&["activity", "created", "title", "manual"]),
             Some("activity"),
         ),
         "sidebar_project_sort" => {
@@ -134,6 +138,17 @@ mod tests {
         let recent = workspace_spec("sidebar_recent_count").unwrap();
         assert!(recent.is_valid("10"));
         assert!(!recent.is_valid("7"));
+        let for_me_limit = workspace_spec("sidebar_for_me_limit").unwrap();
+        assert_eq!(for_me_limit.default, Some("3"));
+        assert!(for_me_limit.is_valid("all"));
+        assert!(!for_me_limit.is_valid("10"));
+        let for_me_ack = workspace_spec("sidebar_for_me_ack").unwrap();
+        assert_eq!(for_me_ack.default, Some("open"));
+        assert!(for_me_ack.is_valid("manual"));
+        assert!(!for_me_ack.is_valid("never"));
+        let conversation_sort = workspace_spec("sidebar_conversation_sort").unwrap();
+        assert!(conversation_sort.is_valid("manual"));
+        assert!(!conversation_sort.is_valid("name"));
         let auto_collapse = workspace_spec("sidebar_auto_collapse").unwrap();
         assert_eq!(auto_collapse.default, Some("false"));
         let lens = workspace_spec("sidebar_lens").unwrap();

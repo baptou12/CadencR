@@ -1,13 +1,14 @@
+mod asset_url;
+pub(crate) use asset_url::AssetUrlPolicy;
 pub(crate) mod discovery;
 mod model;
+mod release_lookup;
 mod request;
 mod tag;
 mod upload;
 mod validation;
-
-use std::path::Path;
-
 use serde::Deserialize;
+use std::path::Path;
 
 use model::{validate_asset, DraftBody, RawAsset, RawRelease};
 use request::{AssetResponse, Requester};
@@ -55,6 +56,8 @@ pub(crate) struct UploadAssetRequest<'a> {
 
 #[derive(bon::Builder)]
 pub(crate) struct VerifyAssetRequest<'a> {
+    #[builder(default)]
+    pub(crate) url_policy: AssetUrlPolicy,
     pub(crate) asset: &'a Asset,
     pub(crate) expected_url: &'a str,
     pub(crate) sha256: &'a str,
@@ -65,6 +68,7 @@ pub(crate) struct VerifyAssetRequest<'a> {
 pub(crate) trait ReleaseClient {
     fn get_tag_commit(&self, tag: &str) -> Result<Option<String>, PublisherError>;
     fn find_release(&self, tag: &str) -> Result<Option<Release>, PublisherError>;
+    fn get_release(&self, release_id: u64) -> Result<Option<Release>, PublisherError>;
     fn create_draft(&self, request: CreateDraftRequest<'_>) -> Result<Release, PublisherError>;
     fn list_assets(&self, release_id: u64) -> Result<Vec<Asset>, PublisherError>;
     fn upload_asset(&self, request: UploadAssetRequest<'_>) -> Result<Asset, PublisherError>;
@@ -104,29 +108,6 @@ impl GitHubClient {
             uploader: Uploader::fixture(token, uploads)?,
             downloader: Default::default(),
         })
-    }
-
-    fn paged<T: for<'de> Deserialize<'de>>(
-        &self,
-        noun: &str,
-        path: &str,
-    ) -> Result<Vec<T>, PublisherError> {
-        let mut result = Vec::new();
-        for page in 1..=MAX_PAGES {
-            let separator = if path.contains('?') { '&' } else { '?' };
-            let values: Vec<T> = self.request.get(&format!(
-                "{path}{separator}per_page={PAGE_SIZE}&page={page}"
-            ))?;
-            let count = values.len();
-            if count > PAGE_SIZE {
-                return Err(error(format!("GitHub {noun} response is malformed")));
-            }
-            result.extend(values);
-            if count < PAGE_SIZE {
-                return Ok(result);
-            }
-        }
-        Err(error(format!("GitHub {noun} pagination limit exceeded")))
     }
 }
 
@@ -178,6 +159,10 @@ impl ReleaseClient for GitHubClient {
         found.map(Release::try_from).transpose()
     }
 
+    fn get_release(&self, release_id: u64) -> Result<Option<Release>, PublisherError> {
+        self.release_by_id(release_id)
+    }
+
     fn create_draft(&self, request: CreateDraftRequest<'_>) -> Result<Release, PublisherError> {
         text(request.tag, "release tag")?;
         crate::validate_registry_commit(request.commit)?;
@@ -219,7 +204,10 @@ impl ReleaseClient for GitHubClient {
 
     fn verify_asset(&self, request: VerifyAssetRequest<'_>) -> Result<(), PublisherError> {
         validate_asset(request.asset)?;
-        if request.asset.browser_download_url != request.expected_url {
+        if !request
+            .url_policy
+            .matches(&request.asset.browser_download_url, request.expected_url)
+        {
             return Err(error("GitHub asset URL does not match"));
         }
         if request.asset.size != request.size {
@@ -264,7 +252,7 @@ impl ReleaseClient for GitHubClient {
 }
 
 #[cfg(test)]
-mod fixture;
+pub(crate) mod fixture;
 
 #[cfg(test)]
 mod tests {

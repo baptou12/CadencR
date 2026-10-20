@@ -1,4 +1,4 @@
-import type { TurnLifecycle } from "./ws-turn-lifecycle";
+import { isTurnInProgress, type TurnLifecycle } from "./ws-turn-lifecycle";
 
 export interface TurnDurationBreakdown {
   totalMs: number;
@@ -37,15 +37,39 @@ export function transitionTurnTiming(
   // without it, `startedAt` stays null and the live "Working - Xs" label
   // can never tick, even though the badge / streaming cursor display
   // "Working".
-  if (!isInProgressPhase(previous) && isInProgressPhase(next)) {
+  if (!isTurnInProgress(previous) && isTurnInProgress(next)) {
     return startTurnTiming(nowMs);
   }
 
   return completeTurnTimingSegment(timing, previous, next, timing.segmentStartedAt, nowMs);
 }
 
-function isInProgressPhase(lifecycle: TurnLifecycle): boolean {
-  return lifecycle.phase === "active" || lifecycle.phase === "paused";
+/**
+ * Re-anchor an in-progress turn's timer to the server-stamped start (already
+ * on this device's clock), so every device measures the same turn from the
+ * same instant, whenever it joined. Time this device didn't observe — it
+ * joined mid-turn — counts as active.
+ */
+export function anchorTurnTiming(
+  timing: TurnTimingState,
+  lifecycle: TurnLifecycle,
+  serverStartedAt: number | null,
+  nowMs: number = Date.now(),
+): TurnTimingState {
+  if (serverStartedAt == null || !isTurnInProgress(lifecycle)) return timing;
+  if (timing.startedAt === serverStartedAt) return timing;
+  if (timing.startedAt == null || timing.segmentStartedAt == null) {
+    return anchorTurnTiming(startTurnTiming(nowMs), lifecycle, serverStartedAt, nowMs);
+  }
+  // While the first, still-open segment is active, it simply started earlier.
+  if (lifecycle.phase === "active" && timing.segmentStartedAt === timing.startedAt) {
+    return { ...timing, startedAt: serverStartedAt, segmentStartedAt: serverStartedAt };
+  }
+  return {
+    ...timing,
+    startedAt: serverStartedAt,
+    activeMs: Math.max(0, timing.activeMs + timing.startedAt - serverStartedAt),
+  };
 }
 
 export function completeTurnTimingSegment(

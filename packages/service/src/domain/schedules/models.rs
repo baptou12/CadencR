@@ -109,6 +109,47 @@ pub struct ScheduleLastRun {
     pub feature_id: Option<i64>,
 }
 
+/// Gates a run on a shell command: at each firing the command runs in the
+/// target's working copy, and the prompt is only delivered when it exits
+/// non-zero — "every 15 minutes, if `cargo test` fails, fix it". The command's
+/// output rides along with the prompt so the agent sees what broke.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ScheduleCondition {
+    /// Run through the user's login shell, like a custom action.
+    pub command: String,
+    /// Seconds before the evaluation is abandoned. Defaults to 300, at most 600.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<i64>,
+}
+
+/// What the latest condition evaluation concluded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "TEXT", rename_all = "lowercase")]
+pub enum ScheduleCheckStatus {
+    /// Exit 0 — nothing was sent.
+    Passed,
+    /// Non-zero exit — the prompt was handed to dispatch.
+    Triggered,
+    /// The target conversation's agent was still working, so the command
+    /// wasn't run: it is most likely still on the previous failure.
+    Busy,
+    /// The command could not be evaluated (timeout, spawn failure, …).
+    Error,
+}
+
+/// Outcome of the most recent condition evaluation. Separate from
+/// [`ScheduleLastRun`]: a passing check delivers nothing, so it must not
+/// overwrite the record of the last message actually sent.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ScheduleLastCheck {
+    /// ISO-8601 UTC.
+    pub at: String,
+    pub status: ScheduleCheckStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i64>,
+}
+
 /// A configured schedule. Timestamps are ISO-8601 UTC (trailing `Z`) so the
 /// frontend parses them unambiguously and renders in the viewer's timezone.
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -119,6 +160,9 @@ pub struct Schedule {
     pub prompt: String,
     pub target: ScheduleTarget,
     pub recurrence: Recurrence,
+    /// Set when the schedule only delivers after a failing command.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub condition: Option<ScheduleCondition>,
     pub enabled: bool,
     /// A one-shot schedule that has already fired. It is neither upcoming nor
     /// paused — a third state the UI has to name, so it ships on the wire
@@ -129,6 +173,8 @@ pub struct Schedule {
     pub next_run_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_run: Option<ScheduleLastRun>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_check: Option<ScheduleLastCheck>,
     pub run_count: i64,
     pub context: ScheduleContext,
     pub created_at: String,
@@ -144,6 +190,9 @@ pub struct SaveScheduleRequest {
     pub prompt: String,
     pub target: ScheduleTarget,
     pub recurrence: RecurrenceInput,
+    /// Omit (or send `null`) for a schedule that always delivers.
+    #[serde(default)]
+    pub condition: Option<ScheduleCondition>,
     /// Defaults to `true` on create; on update, omitting it leaves the current
     /// paused/active state alone.
     #[serde(default)]
@@ -216,6 +265,9 @@ pub struct ScheduleRanEvent {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ScheduleRunResult {
     pub ran: bool,
+    /// The schedule's command exited 0, so there was nothing to send. `ran` is
+    /// false without that being a failure.
+    pub condition_passed: bool,
     /// Conversation the run delivered into.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub feature_id: Option<i64>,

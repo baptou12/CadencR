@@ -121,6 +121,17 @@ pub struct AppState {
     /// live preview: the frontend re-fetches and re-injects the theme's tokens
     /// while the user edits the file.
     pub theme_events_tx: broadcast::Sender<crate::domain::themes::ThemesChangeEvent>,
+    /// Broadcast when a custom tab's `tab.json`, icon or `dist/` changes on
+    /// disk. Drives live reload of open tab instances.
+    pub plugin_tab_events_tx: broadcast::Sender<crate::domain::plugin_tabs::PluginTabChangedEvent>,
+    /// In-memory plugin tokens of live custom tab instances (never persisted).
+    pub plugin_tab_grants: crate::domain::plugin_tabs::grants::GrantStore,
+    /// The commands custom tabs ran, for their Activity dialog (memory only).
+    pub plugin_tab_activity: crate::domain::plugin_tabs::activity::ActivityLog,
+    /// Custom tabs' native backend processes.
+    pub plugin_tab_backends: crate::domain::plugin_tabs::backend::BackendSupervisor,
+    /// Open custom tab instances (presence leases); a backend stops with its tab.
+    pub plugin_tab_presence: crate::domain::plugin_tabs::presence::PresenceStore,
     /// Broadcast when `alacritty.toml` changes on disk. Drives the frontend
     /// to re-fetch `GET /api/terminal/alacritty-config` live.
     pub alacritty_config_events_tx:
@@ -132,6 +143,8 @@ pub struct AppState {
     /// User-visible lifecycle for first-run optimization and later cleanup.
     /// Every app client subscribes so long-running work has explicit progress.
     pub storage_maintenance_events_tx: StorageMaintenanceBroadcaster,
+    /// Cached provider version checks and background provider updates.
+    pub provider_updates: crate::domain::agents::updates::ProviderUpdateService,
     /// Shared file watcher (one project at a time).
     pub file_watcher: SharedFileWatcher,
     /// Per-launch bearer token required on every HTTP request (via the
@@ -269,6 +282,7 @@ impl AppState {
         let (file_change_tx, _) = broadcast::channel(16);
         let (settings_events_tx, _) = broadcast::channel(16);
         let (theme_events_tx, _) = broadcast::channel(16);
+        let (plugin_tab_events_tx, _) = broadcast::channel(16);
         let (alacritty_config_events_tx, _) = broadcast::channel(16);
         let (remote_events_tx, _) = broadcast::channel(16);
         let storage_maintenance_events_tx = StorageMaintenanceBroadcaster::new(16);
@@ -283,6 +297,8 @@ impl AppState {
             }),
         );
         let pty_manager = PtyManager::new();
+        let provider_updates =
+            crate::domain::agents::updates::ProviderUpdateService::new(read_pool.clone());
         Self {
             read_pool: read_pool.clone(),
             write_pool,
@@ -290,10 +306,7 @@ impl AppState {
             browser_bridge: Arc::new(RwLock::new(BrowserBridgeConfig::from_env())),
             max_parallel_agents: Self::max_parallel_from_env(),
             agent_timeout_minutes: Self::agent_timeout_minutes_from_env(),
-            session_status_tx: SessionStatusBroadcaster::new(
-                session_status_tx,
-                Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            ),
+            session_status_tx: SessionStatusBroadcaster::new(session_status_tx),
             feature_events_tx: FeatureEventBroadcaster::new(feature_events_tx),
             schedule_events_tx,
             pty_manager: pty_manager.clone(),
@@ -301,9 +314,15 @@ impl AppState {
             file_change_tx,
             settings_events_tx,
             theme_events_tx,
+            plugin_tab_events_tx,
+            plugin_tab_grants: Default::default(),
+            plugin_tab_activity: Default::default(),
+            plugin_tab_backends: Default::default(),
+            plugin_tab_presence: Default::default(),
             alacritty_config_events_tx,
             remote_events_tx,
             storage_maintenance_events_tx,
+            provider_updates,
             file_watcher: crate::domain::editor::watcher::new_shared(),
             auth_token,
             mcp_control_token: uuid::Uuid::new_v4().to_string(),
@@ -358,11 +377,14 @@ impl AppState {
         let (file_change_tx, _) = broadcast::channel(16);
         let (settings_events_tx, _) = broadcast::channel(16);
         let (theme_events_tx, _) = broadcast::channel(16);
+        let (plugin_tab_events_tx, _) = broadcast::channel(16);
         let (alacritty_config_events_tx, _) = broadcast::channel(16);
         let (remote_events_tx, _) = broadcast::channel(16);
         let storage_maintenance_events_tx = StorageMaintenanceBroadcaster::new(16);
         let (forge_events_tx, _) = broadcast::channel(64);
         let pty_manager = PtyManager::new();
+        let provider_updates =
+            crate::domain::agents::updates::ProviderUpdateService::new(pool.clone());
         Self {
             read_pool: pool.clone(),
             write_pool: pool.clone(),
@@ -373,10 +395,7 @@ impl AppState {
             browser_bridge: Arc::new(RwLock::new(None)),
             max_parallel_agents: 3,
             agent_timeout_minutes: 30,
-            session_status_tx: SessionStatusBroadcaster::new(
-                session_status_tx,
-                std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            ),
+            session_status_tx: SessionStatusBroadcaster::new(session_status_tx),
             feature_events_tx: FeatureEventBroadcaster::new(feature_events_tx),
             schedule_events_tx,
             pty_manager: pty_manager.clone(),
@@ -384,9 +403,15 @@ impl AppState {
             file_change_tx,
             settings_events_tx,
             theme_events_tx,
+            plugin_tab_events_tx,
+            plugin_tab_grants: Default::default(),
+            plugin_tab_activity: Default::default(),
+            plugin_tab_backends: Default::default(),
+            plugin_tab_presence: Default::default(),
             alacritty_config_events_tx,
             remote_events_tx,
             storage_maintenance_events_tx,
+            provider_updates,
             file_watcher: crate::domain::editor::watcher::new_shared(),
             auth_token: "test-token".to_string(),
             mcp_control_token: "test-mcp-token".to_string(),

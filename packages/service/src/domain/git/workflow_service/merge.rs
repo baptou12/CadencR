@@ -78,9 +78,7 @@ pub async fn merge_feature_branch(
     // Merging consumes the committed branch ref only. Uncommitted files in the
     // source worktree are intentionally allowed and remain unmerged there.
     //
-    // The feature's recorded branch, not the live checkout: a worktree-free
-    // feature resolves to the project directory, whose HEAD may have moved to
-    // another branch since — merging that would take the wrong changes.
+    // See `resolve_feature_branch` for which branch a feature is bound to.
     let source_branch = crate::domain::git::service::resolve_feature_branch(
         &state.read_pool,
         feature_id,
@@ -101,6 +99,13 @@ pub async fn merge_feature_branch(
     }
 
     let merge_repo = target_worktree_or_project(project_repo, &target_branch).await?;
+    // `git merge` exits 0 with "Already up to date" here, which would report a
+    // successful merge that changed nothing.
+    if commands::is_branch_merged(&merge_repo, &source_branch, &target_branch).await? {
+        return Err(AppError::BadRequest(format!(
+            "'{source_branch}' has no commits that aren't already in '{target_branch}' — nothing to merge"
+        )));
+    }
     let result = run_merge(&merge_repo, &source_branch, &target_branch, mode).await?;
     if result.success {
         if body.save_as_default {
@@ -306,11 +311,13 @@ mod tests {
         assert_eq!(local, "release");
     }
 
-    #[tokio::test]
-    async fn merge_allows_dirty_source_worktree_and_merges_committed_changes() {
+    /// A `main` repo plus a worktree on `feature/x`. The second dir owns the
+    /// worktree and must outlive the test.
+    async fn repo_with_feature_worktree() -> (tempfile::TempDir, tempfile::TempDir, PathBuf) {
         let dir = init_repo().await;
-        let repo = dir.path();
-        run_git(&["branch", "-M", "main"], repo).await.unwrap();
+        run_git(&["branch", "-M", "main"], dir.path())
+            .await
+            .unwrap();
         let worktree_parent = tempfile::tempdir().unwrap();
         let source = worktree_parent.path().join("feature-x");
         let source_arg = source.to_string_lossy().to_string();
@@ -323,41 +330,93 @@ mod tests {
             &source_arg,
             "main",
         ];
-        run_git(&args, repo).await.unwrap();
+        run_git(&args, dir.path()).await.unwrap();
+        (dir, worktree_parent, source)
+    }
 
-        tokio::fs::write(source.join("committed.txt"), "committed\n")
+    async fn commit_file(repo: &Path, name: &str) {
+        tokio::fs::write(repo.join(name), format!("{name}\n"))
             .await
             .unwrap();
-        run_git(&["add", "committed.txt"], &source).await.unwrap();
-        run_git(&["commit", "-q", "-m", "feature commit"], &source)
+        run_git(&["add", name], repo).await.unwrap();
+        run_git(&["commit", "-q", "-m", name], repo).await.unwrap();
+    }
+
+    async fn merge_into_main(repo: &Path, branch: &str) {
+        run_git(&["merge", "-q", "--no-ff", "--no-edit", branch], repo)
             .await
             .unwrap();
+    }
+
+    fn merge_body() -> MergeFeatureBranchBody {
+        MergeFeatureBranchBody {
+            feature_id: 1,
+            project_id: Some(1),
+            mode: Some(MergeMode::NoFf),
+            save_as_default: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn merge_allows_dirty_source_worktree_and_merges_committed_changes() {
+        let (dir, _worktree_parent, source) = repo_with_feature_worktree().await;
+        let repo = dir.path();
+        commit_file(&source, "committed.txt").await;
         tokio::fs::write(source.join("dirty.txt"), "dirty\n")
             .await
             .unwrap();
         let state = setup_merge_state(repo, &source).await;
 
-        let result = merge_feature_branch(
-            &state,
-            MergeFeatureBranchBody {
-                feature_id: 1,
-                project_id: Some(1),
-                mode: Some(MergeMode::NoFf),
-                save_as_default: false,
-            },
-        )
-        .await
-        .unwrap();
+        let result = merge_feature_branch(&state, merge_body()).await.unwrap();
 
         assert!(result.success, "{:?}", result.error);
-        assert_eq!(
-            tokio::fs::read_to_string(repo.join("committed.txt"))
-                .await
-                .unwrap(),
-            "committed\n"
-        );
+        assert!(repo.join("committed.txt").exists());
         assert!(!repo.join("dirty.txt").exists());
         assert!(source.join("dirty.txt").exists());
+    }
+
+    /// The worktree was provisioned on `feature/x` (already merged), then the
+    /// agent switched it to `feature/y`. Merging the recorded branch used to
+    /// exit 0 with "Already up to date" and report success.
+    #[tokio::test]
+    async fn merges_the_branch_the_feature_worktree_has_checked_out() {
+        let (dir, _worktree_parent, source) = repo_with_feature_worktree().await;
+        let repo = dir.path();
+        commit_file(&source, "first.txt").await;
+        merge_into_main(repo, "feature/x").await;
+        run_git(&["checkout", "-q", "-b", "feature/y"], &source)
+            .await
+            .unwrap();
+        commit_file(&source, "second.txt").await;
+        let state = setup_merge_state(repo, &source).await;
+        repository::set_feature_setting(&state.write_pool, 1, "worktree_branch", "feature/x")
+            .await
+            .unwrap();
+
+        let result = merge_feature_branch(&state, merge_body()).await.unwrap();
+
+        assert!(result.success, "{:?}", result.error);
+        assert!(repo.join("second.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn rejects_a_source_branch_already_merged_into_the_target() {
+        let (dir, _worktree_parent, source) = repo_with_feature_worktree().await;
+        let repo = dir.path();
+        commit_file(&source, "first.txt").await;
+        merge_into_main(repo, "feature/x").await;
+        let state = setup_merge_state(repo, &source).await;
+        let main_before = run_git(&["rev-parse", "main"], repo).await.unwrap();
+
+        let err = merge_feature_branch(&state, merge_body())
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("nothing to merge"), "{err}");
+        assert_eq!(
+            run_git(&["rev-parse", "main"], repo).await.unwrap(),
+            main_before
+        );
     }
 
     #[tokio::test]

@@ -95,6 +95,19 @@ describe("sidebar sample preview", () => {
     expect(screen.getAllByRole("button", { name: "Dormant (1)" })).toHaveLength(2);
   });
 
+  it("lists For me's next actions with their verbs, three before Show more", async () => {
+    const { user } = renderPreview();
+    const forMe = screen.getByRole("region", { name: "For me" });
+    const verbs = () =>
+      [...forMe.querySelectorAll("[data-feature-next-action]")].map((verb) => verb.textContent);
+    expect(verbs()).toEqual(["Answer", "Approve", "Check error"]);
+    expect(within(forMe).getByRole("button", { name: /For me/ })).toHaveTextContent("6");
+
+    await user.click(within(forMe).getByRole("button", { name: "Show 3 more" }));
+    expect(verbs()).toEqual(["Answer", "Approve", "Check error", "Fix CI", "Review", "Merge"]);
+    expect(within(forMe).getByText("Bump the Stripe SDK")).toBeInTheDocument();
+  });
+
   it("follows the display options live", () => {
     configure({ forMe: false, recentBlock: true, recentCount: "3", rail: "attention" });
     renderPreview();
@@ -111,8 +124,12 @@ describe("sidebar sample preview", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { user } = renderPreview();
     await user.click(screen.getByRole("button", { name: "Replay" }));
-    // Back where they came from: nothing waits on you yet, so the block hides.
-    expect(screen.queryByRole("region", { name: "For me" })).not.toBeInTheDocument();
+    // Back where they came from: nothing waits on you yet, only the approved
+    // pull request still asks to be merged.
+    const merging = screen.getByRole("region", { name: "For me" });
+    expect(
+      [...merging.querySelectorAll("[data-feature-title]")].map((title) => title.textContent),
+    ).toEqual(["Bump the Stripe SDK"]);
     await act(() => vi.advanceTimersByTimeAsync(600));
     const forMe = screen.getByRole("region", { name: "For me" });
     // Rows already on screen flash; one just entering For me appears instead (never on mount).

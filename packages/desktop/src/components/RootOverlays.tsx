@@ -4,6 +4,7 @@ import { ArchiveFeatureDialog } from "@/components/ArchiveFeatureDialog";
 import { FeatureDeleteDialog } from "@/components/FeatureDeleteDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ImageLightboxHost } from "@/components/ImageLightbox";
+import { MermaidFullscreenHost } from "@/components/MermaidFullscreen";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { Toaster } from "@/components/ui/sonner";
 import { SchedulesShortcut } from "@/components/SchedulesShortcut";
@@ -82,10 +83,11 @@ export function RootOverlays({
       <UnifiedAgentsShortcut />
       <SchedulesShortcut />
       <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
-      <Toaster position="top-center" />
+      <Toaster />
       <PostUpdateChangelogDialog />
       <ThemeDrawer />
       <ImageLightboxHost />
+      <MermaidFullscreenHost />
       <ArchiveFeatureDialog
         open={archiveConfirmAction != null}
         feature={archiveConfirmAction?.feature}

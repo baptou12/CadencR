@@ -42,6 +42,8 @@ const APP_SHORTCUTS = [
   },
   { id: "open-settings", keys: ["mod", "comma"], description: "Open settings", scope: "global" },
   { id: "toggle-sidebar", keys: ["mod", "b"], description: "Toggle sidebar", scope: "global" },
+  { id: "navigate-back", keys: ["mod", "lbracket"], description: "Go back", scope: "global" },
+  { id: "navigate-forward", keys: ["mod", "rbracket"], description: "Go forward", scope: "global" },
   { id: "new-session", keys: ["mod", "shift", "n"], description: "New session", scope: "feature" },
   {
     id: "delete-feature",

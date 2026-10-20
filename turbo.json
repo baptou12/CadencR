@@ -9,7 +9,7 @@
     "packages/registry-publisher/**",
     "tooling/marketplace-registry/tests/contribution.test.mjs"
   ],
-  "globalPassThroughEnv": ["RUSTC_WRAPPER"],
+  "globalPassThroughEnv": ["RUSTC_WRAPPER", "TMPDIR"],
   "tasks": {
     "transit": {
       "dependsOn": [
@@ -53,7 +53,7 @@
       "persistent": true
     },
     "@cadencr/desktop#build": {
-      "dependsOn": ["^build", "@cadencr/service#build"],
+      "dependsOn": ["^build"],
       "outputs": ["out/**", "dist-electron/**"],
       "cache": false
     },
@@ -63,7 +63,7 @@
       "cache": false
     },
     "@cadencr/desktop#build:electron": {
-      "dependsOn": ["^build", "@cadencr/service#build"],
+      "dependsOn": ["^build"],
       "outputs": ["out/**", "dist-electron/**"],
       "cache": false
     },
@@ -105,6 +105,37 @@
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/packages/desktop/src/lib/shortcuts/**",
         "$TURBO_ROOT$/packages/desktop/src/shared/**"
+      ],
+      "outputs": []
+    },
+    "@cadencr/tab-sdk#build": {
+      "outputs": ["dist/**"]
+    },
+    "@cadencr/tab-kit#build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/desktop/src/components/ui/**",
+        "$TURBO_ROOT$/packages/desktop/src/lib/utils.ts"
+      ],
+      "outputs": ["dist/**"]
+    },
+    "@cadencr/tab-kit#test": {
+      "dependsOn": ["build", "transit"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/desktop/src/components/ui/**",
+        "$TURBO_ROOT$/packages/desktop/src/lib/utils.ts",
+        "$TURBO_ROOT$/packages/desktop/src/lib/themes/tokens.ts",
+        "$TURBO_ROOT$/packages/desktop/src/theme-cadencr.css"
+      ],
+      "outputs": []
+    },
+    "@cadencr/tab-kit#ts-check": {
+      "dependsOn": ["build", "transit"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/desktop/src/components/ui/**",
+        "$TURBO_ROOT$/packages/desktop/src/lib/utils.ts"
       ],
       "outputs": []
     },

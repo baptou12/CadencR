@@ -7,6 +7,12 @@ import {
   toDraft,
   type RecurrenceDraft,
 } from "@/lib/schedules/recurrence";
+import {
+  conditionDraftError,
+  conditionDraftToInput,
+  toConditionDraft,
+  type ConditionDraft,
+} from "@/lib/schedules/condition";
 
 export interface ScheduleDraftParams {
   open: boolean;
@@ -31,6 +37,8 @@ export interface ScheduleDraft {
   setTarget: (target: ScheduleTarget) => void;
   recurrence: RecurrenceDraft;
   setRecurrence: (recurrence: RecurrenceDraft) => void;
+  condition: ConditionDraft;
+  setCondition: (condition: ConditionDraft) => void;
   /** Captured once per open so `min` and validation don't drift while the
    *  dialog sits open. */
   now: Date;
@@ -73,6 +81,7 @@ function useDraftFields() {
   const [prompt, setPrompt] = useState("");
   const [target, setTarget] = useState<ScheduleTarget>({ kind: "new_conversation" });
   const [recurrence, setRecurrence] = useState<RecurrenceDraft>(() => emptyDraft());
+  const [condition, setCondition] = useState<ConditionDraft>(() => toConditionDraft(null));
   const [now, setNow] = useState(() => new Date());
   const [formKey, setFormKey] = useState(0);
 
@@ -91,6 +100,7 @@ function useDraftFields() {
       setRecurrence(
         schedule ? toDraft(schedule.recurrence, schedule.next_run_at, opened) : emptyDraft(opened),
       );
+      setCondition(toConditionDraft(schedule?.condition));
       // Bumped in the same commit as `setPrompt`, so the editor mounts with the
       // text already in state.
       setFormKey((key) => key + 1);
@@ -112,11 +122,13 @@ function useDraftFields() {
       setTarget,
       recurrence,
       setRecurrence,
+      condition,
+      setCondition,
       now,
       formKey,
       load,
     }),
-    [formKey, load, name, now, prompt, recurrence, target],
+    [condition, formKey, load, name, now, prompt, recurrence, target],
   );
 }
 
@@ -132,7 +144,7 @@ export function useScheduleDraft({
   onDelete,
 }: ScheduleDraftParams): ScheduleDraft {
   const fields = useDraftFields();
-  const { name, prompt, target, setTarget, recurrence, load } = fields;
+  const { name, prompt, target, setTarget, recurrence, condition, load } = fields;
   const [busy, setBusy] = useState(false);
 
   // Read inside the effect instead of listed as deps: callers build
@@ -179,6 +191,7 @@ export function useScheduleDraft({
           prompt: prompt.trim(),
           target,
           recurrence: draftToInput(recurrence),
+          condition: conditionDraftToInput(condition),
           enabled: schedule?.enabled ?? true,
         },
         schedule?.id,
@@ -188,7 +201,7 @@ export function useScheduleDraft({
       // useSchedules surfaces the toast; keep the dialog open to retry.
       setBusy(false);
     }
-  }, [canSave, name, onOpenChange, onSave, prompt, recurrence, schedule, target]);
+  }, [canSave, condition, name, onOpenChange, onSave, prompt, recurrence, schedule, target]);
 
   const remove = useCallback(async (): Promise<void> => {
     if (!schedule || !onDelete) return;
@@ -209,7 +222,7 @@ export function useScheduleDraft({
 
 /** What stops a save, in the order the user can act on it. */
 function validate(
-  { target, prompt, recurrence, now }: ReturnType<typeof useDraftFields>,
+  { target, prompt, recurrence, condition, now }: ReturnType<typeof useDraftFields>,
   busy: boolean,
 ): { worktreeError: string | null; canSave: boolean } {
   const missingTarget =
@@ -223,6 +236,7 @@ function validate(
   const canSave =
     !busy &&
     !draftError(recurrence, now) &&
+    !conditionDraftError(condition) &&
     !worktreeError &&
     !missingTarget &&
     prompt.trim().length > 0;

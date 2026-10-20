@@ -42,4 +42,20 @@ describe("declarative theme authoring", () => {
     expect(screen.getByText("Checking theme project…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Prepare theme bundle" })).toBeDisabled();
   });
+  it("prepares a custom tab bundle through the shared publication workflow", () => {
+    render(<ThemePublicationPackagePreparation projectId={3} enabled pluginKind="tab" />);
+    expect(screen.getByText("Prepare a custom tab bundle")).toBeInTheDocument();
+    expect(screen.queryByText("Binary target")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Custom tab package metadata JSON/), {
+      target: { value: '{"kind":"tab"}' },
+    });
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "I reviewed the custom tab data and metadata" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Prepare custom tab bundle" }));
+    expect(mocks.prepare).toHaveBeenCalledWith({
+      id: 3,
+      data: { metadata_json: '{"kind":"tab"}' },
+    });
+  });
 });

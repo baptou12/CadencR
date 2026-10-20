@@ -80,7 +80,7 @@ fn validate_current(
     draft: bool,
 ) -> Result<(), PublisherError> {
     let release = client
-        .find_release(snapshot.tag())?
+        .get_release(id)?
         .ok_or_else(|| PublisherError::new("catalog release is missing"))?;
     validate_release(&release, snapshot, Some(id), Some(draft))
 }
@@ -148,12 +148,65 @@ fn verify_final(
     combine_cleanup(result, temporary.remove())?;
     validate_current(client, snapshot, id, false)?;
     let final_assets = catalog_assets(client.list_assets(id)?, expected, true)?;
-    if final_assets != [verified_asset.clone()] {
-        return Err(PublisherError::new(
-            "catalog release asset changed after publication",
-        ));
-    }
+    crate::promote::local::require_same_published_assets(
+        std::slice::from_ref(verified_asset),
+        &final_assets,
+    )?;
     verify_tag(client, snapshot, "after public verification")?;
     freshness()?;
     Ok(())
+}
+
+fn asset_url_policy(
+    release: &Release,
+    snapshot: &cadencr_registry_core::CatalogSnapshot,
+) -> Result<crate::github::AssetUrlPolicy, PublisherError> {
+    if release.draft {
+        crate::github::AssetUrlPolicy::bound_draft()
+            .release(release)
+            .tag(snapshot.tag())
+            .commit(snapshot.registry_commit())
+            .body(snapshot.body())
+            .call()
+    } else {
+        Ok(crate::github::AssetUrlPolicy::default())
+    }
+}
+
+#[bon::builder]
+fn publish_verified_draft(
+    client: &impl ReleaseClient,
+    snapshot: &cadencr_registry_core::CatalogSnapshot,
+    release_id: u64,
+    expected: &crate::binding::ExpectedArtifact,
+    verified_asset: &Asset,
+    policy: crate::github::AssetUrlPolicy,
+    freshness: &impl Fn() -> Result<(), PublisherError>,
+) -> Result<Release, PublisherError> {
+    validate_current(client, snapshot, release_id, true)?;
+    let current_assets = crate::mirror::artifacts::validated_assets_with_policy(
+        client.list_assets(release_id)?,
+        std::slice::from_ref(expected),
+        true,
+        policy,
+    )?;
+    if current_assets != [verified_asset.clone()] {
+        return Err(PublisherError::new(
+            "catalog release asset changed before publication",
+        ));
+    }
+    verify_tag(client, snapshot, "before publication PATCH")?;
+    freshness()?;
+    let release = match client.publish_draft(release_id) {
+        Ok(value) => value,
+        Err(primary) => match client.get_release(release_id)? {
+            Some(value)
+                if validate_release(&value, snapshot, Some(release_id), Some(false)).is_ok() =>
+            {
+                value
+            }
+            _ => return Err(primary),
+        },
+    };
+    Ok(release)
 }

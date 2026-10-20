@@ -4,7 +4,7 @@ use crate::error::AppError;
 use crate::shared::git_cli::git_ref_resolves_readonly;
 
 /// Resolve an existing object locally first, then through `origin/<ref>`.
-pub(super) async fn branch_exists(repo: &Path, name: &str) -> Result<bool, AppError> {
+pub(crate) async fn branch_exists(repo: &Path, name: &str) -> Result<bool, AppError> {
     if git_ref_resolves_readonly(name, repo).await? {
         return Ok(true);
     }

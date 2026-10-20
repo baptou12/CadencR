@@ -8,6 +8,8 @@ import {
 } from "@/components/WebSocketSessionFeatureBlockHooks";
 import { useSessionTabs } from "@/components/WebSocketSessionFeatureBlockTabs";
 import { requestAutoReveal } from "@/lib/auto-layout/auto-layout-controller";
+import { isBinaryDocumentFile, isDocumentFile } from "@/lib/document-file";
+import { openDocumentPreview } from "@/lib/open-document-preview";
 import { toRelativePath } from "@/lib/utils";
 import { ROOT_LEAF_ID, type TabKind } from "@/stores/feature-layout-schema";
 import {
@@ -30,6 +32,11 @@ interface DiffFileOpeners {
   openBesideAgent: OpenDiffInEditor;
 }
 
+/** A clicked file reference as a path relative to the feature's editor root. */
+function toProjectPath(filePath: string, rootPath: string): string {
+  return toRelativePath(filePath, rootPath).replace(/^\.\//, "");
+}
+
 export function useOpenDiffFileInEditor({
   featureId,
   layoutFeatureId,
@@ -50,7 +57,17 @@ export function useOpenDiffFileInEditor({
       column: number | undefined,
       reveal: () => void,
     ): void => {
-      const relativePath = toRelativePath(filePath, rootPath).replace(/^\.\//, "");
+      const relativePath = toProjectPath(filePath, rootPath);
+      // Neovim can't show a binary document: it opens in the Preview tab instead.
+      if (openInNeovim && isBinaryDocumentFile(relativePath)) {
+        openDocumentPreview({
+          featureId,
+          layoutFeatureId,
+          filePath: relativePath,
+          source: "user-link",
+        });
+        return;
+      }
       if (openInNeovim) {
         openInNeovim(relativePath, lineNumber, column, reveal);
         return;
@@ -64,19 +81,32 @@ export function useOpenDiffFileInEditor({
       reveal();
       requestAnimationFrame(() => refs.editor.current?.focusActiveEditor());
     },
-    [featureId, openInNeovim, refs.editor, rootPath],
+    [featureId, layoutFeatureId, openInNeovim, refs.editor, rootPath],
   );
 
   return useMemo(
     () => ({
       openInPlace: (filePath, lineNumber, column) =>
         open(filePath, lineNumber, column, () => activateFeatureTab(layoutFeatureId, "editor")),
-      openBesideAgent: (filePath, lineNumber, column) =>
+      openBesideAgent: (filePath, lineNumber, column) => {
+        // Documents clicked in the conversation go to the Preview tab, which
+        // auto layout splits in beside the agent like it does the Editor.
+        const relativePath = toProjectPath(filePath, rootPath);
+        if (isDocumentFile(relativePath)) {
+          openDocumentPreview({
+            featureId,
+            layoutFeatureId,
+            filePath: relativePath,
+            source: "user-link",
+          });
+          return;
+        }
         open(filePath, lineNumber, column, () =>
           revealEditorBesideAgent(featureId, layoutFeatureId),
-        ),
+        );
+      },
     }),
-    [featureId, layoutFeatureId, open],
+    [featureId, layoutFeatureId, open, rootPath],
   );
 }
 
@@ -166,6 +196,7 @@ export function useFeatureBlockTabs(args: {
   hotkeysEnabled: boolean;
   sendFromGitTab: (message: string) => void;
   openAgentFileInEditor: OpenDiffInEditor;
+  pluginTabsEnabled: boolean;
 }): ReturnType<typeof useSessionTabs> {
   return useSessionTabs({
     sessionId: args.sessionId,
@@ -180,6 +211,7 @@ export function useFeatureBlockTabs(args: {
     hotkeysEnabled: args.hotkeysEnabled,
     sendFromGitTab: args.sendFromGitTab,
     openAgentFileInEditor: args.openAgentFileInEditor,
+    pluginTabsEnabled: args.pluginTabsEnabled,
   });
 }
 

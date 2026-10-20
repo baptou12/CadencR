@@ -16,9 +16,15 @@ const LINK_CLASS =
 export function MarkdownLink({
   href,
   children,
+  wrapsImage = false,
 }: {
   href?: string;
   children: ReactNode;
+  /**
+   * The label is only an image: a badge. It needs no external mark, and
+   * `data-image-link` lets a prose scale space badge rows apart.
+   */
+  wrapsImage?: boolean;
 }): ReactElement {
   const routing = useLinkRouting();
   const openInEditor = useOpenDiffInEditor();
@@ -51,15 +57,25 @@ export function MarkdownLink({
   // a long, streaming transcript.
   const isWeb = isUserOpenableUrl(href);
   const title = isWeb ? href : undefined;
-  const externalMark = isWeb ? (
-    <ArrowUpRightIcon
-      aria-hidden
-      className="ml-px inline size-[0.85em] align-[-0.05em] opacity-70"
-    />
-  ) : null;
+  // The word joiner forbids a line break before the icon (an SVG is an atomic
+  // inline, so the browser would otherwise wrap it alone onto the next line).
+  const externalMark =
+    isWeb && !wrapsImage ? (
+      <span aria-hidden className="select-none">
+        {"\u2060"}
+        <ArrowUpRightIcon className="ml-px inline size-[0.85em] align-[-0.05em] opacity-70" />
+      </span>
+    ) : null;
   if (!routing) {
     return (
-      <a href={href} title={title} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
+      <a
+        href={href}
+        title={title}
+        target="_blank"
+        rel="noopener noreferrer"
+        data-image-link={wrapsImage || undefined}
+        className={LINK_CLASS}
+      >
         {children}
         {externalMark}
       </a>
@@ -70,6 +86,7 @@ export function MarkdownLink({
       href={href}
       title={title}
       rel="noopener noreferrer"
+      data-image-link={wrapsImage || undefined}
       className={LINK_CLASS}
       onClick={(event) => {
         // Never the default: it would navigate the app window itself. Web

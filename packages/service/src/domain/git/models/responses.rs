@@ -27,8 +27,27 @@ pub struct CommitLogResponse {
     pub is_on_base_branch: bool,
 }
 
+/// What a decorating ref points from: the branch checked out (`HEAD ->`), any
+/// other local branch, a remote-tracking branch, or a tag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CommitRefKind {
+    Head,
+    Local,
+    Remote,
+    Tag,
+}
+
+/// One decorating ref on a graph commit, by its short name (`main`,
+/// `origin/main`, `v1.0`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct CommitRef {
+    pub name: String,
+    pub kind: CommitRefKind,
+}
+
 /// One commit row in the graph view. Carries `parents` so the frontend can
-/// compute lane positions, `refs` (decorating branch/tag labels), and the
+/// compute lane positions, `decorations` (typed branch/tag labels), and the
 /// `--shortstat` summary (`files_changed` / `additions` / `deletions`).
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct CommitGraphEntry {
@@ -39,7 +58,13 @@ pub struct CommitGraphEntry {
     pub author: String,
     pub date: String,
     pub parents: Vec<String>,
+    /// Short names of `decorations`. The desktop reads `decorations`; this
+    /// stays for custom tabs, which reach this route through the tab SDK.
     pub refs: Vec<String>,
+    /// The decorating refs with their kind, so the UI can tell the checked-out branch, a
+    /// local branch, a remote-tracking branch and a tag apart — the names
+    /// alone cannot (`feature/x` and `origin/x` both contain a slash).
+    pub decorations: Vec<CommitRef>,
     pub files_changed: i32,
     pub additions: i32,
     pub deletions: i32,
@@ -157,6 +182,16 @@ pub struct SuccessResponse {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blocked_reason: Option<String>,
+}
+
+impl SuccessResponse {
+    pub fn ok() -> Self {
+        Self {
+            success: true,
+            error: None,
+            blocked_reason: None,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

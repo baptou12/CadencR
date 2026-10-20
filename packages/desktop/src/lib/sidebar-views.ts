@@ -188,14 +188,28 @@ export function buildSidebarGroups(
   features: readonly Feature[],
   mode: Exclude<SidebarListMode, { kind: "tree" }>,
   sort: ConversationSort,
+  manualOrder: readonly number[],
   projects: readonly Project[],
   context: LensContext,
 ): readonly LensGroup[] {
   if (mode.kind === "view") {
     const filter = parseSidebarViewQuery(mode.view.query, projects);
-    const shown = applySidebarView(sortConversations(features, sort), filter, context);
+    const shown = applySidebarView(sortConversations(features, sort, manualOrder), filter, context);
     return [{ key: `view:${mode.view.id}`, lens: "flat", value: null, features: shown }];
   }
   const unpinned = features.filter((feature) => !feature.is_pinned);
-  return groupConversations(sortConversations(unpinned, sort), mode.lens, context);
+  return groupConversations(sortConversations(unpinned, sort, manualOrder), mode.lens, context);
+}
+
+/**
+ * Whether dragging can reorder a cross-project list's rows: a view with its
+ * own `/sort:` keeps that order, so a drop there would change nothing visible.
+ */
+export function isSidebarListReorderable(
+  mode: Exclude<SidebarListMode, { kind: "tree" }>,
+  projects: readonly Project[],
+): boolean {
+  return (
+    mode.kind !== "view" || parseSidebarViewQuery(mode.view.query, projects).sortOrder === null
+  );
 }

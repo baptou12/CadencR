@@ -8,7 +8,7 @@ permissions:
 
 concurrency:
   # Reserve one repository-wide publication lane for this preparation job and
-  # the future privileged publisher. Never cancel an in-flight publication.
+  # the separately dispatched privileged publisher. Never cancel an in-flight publication.
   group: marketplace-publication
   cancel-in-progress: false
 
@@ -23,21 +23,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Pin the reviewed dispatch commit; do not follow a moving branch.
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.19.0
-      - run: npm test
-      - run: npm run validate
+      - name: Select verified preparation runtime
+        id: publisher_runtime
+        env:
+          CLI_ROOT: ${{ runner.temp }}/marketplace-released-cli
+        run: sh scripts/ci/select-publisher-runtime.sh
       - name: Choose bounded publication window
         run: |
           echo "GENERATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
           echo "EXPIRES_AT=$(date -u -d '+7 days' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
-      - run: npm run build:index -- --generated-at "$GENERATED_AT" --expires-at "$EXPIRES_AT" --output "$RUNNER_TEMP/managed-index.json"
+      - name: Build unsigned schema-2 input
+        env:
+          VERIFIED_CLI: ${{ steps.publisher_runtime.outputs.cli_file }}
+        run: >-
+          "$VERIFIED_CLI" registry build-index --schema-version 2 --packages packages
+          --generated-at "$GENERATED_AT" --expires-at "$EXPIRES_AT"
+          --output "$RUNNER_TEMP/managed-index.json"
       - uses: actions/upload-artifact@v4
         with:
           name: canonical-unsigned-managed-index
@@ -46,7 +55,7 @@ jobs:
           retention-days: 1
       # This is unsigned preparation, not a fully wired protected publisher. It
       # intentionally stops before signing, mirroring, discovery, or release
-      # writes. A future privileged publisher must use this same concurrency
+      # writes. The separate privileged publisher must use this same concurrency
       # group, revalidate reviewed digests, mirror exact bytes, sign only the
       # canonical payload, and publish atomically. It must never execute
       # contributor archives or receive PR-controlled code.

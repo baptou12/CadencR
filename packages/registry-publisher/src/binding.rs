@@ -203,8 +203,6 @@ pub(super) fn read_optional<T: serde::de::DeserializeOwned>(
 
 #[cfg(test)]
 mod tests {
-    use std::process::Command;
-
     use serde_json::json;
     use sha2::{Digest as _, Sha256};
 
@@ -226,6 +224,13 @@ mod tests {
                 size: 7,
             }],
         };
+        assert_eq!(
+            serde_json::to_value(&staged).unwrap(),
+            serde_json::from_str::<serde_json::Value>(include_str!(
+                "../tests/fixtures/legacy-v1/binding-input.json"
+            ))
+            .unwrap()
+        );
         let binding = build_publication_binding(
             &staged,
             "cadencr/registry",
@@ -233,28 +238,8 @@ mod tests {
             directory.path(),
         )
         .unwrap();
-        let module = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tooling/marketplace-registry/scripts/publication/binding.mjs");
-        let script = r#"
-import { pathToFileURL } from 'node:url';
-const { buildPublicationBinding } = await import(pathToFileURL(process.argv[1]));
-const staged = JSON.parse(process.argv[2]);
-const value = buildPublicationBinding(staged, 'cadencr/registry', 'b'.repeat(40), process.argv[3]);
-process.stdout.write(JSON.stringify({tag:value.tag,planSha256:value.planSha256,body:value.body,expected:value.expected.map(({name,sha256,size,expectedUrl})=>({name,sha256,size,expectedUrl}))}));
-"#;
-        let output = Command::new("node")
-            .args(["--input-type=module", "-e", script])
-            .arg(module)
-            .arg(serde_json::to_string(&staged).unwrap())
-            .arg(directory.path())
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let actual: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let actual: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/legacy-v1/binding.json")).unwrap();
         let expected = json!({
             "tag":binding.tag,
             "planSha256":binding.plan_sha256,

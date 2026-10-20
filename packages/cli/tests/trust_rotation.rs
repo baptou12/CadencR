@@ -14,36 +14,60 @@ fn cli(args: &[&str]) -> std::process::Output {
 
 fn rotation() -> catalog::Fixture {
     let mut fixture = catalog::Fixture::new();
+    let root = fixture.root.path();
+    let envelope: Value =
+        serde_json::from_slice(&std::fs::read(root.join("catalog.json")).unwrap()).unwrap();
+    let mut previous = envelope["signed"].clone();
+    let now = chrono::Utc::now();
+    previous["generated_at"] = serde_json::json!(
+        (now - chrono::Duration::minutes(2)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    );
+    std::fs::write(
+        root.join("previous-payload.json"),
+        cadencr_registry_core::validate_signing_payload_at(&previous, false, now).unwrap(),
+    )
+    .unwrap();
     let output = Command::new("node")
-        .current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
         .args(["--input-type=module", "-e", r#"
-import {generateKeyPairSync,sign,createHash} from 'node:crypto';
+import {generateKeyPairSync,sign} from 'node:crypto';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {canonicalJson} from './tooling/marketplace-registry/scripts/lib.mjs';
 const root=process.argv[1];
 const pair=()=>generateKeyPairSync('ed25519');
 const a=pair(),b=pair(),offline=pair();
-const env=JSON.parse(readFileSync(join(root,'catalog.json')));
-const previous=structuredClone(env.signed);
-previous.generated_at=new Date(Date.now()-120000).toISOString().replace(/\.\d{3}Z$/,'Z');
-const envelope=(signed,key,id)=>({signed,signature:{algorithm:'ed25519',key_id:id,value:sign(null,Buffer.from(canonicalJson(signed)),key).toString('base64')}});
-writeFileSync(join(root,'previous.json'),canonicalJson(envelope(previous,a.privateKey,'prior-a'))+'\n');
-const bytes=canonicalJson(envelope(env.signed,b.privateKey,'fixture-key'))+'\n';
-writeFileSync(join(root,'catalog.json'),bytes);
+const previous=readFileSync(join(root,'previous-payload.json'));
+const current=readFileSync(join(root,'payload.json'));
+const envelope=(bytes,key,id)=>({signed:JSON.parse(bytes),signature:{algorithm:'ed25519',key_id:id,value:sign(null,bytes,key).toString('base64')}});
+writeFileSync(join(root,'previous.json'),JSON.stringify(envelope(previous,a.privateKey,'prior-a')));
+writeFileSync(join(root,'catalog.json'),JSON.stringify(envelope(current,b.privateKey,'fixture-key')));
 writeFileSync(join(root,'public.pem'),b.publicKey.export({format:'pem',type:'spki'}));
 writeFileSync(join(root,'root-public.pem'),offline.publicKey.export({format:'pem',type:'spki'}));
 writeFileSync(join(root,'root-private.pem'),offline.privateKey.export({format:'pem',type:'pkcs8'}));
 const raw=(k)=>k.export({format:'der',type:'spki'}).subarray(-32).toString('base64');
 writeFileSync(join(root,'trust-payload.json'),JSON.stringify({schema_version:1,kind:'registry-trust',generation:2,keys:[{key_id:'prior-a',public_key_base64:raw(a.publicKey),retired_at:new Date().toISOString()},{key_id:'fixture-key',public_key_base64:raw(b.publicKey)}],revoked_key_ids:[],recovery_catalog_sha256:[]}));
-console.log('catalog-'+createHash('sha256').update(bytes).digest('hex'));
 "#]).arg(fixture.root.path()).output().unwrap();
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    fixture.tag = String::from_utf8(output.stdout).unwrap().trim().into();
+    use sha2::{Digest as _, Sha256};
+    for name in ["previous.json", "catalog.json"] {
+        let path = root.join(name);
+        let value: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let mut bytes = cadencr_registry_core::canonical_json_bytes(&value);
+        bytes.push(b'\n');
+        std::fs::write(&path, &bytes).unwrap();
+        if name == "catalog.json" {
+            fixture.tag = format!(
+                "catalog-{}",
+                Sha256::digest(&bytes)
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>()
+            );
+        }
+    }
     let root = fixture.root.path();
     let output = cli(&[
         "registry",

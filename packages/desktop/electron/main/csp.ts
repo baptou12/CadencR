@@ -63,6 +63,9 @@ export function rendererCsp(
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
+    // The Office preview's parser workers are inline module scripts started
+    // from `blob:` URLs the library mints itself; `script-src` stays strict.
+    "worker-src 'self' blob:",
     connectSrc,
     "object-src 'none'",
     "base-uri 'none'",

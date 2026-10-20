@@ -2,10 +2,16 @@
 
 ## Authority and deployment gates
 
-v0.13.0 ships hidden UI, not a public registry launch. All steps involving signing,
-release/tag creation, feed advancement, production pins or remote writes below are
-**future operator procedures requiring separate authority**. Examples are syntax,
-not actual keys, destinations or assigned owners. No scheduler is deployed here.
+v0.13.0 ships hidden UI, not a public registry launch. The next milestone publishes
+reviewed themes and Pi before a future desktop activation. Procedures involving
+signing, tags, feed advancement, production pins or remote writes require reviewed
+targets/inputs and protected operator authority; preparation alone is insufficient.
+Examples are syntax, not actual keys, destinations or assigned owners. No scheduler
+is deployed here. Earlier distributed CLI qualification is dated evidence, not
+production deployment. The newer `0.13.1-dev.39144478778.1` ships standalone Rust
+diagnostics, but its initial renewal returned an error after publication; exact
+recovery does not make that first run green. See the
+[qualification record](../../docs/MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-18.md).
 
 | Required record before activation | Accountable role / evidence                                                             |
 | --------------------------------- | --------------------------------------------------------------------------------------- |
@@ -17,21 +23,25 @@ not actual keys, destinations or assigned owners. No scheduler is deployed here.
 | Runtime cutover                   | Released Rust binary independently downloaded/verified/exercised; both CI pins reviewed |
 
 The owners and live controls above remain unassigned/unverified in this template.
-Retain JavaScript until the distributed Rust binary qualifies. `PENDING` is not
-an activation flag; legacy tooling cannot process schema-2 mixed catalogs or the
-trust-generation protocol. Preparation CI artifacts are not released-binary proof.
+The candidate contribution/publisher pin selects the qualified Rust binary with
+no JavaScript fallback. **Full cutover needs a corrected, qualified CLI release**
+closing the post-publication renewal gate, then separately reviewed replacement
+pins. Source changes and successful recovery do not close that delivery gate.
+Reinspect the remote default branch, regenerate delivery payload hashes and follow
+the [deployment sequence](README.md#remote-deployment-requires-two-reviewed-changes).
+The JavaScript business implementation has been removed from this source template;
+that does not deploy these changes or authorize desktop trust/feed/key changes.
 
 ## Read-only expiry and failure alert preparation
 
-Run the offline scheduling diagnostic against **local snapshots**, including the
-catalog, provider policy and theme policy where present:
+Use the **newly released and qualified Rust CLI**, not the older CI pin. Run this
+read-only diagnostic against local catalog/provider/theme-policy snapshots:
 
 ```sh
-node scripts/check-metadata-expiry.mjs \
+cadencr registry check-metadata-expiry \
   /reviewed/snapshots/managed-index.json \
   /reviewed/snapshots/managed-blocklist.json \
   /reviewed/snapshots/managed-theme-blocklist.json
-node --test tests/check-metadata-expiry.test.mjs
 ```
 
 - Reads at most three regular non-symlink files, each at most 32 MiB; no network,
@@ -77,6 +87,36 @@ isolated environment, and retain real acknowledgment evidence as an activation g
 5. Independently fetch public bytes without credentials; authenticate all namespaces,
    confirm high-water continuity and expiry, then verify a supported packaged client.
    Retain run/receipt evidence and acknowledge/clear alerts only after these checks.
+
+### Source-only discovery convergence correction
+
+The source correction is not included in the CLI qualified above. A deterministic
+regression reproduces the failure class: after discovery advances, its stable
+public URL serves the exact previous signed catalog before serving the candidate.
+This does not establish which response caused the historical hosted error.
+
+- Keep the canonical stable discovery URL and request cache revalidation; a
+  commit-pinned alternate URL is not proof that the configured feed is current.
+- Allow at most four public reads in a shared 30-second convergence window,
+  including inter-read authenticated head checks and backoff. Each HTTP request
+  receives only the remaining budget, including response-body reads. This is not
+  a 30-second bound on the complete publication command or its other validations.
+- Only fully read bytes matching the reviewed predecessor's exact SHA-256 may
+  trigger another read. Bootstrap has no predecessor allowance. The observation
+  remains bounded by the discovery size limit; only the exact candidate size and
+  SHA-256 can produce success.
+- Unknown content, invalid/truncated/oversized responses, redirects, transport or
+  cleanup errors remain terminal. Recheck authenticated candidate identity and
+  freshness before additional reads; retain the final release/tag/asset checks.
+- Never repeat publication mutations, CAS, or the whole pipeline automatically.
+  Persistent predecessor bytes exhaust the budget without a success receipt.
+  Preserve the original operation after failure, as required by step 4 above.
+
+Merge, green CI, a new CLI-only release and actual distributed-binary qualification
+are required before deployment or pin promotion. Demonstrate first-pass renewal,
+same-intent replay and clean-runner recovery. A separately reviewed new operation
+may follow a reconciled prior operation; if an attempt fails, preserve its exact
+request, commit and timestamps rather than replacing them to manufacture success.
 
 ## Revocation incident runbook
 

@@ -9,7 +9,7 @@ pub(crate) fn verify(
     directory: &Path,
     downloader: &impl Downloader,
 ) -> Result<(), PublisherError> {
-    verify_with_policy(expected, directory, downloader, false)
+    verify_with_policy(expected, directory, downloader, None)
 }
 
 pub(crate) fn verify_theme_package(
@@ -17,14 +17,22 @@ pub(crate) fn verify_theme_package(
     directory: &Path,
     downloader: &impl Downloader,
 ) -> Result<(), PublisherError> {
-    verify_with_policy(expected, directory, downloader, true)
+    verify_with_policy(expected, directory, downloader, Some("theme"))
+}
+
+pub(crate) fn verify_tab_package(
+    expected: &[ExpectedArtifact],
+    directory: &Path,
+    downloader: &impl Downloader,
+) -> Result<(), PublisherError> {
+    verify_with_policy(expected, directory, downloader, Some("tab"))
 }
 
 fn verify_with_policy(
     expected: &[ExpectedArtifact],
     directory: &Path,
     downloader: &impl Downloader,
-    theme: bool,
+    kind: Option<&str>,
 ) -> Result<(), PublisherError> {
     for artifact in expected {
         let temporary = OwnedDirectory::create(directory, ".promote-public-")?;
@@ -39,8 +47,11 @@ fn verify_with_policy(
             if downloaded.size != artifact.size || downloaded.sha256 != artifact.sha256 {
                 return Err(PublisherError::new("public asset size does not match"));
             }
-            if theme && artifact.name == "theme.tar.gz" {
+            if kind == Some("theme") && artifact.name == "theme.tar.gz" {
                 cadencr_registry_core::verify_theme_archive(&output)?;
+            }
+            if kind == Some("tab") && artifact.name == "tab.tar.gz" {
+                cadencr_registry_core::verify_tab_archive(&output)?;
             }
             Ok(())
         });

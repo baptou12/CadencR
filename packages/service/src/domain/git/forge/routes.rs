@@ -12,7 +12,7 @@ use super::poller::refresh_all;
 use super::provider::{
     FeaturePrParams, ForgeAuthContext, ForgeAuthSource, ForgeAuthStatus, ForgeCredentials,
     ForgeHostConfig, ForgeTokenDeleteParams, ForgeTokenDeleteResponse, ForgeTokenRequest,
-    PrCommentsResponse, PrStatusSnapshot,
+    PrCommentsParams, PrCommentsResponse, PrStatusSnapshot,
 };
 use super::repository::{detected_project_remotes, feature_forge_context};
 use super::{api_base_url, effective_kind, provider_for};
@@ -168,10 +168,10 @@ pub async fn get_pr_handler(
         .ok_or_else(|| AppError::NotFound(format!("Feature not found: {}", params.feature_id)))
 }
 
-#[utoipa::path(get, path = "/api/git/pr/comments", params(FeaturePrParams), responses((status = 200, body = PrCommentsResponse)))]
+#[utoipa::path(get, path = "/api/git/pr/comments", params(PrCommentsParams), responses((status = 200, body = PrCommentsResponse)))]
 pub async fn get_pr_comments_handler(
     State(state): State<AppState>,
-    Query(params): Query<FeaturePrParams>,
+    Query(params): Query<PrCommentsParams>,
 ) -> Result<Json<PrCommentsResponse>, AppError> {
     refresh_if_stale(&state, params.feature_id).await?;
     let Some(status) = state.forge_status.get(params.feature_id).await else {
@@ -180,7 +180,7 @@ pub async fn get_pr_comments_handler(
             params.feature_id
         )));
     };
-    let Some(pr) = status.pr else {
+    let Some(pr_number) = requested_pr_number(&status, params.pr_number)? else {
         return Ok(Json(PrCommentsResponse {
             feature_id: params.feature_id,
             threads: Vec::new(),
@@ -190,7 +190,7 @@ pub async fn get_pr_comments_handler(
     let forge = feature_forge_context(&state, params.feature_id).await?;
     let threads = forge
         .provider
-        .comments(&forge.context, pr.number)
+        .comments(&forge.context, pr_number)
         .await
         .map_err(forge_to_app_error)?;
     Ok(Json(PrCommentsResponse {
@@ -198,6 +198,30 @@ pub async fn get_pr_comments_handler(
         threads,
         fetched_at: chrono::Utc::now().timestamp_millis(),
     }))
+}
+
+/// The proposal whose comments to read: the requested one when it belongs to
+/// the conversation, else the current branch's. Only the conversation's own
+/// proposals can be asked for — the forge snapshot is what vouches for them.
+fn requested_pr_number(
+    status: &PrStatusSnapshot,
+    requested: Option<u64>,
+) -> Result<Option<u64>, AppError> {
+    let current = status.pr.as_ref().map(|pr| pr.number);
+    let Some(requested) = requested else {
+        return Ok(current);
+    };
+    let known = current == Some(requested)
+        || status
+            .other_prs
+            .iter()
+            .any(|other| other.pr.number == requested);
+    if !known {
+        return Err(AppError::BadRequest(format!(
+            "#{requested} is not one of this conversation's pull requests"
+        )));
+    }
+    Ok(Some(requested))
 }
 
 pub fn forge_router() -> Router<AppState> {
@@ -325,9 +349,51 @@ fn disable_cli_auth(config: Option<&mut ForgeHostConfig>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{disable_cli_auth, has_stored_credentials};
-    use crate::domain::git::forge::provider::{ForgeAuthSource, ForgeCredentials, ForgeHostConfig};
+    use super::{disable_cli_auth, has_stored_credentials, requested_pr_number};
+    use crate::domain::git::forge::provider::{
+        ForgeAuthSource, ForgeCredentials, ForgeHostConfig, ForgeUser, PrState, PrStatusSnapshot,
+        PrSummary, ReviewState,
+    };
+    use crate::domain::git::forge::BranchPr;
     use crate::domain::git::host::GitHost;
+
+    fn summary(number: u64) -> PrSummary {
+        PrSummary {
+            author: ForgeUser {
+                username: "author".into(),
+                display_name: None,
+                avatar_url: None,
+            },
+            body_markdown: String::new(),
+            head_sha: "abc".into(),
+            number,
+            pr_label: "Pull request".into(),
+            review_state: ReviewState::None,
+            source_branch: "fix/b".into(),
+            state: PrState::Open,
+            target_branch: "main".into(),
+            title: "Proposal".into(),
+            updated_at: "2026-10-16T00:00:00Z".into(),
+            url: "https://example.test/pr".into(),
+        }
+    }
+
+    #[test]
+    fn comments_are_read_only_for_the_conversations_own_proposals() {
+        let mut status = PrStatusSnapshot::unpolled(1, None, false);
+        assert_eq!(requested_pr_number(&status, None).unwrap(), None);
+
+        status.pr = Some(summary(12));
+        status.other_prs = vec![BranchPr {
+            branch: "feature/a".into(),
+            pr: summary(10),
+            ci: None,
+            unresolved_threads: None,
+        }];
+        assert_eq!(requested_pr_number(&status, None).unwrap(), Some(12));
+        assert_eq!(requested_pr_number(&status, Some(10)).unwrap(), Some(10));
+        assert!(requested_pr_number(&status, Some(99)).is_err());
+    }
 
     fn credentials(source: ForgeAuthSource) -> ForgeCredentials {
         ForgeCredentials {

@@ -74,6 +74,8 @@ Descriptor arguments are appended after the reserved command arguments.
 | `models --format acp-config-options-v1 --cwd <absolute-path> [provider-args...]` | Discover models before session creation | One JSON array on `stdout`; exit `0`  |
 | `run --protocol acp-v1 [provider-args...]`                                       | Start the live agent                    | ACP v1 JSON-RPC over `stdin`/`stdout` |
 | `version`                                                                        | Report package implementation version   | One version string on `stdout`        |
+| `updates --format cadencr-updates-v1` _(optional)_                               | Report installed and available versions | One JSON object on `stdout`; exit `0` |
+| `update [--version <version>]` _(optional)_                                      | Upgrade the provider                    | Exit `0` on success                   |
 
 Diagnostics belong on `stderr`. The `models` command must not write logs,
 progress, or banners to `stdout`.
@@ -86,6 +88,53 @@ progress, or banners to `stdout`.
 | `stdout`            | Rejected above 1 MiB                                        |
 | `stderr`            | Drained and bounded; contents are never returned by the API |
 | Shell interpolation | Forbidden                                                   |
+
+## Optional update commands
+
+A connector usually wraps a native CLI it does not ship. The connector knows
+how that CLI was installed and where its releases are published, so it — not
+Cadencr — reports versions and performs upgrades. Cadencr renders the report in
+Settings → Providers → **Versions & updates**, toasts each newly detected
+version once, and runs `update` on request. Built-in providers implement the
+same host interface natively (`domain/agents/updates/`).
+
+`updates --format cadencr-updates-v1` prints one JSON object:
+
+```json
+{
+  "supported": true,
+  "current_version": "1.4.0",
+  "latest_version": "1.5.0",
+  "available_versions": ["1.5.0", "1.4.1"],
+  "supports_target_version": true
+}
+```
+
+| Field                     | Rule                                                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `supported`               | `false` means updates are not managed by this connector; every other field is then ignored.          |
+| `current_version`         | Installed version, or `null` when the native CLI is missing ("Not installed").                       |
+| `latest_version`          | Newest installable version. An update is offered whenever it differs from `current_version`.         |
+| `available_versions`      | Newest first, at most 100. `latest_version` is prepended when missing.                               |
+| `supports_target_version` | Whether `update --version <v>` accepts every listed entry. Requests are validated against this list. |
+
+Version strings are opaque: trimmed, at most 64 characters, no control
+characters. The command runs with the same direct-exec, process-policy, and
+1 MiB output bounds as `models`, with a 20-second timeout. An invalid report,
+or a non-zero exit that prints `{"message": "..."}`, is shown as a failed check
+with that message. A non-zero exit without that message is read as a connector
+that predates these optional commands: "Updates not managed".
+
+`update [--version <version>]` installs the requested version (or the latest).
+`stdin` is closed, so it must never prompt; it is bounded to 10 minutes. It
+may print `{"message": "..."}` — a short summary on success, or the actionable
+reason on a non-zero exit. `stderr` is never surfaced because it may contain
+credentials. After `update` exits, Cadencr re-runs `updates` and reports the
+version transition.
+
+The reference SDK exposes both through optional `CadencrProvider::updates` /
+`CadencrProvider::update` methods; their defaults report "not supported".
+Updating the native CLI never touches the immutable managed package payload.
 
 ## `models` output
 

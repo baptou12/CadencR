@@ -19,7 +19,7 @@ pub(super) fn advance_with(
     branch: &str,
     client: &(impl DiscoveryClient + ReleaseClient),
     catalog_downloader: &impl Downloader,
-    discovery_downloader: &impl Downloader,
+    discovery_downloader: &impl crate::download::DiscoveryReader,
 ) -> Result<DiscoveryReceipt, PublisherError> {
     let freshness = || snapshot.revalidate_freshness().map_err(Into::into);
     preflight(snapshot, manifest, directory, branch)?;
@@ -42,7 +42,7 @@ pub(crate) fn advance_preflighted(
     branch: &str,
     client: &(impl DiscoveryClient + ReleaseClient),
     catalog_downloader: &impl Downloader,
-    discovery_downloader: &impl Downloader,
+    discovery_downloader: &impl crate::download::DiscoveryReader,
 ) -> Result<DiscoveryReceipt, PublisherError> {
     let freshness = || snapshot.revalidate_freshness().map_err(Into::into);
     advance_preflighted_with_freshness()
@@ -66,7 +66,7 @@ pub(super) fn advance_with_freshness(
     branch: &str,
     client: &(impl DiscoveryClient + ReleaseClient),
     catalog_downloader: &impl Downloader,
-    discovery_downloader: &impl Downloader,
+    discovery_downloader: &impl crate::download::DiscoveryReader,
     freshness: &impl Fn() -> Result<(), PublisherError>,
 ) -> Result<DiscoveryReceipt, PublisherError> {
     preflight(snapshot, manifest, directory, branch)?;
@@ -90,7 +90,7 @@ fn advance_preflighted_with_freshness(
     branch: &str,
     client: &(impl DiscoveryClient + ReleaseClient),
     catalog_downloader: &impl Downloader,
-    discovery_downloader: &impl Downloader,
+    discovery_downloader: &impl crate::download::DiscoveryReader,
     freshness: &impl Fn() -> Result<(), PublisherError>,
 ) -> Result<DiscoveryReceipt, PublisherError> {
     let lock = crate::fs::OwnedLock::acquire(&directory.join(LOCK))?;
@@ -121,7 +121,7 @@ fn advance_locked(
     branch: &str,
     client: &(impl DiscoveryClient + ReleaseClient),
     catalog_downloader: &impl Downloader,
-    discovery_downloader: &impl Downloader,
+    discovery_downloader: &impl crate::download::DiscoveryReader,
     freshness: &impl Fn() -> Result<(), PublisherError>,
 ) -> Result<DiscoveryReceipt, PublisherError> {
     let catalog = crate::catalog_publish::read_receipt(directory, snapshot)?
@@ -150,7 +150,24 @@ fn advance_locked(
         set_or_reconcile(client, snapshot, branch, original.as_ref())?
     };
     require_candidate(snapshot, Some(&final_head))?;
-    verify_raw(snapshot, branch, directory, discovery_downloader)?;
+    verify_raw(
+        snapshot,
+        branch,
+        directory,
+        discovery_downloader,
+        &|deadline| {
+            freshness()?;
+            let current = client.get_discovery_before(branch, deadline)?;
+            require_candidate(snapshot, current.as_ref())?;
+            if current.as_ref().map(|head| &head.sha) != Some(&final_head.sha) {
+                return Err(PublisherError::new(
+                    "discovery changed during public verification",
+                ));
+            }
+            freshness()?;
+            Ok(())
+        },
+    )?;
     let after_raw = client.get_discovery(branch)?;
     require_candidate(snapshot, after_raw.as_ref())?;
     if after_raw.as_ref().map(|head| &head.sha) != Some(&final_head.sha) {
