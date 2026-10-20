@@ -44,7 +44,7 @@ The helper script creates the local tag only. The agent must push the tag explic
    - Keep each feature and fix bullet focused on user impact, then end that same bullet with `— [@handle](https://github.com/handle).` for every human contributor who materially authored the item. Do not add wording such as `contributed by`. Credit each contributor once per changelog line; exclude bots, merge-only identities, and the release-preparation commit author.
    - When one changelog line folds together work from multiple PRs or commits, include every applicable contributor on that line using linked GitHub handles when available.
    - Keep the changelog factual and concise.
-   - Images are optional. Only add one when a screenshot genuinely helps explain a user-facing change, and follow [Changelog images](#changelog-images-optional).
+   - Images are optional. Add one when it helps communicate the release or explain a user-facing change, and follow [Changelog images](#changelog-images-optional). For an announcement graphic, also follow [Landing news visuals](#landing-news-visuals).
    - The GitHub release page is populated automatically from this exact changelog section by the release workflow, so write it as publish-ready release notes.
 
 4. **Ask for landing news copy**
@@ -53,6 +53,7 @@ The helper script creates the local tag only. The agent must push the tag explic
    - If the developer requests no news post, continue with changelog-only release notes and do not create a landing news file.
    - If the developer provides news copy, create a post under `packages/landing/src/content/news/` whose filename includes the release version, for example `cadencr-v0-2-0.mdx`.
    - The post should sell the release clearly while remaining accurate.
+   - When the developer requests visuals, follow [Landing news visuals](#landing-news-visuals): use an abstract announcement graphic for the opening and authentic app screenshots to illustrate features in the article.
    - Write the news post from the perspective that the release has already shipped. Use present or past release language such as `is available now` and link directly to the release. Never use staging language such as `once the release is live`, `will be available`, or `once publication finishes`.
    - Stop after `CHANGELOG.md` and any requested landing news post are modified. Show the drafted changelog section and news file path or changelog-only status, then ask the developer to confirm before continuing.
    - Wait for explicit developer confirmation before continuing to version bumps, security review, CI checks, release preparation commit, preflight, tagging, pushing, or asset polling.
@@ -61,6 +62,7 @@ The helper script creates the local tag only. The agent must push the tag explic
    - Update package versions in package manifests under `packages/*/package.json` that already have a version field.
    - Update Rust package versions in `packages/*/Cargo.toml` that already have a package version.
    - Update lockfiles when the package manager requires it.
+   - Keep `SDK_VERSION` in `packages/tab-sdk/src/version.ts` equal to `packages/tab-sdk/package.json`; custom tabs send this value in their handshake.
    - Do not change unrelated dependency versions.
    - Verify the landing page displays the new version from `packages/landing/package.json` rather than a hardcoded version string.
    - If the landing source still contains hardcoded version labels for the navbar, footer, hero, download blocks, or release CTAs, replace them with the shared landing version source and include that in the release preparation commit.
@@ -84,7 +86,7 @@ gh api "repos/{owner}/{repo}/commits/$MAIN_SHA/status" \
   --jq '{state: .state, statuses: [.statuses[] | {context, state}]}'
 ```
 
-   - Continue only if the latest `origin/main` checks are completed and successful, or if the developer explicitly accepts releasing from a non-green main.
+- Continue only if the latest `origin/main` checks are completed and successful, or if the developer explicitly accepts releasing from a non-green main.
 
 8. **Create the release preparation commit**
    - Review the final diff and ensure it contains only release preparation changes.
@@ -99,9 +101,10 @@ gh api "repos/{owner}/{repo}/commits/$MAIN_SHA/status" \
    - If it fails, fix the reported issue and rerun it.
 
 10. **Push the tag manually**
-   - Show the critical safety rule again.
-   - Run: `git push origin "$TAG"`.
-   - The script must not do this step.
+
+- Show the critical safety rule again.
+- Run: `git push origin "$TAG"`.
+- The script must not do this step.
 
 11. **Poll GitHub for release assets**
     - Poll until the release exists, is not a draft, and has assets.
@@ -118,9 +121,34 @@ done
     - Report the final release URL and asset count.
     - If assets do not appear before the timeout, inspect the GitHub Actions run and report the failure.
 
+## Landing news visuals
+
+When news visuals are requested, use this preferred Cadencr direction unless the developer gives a different brief. The [v0.14.0 announcement](../../../docs/changelog/v0.14.0/everyday-improvements.png) is the approved reference for tone and restraint, not a template to repeat literally.
+
+### Announcement image
+
+- Aim for a premium, abstract, minimal composition: generous negative space, a clear focal point, and very few elements. Use the graphite/emerald palette from `packages/brand/` and `DESIGN.md`. Keep the brand signature optional; when included, use the official Cadencr symbol alone, without the `CADENCR` wordmark.
+- Choose one simple visual metaphor for the release's main feature. For custom tabs, a large emerald **+** with a few quiet, overlapping tab shapes conveys adding your own tools. Adapt the metaphor to later releases; do not reuse the plus by default.
+- Keep copy sparse: a short feature title, an optional one-line tagline, and the release version. Keep the main feature motif prominent, and check that the title and any included symbol remain legible when reduced inside the changelog modal or news article; judge their size there, not only on the full-resolution export.
+- Keep full application windows, detailed graphs, code, controls, and feature inventories out of the announcement composition. Avoid technical diagrams, explanatory arrows, numbered callouts, and classroom-style infographics.
+- Do not add labels such as “Interface preview” or “sample data” to the artwork. Keep the image clean and ensure the surrounding article accurately describes what it represents.
+- Prefer simple vector/CSS geometry for brand-led artwork when it gives a more faithful result; use image generation when the concept benefits from an illustration. Do not fabricate a detailed product interface for the hero.
+
+### Feature screenshots in the article
+
+- Use authentic captures of the running Cadencr interface to demonstrate the features discussed in the corresponding sections. For custom tabs, show a useful tab actually open in the workspace, such as Files graph with its treemap of changed files.
+- Frame the feature clearly while retaining enough app context to show where it lives. A focused crop is useful; a reconstructed window or an AI-generated interface is not a product screenshot.
+- Add a short caption explaining the practical benefit and alt text describing the visible feature. Keep screenshots separate from the abstract announcement image.
+
+### Assets and verification
+
+- A landscape announcement image around 1600 × 900 is a useful starting point. Check that the motif and short title remain readable at article and in-app changelog sizes.
+- When sharing the announcement image with the changelog, commit one source asset under `docs/changelog/vX.Y.Z/`, import it into the news MDX, and reference its tag-pinned raw URL in the changelog. A release-wide announcement image can sit directly below the release heading.
+- Store article-only screenshots under `packages/landing/src/assets/news/vX.Y.Z/` and use the existing `DocScreenshot.astro` component. Compress assets, preserve sharp UI text, and verify the article on desktop and mobile.
+
 ## Changelog images (optional)
 
-Most releases need no images. When one helps — typically a screenshot of a new feature — use this technique, because it is the only one that renders in the in-app changelog dialogs:
+Images remain optional. For an abstract announcement graphic or a screenshot of a new feature, use this technique so it renders in the in-app changelog dialogs:
 
 1. **Commit the image to the repository** under `docs/changelog/vX.Y.Z/`, in the release preparation commit, with a descriptive kebab-case name (`docs/changelog/v0.14.0/sidebar-presets.png`).
    - Formats: PNG, JPEG, GIF, WebP, AVIF, or SVG. Hard limit 10 MB; compress screenshots and aim for well under 1 MB.
