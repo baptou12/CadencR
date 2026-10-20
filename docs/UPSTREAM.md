@@ -27,12 +27,12 @@ hosting are decided; the rest is to validate before it is condensed into
 | `sync/vX.Y.Z` | one upstream merge | from `ours`, merges tag `vX.Y.Z`, PR to `ours` |
 | `feature/*`, `fix/*` | work | from `ours`, PR to `ours` |
 
-`fork/main` currently sits at v0.11.5: fast-forward it to `origin/main` and keep
-it a pure mirror. `ours` is also git's word for our side of a merge: on `ours`,
-`--ours` is us and `--theirs` is upstream. CI runs on every pull request
-whatever its target, so PRs to `ours` are checked; pushes to `ours` itself do
-not trigger CI (`ci.yml` lists only `main` and `v*`). In the PR template, read
-`main` as `ours`.
+`fork/main` is a pure mirror of `origin/main`; only ever fast-forward it.
+`ours` is also git's word for our side of a merge: on `ours`, `--ours` is us
+and `--theirs` is upstream. CI runs on every pull request whatever its target,
+so PRs to `ours` are checked; pushes to `ours` itself do not trigger CI
+(`ci.yml` lists only `main` and `v*`). In the PR template, read `main` as
+`ours`.
 
 ## Two lanes
 
@@ -129,9 +129,9 @@ update and stop tools, worktree-mode gates.
 ## Bootstrap (first session)
 
 - [x] 1. Master branch named `ours`, hosted on GitHub `baptou12/CadencR`.
-- [ ] 2. Create `ours` from `origin/main`, push it to `fork`, protect it on GitHub.
-- [ ] 3. Fast-forward the mirror: `git push fork origin/main:main`.
-- [ ] 4. First PR to `ours`: this document only, zero upstream files touched.
+- [x] 2. Create `ours` from `origin/main`, push it to `fork`, protect it on GitHub.
+- [x] 3. Fast-forward the mirror: `git push fork origin/main:main`.
+- [x] 4. First PR to `ours`: this document only, zero upstream files touched.
 - [ ] 5. Fill "Our philosophy"; classify the candidates above.
 - [ ] 6. Condense rules 1 to 10 into `.claude/rules/upstream.md`, run `pnpm build:agents-md`.
-- [ ] 7. First real sync at the next upstream tag, to rehearse the procedure.
+- [x] 7. First real sync at the next upstream tag, to rehearse the procedure.
