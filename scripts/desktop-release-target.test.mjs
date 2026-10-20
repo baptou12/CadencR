@@ -10,7 +10,7 @@ const workflow = parse(readFileSync(".github/workflows/desktop-release.yml", "ut
 
 test("manual release builds require an explicit existing version tag", () => {
   assert.equal(workflow.on.workflow_dispatch.inputs.release_tag.required, true);
-  const steps = workflow.jobs["cli-linux"].steps;
+  const steps = workflow.jobs.release.steps;
   const validationIndex = steps.findIndex((step) => step.name === "Validate release tag");
   const checkoutIndex = steps.findIndex((step) => step.uses?.startsWith("actions/checkout@"));
   assert.ok(validationIndex >= 0 && validationIndex < checkoutIndex);
@@ -33,14 +33,14 @@ test("manual release builds require an explicit existing version tag", () => {
   }
 });
 
-test("both jobs build the tag rather than the workflow dispatch branch", () => {
+test("the release builds the tag rather than the workflow dispatch branch", () => {
   assert.equal(workflow.env.RELEASE_TAG, "${{ inputs.release_tag || github.ref_name }}");
-  for (const name of ["cli-linux", "release"]) {
-    const checkout = workflow.jobs[name].steps.find((step) =>
-      step.uses?.startsWith("actions/checkout@"),
-    );
-    assert.equal(checkout.with.ref, "refs/tags/${{ env.RELEASE_TAG }}");
-  }
+  // The CLI ships through cli-release.yml; the app release is one job.
+  assert.deepEqual(Object.keys(workflow.jobs), ["release"]);
+  const checkout = workflow.jobs.release.steps.find((step) =>
+    step.uses?.startsWith("actions/checkout@"),
+  );
+  assert.equal(checkout.with.ref, "refs/tags/${{ env.RELEASE_TAG }}");
   const create = workflow.jobs.release.steps.find(
     (step) => step.name === "Create draft GitHub release",
   );

@@ -61,8 +61,11 @@ The helper script creates the local tag only. The agent must push the tag explic
 5. **Update every application version**
    - Update package versions in package manifests under `packages/*/package.json` that already have a version field.
    - Update Rust package versions in `packages/*/Cargo.toml` that already have a package version.
+   - Except the artifacts released on their own semver, independently of the app (see "Releasing the SDKs and the CLI" in `CONTRIBUTING.md`): leave their versions alone, the app release never bumps them.
+     - The crates.io SDKs `packages/tab-backend-sdk-rs` (`cadencr-tab-backend`) and `packages/provider-plugin-sdk-rs` (`cadencr-provider-sdk`), released by hand through `.github/workflows/crates-release.yml`.
+     - The npm custom-tab libraries `packages/tab-sdk` (`@cadencr/tab-sdk`) and `packages/tab-kit` (`@cadencr/tab-kit`), released by hand through `.github/workflows/npm-release.yml`. Whoever bumps `@cadencr/tab-sdk` keeps `SDK_VERSION` in `packages/tab-sdk/src/version.ts` equal to its `package.json` (custom tabs send it in their handshake; a test and the build enforce it).
+     - The CLI `packages/cli` (`cadencr-cli`, both `Cargo.toml` and `package.json`), released by hand through `.github/workflows/cli-release.yml`. The app release no longer builds or attaches a CLI.
    - Update lockfiles when the package manager requires it.
-   - Keep `SDK_VERSION` in `packages/tab-sdk/src/version.ts` equal to `packages/tab-sdk/package.json`; custom tabs send this value in their handshake.
    - Do not change unrelated dependency versions.
    - Verify the landing page displays the new version from `packages/landing/package.json` rather than a hardcoded version string.
    - If the landing source still contains hardcoded version labels for the navbar, footer, hero, download blocks, or release CTAs, replace them with the shared landing version source and include that in the release preparation commit.

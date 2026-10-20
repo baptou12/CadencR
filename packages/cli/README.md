@@ -439,8 +439,44 @@ The seven-day workflow artifact contains the executable
 before use. These are preparation artifacts, not an activated registry CLI pin.
 
 This preparation workflow has read-only repository permissions and no signing
-secrets. Normal application tags still distribute the stable CLI alongside the
-desktop app; the development-only path below is independent.
+secrets. Stable CLI releases come from the workflow below, not from application
+tags.
+
+## Stable CLI releases
+
+The CLI has its own semver, independent of the desktop app: an app release
+neither bumps it nor ships it (app releases up to `v0.14.0` carried a Linux CLI
+asset, which stays on those releases). To release a CLI version, bump `version`
+in `packages/cli/Cargo.toml` and `packages/cli/package.json` (and the
+`cadencr-cli` entry of `Cargo.lock`) in a normal PR; `scripts/cli-version.test.mjs`
+keeps the three equal. Once it is on `main` with green CI, launch **Release CLI**
+(`.github/workflows/cli-release.yml`) on `main` with that full main-tip SHA:
+
+```bash
+gh workflow run cli-release.yml --ref main \
+  -f source_commit=<full-reviewed-current-main-sha> -f dry_run=false
+```
+
+It uses the development release's gate (dispatch SHA = fetched `main` tip with
+successful main CI), refuses a version whose `cli/vX.Y.Z` tag or release exists,
+and runs tests, build and packaging read-only and secret-free. `dry_run`
+(default) stops there. Otherwise the `cli-release` environment's reviewers
+approve publication of exactly that artifact: tag `cli/vX.Y.Z` at the source
+commit, then a GitHub release with `cadencr-vX.Y.Z-x86_64-unknown-linux-gnu`, its
+`SHA256SUMS`, `provenance.json` and a `released-cli.env` pin:
+
+```dotenv
+CADENCR_RELEASE_VERSION=0.14.0
+CADENCR_RELEASE_TAG=cli/v0.14.0
+CADENCR_RELEASE_SHA256=<reviewed-64-character-lowercase-sha256>
+```
+
+The release is a normal release, never marked **Latest**: the desktop
+auto-updater and the landing download page follow the repository's latest
+release, which stays the app's. It is not flagged as a prerelease either, since
+it is a stable artifact and `--prerelease` marks the development channel below.
+A consumed version is never reused: if publication fails after the tag exists,
+bump the version and release again.
 
 ## Manual development CLI releases
 
@@ -463,8 +499,8 @@ For package base `0.13.1`, a run produces a unique version such as
 `cadencr 0.13.1-dev.123456789.1`. The narrowly validated compile-time
 `CADENCR_CLI_RELEASE_VERSION` override does not edit package manifests or the
 lockfile; ordinary builds continue to report their package version. Existing
-tags/releases/assets are never overwritten. These are prereleases, not the
-latest desktop release.
+tags/releases/assets are never overwritten. These are prereleases, never the
+repository's latest release.
 
 If publication fails after creating its tag or draft, retain that state and
 rerun the **whole workflow** to obtain a new attempt/version. Do not delete or
@@ -481,8 +517,9 @@ CADENCR_RELEASE_TAG=cli/v0.13.1-dev.123456789.1
 CADENCR_RELEASE_SHA256=<reviewed-64-character-lowercase-sha256>
 ```
 
-The trusted downloader accepts this exact tag/version binding as well as legacy
-two-field application-release pins. Independently verify the published source
+The trusted downloader accepts this exact tag/version binding, the stable
+`cli/vX.Y.Z` binding above, and legacy two-field pins, which resolve to the
+application release `vX.Y.Z` that carried CLIs up to `0.14.0`. Independently verify the published source
 binding, checksum and downloaded binary before selecting a candidate for QA.
 No workflow run changes the checked-in qualification or production pins; the
 production pair remains `PENDING` until real lifecycle qualification is complete.

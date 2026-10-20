@@ -111,7 +111,14 @@ test("reviewed pin input is strictly bounded before executable invocation", (t) 
     ...["", "v0.13.1-dev.39108033875.1", "cli/v0.13.1-dev.39108033875.2", "$(touch bad)"].map(
       (tag) => base + `\nCADENCR_RELEASE_TAG=${tag}`,
     ),
-    ...["0.13.1", "0.13.1-dev.0.1", "0.13.1-dev.1.0", "0.13.1-dev.01.1", "0.13.1-dev.1.01"].map(
+    `CADENCR_RELEASE_VERSION=0.13.1\nCADENCR_RELEASE_SHA256=${digest}\nCADENCR_RELEASE_TAG=v0.13.1`,
+    ...[
+      "0.13.1-rc.1",
+      "0.13.1-dev.0.1",
+      "0.13.1-dev.1.0",
+      "0.13.1-dev.01.1",
+      "0.13.1-dev.1.01",
+    ].map(
       (version) =>
         `CADENCR_RELEASE_VERSION=${version}\nCADENCR_RELEASE_SHA256=${digest}\nCADENCR_RELEASE_TAG=cli/v${version}`,
     ),
@@ -132,6 +139,13 @@ test("reviewed pin input is strictly bounded before executable invocation", (t) 
   assert.match(acceptedShape.stderr, /digest mismatch/);
   assert.match(
     run(base + "\nCADENCR_RELEASE_TAG=cli/v0.13.1-dev.39108033875.1").stderr,
+    /digest mismatch/,
+  );
+  // A stable cli-release.yml pin uses the same cli/v namespace.
+  assert.match(
+    run(
+      `CADENCR_RELEASE_VERSION=0.14.0\nCADENCR_RELEASE_SHA256=${digest}\nCADENCR_RELEASE_TAG=cli/v0.14.0`,
+    ).stderr,
     /digest mismatch/,
   );
   assert.equal(existsSync(path.join(root, "work")), false);
