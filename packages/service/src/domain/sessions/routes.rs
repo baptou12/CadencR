@@ -8,6 +8,7 @@ use crate::app_state::AppState;
 use crate::domain::sessions::activity_digest::{
     load_activity_digest, parse_feature_ids, ActivityDigestParams, AgentActivityDigestResponse,
 };
+use crate::domain::sessions::agent_images::get_agent_image_handler;
 use crate::domain::sessions::limits::normalize_agent_message_limit;
 use crate::domain::sessions::models::*;
 use crate::domain::sessions::prompt_index::{list_session_prompts, SessionPromptsResponse};
@@ -257,6 +258,10 @@ pub fn sessions_router() -> Router<AppState> {
         .route(
             "/api/features/{feature_id}/row-summary",
             get(get_feature_row_summary_handler),
+        )
+        .route(
+            "/api/features/{feature_id}/agent-image",
+            get(get_agent_image_handler),
         )
         .route(
             "/api/features/{feature_id}/agent-state",

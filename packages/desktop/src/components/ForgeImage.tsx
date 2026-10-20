@@ -22,7 +22,7 @@ import {
   type ReactNode,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ImageIcon, ImageOffIcon, Loader2Icon } from "lucide-react";
+import { ImageIcon } from "lucide-react";
 import type { ForgeUser } from "@/api/generated";
 import {
   isDirectSource,
@@ -30,6 +30,7 @@ import {
   MarkdownImageNotice,
   MarkdownImageProvider,
   PlainMarkdownImage,
+  ProxiedMarkdownImage,
   type MarkdownImageProps,
 } from "@/components/markdown-image";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
@@ -190,22 +191,7 @@ function DeferredForgeMarkdownImage({
 
 function LoadedForgeMarkdownImage(props: MarkdownImageProps): ReactElement {
   const { url, errorMessage } = useForgeImage(props.src, "content", true);
-  const label = props.alt || props.src || "image";
-  if (errorMessage) {
-    return (
-      <MarkdownImageNotice title={errorMessage} label={label}>
-        <ImageOffIcon className="size-3.5 shrink-0" aria-hidden />
-      </MarkdownImageNotice>
-    );
-  }
-  if (!url) {
-    return (
-      <MarkdownImageNotice label={label}>
-        <Loader2Icon className="size-3.5 shrink-0 animate-spin" aria-hidden />
-      </MarkdownImageNotice>
-    );
-  }
-  return <PlainMarkdownImage {...props} src={url} />;
+  return <ProxiedMarkdownImage {...props} url={url} errorMessage={errorMessage} />;
 }
 
 /**

@@ -32,6 +32,14 @@ describe("persistedQueries", () => {
     expect(shouldDehydrateQuery(makeQuery("/api/features/1076/agent-state?after=foo"))).toBe(false);
   });
 
+  it("does NOT persist binary bodies, which serialize to {}", () => {
+    const query = {
+      queryKey: ["/api/features/7/agent-image", { src: "/tmp/qa/shot.png" }],
+      state: { status: "success", data: new Blob(["png"], { type: "image/png" }) },
+    } as unknown as Query;
+    expect(shouldDehydrateQuery(query)).toBe(false);
+  });
+
   it("does NOT persist allocated ports (a restored scan would list dead servers)", () => {
     expect(shouldDehydrateQuery(makeQuery("/api/features/ports"))).toBe(false);
   });

@@ -4,7 +4,8 @@ import {
   clearDesktopBridgeOverrideForTests,
 } from "@/lib/desktop-bridge";
 import type { CadencrDesktopBridge } from "@/lib/desktop-bridge";
-import type { AxiosAdapter, InternalAxiosRequestConfig } from "axios";
+import { AxiosError, type AxiosAdapter, type InternalAxiosRequestConfig } from "axios";
+import { apiErrorCode, apiErrorMessage } from "@/lib/api-errors";
 import {
   __resetRuntimeConfigForTests,
   customInstance,
@@ -255,5 +256,27 @@ describe("workspace settings bulk cache", () => {
       customInstance({ url: "/api/workspace/settings/sidebar_density", adapter: fresh }),
     ).resolves.toEqual({ value: "spacious" });
     expect(fresh).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("blob error bodies", () => {
+  it("decodes a blob request's JSON error body so the service's reason survives", async () => {
+    const body = { error: "Not found: /tmp/qa/gone.png", code: "NOT_FOUND" };
+    const adapter: AxiosAdapter = async (config) => {
+      throw new AxiosError("Request failed with status code 404", "ERR_BAD_REQUEST", config, null, {
+        data: new Blob([JSON.stringify(body)], { type: "application/json" }),
+        status: 404,
+        statusText: "Not Found",
+        headers: {},
+        config,
+      });
+    };
+
+    const error = await customInstance({ url: "/api/x", responseType: "blob", adapter }).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(apiErrorMessage(error, "fallback")).toBe(body.error);
+    expect(apiErrorCode(error)).toBe("NOT_FOUND");
   });
 });

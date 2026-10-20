@@ -6,13 +6,12 @@
  * blocked before the request leaves. The Electron main process fetches the
  * bytes (`electron/main/changelog-images.ts`) and they render from a `blob:` URL.
  */
-import { useState, type ReactElement } from "react";
+import type { ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ImageOffIcon, Loader2Icon } from "lucide-react";
 import {
+  DecodedMarkdownImage,
   isDirectSource,
-  MarkdownImageNotice,
-  PlainMarkdownImage,
+  ProxiedMarkdownImage,
   type MarkdownImageProps,
 } from "@/components/markdown-image";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
@@ -43,38 +42,12 @@ export function ChangelogImage(props: MarkdownImageProps): ReactElement {
     retry: false,
   });
   const url = useObjectUrl(query.data);
-  const label = props.alt || src || "image";
 
-  if (direct) return <DisplayChangelogImage key={src} {...props} />;
-  if (query.error || !src) {
-    const reason = query.error
+  if (direct) return <DecodedMarkdownImage key={src} {...props} />;
+  const errorMessage = !src
+    ? "This image has no source."
+    : query.error
       ? apiErrorMessage(query.error, "Could not load this image").replace(IPC_ERROR_PREFIX, "")
-      : "This image has no source.";
-    return (
-      <MarkdownImageNotice title={reason} label={label}>
-        <ImageOffIcon className="size-3.5 shrink-0" aria-hidden />
-      </MarkdownImageNotice>
-    );
-  }
-  if (!url) {
-    return (
-      <MarkdownImageNotice label={label}>
-        <Loader2Icon className="size-3.5 shrink-0 animate-spin" aria-hidden />
-      </MarkdownImageNotice>
-    );
-  }
-  return <DisplayChangelogImage key={src} {...props} src={url} />;
-}
-
-/** Fetching bytes can succeed even when the browser cannot decode them. */
-function DisplayChangelogImage(props: MarkdownImageProps): ReactElement {
-  const [failed, setFailed] = useState(false);
-  if (failed) {
-    return (
-      <MarkdownImageNotice title="Could not display this image." label={props.alt || "image"}>
-        <ImageOffIcon className="size-3.5 shrink-0" aria-hidden />
-      </MarkdownImageNotice>
-    );
-  }
-  return <PlainMarkdownImage {...props} onError={() => setFailed(true)} />;
+      : null;
+  return <ProxiedMarkdownImage {...props} url={url} errorMessage={errorMessage} />;
 }
