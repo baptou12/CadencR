@@ -82,7 +82,7 @@ jobs:
     # arm64 runner (build:macos-sidecars cross-compiles x64). macos-14 is
     # retired on 2026-11-02.
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       # Public host-owned trust only; empty repository variables keep acquisition
       # disabled. The build wrapper removes empty values before Rust option_env!.
@@ -144,6 +144,21 @@ jobs:
       - name: Validate marketplace build configuration
         run: node scripts/validate-marketplace-build-env.mjs
 
+      - name: Verify packaging dependency graph
+        working-directory: packages/desktop
+        run: |
+          ulimit -Sn 10240
+          dependency_tree="$RUNNER_TEMP/desktop-production-dependencies.json"
+          if ! pnpm list --prod --json --depth Infinity --silent --loglevel=error > "$dependency_tree"; then
+            cat "$dependency_tree" >&2
+            exit 1
+          fi
+
+      - name: Build renderer + main bundles
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm --filter @cadencr/desktop exec electron-vite build
+
       - name: Build Rust service sidecars (arm64 + x64)
         run: node scripts/validate-marketplace-build-env.mjs -- pnpm --filter @cadencr/service build:macos-sidecars
 
@@ -156,11 +171,6 @@ jobs:
             pnpm --filter @cadencr/service smoke:packaged-sidecar \
               "$GITHUB_WORKSPACE/packages/desktop/resources/bin/$arch/cadencr-service"
           done
-
-      - name: Build renderer + main bundles
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
-        run: pnpm --filter @cadencr/desktop exec electron-vite build
 
       # actions/download-artifact@v4.3.0
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -219,6 +229,7 @@ jobs:
         # Letting electron-builder publish directly can race multi-target macOS
         # uploads into duplicate releases for the same tag.
         run: |
+          ulimit -Sn 10240
           pnpm --filter @cadencr/desktop exec electron-builder \
             --config electron-builder.yml \
             --mac \

@@ -87,3 +87,29 @@ test("release preparation refuses every existing release without deleting it", (
     rmSync(scratch, { recursive: true });
   }
 });
+
+test("packaging raises the descriptor limit inherited by pnpm", () => {
+  const steps = workflow.jobs.release.steps;
+  const packaging = steps.find((step) => step.name === "Build, sign, and notarize desktop app");
+  const scratch = mkdtempSync(join(tmpdir(), "cadencr-packaging-limit-"));
+  try {
+    writeFileSync(join(scratch, "pnpm"), '#!/bin/bash\nprintf "fd-limit=%s\\n" "$(ulimit -Sn)"\n', {
+      mode: 0o700,
+    });
+    const result = spawnSync("bash", ["-e", "-c", `ulimit -Sn 256\n${packaging.run}`], {
+      env: { ...process.env, PATH: `${scratch}:${process.env.PATH}` },
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const limit = result.stdout.match(/fd-limit=(\d+)/);
+    assert.ok(limit, result.stdout);
+    assert.ok(Number(limit[1]) >= 10240, result.stdout);
+    const nativeIndex = steps.findIndex((step) => step.name?.startsWith("Build Rust service"));
+    for (const name of ["Verify packaging dependency graph", "Build renderer + main bundles"]) {
+      const index = steps.findIndex((step) => step.name === name);
+      assert.ok(index >= 0 && index < nativeIndex, `${name} must fail before the native build`);
+    }
+  } finally {
+    rmSync(scratch, { recursive: true });
+  }
+});
