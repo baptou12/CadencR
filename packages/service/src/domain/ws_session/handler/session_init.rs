@@ -56,13 +56,8 @@ pub(super) async fn handle_init(
         return;
     };
 
-    let (initial_provider, configured_initial_access_mode) = session_init_provider::resolve(
-        app_state,
-        feature_id,
-        project_id,
-        payload.provider.as_deref(),
-    )
-    .await;
+    let (initial_provider, configured_initial_access_mode) =
+        session_init_provider::resolve(app_state, feature_id, payload.provider.as_deref()).await;
     let configured_initial_access_wire = configured_initial_access_mode
         .as_ref()
         .map(crate::domain::agents::adapter::access_mode_wire);

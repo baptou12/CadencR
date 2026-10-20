@@ -17,6 +17,8 @@ const JS_PACKAGES = {
   desktop: "@cadencr/desktop",
   landing: "@cadencr/landing",
   brand: "@cadencr/brand",
+  "tab-sdk": "@cadencr/tab-sdk",
+  "tab-kit": "@cadencr/tab-kit",
 };
 const RUST_ROOT_FILES = new Set([
   "Cargo.toml",
@@ -51,6 +53,9 @@ const DESKTOP_FULL_SUITE =
   /^packages\/desktop\/(vitest\.[^/]+|package\.json|src\/test-setup[^/]*\.tsx?|src\/test\/)/;
 // packages/landing type-checks and tests the desktop shortcut registry.
 const LANDING_READS_DESKTOP = /^packages\/desktop\/src\/(lib\/shortcuts|shared)\//;
+// packages/tab-kit compiles the desktop UI components and derives its tokens.
+const TAB_KIT_READS_DESKTOP =
+  /^packages\/desktop\/src\/(components\/ui\/|lib\/utils\.ts$|lib\/themes\/tokens\.ts$|theme-cadencr\.css$)/;
 const MODULE_FILE = /\.(c|m)?[jt]sx?$|\.css$|\.json$/;
 const PROVIDER_BOUNDARY_ROOTS = /^packages\/(service|desktop)\/src\//;
 
@@ -58,6 +63,9 @@ const STEP = {
   agentsMd: ["AGENTS.md matches .claude/rules", ["node", "scripts/build-agents-md.mjs", "--check"]],
   providerBoundaries: ["provider boundaries", ["pnpm", "run", "check:provider-boundaries"]],
   rootTests: ["root script tests", ["pnpm", "run", "test:scripts"]],
+  providerPluginChecks: ["provider plugin static checks", ["pnpm", "run", "check:plugin:pi"]],
+  providerPluginTests: ["provider plugin tests", ["pnpm", "run", "test:plugin:pi"]],
+  themePluginTests: ["theme plugin checks", ["pnpm", "run", "test:plugin:themes"]],
   releaseTests: ["release script tests", ["pnpm", "run", "test:release-scripts"]],
   rustFormat: ["Rust format", ["pnpm", "--filter", "@cadencr/service", "run", "format:check"]],
   rustLint: ["Rust clippy", ["pnpm", "--filter", "@cadencr/service", "run", "lint"]],
@@ -83,15 +91,19 @@ function isDocs(path) {
 
 /** Map one repository-relative path to the check areas it affects. */
 export function classifyPath(path) {
+  if (path.startsWith("plugins/providers/")) return ["other", "providerPlugins"];
+  if (path.startsWith("plugins/themes/")) return ["other", "themePlugins"];
+  if (path.startsWith("plugins/")) return ["other", "providerPlugins", "themePlugins"];
   if (isDocs(path)) return ["docs"];
   if (FULL_ROOT_FILES.has(path) || FULL_PREFIXES.some((prefix) => path.startsWith(prefix))) {
     return ["full"];
   }
   const areas = ["other"];
   if (RUST_ROOT_FILES.has(path) || RUST_PACKAGE.test(path)) areas.push("rust");
-  const jsPackage = path.match(/^packages\/(desktop|landing|brand)\//)?.[1];
+  const jsPackage = path.match(/^packages\/(desktop|landing|brand|tab-sdk|tab-kit)\//)?.[1];
   if (jsPackage) areas.push(jsPackage);
   if (LANDING_READS_DESKTOP.test(path)) areas.push("landing");
+  if (TAB_KIT_READS_DESKTOP.test(path)) areas.push("tab-kit");
   if (path.startsWith("packages/brand/src/")) areas.push("desktop", "landing");
   if (RELEASE_INPUTS.some((pattern) => pattern.test(path))) areas.push("release");
   if (PROVIDER_BOUNDARY_ROOTS.test(path)) areas.push("boundaries");
@@ -145,6 +157,9 @@ function fullPlan(reason) {
       step(STEP.providerBoundaries),
       step(STEP.rootTests),
       step(STEP.releaseTests),
+      step(STEP.providerPluginChecks),
+      step(STEP.providerPluginTests),
+      step(STEP.themePluginTests),
       {
         label: "workspace checks",
         command: turbo(["format:check", "lint", "ts-check", "test", "knip"], []),
@@ -183,10 +198,16 @@ export function buildPrecommitPlan(entries, { full = false } = {}) {
 
   if (byArea.has("boundaries")) steps.push(step(STEP.providerBoundaries));
   steps.push(step(STEP.rootTests));
+  if (byArea.has("providerPlugins")) {
+    steps.push(step(STEP.providerPluginChecks), step(STEP.providerPluginTests));
+  }
+  if (byArea.has("themePlugins")) steps.push(step(STEP.themePluginTests));
   if (byArea.has("release")) steps.push(step(STEP.releaseTests));
   if (byArea.has("rust")) steps.push(step(STEP.rustFormat));
 
-  const jsAreas = ["desktop", "landing", "brand"].filter((area) => byArea.has(area));
+  const jsAreas = ["desktop", "landing", "brand", "tab-sdk", "tab-kit"].filter((area) =>
+    byArea.has(area),
+  );
   if (jsAreas.length > 0) {
     const packages = jsAreas.map((area) => JS_PACKAGES[area]);
     steps.push({

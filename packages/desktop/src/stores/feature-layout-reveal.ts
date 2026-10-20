@@ -11,6 +11,7 @@ import {
   mapLeaf,
   pluckTab,
   splitLeafAt,
+  withFocus,
   type SplitPath,
 } from "./feature-layout-tree";
 
@@ -91,15 +92,6 @@ export function planReveal(
     state: withFocus(state, splitRoot, newLeaf.id, options.focus),
     paneId: newLeaf.id,
   };
-}
-
-function withFocus(
-  state: FeatureLayoutState,
-  splitRoot: LayoutNode,
-  paneId: string,
-  focus: boolean,
-): FeatureLayoutState {
-  return { ...state, splitRoot, focusedPaneId: focus ? paneId : state.focusedPaneId };
 }
 
 /**

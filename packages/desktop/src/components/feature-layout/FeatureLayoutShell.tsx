@@ -12,8 +12,10 @@ import {
   useFeatureLayoutStore,
 } from "@/stores/feature-layout-store";
 import { flatLayoutState } from "@/stores/feature-layout-schema";
+import { getPluginTabs, restrictLayoutToTabs } from "@/stores/feature-layout-tree";
 
 import { DragChip } from "./DragChip";
+import { useStableTabIds } from "./feature-tabs";
 import { SplitTreeRenderer } from "./SplitTreeRenderer";
 import { TabContentRegistry } from "./TabContentRegistry";
 import type { DragSource, FeatureTabActivationHandlers, FeatureTabs } from "./types";
@@ -25,6 +27,11 @@ interface FeatureLayoutShellProps extends FeatureTabActivationHandlers {
   splitsEnabled?: boolean;
   hotkeysEnabled?: boolean;
   mountInactiveTabs?: boolean;
+  /**
+   * Extra controls for the root pane's trailing strip area, before the auto
+   * layout toggle (the custom-tab "+" menu).
+   */
+  rootStripActions?: ReactNode;
 }
 
 /**
@@ -35,6 +42,11 @@ interface FeatureLayoutShellProps extends FeatureTabActivationHandlers {
  *   - Keyboard shortcuts (preserves Mod+Shift+A/T/G/E).
  *   - Auto layout registration (splits only) and the agent browser listener.
  *   - The split-tree renderer.
+ *
+ * Renders from a *view* of the stored layout limited to the tabs `tabs`
+ * defines (`restrictLayoutToTabs`): a placed plugin tab whose plugin is
+ * unavailable is hidden but keeps its place in the store, so re-enabling the
+ * plugin brings it back where it was. Store mutations act on the raw layout.
  */
 export function FeatureLayoutShell({
   featureId,
@@ -44,6 +56,7 @@ export function FeatureLayoutShell({
   splitsEnabled = true,
   hotkeysEnabled = true,
   mountInactiveTabs = true,
+  rootStripActions,
 }: FeatureLayoutShellProps): ReactNode {
   useFeatureLayoutHydration(featureId, { enabled: splitsEnabled });
   useFeatureLayoutPersistence(featureId, { enabled: splitsEnabled });
@@ -64,10 +77,23 @@ export function FeatureLayoutShell({
   // re-arm its `setVisitedTabs` effect every render — which is what drove the
   // mobile "Maximum update depth exceeded" (#185) crash. See that component.
   const effectiveLayout = useMemo(
-    () => (splitsEnabled ? layoutState : flatLayoutState(getFocusedTab(layoutState) ?? "agent")),
+    () =>
+      splitsEnabled
+        ? layoutState
+        : flatLayoutState(
+            getFocusedTab(layoutState) ?? "agent",
+            getPluginTabs(layoutState.splitRoot),
+          ),
     [layoutState, splitsEnabled],
   );
-  const splitRoot = effectiveLayout.splitRoot;
+  // Same #185 rule: the ids are identity-stable (callers rebuild `tabs` every
+  // render), and the view is `effectiveLayout` itself when nothing is hidden.
+  const availableTabIds = useStableTabIds(tabs);
+  const visibleLayout = useMemo(
+    () => restrictLayoutToTabs(effectiveLayout, new Set(availableTabIds)),
+    [availableTabIds, effectiveLayout],
+  );
+  const splitRoot = visibleLayout.splitRoot;
 
   const [activeSource, setActiveSource] = useState<DragSource | null>(null);
   const dnd = useFeatureDnd({
@@ -87,7 +113,7 @@ export function FeatureLayoutShell({
       <TabContentRegistry
         featureId={featureId}
         tabs={tabs}
-        layoutState={effectiveLayout}
+        layoutState={visibleLayout}
         mountVisibleOnly={!mountInactiveTabs}
       />
       <div
@@ -104,6 +130,7 @@ export function FeatureLayoutShell({
           onTerminalActivate={onTerminalActivate}
           onEditorActivate={onEditorActivate}
           splitsEnabled={splitsEnabled}
+          rootStripActions={rootStripActions}
         />
       </div>
       <DragOverlay dropAnimation={null}>

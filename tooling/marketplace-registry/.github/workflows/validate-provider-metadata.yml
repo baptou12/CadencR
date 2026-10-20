@@ -44,10 +44,7 @@ jobs:
       # only the structural and immutable-history contribution policy.
 
   contributor-tooling:
-    # Pending release provisioning, this preserves the legacy PR-controlled tests.
-    # Once pinned, the trusted released CLI replaces them without changing the
-    # required-check name. The job has no secrets, write permission, protected
-    # environment, cache, or artifact handoff in either mode.
+    # Trusted base tooling treats the candidate as inert metadata only.
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -58,7 +55,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           path: trusted-registry
           persist-credentials: false
-      - name: Check out candidate registry tooling
+      - name: Check out candidate registry metadata
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -68,12 +65,12 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.19.0
-      - name: Test legacy tooling or build index with the pinned released CLI
+      - name: Validate and build unsigned index with the pinned released CLI
         run: >-
           sh trusted-registry/scripts/ci/validate-provider-contribution.sh
           trusted-registry/ci/released-cli.env
           trusted-registry
           candidate-registry
           tooling
-      # Neither mode establishes publisher identity, provenance, or publication
-      # authority, and neither may download or execute provider archives.
+      # Neither job establishes publisher identity, provenance, or publication
+      # authority, and neither may download or execute package archives.

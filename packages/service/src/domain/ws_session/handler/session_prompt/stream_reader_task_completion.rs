@@ -150,7 +150,6 @@ impl StreamReaderTask {
             } else {
                 status_tx.broadcast(self.db_session_id, self.feature_id, AgentStatus::Idle, None);
             }
-            state.turn_state.record_signal_status(AgentStatus::Idle);
         }
         Some(WsEnvelope::new(
             "session",
@@ -196,7 +195,6 @@ impl StreamReaderTask {
                 AgentStatus::Idle,
                 None,
             );
-            state.turn_state.record_signal_status(AgentStatus::Idle);
         }
         Some(WsEnvelope::new(
             "session",

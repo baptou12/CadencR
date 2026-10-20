@@ -171,9 +171,11 @@ function PromptSurface({
         onArrowDown={editorActions.handleArrowDown}
         disabled={props.disabled || sending.sending}
         placeholder={
-          props.status === "question"
-            ? "Send a message to resume…"
-            : `Send a message… (@ files, @@ conversations, ${controller.promptCommandHint})`
+          sending.sending
+            ? "Sending…"
+            : props.status === "question"
+              ? "Send a message to resume…"
+              : `Send a message… (@ files, @@ conversations, ${controller.promptCommandHint})`
         }
         className="min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 text-sm leading-[22px] shadow-none focus:border-0 focus:ring-0"
         mentionProjectId={props.projectId}

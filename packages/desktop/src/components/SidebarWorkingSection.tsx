@@ -30,6 +30,7 @@ function WorkingBlock({ activeFeatureId, onSelectFeature }: SectionProps): React
       icon={LoaderIcon}
       surface="working"
       features={features}
+      count={features.length}
       loading={loadingStates.includes("working")}
       empty="No agent at work"
       activeFeatureId={activeFeatureId}

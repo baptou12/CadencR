@@ -115,6 +115,12 @@ export function buildOptions(gate: FeaturePendingGateResponse): PermissionOption
   return [];
 }
 
+/** The text color naming a pending request: primary for a question, amber otherwise. */
+export const PENDING_KIND_TEXT_CLASS: Record<PendingKind, string> = {
+  question: "text-primary",
+  permission: "text-(--acc-yellow,var(--color-amber-400))",
+};
+
 /** Fold plan into permission for the 2-value live status badge. */
 export function triggerPendingKind(
   liveKind: PendingKind | null | undefined,

@@ -1,7 +1,9 @@
+import type { FeatureNavigate } from "@/lib/feature-focus-handoff";
 import {
   memo,
   useCallback,
   useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactElement,
   type ReactNode,
   type RefObject,
@@ -13,9 +15,14 @@ import { FeatureRowActions } from "@/components/ProjectFeatureRowParts";
 import { FeatureHierarchyGutter } from "@/components/FeatureHierarchyGutter";
 import { FeatureRowBody } from "@/components/FeatureRowBody";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
-import { useProjectFeatureRowState } from "@/hooks/useProjectFeatureRowState";
+import {
+  useProjectFeatureRowState,
+  type ProjectFeatureRowState,
+} from "@/hooks/useProjectFeatureRowState";
 import { useOpenFeaturePort } from "@/hooks/useOpenFeaturePort";
+import { useOpenFeaturePr } from "@/hooks/useOpenFeaturePr";
 import { useSidebarRowActionListener } from "@/hooks/useSidebarRowActionListener";
+import { useRowReorder } from "@/hooks/useRowReorder";
 
 const ROW_KEYDOWN_IGNORED_SELECTOR = [
   "input",
@@ -48,7 +55,7 @@ interface ProjectFeatureRowProps {
   labelDraft: string;
   labelSuggestions: readonly string[];
   isSavingLabel: boolean;
-  onNavigate: (feature: Feature) => void;
+  onNavigate: FeatureNavigate;
   onStartLabelEdit: (feature: Feature) => void;
   onLabelDraftChange: (value: string) => void;
   onSaveLabel: (featureId: number, override?: string) => void;
@@ -70,13 +77,12 @@ interface ProjectFeatureRowProps {
   hiddenDescendantIds?: readonly number[];
 }
 
-type ProjectFeatureRowState = ReturnType<typeof useProjectFeatureRowState>;
-
 interface FeatureRowDetailsProps {
   props: ProjectFeatureRowProps;
   state: ProjectFeatureRowState;
   onOpenConversation: () => void;
   onOpenPort: (port: number) => void;
+  onOpenPr: (prNumber: number | null) => void;
   badgeRef: RefObject<HTMLSpanElement | null>;
 }
 
@@ -85,6 +91,7 @@ function FeatureRowDetails({
   state,
   onOpenConversation,
   onOpenPort,
+  onOpenPr,
   badgeRef,
 }: FeatureRowDetailsProps): ReactElement {
   const {
@@ -147,6 +154,7 @@ function FeatureRowDetails({
           : undefined
       }
       onOpenPort={onOpenPort}
+      onOpenPr={onOpenPr}
     />
   );
 }
@@ -242,11 +250,13 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
   }, [feature, onNavigate]);
 
   const handleOpenPort = useOpenFeaturePort(feature, onNavigate);
+  const handleOpenPr = useOpenFeaturePr(feature, onNavigate);
   useSidebarRowActionListener(navRef, {
     label: () => onStartLabelEdit(feature),
     archive: () => props.onArchiveOrDelete(feature.id),
     pin: state.isArchived ? undefined : () => props.onTogglePin(feature.id, !state.isPinned),
   });
+  const reorder = useRowReorder(navRef, feature.id, props.isEditingLabel);
 
   return (
     <ContextMenu>
@@ -260,6 +270,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
           data-nav-id={String(feature.id)}
           data-nav-project-id={String(projectId)}
           data-feature-depth={hierarchyDepth}
+          {...reorder}
           className={`sidebar-row group/feature relative flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 outline-none transition-colors hover:bg-sidebar-accent ${
             state.isActive ? "bg-sidebar-accent" : ""
           } ${state.isArchived ? "opacity-50" : ""}`}
@@ -269,13 +280,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
           }}
           onMouseEnter={state.prefetchFeature}
           onFocus={state.prefetchFeature}
-          onKeyDown={(e) => {
-            if (shouldIgnoreFeatureRowKeyDown(e.target)) return;
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              onNavigate(feature);
-            }
-          }}
+          onKeyDown={(e) => openFeatureRowOnKey(e, () => onNavigate(feature))}
         >
           <FeatureHierarchyGutter depth={hierarchyDepth}>{hierarchyControl}</FeatureHierarchyGutter>
 
@@ -284,6 +289,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
             state={state}
             onOpenConversation={handleOpenConversation}
             onOpenPort={handleOpenPort}
+            onOpenPr={handleOpenPr}
             badgeRef={badgeRef}
           />
         </div>
@@ -306,4 +312,12 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
 export function shouldIgnoreFeatureRowKeyDown(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   return target.closest(ROW_KEYDOWN_IGNORED_SELECTOR) !== null;
+}
+
+/** Enter or Space on a conversation row (not on a control inside it) opens it. */
+export function openFeatureRowOnKey(event: ReactKeyboardEvent, open: () => void): void {
+  if (shouldIgnoreFeatureRowKeyDown(event.target)) return;
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  open();
 }

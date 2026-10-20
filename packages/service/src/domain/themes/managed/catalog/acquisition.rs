@@ -7,11 +7,14 @@ use crate::domain::themes::managed::{models::*, storage};
 use crate::error::AppError;
 use std::{collections::BTreeMap, future::Future, path::PathBuf};
 
+mod shared;
+
 #[derive(Clone)]
 struct Context {
     root: PathBuf,
     trust: ManagedTrustStore,
 }
+#[derive(Debug, Clone)]
 struct VerifiedCatalog {
     index: SignedMixedCatalog,
     recommendations: BTreeMap<String, String>,
@@ -25,26 +28,41 @@ impl VerifiedCatalog {
     }
 }
 pub async fn acquire(refresh: bool) -> ManagedThemeCatalogResponse {
+    acquire_with_policy(refresh, true).await
+}
+pub async fn acquire_catalog(refresh: bool) -> ManagedThemeCatalogResponse {
+    acquire_with_policy(refresh, false).await
+}
+async fn acquire_with_policy(refresh: bool, check_policy: bool) -> ManagedThemeCatalogResponse {
     let context = Context {
         root: storage::root(),
         trust: pinned_index_trust_store(),
     };
-    let policy_error = match super::super::policy::refresh(refresh).await {
-        Ok(warning) => warning,
-        Err(error) => Some(error.to_string()),
+    let policy = async {
+        if check_policy {
+            match super::super::policy::refresh(refresh).await {
+                Ok(warning) => warning,
+                Err(error) => Some(error.to_string()),
+            }
+        } else {
+            None
+        }
     };
-    let (result, refresh_error) = acquire_or_cached(
-        context,
-        refresh,
-        source().map(|url| download(url, cadencr_registry_core::MAX_CATALOG_BYTES)),
-    )
-    .await;
+    let (catalog, policy_error) = tokio::join!(
+        shared::acquire(
+            context,
+            refresh,
+            source().map(|url| download(url, cadencr_registry_core::MAX_CATALOG_BYTES)),
+        ),
+        policy
+    );
+    let (result, refresh_error) = &*catalog;
     match result {
         Ok(catalog) => ManagedThemeCatalogResponse {
-            index: Some(catalog.index),
-            recommended_versions: catalog.recommendations,
+            index: Some(catalog.index.clone()),
+            recommended_versions: catalog.recommendations.clone(),
             verified: true,
-            error: match (refresh_error, policy_error) {
+            error: match (refresh_error.clone(), policy_error) {
                 (Some(catalog), Some(policy)) => Some(format!("{catalog}; {policy}")),
                 (catalog, policy) => catalog.or(policy),
             },

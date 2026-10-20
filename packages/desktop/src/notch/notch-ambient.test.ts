@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { NotchAgent } from "@/shared/notch";
-import { ambientAgents } from "./notch-ambient";
+import { ambientAgents, compactDots } from "./notch-ambient";
 
 function agent(featureId: number, status: NotchAgent["status"], unread = false): NotchAgent {
   return {
@@ -34,5 +34,18 @@ describe("ambientAgents", () => {
 
   it("is empty once the last agent finished and was read", () => {
     expect(ambientAgents([agent(4, "done")])).toEqual([]);
+  });
+});
+
+describe("compactDots", () => {
+  it.each([
+    [4, 4, 0],
+    [5, 3, 2],
+    [12, 3, 9],
+    [13, 2, 11],
+    [102, 1, 101],
+  ])("fits %i agents as %i dots + %i more", (count, dots, extra) => {
+    const agents = Array.from({ length: count }, (_, i) => agent(i, "running"));
+    expect(compactDots(agents)).toEqual({ shown: agents.slice(0, dots), extra });
   });
 });

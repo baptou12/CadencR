@@ -1,7 +1,7 @@
 use super::*;
 use std::io::{Read, Write};
 use std::net::TcpListener;
-pub(super) fn serve_json(status: &str, body: &str) -> (String, std::thread::JoinHandle<String>) {
+pub(crate) fn serve_json(status: &str, body: &str) -> (String, std::thread::JoinHandle<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let response = format!(
@@ -16,13 +16,17 @@ pub(super) fn serve_json(status: &str, body: &str) -> (String, std::thread::Join
     });
     (format!("http://{address}"), handle)
 }
-pub(super) fn serve_many(bodies: Vec<String>) -> String {
+pub(crate) fn serve_many(bodies: Vec<String>) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     std::thread::spawn(move || {
         for body in bodies {
             let (mut stream, _) = listener.accept().unwrap();
-            read_request(&mut stream);
+            let request = read_request(&mut stream);
+            assert!(
+                request.starts_with(b"GET "),
+                "scripted read fixture rejects writes"
+            );
             write!(
                 stream,
                 "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -37,7 +41,9 @@ pub(super) fn client(api: String) -> GitHubClient {
     GitHubClient::fixture("acme/releases", "secret-token", api.clone(), api).unwrap()
 }
 
-fn read_request(stream: &mut std::net::TcpStream) -> Vec<u8> {
+pub(super) fn read_request(stream: &mut std::net::TcpStream) -> Vec<u8> {
+    // Accepted sockets may inherit a nonblocking listener's mode on macOS.
+    stream.set_nonblocking(false).unwrap();
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(2)))
         .unwrap();
@@ -75,6 +81,36 @@ fn read_request_bytes(reader: &mut impl Read) -> Vec<u8> {
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn request_reader_handles_nonblocking_socket_before_fragmented_bytes_arrive() {
+        use std::net::TcpStream;
+        use std::time::Duration;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (ready, wait_ready) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            // Exercise inherited mode deterministically on every platform.
+            stream.set_nonblocking(true).unwrap();
+            ready.send(()).unwrap();
+            read_request(&mut stream)
+        });
+        let mut client = TcpStream::connect(address).unwrap();
+        client
+            .set_write_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        wait_ready.recv_timeout(Duration::from_secs(2)).unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        let head = b"POST /assets HTTP/1.1\r\nContent-Length: 3\r\n\r\n";
+        client.write_all(head).unwrap();
+        for byte in b"abc" {
+            std::thread::sleep(Duration::from_millis(10));
+            client.write_all(&[*byte]).unwrap();
+        }
+        assert_eq!(server.join().unwrap(), [head.as_slice(), b"abc"].concat());
+    }
 
     #[test]
     fn request_reader_collects_a_body_fragmented_across_reads() {

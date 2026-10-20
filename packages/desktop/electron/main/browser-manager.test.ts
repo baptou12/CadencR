@@ -446,6 +446,8 @@ describe("BrowserManager", () => {
       responsive: { keys: ["mod", "shift", "y"] },
       devtools: { keys: ["f12"] },
       zoomReset: { keys: ["mod", "9"] },
+      navigateBack: { keys: [] },
+      navigateForward: { keys: [] },
     });
 
     for (const [key, shortcut] of [
@@ -546,6 +548,8 @@ describe("BrowserManager", () => {
       responsive: { keys: [] },
       devtools: { keys: [] },
       zoomReset: { keys: [] },
+      navigateBack: { keys: [] },
+      navigateForward: { keys: [] },
     });
     const event = { preventDefault: vi.fn() };
 

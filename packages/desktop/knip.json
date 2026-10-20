@@ -5,6 +5,7 @@
     "electron/main/index.ts",
     "electron/preload/index.ts",
     "electron/preload/notch.ts",
+    "electron/preload/plugin-tab.ts",
     "src/App.tsx",
     "src/notch/main.tsx",
     "src/routes/**/*.tsx"
@@ -14,6 +15,7 @@
     "src/**/*.{ts,tsx}"
   ],
   "ignoreBinaries": [
+    "clang",
     "oxfmt",
     "security",
     "spctl",
@@ -24,7 +26,6 @@
     "postcss",
     "tailwindcss",
     "@fontsource-variable/inter",
-    "streamdown",
     "tw-animate-css"
   ],
   "tags": [

@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(
     name = "cadencr",
-    version,
+    version = env!("CADENCR_CLI_VERSION"),
     about = "Headless Cadencr package and registry tooling"
 )]
 pub(crate) struct Cli {
@@ -32,6 +32,22 @@ pub(crate) struct PluginArgs {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum PluginCommand {
+    /// Inspect a content-bound author release locally only (no network or credentials).
+    InspectRelease {
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        directory: PathBuf,
+    },
+    /// Publish the exact reviewed original-author request using the author token.
+    PublishRelease {
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        directory: PathBuf,
+        #[arg(long)]
+        confirm_request_sha256: String,
+    },
     /// Validate a provider plugin folder against an explicit descriptor.
     Validate {
         /// Provider workspace containing the existing bin/provider entrypoint.
@@ -39,10 +55,19 @@ pub(crate) enum PluginCommand {
         /// Temporary explicit host descriptor input; never discovered from user state.
         #[arg(long, required_if_eq("kind", "provider"))]
         descriptor: Option<PathBuf>,
-        /// Content kind; themes are pure declarative data and need no provider descriptor.
-        #[arg(long, default_value = "provider", value_parser = ["provider", "theme"])]
-        kind: String,
+        /// Content kind; themes and custom tabs are validated from their own
+        /// manifest and need no provider descriptor.
+        #[arg(long, value_enum, default_value_t = PluginKind::Provider)]
+        kind: PluginKind,
     },
+}
+
+/// What `plugin validate` inspects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum PluginKind {
+    Provider,
+    Theme,
+    Tab,
 }
 
 #[derive(Debug, Args)]
@@ -53,6 +78,8 @@ pub(crate) struct RegistryArgs {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum RegistryCommand {
+    #[command(flatten)]
+    Diagnostics(crate::metadata::MetadataCommand),
     /// Validate a candidate contribution relative to a base registry.
     Validate {
         #[arg(long)]
@@ -90,6 +117,16 @@ pub(crate) enum RegistryCommand {
     PackTheme {
         #[arg(long)]
         directory: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Build a deterministic, platform-independent custom tab archive.
+    PackTab {
+        #[arg(long)]
+        directory: PathBuf,
+        /// Bind the runtime manifest to full schema-2 marketplace metadata.
+        #[arg(long)]
+        package: Option<PathBuf>,
         #[arg(long)]
         output: PathBuf,
     },
@@ -208,10 +245,17 @@ impl Cli {
     pub(crate) fn writes_index_to_stdout(&self) -> bool {
         matches!(
             &self.command,
-            Command::Registry(RegistryArgs {
+            Command::Plugin(PluginArgs {
+                command: PluginCommand::InspectRelease { .. }
+                    | PluginCommand::PublishRelease { .. }
+            }) | Command::Registry(RegistryArgs {
                 command: RegistryCommand::BuildIndex { output: None, .. }
             }) | Command::Registry(RegistryArgs {
-                command: RegistryCommand::PackProvider { .. } | RegistryCommand::PackTheme { .. }
+                command: RegistryCommand::Diagnostics(
+                    crate::metadata::MetadataCommand::CheckMetadataExpiry { .. }
+                ) | RegistryCommand::PackProvider { .. }
+                    | RegistryCommand::PackTheme { .. }
+                    | RegistryCommand::PackTab { .. }
             })
         )
     }

@@ -1,11 +1,8 @@
-use crate::domain::session_status::AgentStatus;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct StreamTurnState {
     phase: TurnPhase,
     compacting: bool,
     surfaced_error_this_turn: bool,
-    last_signal_status: Option<AgentStatus>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,7 +18,6 @@ impl StreamTurnState {
             phase: TurnPhase::AwaitingFirstEvent,
             compacting: false,
             surfaced_error_this_turn: false,
-            last_signal_status: None,
         }
     }
 
@@ -67,19 +63,6 @@ impl StreamTurnState {
         self.phase = TurnPhase::BetweenTurnsAfterResult;
         self.compacting = false;
     }
-
-    #[cfg(test)]
-    fn last_signal_status(&self) -> Option<AgentStatus> {
-        self.last_signal_status
-    }
-
-    pub(super) fn record_signal_status(&mut self, next: AgentStatus) -> bool {
-        if self.last_signal_status == Some(next) {
-            return false;
-        }
-        self.last_signal_status = Some(next);
-        true
-    }
 }
 
 #[cfg(test)]
@@ -93,7 +76,6 @@ mod tests {
         assert!(state.is_between_turns());
         assert!(!state.has_completed_turn());
         assert!(!state.is_compacting());
-        assert_eq!(state.last_signal_status(), None);
     }
 
     #[test]
@@ -130,15 +112,6 @@ mod tests {
         assert!(!state.is_compacting());
     }
 
-    #[test]
-    fn signal_deduplication_is_part_of_turn_state() {
-        let mut state = StreamTurnState::new();
-
-        assert!(state.record_signal_status(AgentStatus::Agent));
-        assert!(!state.record_signal_status(AgentStatus::Agent));
-        assert_eq!(state.last_signal_status(), Some(AgentStatus::Agent));
-        assert!(state.record_signal_status(AgentStatus::Idle));
-    }
     #[test]
     fn child_errors_do_not_suppress_root_errors_or_clear_root_deduplication() {
         let mut state = StreamTurnState::new();

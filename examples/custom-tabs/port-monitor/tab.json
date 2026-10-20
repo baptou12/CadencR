@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "kind": "tab",
+  "id": "port-monitor",
+  "name": "Port monitor",
+  "version": "0.1.0",
+  "description": "The local servers listening on TCP ports, the process behind each, and which ones run in this conversation's folder — with a Stop button for those.",
+  "icon": "icon.svg",
+  "api_version": 1,
+  "entry": "dist/index.html",
+  "tab": { "label": "Ports" },
+  "permissions": ["features:read"],
+  "backend": {
+    "command": "node",
+    "args": ["backend/server.mjs"],
+    "reasoning": "Lists the TCP ports listening on this computer and the process behind each (lsof, or netstat on Windows), and stops a process started in this conversation's folder when you ask."
+  }
+}

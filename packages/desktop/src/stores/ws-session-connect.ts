@@ -57,6 +57,16 @@ function handleConnectionOpen(context: SessionConnectionContext): void {
   void resyncMessagesOnReconnect(ctx, context.sessionId);
 }
 
+/**
+ * An init already on the wire is lost with the socket: dropping its id lets a
+ * still-queued prompt re-run it once the transport is back. One still parked
+ * in the outbound queue is replayed on reconnect, so it stays in flight.
+ */
+export function initRequestIdAfterDrop(session: SessionEntry | undefined): string | null {
+  const id = session?.initRequestId ?? null;
+  return id !== null && session?.outboundQueue.some((envelope) => envelope.id === id) ? id : null;
+}
+
 function handleConnectionClose(
   context: SessionConnectionContext,
   intentional: boolean,
@@ -84,6 +94,7 @@ function handleConnectionClose(
     updateSession(get(), context.sessionId, {
       conn: null,
       isConnected: false,
+      initRequestId: initRequestIdAfterDrop(session),
       // Session IDs are stable across transport hiccups; onOpen replays init.
       lifecycle: transitionTurn(session?.lifecycle ?? createSessionEntry().lifecycle, {
         type: "connection_lost",
@@ -123,6 +134,7 @@ function handleConnectionError(context: SessionConnectionContext, intentional: b
     updateSession(get(), context.sessionId, {
       conn: null,
       isConnected: false,
+      initRequestId: initRequestIdAfterDrop(session),
       // Session IDs are stable across transport hiccups; onOpen replays init.
       lifecycle: transitionTurn(session?.lifecycle ?? createSessionEntry().lifecycle, {
         type: "turn_errored",

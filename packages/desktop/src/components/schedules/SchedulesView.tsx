@@ -36,7 +36,6 @@ const FILTERS: { state: ScheduleFilterState; label: string }[] = [
  * top of the page is always the next thing Cadencr will do on its own.
  */
 export function SchedulesView(): ReactElement {
-  const { collapsed, setCollapsed } = useSidebarCollapsed();
   const projectsQuery = useListProjects();
   const { schedules, isLoading, isMutating, save, remove, setEnabled, runNow } = useSchedules();
 
@@ -62,7 +61,6 @@ export function SchedulesView(): ReactElement {
 
   return (
     <div data-feature-chrome="standard" className="flex h-full flex-col bg-background">
-      <SidebarCollapsedChrome visible={collapsed} onExpand={() => setCollapsed(false)} />
       <SchedulesHeader
         total={schedules.length}
         nextRun={nextRun}
@@ -124,9 +122,11 @@ function SchedulesHeader({
   counts,
   onCreate,
 }: SchedulesHeaderProps): ReactElement {
+  const { collapsed, setCollapsed } = useSidebarCollapsed();
   return (
-    <header className="flex shrink-0 flex-col gap-3 border-b border-border/60 px-5 py-4">
+    <header className="titlebar-drag flex shrink-0 flex-col gap-3 border-b border-border/60 px-5 py-4">
       <div className="flex items-center gap-3">
+        <SidebarCollapsedChrome visible={collapsed} onExpand={() => setCollapsed(false)} />
         <CalendarClock className="size-5 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
           <h1 className="text-base font-semibold leading-tight">Schedules</h1>

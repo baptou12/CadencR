@@ -94,7 +94,7 @@ pub(super) fn revalidate_release(
     body: &str,
 ) -> Result<(), PublisherError> {
     let current = client
-        .find_release(&release.tag_name)?
+        .get_release(release.id)?
         .ok_or_else(|| PublisherError::new("draft release disappeared during mirroring"))?;
     validate_bound_release(&current, &release.tag_name, commit, body)?;
     if !current.draft {
@@ -137,12 +137,12 @@ mod tests {
 
     use serde_json::json;
 
-    use crate::github::GitHubClient;
+    use super::revalidate_release;
+    use crate::github::{GitHubClient, ReleaseClient};
     use crate::StageRequest;
 
     const REPOSITORY: &str = "cadencr/registry";
     const COMMIT: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-    const TAG: &str = "provider-acme-v1.0.0";
 
     #[derive(Default)]
     struct State {
@@ -191,6 +191,40 @@ mod tests {
         stop.store(true, Ordering::Release);
         TcpStream::connect(server.0).unwrap();
         server.1.join().unwrap();
+    }
+
+    #[test]
+    fn known_id_revalidation_ignores_stale_listing_and_rejects_drift() {
+        use crate::github::fixture::{serve_json, serve_many};
+        let value = json!({"id":7,"draft":true,"prerelease":false,
+            "tag_name":"v1","target_commitish":COMMIT,"body":"binding"});
+        let mut responses = vec![value.to_string(), "[]".into(), value.to_string()];
+        for (field, foreign) in [
+            ("id", json!(8)),
+            ("body", json!("foreign")),
+            ("tag_name", json!("foreign")),
+            ("target_commitish", json!("a".repeat(40))),
+            ("draft", json!(false)),
+        ] {
+            let mut changed = value.clone();
+            changed[field] = foreign;
+            responses.push(changed.to_string());
+        }
+        let base = serve_many(responses);
+        let client = GitHubClient::fixture(REPOSITORY, "secret-token", base.clone(), base).unwrap();
+        let release = client.get_release(7).unwrap().unwrap();
+        assert!(client.find_release("v1").unwrap().is_none());
+        revalidate_release(&client, &release, COMMIT, "binding").unwrap();
+        for _ in 0..5 {
+            assert!(revalidate_release(&client, &release, COMMIT, "binding").is_err());
+        }
+        let (base, observed) = serve_json("404 Not Found", "{}");
+        let client = GitHubClient::fixture(REPOSITORY, "secret-token", base.clone(), base).unwrap();
+        assert!(revalidate_release(&client, &release, COMMIT, "binding").is_err());
+        assert!(observed
+            .join()
+            .unwrap()
+            .starts_with("GET /repos/cadencr/registry/releases/7 "));
     }
 
     type ServerFixture = (
@@ -247,6 +281,8 @@ mod tests {
                 json!([])
             };
             json_response(stream, "200 OK", &value);
+        } else if first.starts_with("GET /repos/cadencr/registry/releases/7 ") {
+            json_response(stream, "200 OK", state.release.as_ref().unwrap());
         } else if first.starts_with("POST /repos/cadencr/registry/releases ") {
             state.creates += 1;
             let draft: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -345,7 +381,7 @@ mod tests {
     }
 
     fn asset(id: u64, name: &str, size: usize) -> serde_json::Value {
-        json!({"id":id,"name":name,"state":"uploaded","browser_download_url":format!("https://github.com/{REPOSITORY}/releases/download/{TAG}/{name}"),"size":size})
+        json!({"id":id,"name":name,"state":"uploaded","browser_download_url":format!("https://github.com/{REPOSITORY}/releases/download/untagged-fixture/{name}"),"size":size})
     }
 
     fn json_response(stream: &mut TcpStream, status: &str, value: &impl serde::Serialize) {

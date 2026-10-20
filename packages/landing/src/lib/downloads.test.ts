@@ -3,6 +3,7 @@ import landingPackage from "../../package.json";
 import {
   archFromRenderer,
   DOWNLOAD_ASSETS,
+  macReleaseAssetName,
   normalizeArch,
   resolveMacArch,
   selectRecommendedDownload,
@@ -20,7 +21,7 @@ describe("selectRecommendedDownload", () => {
   it("recommends the Intel DMG for macOS x64 browsers", () => {
     const result = selectRecommendedDownload({ os: "macos", arch: "x64" });
 
-    expect(result?.assetName).toBe(`Cadencr-${appVersion}.dmg`);
+    expect(result?.assetName).toBe(macReleaseAssetName(appVersion, "x64", "installer"));
   });
 
   it("defaults to Apple Silicon when the arch is unknown", () => {
@@ -36,6 +37,21 @@ describe("selectRecommendedDownload", () => {
 
   it("keeps asset URLs pinned to the current landing version", () => {
     expect(DOWNLOAD_ASSETS.every((asset) => asset.url.includes(`/v${appVersion}/`))).toBe(true);
+  });
+});
+
+describe("macReleaseAssetName", () => {
+  it("names both architectures explicitly after v0.13.0", () => {
+    expect(macReleaseAssetName("0.14.0", "x64", "installer")).toBe("Cadencr-0.14.0-x64.dmg");
+    expect(macReleaseAssetName("0.14.0", "x64", "archive")).toBe("Cadencr-0.14.0-x64-mac.zip");
+    expect(macReleaseAssetName("0.14.0", "arm64", "installer")).toBe("Cadencr-0.14.0-arm64.dmg");
+    expect(macReleaseAssetName("0.14.0", "arm64", "archive")).toBe("Cadencr-0.14.0-arm64-mac.zip");
+  });
+
+  it("keeps the unsuffixed Intel names of v0.13.0", () => {
+    expect(macReleaseAssetName("0.13.0", "x64", "installer")).toBe("Cadencr-0.13.0.dmg");
+    expect(macReleaseAssetName("0.13.0", "x64", "archive")).toBe("Cadencr-0.13.0-mac.zip");
+    expect(macReleaseAssetName("0.13.0", "arm64", "installer")).toBe("Cadencr-0.13.0-arm64.dmg");
   });
 });
 

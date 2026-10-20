@@ -2,7 +2,12 @@
 layout: "@/layouts/DocLayout.astro"
 title: "Shortcuts"
 description: "A practical keyboard shortcuts guide for moving around CadencR with less mouse travel and less hunting around."
+lastReviewed: "2026-10-13"
+version: "0.13.0"
 ---
+
+import DocScreenshot from "@/components/docs/DocScreenshot.astro";
+import pageImage from "@/assets/docs/v0.13.0/shortcuts.png";
 
 import DocCallout from "@/components/docs/DocCallout.astro";
 import ShortcutTable from "@/components/docs/ShortcutTable.astro";
@@ -12,6 +17,15 @@ import ShiftIcon from "@/components/icons/ShiftIcon.astro";
 If CadencR is where you keep work moving, shortcuts help you spend less time reaching for the mouse.
 
 You do **not** need to memorize every key combo on day one. Learn the few that save you the most time, then add more as you go.
+
+<DocScreenshot
+  src={pageImage}
+  alt="The current searchable keyboard-shortcuts helper. The tables below use the same desktop registry."
+  caption="The current searchable keyboard-shortcuts helper. The tables below use the same desktop registry."
+  bordered={false}
+  rounded
+  elevated
+/>
 
 ## How shortcut scopes work
 
@@ -38,6 +52,8 @@ The scopes you will meet most often:
 <ShortcutTable scope="feature" heading="Feature workspace — actions" />
 
 <ShortcutTable scope="agent" />
+
+<ShortcutTable scope="model-picker" />
 
 <DocCallout title="Why ⌘ Enter does two things" variant="note">
   Inside a focused prompt with text, <Kbd>⌘</Kbd> <Kbd>↵</Kbd> sends. Outside the prompt it
@@ -70,6 +86,16 @@ The scopes you will meet most often:
 </DocCallout>
 
 <ShortcutTable scope="unified-agents" heading="Unified agent list" />
+
+## Newer workflows to know
+
+- Use `Alt+Up` / `Alt+Down` for the conversation's user-message navigator.
+- The worktree-behavior cycle skips choices that do not apply to the selected branch.
+- The model-picker scope includes starring a model; the same save binding has other meanings outside that picker.
+- Git navigation includes its current views, diff presentation, staging, and review context. Follow the scope's table rather than assuming every Git action uses a global shortcut.
+- Image viewers provide their own navigation and close controls while open.
+
+Bindings are customizable in the app. These tables list registry defaults and alternate combinations; your saved overrides can differ. `Cmd` on macOS corresponds to the platform's `Ctrl` modifier where applicable.
 
 ## Three habits worth forming
 

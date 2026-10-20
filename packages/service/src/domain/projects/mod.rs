@@ -1,3 +1,4 @@
+pub mod authoring_workspace;
 pub mod icon;
 pub mod models;
 pub mod publication_operations;

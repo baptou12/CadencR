@@ -4,6 +4,7 @@ import type { LensContext } from "@/lib/sidebar-lens";
 import {
   applySidebarView,
   buildSidebarGroups,
+  isSidebarListReorderable,
   parseSidebarViewQuery,
   parseSidebarViews,
   sidebarListMode,
@@ -105,11 +106,34 @@ describe("buildSidebarGroups", () => {
     if (lens.kind === "tree" || view.kind === "tree") throw new Error("expected a list");
     const ids = (groups: ReturnType<typeof buildSidebarGroups>) =>
       groups.flatMap((group) => group.features.map((f) => f.id));
-    expect(ids(buildSidebarGroups(features, lens, "activity", projects, context))).toEqual([
+    expect(ids(buildSidebarGroups(features, lens, "activity", [], projects, context))).toEqual([
       1, 3, 4,
     ]);
-    expect(ids(buildSidebarGroups(features, view, "activity", projects, context))).toEqual([2, 3]);
+    expect(ids(buildSidebarGroups(features, view, "activity", [], projects, context))).toEqual([
+      2, 3,
+    ]);
     expect(sidebarListMode("project", null)).toEqual({ kind: "tree" });
+  });
+
+  it("orders every lens group by the manual rank", () => {
+    const lens = sidebarListMode("flat", null);
+    if (lens.kind === "tree") throw new Error("expected a list");
+    const [group] = buildSidebarGroups(features, lens, "manual", [4, 3, 1], projects, context);
+    expect(group?.features.map((f) => f.id)).toEqual([4, 3, 1]);
+  });
+});
+
+describe("isSidebarListReorderable", () => {
+  it("refuses a view that sorts itself", () => {
+    const lens = sidebarListMode("status", null);
+    const plain = sidebarListMode("flat", { id: "v", name: "All", query: "/provider:codex" });
+    const sorted = sidebarListMode("flat", { id: "s", name: "New", query: "/sort:created" });
+    if (lens.kind === "tree" || plain.kind === "tree" || sorted.kind === "tree") {
+      throw new Error("expected a list");
+    }
+    expect(isSidebarListReorderable(lens, projects)).toBe(true);
+    expect(isSidebarListReorderable(plain, projects)).toBe(true);
+    expect(isSidebarListReorderable(sorted, projects)).toBe(false);
   });
 });
 

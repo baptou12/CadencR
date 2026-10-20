@@ -116,7 +116,6 @@ mod tests {
     use crate::{DownloadRequest, Downloaded};
     use serde_json::json;
     use std::collections::HashMap;
-    use std::process::Command;
     use std::sync::Mutex;
     use tempfile::TempDir;
     struct FixtureDownloader {
@@ -201,6 +200,13 @@ mod tests {
     #[test]
     fn stages_replays_and_matches_javascript_receipt_bytes() {
         let (root, input, downloader) = fixture(&[b"one", b"two"]);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&std::fs::read(&input).unwrap()).unwrap(),
+            serde_json::from_str::<serde_json::Value>(include_str!(
+                "../tests/fixtures/legacy-v1/stage-submission.json"
+            ))
+            .unwrap()
+        );
         let output = root.path().join("rust");
         let first = stage(request(&input, &output), &downloader).unwrap();
         assert_eq!(first.artifacts.len(), 2);
@@ -215,30 +221,9 @@ mod tests {
         )
         .unwrap();
 
-        let js_output = root.path().join("javascript");
-        let script = format!(
-            "import fs from 'node:fs/promises'; import {{stagePublication}} from '{}';\
-             const s=JSON.parse(await fs.readFile(process.argv[1]));\
-             await stagePublication(s,'cadencr/registry',process.argv[2],{{download:async(o)=>{{\
-             const b=new Map([['{}','one'],['{}','two']]).get(o.sha256);\
-             await fs.writeFile(o.outputPath,b,{{flag:'wx',mode:0o600}});\
-             return {{sha256:o.sha256,size:Buffer.byteLength(b)}};}}}});",
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../tooling/marketplace-registry/scripts/publication/stage.mjs")
-                .display(),
-            crate::hex(&Sha256::digest(b"one")),
-            crate::hex(&Sha256::digest(b"two")),
-        );
-        let status = Command::new("node")
-            .args(["--input-type=module", "-e", &script])
-            .arg(&input)
-            .arg(&js_output)
-            .status()
-            .expect("Node is required for the JavaScript staging oracle");
-        assert!(status.success());
         assert_eq!(
             std::fs::read(output.join(RECEIPT)).unwrap(),
-            std::fs::read(js_output.join(RECEIPT)).unwrap()
+            include_bytes!("../tests/fixtures/legacy-v1/stage-receipt.json")
         );
     }
 
@@ -294,5 +279,44 @@ mod tests {
         .is_err());
         assert!(!final_path.exists());
         assert_eq!(std::fs::read(&partial).unwrap(), b"foreign");
+    }
+    #[test]
+    fn tab_publication_stages_normalized_assets_and_rejects_identity_swaps() {
+        let root = tempfile::tempdir().unwrap();
+        let stage = root.path().join("payload");
+        std::fs::create_dir_all(stage.join("dist")).unwrap();
+        std::fs::write(stage.join("tab.json"),r#"{"schema_version":1,"kind":"tab","id":"graph","name":"Graph","version":"1.0.0","api_version":1,"entry":"dist/index.html"}"#).unwrap();
+        std::fs::write(stage.join("dist/index.html"), "<html>Graph</html>").unwrap();
+        let packed = cadencr_registry_core::pack_tab(
+            cadencr_registry_core::PackTabRequest::builder()
+                .directory(&stage)
+                .output(&root.path().join("tab.tar.gz"))
+                .build(),
+        )
+        .unwrap();
+        let body = std::fs::read(&packed.archive).unwrap();
+        let downloader = FixtureDownloader {
+            bodies: HashMap::from([(packed.sha256.clone(), body)]),
+            calls: Mutex::new(Vec::new()),
+            fail_at: None,
+        };
+        let mut submission = json!({"schema_version":2,"package":{"kind":"tab","package":{"tab":{"id":"graph","name":"Graph","description":"Graph","version":"1.0.0","api_version":1,"license":"MIT","repository":"https://github.com/acme/tabs","distribution":{"archive":"https://github.com/acme/tabs/releases/download/v1.0.0/tab.tar.gz","sha256":packed.sha256}},"host":{"publisher":"acme","compatibility":{"min_app_version":"0.1.0"}}}},"source":{"repository":"https://github.com/acme/tabs","commit":"a".repeat(40),"tag":"v1.0.0"},"changelog":"Release"});
+        let receipt = stage_loaded(
+            &submission,
+            "cadencr/registry",
+            &root.path().join("first"),
+            &downloader,
+        )
+        .unwrap();
+        assert_eq!(receipt.artifacts[0].asset, "tab.tar.gz");
+        assert_eq!(receipt.plan["mirrored_package"]["kind"], "tab");
+        submission["package"]["package"]["tab"]["id"] = json!("impostor");
+        assert!(stage_loaded(
+            &submission,
+            "cadencr/registry",
+            &root.path().join("second"),
+            &downloader
+        )
+        .is_err());
     }
 }

@@ -115,7 +115,7 @@ describe("useWebSocketSession", () => {
     expect(result.current.currentSelection).toBeNull();
   });
 
-  it("restarts stale local timing when backend live status first reports agent", async () => {
+  it("anchors stale local timing to the server turn start when live status first reports agent", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);
     const { result } = renderHook(() => useWebSocketSession("test-id"));
@@ -161,11 +161,12 @@ describe("useWebSocketSession", () => {
           status: "agent",
           kind: null,
           seq: 2,
+          turn_started_at_ms: 180_500,
         },
       });
     });
 
-    expect(result.current.turnTiming.startedAt).toBe(181_000);
+    expect(result.current.turnTiming.startedAt).toBe(180_500);
 
     vi.setSystemTime(185_000);
     act(() => {
@@ -183,8 +184,8 @@ describe("useWebSocketSession", () => {
     });
 
     expect(result.current.turnTiming.completed).toEqual({
-      totalMs: 4_000,
-      activeMs: 4_000,
+      totalMs: 4_500,
+      activeMs: 4_500,
       userPendingMs: 0,
     });
     expect(result.current.blocks.at(-1)).toMatchObject({

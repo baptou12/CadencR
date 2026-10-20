@@ -15,6 +15,7 @@ import { SidebarLensGroupHeader, STICKY_FILL_CLASS } from "@/components/SidebarL
 import { useCrossProjectNavigate } from "@/hooks/useCrossProjectNavigate";
 import { NO_PORTS, useFeaturePorts } from "@/hooks/useFeaturePorts";
 import type { PinnedActivity } from "@/hooks/usePinnedActivity";
+import { useReorderAnimation } from "@/hooks/useReorderAnimation";
 import { useSidebarVirtualList } from "@/hooks/useVirtualFeatureFocus";
 import type { LensGroup } from "@/lib/sidebar-lens";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
@@ -79,6 +80,9 @@ export function SidebarLensList(props: SidebarLensListProps): ReactElement {
   // Per "Reveal open": only "scroll" brings the open conversation into view.
   const reveal = useSidebarOption("revealActive") === "scroll";
   const list = useSidebarVirtualList(rowIds, activeFeatureId, reveal, INDEX_ATTRIBUTE);
+  const featureIds = useMemo(() => rowIds.filter((id) => id !== null), [rowIds]);
+  // A drop, or a re-sort, slides rows into place as in a project's list.
+  useReorderAnimation(list.rootRef, featureIds);
   const navigate = useCrossProjectNavigate(activeFeatureId, props.onSelectFeature);
   const portsByFeatureId = useFeaturePorts();
   const itemContent = useCallback(

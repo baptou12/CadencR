@@ -144,6 +144,10 @@ struct ValidatedEnvelope<'a> {
     payload: Vec<u8>,
 }
 
+pub(crate) fn validate_envelope_shape(envelope: &Value) -> Result<(), RegistryError> {
+    validate_envelope_at(envelope, false, Utc::now()).map(|_| ())
+}
+
 fn validate_envelope_at(
     envelope: &Value,
     allow_expired: bool,

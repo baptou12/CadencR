@@ -12,6 +12,7 @@ use serde_json::Value;
 pub enum MarketplacePackage {
     Provider(ProviderPackage),
     Theme(ThemePackage),
+    Tab(TabPackage),
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -25,6 +26,24 @@ pub struct ProviderPackage {
 pub struct ThemePackage {
     pub theme: ThemeDescriptor,
     pub host: MarketplaceHost,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TabPackage {
+    pub tab: TabDescriptor,
+    pub host: MarketplaceHost,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TabDescriptor {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub version: String,
+    pub repository: String,
+    pub license: String,
+    pub api_version: u64,
+    pub distribution: ThemeDistribution,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

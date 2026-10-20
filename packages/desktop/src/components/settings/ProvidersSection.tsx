@@ -1,6 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProviderIcon } from "@/lib/provider-icons";
 import { getProviderMetadata, PROVIDER_IDS, type ProviderId } from "@/lib/providers";
+import { PROVIDER_UPDATES_SETTINGS_ANCHOR } from "@/lib/settings-anchors";
 import { CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY } from "@/shared/permission-mode-settings";
 import { BinaryDiscoverySection } from "./BinaryDiscoverySection";
 import { ProviderAccessModeSetting } from "./ProviderAccessModeSetting";
@@ -9,6 +10,7 @@ import { CodexProfilesSection } from "./CodexProfilesSection";
 import { DangerousModeToggle } from "./DangerousModeToggle";
 import { ProfilesSection } from "./ProfilesSection";
 import { ProviderDevelopmentCard } from "./ProviderDevelopmentCard";
+import { ProviderUpdatesCard } from "./ProviderUpdatesCard";
 import { SettingsCard } from "./SettingsCard";
 import { SettingsSection } from "./SettingsSection";
 import { SettingsSubsection } from "./SettingsSubsection";
@@ -22,7 +24,12 @@ const PROVIDER_TABS: ProviderId[] = [
 
 export function ProvidersSection(): React.JSX.Element {
   return (
-    <SettingsSection id="providers" title="Providers" subtitle="Built-ins · Developer connectors">
+    <SettingsSection
+      id={PROVIDER_UPDATES_SETTINGS_ANCHOR}
+      title="Providers"
+      subtitle="Built-ins · Developer connectors"
+    >
+      <ProviderUpdatesCard />
       <ProviderDevelopmentCard />
       <SettingsCard padded={false}>
         <Tabs defaultValue={PROVIDER_IDS.CLAUDE_CODE}>

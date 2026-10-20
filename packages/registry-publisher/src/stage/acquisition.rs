@@ -53,13 +53,23 @@ fn stage_locked(
             stage_managed_targets(directory, &targets, downloader, max_total_bytes)?
         }
     };
-    if plan
-        .pointer("/mirrored_package/kind")
-        .and_then(Value::as_str)
-        == Some("theme")
-    {
-        for artifact in &artifacts {
-            cadencr_registry_core::verify_theme_archive(&directory.join(&artifact.asset))?;
+    for artifact in &artifacts {
+        let archive = directory.join(&artifact.asset);
+        match plan
+            .pointer("/mirrored_package/kind")
+            .and_then(Value::as_str)
+        {
+            Some("theme") => cadencr_registry_core::verify_theme_archive(&archive)?,
+            Some("tab") => {
+                let bytes =
+                    crate::fs::read_bounded(&archive, 32 * 1024 * 1024, "staged tab archive")?;
+                let files = cadencr_registry_core::read_tab_archive_bytes(&bytes)?;
+                cadencr_registry_core::validate_tab_package_files(
+                    &plan["mirrored_package"]["package"],
+                    &files,
+                )?;
+            }
+            _ => {}
         }
     }
     let receipt = StageReceipt {

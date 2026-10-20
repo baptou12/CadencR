@@ -8,3 +8,6 @@
 
 /** The "Remote connections" group inside the Git section — forge onboarding. */
 export const FORGE_SETTINGS_ANCHOR = "git-remotes";
+
+/** The "Versions & updates" card leads the Providers section. */
+export const PROVIDER_UPDATES_SETTINGS_ANCHOR = "providers";

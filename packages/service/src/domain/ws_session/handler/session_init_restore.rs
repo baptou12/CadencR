@@ -35,7 +35,7 @@ pub(super) async fn restore_pending_or_idle(
     let turn_running = row.as_ref().is_some_and(|r| r.status == "running")
         || app_state
             .active_turns
-            .started_at(db_session_id)
+            .owner_sessions(db_session_id)
             .await
             .is_some();
     if turn_running {
@@ -236,6 +236,13 @@ mod tests {
         .execute(&state.write_pool)
         .await
         .unwrap();
+        // Every client still shows the gate whose columns have gone stale.
+        state.session_status_tx.broadcast(
+            2,
+            20,
+            AgentStatus::Question,
+            Some(PendingKind::Permission),
+        );
         let mut status_rx = state.session_status_tx.subscribe();
         let (sender, mut rx) = mpsc::unbounded_channel();
 

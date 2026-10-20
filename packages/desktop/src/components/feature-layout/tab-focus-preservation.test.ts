@@ -2,13 +2,17 @@
 import { renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ALL_TAB_KINDS, type TabKind } from "@/stores/feature-layout-schema";
+import { BUILTIN_TAB_KINDS, type TabKind } from "@/stores/feature-layout-schema";
 
-import { restoreTabFocus, useTabFocusMemory } from "./tab-focus-preservation";
+import {
+  releaseFocusOutsideTab,
+  restoreTabFocus,
+  useTabFocusMemory,
+} from "./tab-focus-preservation";
 
 function setup() {
   const mounts = {} as Record<TabKind, HTMLDivElement>;
-  for (const tab of ALL_TAB_KINDS) {
+  for (const tab of BUILTIN_TAB_KINDS) {
     const mount = document.createElement("div");
     mount.setAttribute("data-tab-mount", tab);
     mounts[tab] = mount;
@@ -32,6 +36,48 @@ function setup() {
 
 afterEach(() => {
   document.body.innerHTML = "";
+});
+
+/** Agent and Git mounts side by side, as in a split — both visible. */
+function setupSplit() {
+  const mount = (tab: TabKind, child: HTMLElement): HTMLElement => {
+    const el = document.createElement("div");
+    el.setAttribute("data-tab-mount", tab);
+    el.append(child);
+    document.body.append(el);
+    return child;
+  };
+  const prompt = mount("agent", document.createElement("textarea"));
+  const gitButton = mount("git", document.createElement("button"));
+  return { prompt, gitButton };
+}
+
+describe("releaseFocusOutsideTab", () => {
+  it("takes the caret out of a still-visible prompt when Git is activated", () => {
+    const { prompt } = setupSplit();
+    prompt.focus();
+
+    releaseFocusOutsideTab("git");
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("keeps focus that is already inside the activated tab", () => {
+    const { gitButton } = setupSplit();
+    gitButton.focus();
+
+    releaseFocusOutsideTab("git");
+    expect(document.activeElement).toBe(gitButton);
+  });
+
+  it("leaves focus outside every tab alone", () => {
+    setupSplit();
+    const search = document.createElement("input");
+    document.body.append(search);
+    search.focus();
+
+    releaseFocusOutsideTab("git");
+    expect(document.activeElement).toBe(search);
+  });
 });
 
 describe("tab focus preservation", () => {

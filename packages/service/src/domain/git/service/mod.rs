@@ -186,6 +186,10 @@ pub(super) mod test_support {
         .execute(&pool)
         .await
         .unwrap();
+        sqlx::query(crate::domain::git::linked_branches::repository::TEST_SCHEMA)
+            .execute(&pool)
+            .await
+            .unwrap();
         pool
     }
 }

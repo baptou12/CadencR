@@ -25,7 +25,7 @@ async fn setup_interrupted_session(
     sdk_sessions.lock().await.insert(db_session_id, runtime);
     app_state
         .active_turns
-        .begin_turn(db_session_id, sdk_sessions, 1_000)
+        .begin_turn(db_session_id, sdk_sessions)
         .await;
     app_state
         .active_turns
@@ -149,7 +149,7 @@ async fn interrupt_control_keeps_completion_follow_armed() {
     sdk_sessions.lock().await.insert(session_id, runtime);
     app_state
         .active_turns
-        .begin_turn(session_id, &sdk_sessions, 1_000)
+        .begin_turn(session_id, &sdk_sessions)
         .await;
     seed_armed_reply_wait(&app_state, session_id).await;
 
@@ -311,7 +311,7 @@ async fn replacement_reader_cannot_consume_an_old_interruption_or_receive_its_en
     sdk_sessions.lock().await.insert(session_id, old);
     app_state
         .active_turns
-        .begin_turn(session_id, &sdk_sessions, 1_000)
+        .begin_turn(session_id, &sdk_sessions)
         .await;
     app_state
         .active_turns
@@ -326,7 +326,7 @@ async fn replacement_reader_cannot_consume_an_old_interruption_or_receive_its_en
         .insert(session_id, make_active_handle(1, Some("new".into())));
     app_state
         .active_turns
-        .begin_turn(session_id, &sdk_sessions, 2_000)
+        .begin_turn(session_id, &sdk_sessions)
         .await;
     let (msg_tx, msg_rx) = mpsc::channel(1);
     msg_tx.send(Ok(interrupted_error_result())).await.unwrap();

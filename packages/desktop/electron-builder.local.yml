@@ -17,6 +17,10 @@ extraResources:
   # window and served over the remote listener.
   - from: out/renderer
     to: renderer
+  # Universal AppKit addon from `electron/mac-native-addon.ts` (see `mac-window.ts`).
+  - from: resources/native
+    to: native
+    filter: ["*.node"]
 mac:
   # Intentionally NOT setting `identity: null` — that disables codesign
   # entirely, and macOS UNUserNotificationCenter then refuses to register

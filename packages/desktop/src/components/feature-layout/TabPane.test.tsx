@@ -1,10 +1,17 @@
 import { DndContext } from "@dnd-kit/core";
-import { BotIcon, CodeIcon, GitCompareArrowsIcon, GlobeIcon, TerminalIcon } from "lucide-react";
+import {
+  BotIcon,
+  CodeIcon,
+  GitCompareArrowsIcon,
+  FileTextIcon,
+  GlobeIcon,
+  TerminalIcon,
+} from "lucide-react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import { noteUserLayoutChange } from "@/lib/auto-layout/auto-layout-controller";
-import { ROOT_LEAF_ID, type LayoutLeaf } from "@/stores/feature-layout-schema";
+import { BUILTIN_TAB_KINDS, ROOT_LEAF_ID, type LayoutLeaf } from "@/stores/feature-layout-schema";
 import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 import { makeTabHostKey, useTabHostRegistry } from "@/stores/tab-host-registry";
 
@@ -33,6 +40,7 @@ const tabs: FeatureTabs = {
   git: { label: "Git", Icon: GitCompareArrowsIcon, content: null },
   editor: { label: "Editor", Icon: CodeIcon, content: null },
   browser: { label: "Browser", Icon: GlobeIcon, content: null },
+  preview: { label: "Preview", Icon: FileTextIcon, content: null },
 };
 
 function resetStores(): void {
@@ -268,5 +276,75 @@ describe("TabPane", () => {
     fireEvent.focusIn(contentChild);
 
     expect(useFeatureLayoutStore.getState().features[FEATURE_ID]?.focusedPaneId).toBe(ROOT_LEAF_ID);
+  });
+
+  describe("closable (plugin) tabs", () => {
+    const GRAPH = "plugin:graph" as const;
+    const pluginTabs: FeatureTabs = {
+      ...tabs,
+      [GRAPH]: {
+        label: "Graph",
+        iconNode: <svg data-testid="graph-icon" />,
+        content: null,
+        closable: true,
+      },
+    };
+    const rootWithGraph: LayoutLeaf = { ...leaf, tabIds: [...leaf.tabIds, GRAPH] };
+
+    it("shows a close button in the root pane that removes the tab", () => {
+      useFeatureLayoutStore.getState().addTab(FEATURE_ID, GRAPH, { activate: false });
+      render(
+        <DndContext>
+          <TabPane featureId={FEATURE_ID} leaf={rootWithGraph} tabs={pluginTabs} />
+        </DndContext>,
+      );
+
+      expect(screen.getByTestId("graph-icon")).toBeInTheDocument();
+      // Built-ins in the root strip still have no X.
+      expect(screen.queryByRole("button", { name: /Return .* to the root tab strip/ })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Close Agent" })).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "Close Graph" }));
+
+      expect(noteUserLayoutChange).toHaveBeenCalledWith(FEATURE_ID, { structural: true });
+      const stored = useFeatureLayoutStore.getState().features[FEATURE_ID];
+      expect(stored?.splitRoot).toMatchObject({ tabIds: [...BUILTIN_TAB_KINDS] });
+    });
+
+    it("closes rather than docks from a floating pane", () => {
+      const floating: LayoutLeaf = { type: "leaf", id: "p", tabIds: [GRAPH], activeTabId: GRAPH };
+      render(
+        <DndContext>
+          <TabPane featureId={FEATURE_ID} leaf={floating} tabs={pluginTabs} />
+        </DndContext>,
+      );
+      expect(screen.getByRole("button", { name: "Close Graph" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Return Graph/ })).toBeNull();
+    });
+
+    it("skips tabs that have no definition", () => {
+      render(
+        <DndContext>
+          <TabPane featureId={FEATURE_ID} leaf={rootWithGraph} tabs={tabs} />
+        </DndContext>,
+      );
+      expect(screen.queryByText("Graph")).toBeNull();
+      expect(screen.getByText("Agent")).toBeInTheDocument();
+    });
+
+    it("renders root strip actions, even with splits off", () => {
+      render(
+        <DndContext>
+          <TabPane
+            featureId={FEATURE_ID}
+            leaf={leaf}
+            tabs={tabs}
+            splitsEnabled={false}
+            rootStripActions={<button type="button">Add tab</button>}
+          />
+        </DndContext>,
+      );
+      expect(screen.getByRole("button", { name: "Add tab" })).toBeInTheDocument();
+    });
   });
 });

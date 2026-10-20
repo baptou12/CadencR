@@ -12,7 +12,10 @@ pub(super) fn validate(
     tag: &str,
     changelog: &str,
 ) -> Result<(), AppError> {
-    if package.get("kind").and_then(Value::as_str) == Some("theme") {
+    if matches!(
+        package.get("kind").and_then(Value::as_str),
+        Some("theme" | "tab")
+    ) {
         cadencr_registry_core::validate_marketplace_package(package)
             .map_err(|error| invalid(error.to_string()))?;
         let submission = serde_json::json!({"schema_version":2,"package":package,"source":{"repository":format!("https://github.com/{repository}"),"commit":commit,"tag":tag},"changelog":changelog});

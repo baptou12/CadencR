@@ -3,6 +3,7 @@ import { type ReactNode } from "react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import type { LayoutNode } from "@/stores/feature-layout-schema";
 import { useFeatureLayoutStore, type SplitPath } from "@/stores/feature-layout-store";
+import { storedSplitPath } from "@/stores/feature-layout-tree";
 import { noteUserLayoutChange } from "@/lib/auto-layout/auto-layout-controller";
 
 import { TabPane } from "./TabPane";
@@ -15,6 +16,8 @@ interface SplitTreeRendererProps extends FeatureTabActivationHandlers {
   path: SplitPath;
   tabs: FeatureTabs;
   splitsEnabled?: boolean;
+  /** Trailing controls for the root pane's strip (see `FeatureLayoutShell`). */
+  rootStripActions?: ReactNode;
 }
 
 /** Panel sizes are float percentages; anything finer than this is rounding. */
@@ -37,6 +40,7 @@ export function SplitTreeRenderer({
   onTerminalActivate,
   onEditorActivate,
   splitsEnabled = true,
+  rootStripActions,
 }: SplitTreeRendererProps): ReactNode {
   const setSplitSizes = useFeatureLayoutStore((s) => s.setSplitSizes);
 
@@ -49,6 +53,7 @@ export function SplitTreeRenderer({
         onTerminalActivate={onTerminalActivate}
         onEditorActivate={onEditorActivate}
         splitsEnabled={splitsEnabled}
+        rootStripActions={rootStripActions}
       />
     );
   }
@@ -70,7 +75,9 @@ export function SplitTreeRenderer({
     if (typeof sizeA !== "number" || typeof sizeB !== "number") return;
     if (isSameSize(sizeA, defaultA) && isSameSize(sizeB, defaultB)) return;
     noteUserLayoutChange(featureId);
-    setSplitSizes(featureId, path, [sizeA, sizeB]);
+    // `node` may come from a view that hid an unavailable plugin pane; size
+    // the split it stands for in the stored layout.
+    setSplitSizes(featureId, storedSplitPath(node, path), [sizeA, sizeB]);
   };
 
   return (
@@ -88,6 +95,7 @@ export function SplitTreeRenderer({
           onTerminalActivate={onTerminalActivate}
           onEditorActivate={onEditorActivate}
           splitsEnabled={splitsEnabled}
+          rootStripActions={rootStripActions}
         />
       </ResizablePanel>
       {/* Transparent handle: the floating-block padding around each pane
@@ -104,6 +112,7 @@ export function SplitTreeRenderer({
           onTerminalActivate={onTerminalActivate}
           onEditorActivate={onEditorActivate}
           splitsEnabled={splitsEnabled}
+          rootStripActions={rootStripActions}
         />
       </ResizablePanel>
     </ResizablePanelGroup>

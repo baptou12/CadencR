@@ -1,5 +1,14 @@
 import { memo, useMemo, useState, type ReactElement } from "react";
-import { CalendarClock, ChevronDown, Loader2, Pencil, Repeat, Send, X } from "lucide-react";
+import {
+  CalendarClock,
+  ChevronDown,
+  Loader2,
+  Pencil,
+  Repeat,
+  Send,
+  SquareTerminal,
+  X,
+} from "lucide-react";
 import type { Schedule } from "@/api/generated";
 import { Button } from "@/components/ui/button";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
@@ -87,7 +96,9 @@ function ScheduleLine({
   );
   useCountdownTick(nextRun);
   const repeats = schedule.recurrence.kind !== "once";
-  const Icon = repeats ? Repeat : CalendarClock;
+  const condition = schedule.condition;
+  const Icon = condition ? SquareTerminal : repeats ? Repeat : CalendarClock;
+  const verb = condition ? "Checks" : "Scheduled";
 
   return (
     <div className="flex items-center gap-2.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
@@ -95,7 +106,7 @@ function ScheduleLine({
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5 text-xs">
           <span className="font-medium text-foreground">
-            {nextRun ? `Scheduled ${formatRelative(nextRun)}` : "Scheduled"}
+            {nextRun ? `${verb} ${formatRelative(nextRun)}` : verb}
           </span>
           <span className="truncate text-muted-foreground">
             · {nextRun ? formatAbsolute(nextRun) : ""}
@@ -103,6 +114,13 @@ function ScheduleLine({
           </span>
         </div>
         <p className="truncate text-xs text-muted-foreground" title={schedule.prompt}>
+          {condition && (
+            <>
+              If{" "}
+              <code className="font-mono text-[11px] text-foreground/80">{condition.command}</code>{" "}
+              fails ·{" "}
+            </>
+          )}
           {scheduleTitle(schedule)}
         </p>
       </div>

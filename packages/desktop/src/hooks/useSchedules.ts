@@ -155,6 +155,9 @@ function useScheduleMutations(): Omit<UseSchedulesResult, "schedules" | "isLoadi
       );
       if (result.ran) {
         toast.success("Schedule sent.");
+      } else if (result.condition_passed) {
+        // Not a failure: the check is the thing being tested.
+        toast.success("The command passed — nothing to send.");
       } else {
         toast.error(`The schedule could not run: ${result.error ?? "Unknown error"}`);
       }

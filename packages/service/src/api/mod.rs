@@ -1,5 +1,6 @@
 #![allow(clippy::result_large_err)]
 
+pub mod cors;
 pub mod middleware;
 pub mod openapi;
 
@@ -16,9 +17,13 @@ use crate::domain::agents::providers::installed::routes::{
     installed_provider_lifecycle_router, installed_providers_router,
 };
 use crate::domain::agents::runtime::AgentCatalogResponse;
+use crate::domain::agents::updates::routes::{
+    provider_update_actions_router, provider_updates_router,
+};
 use crate::domain::agents::ResolvedSelection;
 use crate::domain::custom_actions::routes::custom_actions_router;
 use crate::domain::diff_comments::routes::diff_comments_router;
+use crate::domain::editor::document_routes::document_router;
 use crate::domain::editor::file_size::EDITOR_REQUEST_BODY_BYTES;
 use crate::domain::editor::format::format_router;
 use crate::domain::editor::image_routes::image_router;
@@ -230,6 +235,7 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(editor_router().layer(DefaultBodyLimit::max(EDITOR_REQUEST_BODY_BYTES)))
         .merge(format_router().layer(DefaultBodyLimit::max(EDITOR_REQUEST_BODY_BYTES)))
         .merge(image_router())
+        .merge(document_router())
         // Raw bytes for off-loaded message payloads (screenshots, pasted
         // images). Outside the OpenAPI surface like the other byte routes.
         .merge(crate::domain::blobs::routes::routes())
@@ -237,12 +243,15 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(claude_code_router())
         .merge(custom_actions_router())
         .merge(discovery_router())
+        .merge(provider_updates_router())
         .merge(installed_providers_router())
         .merge(imports_router())
         .merge(lsp_router())
         .merge(usage_stats_router())
         .merge(crate::domain::maintenance::routes::routes())
         .merge(themes_router())
+        .merge(crate::domain::plugin_tabs::plugin_tabs_router())
+        .merge(crate::domain::plugin_tabs::managed::routes::router())
         .merge(prompt_commands_router())
         .merge(neovim_routes())
         .merge(neovim_ws_routes())
@@ -282,8 +291,12 @@ pub fn build_router(state: AppState) -> Router {
         .merge(installed_provider_lifecycle_router())
         .merge(managed_provider_inventory_router())
         .merge(managed_provider_lifecycle_router())
+        .merge(provider_update_actions_router())
         .merge(crate::domain::mcp::control::control_router())
         .merge(crate::domain::remote::loopback_router())
+        // Custom tab grants, plugin-token routes and the plugin socket: a
+        // desktop feature, never on the remote listener.
+        .merge(crate::domain::plugin_tabs::plugin_tabs_loopback_router())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::auth_middleware,

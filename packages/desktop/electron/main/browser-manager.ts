@@ -26,7 +26,7 @@ import { BrowserTabWorkspaceController } from "./browser-tab-workspace-controlle
 import { BrowserScopeState } from "./browser-scope-state";
 import { BrowserSiteApi } from "./browser-site-api";
 import { BrowserSiteController } from "./browser-site-controller";
-import { contentOffset, scaleBounds, windowRelativeBounds } from "./browser-manager-layout";
+import { rendererBoundsToWindow } from "./browser-manager-layout";
 import { BrowserViewLayout } from "./browser-view-layout";
 import { profileFromSelection, pushBounded } from "./browser-manager-utils";
 import { sendToWindow } from "./safe-send";
@@ -344,13 +344,8 @@ export class BrowserManager {
     scopeId: number | null = null,
     zoomFactor?: number,
   ): BrowserStateSnapshot {
-    const win = this.getMainWindow();
-    const factor = zoomFactor ?? win?.webContents.getZoomFactor() ?? 1;
-    this.scopes.setBounds(
-      scopeId,
-      windowRelativeBounds(scaleBounds(bounds, factor), contentOffset(win)),
-      factor,
-    );
+    const placed = rendererBoundsToWindow(this.getMainWindow(), bounds, zoomFactor);
+    this.scopes.setBounds(scopeId, placed.bounds, placed.factor);
     this.applyLayout();
     return this.state(scopeId);
   }

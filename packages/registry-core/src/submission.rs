@@ -179,7 +179,7 @@ pub(crate) fn canonical_github_repository(value: &str) -> bool {
         && canonical_https_github_url(value)
 }
 
-fn valid_git_tag(value: &str) -> bool {
+pub(crate) fn valid_git_tag(value: &str) -> bool {
     !value.is_empty()
         && utf16_len(value) <= 255
         && value != "@"
@@ -253,7 +253,7 @@ fn has_traversal(value: &str) -> bool {
     })
 }
 
-fn decode_uri_component(value: &str) -> Option<String> {
+pub(crate) fn decode_uri_component(value: &str) -> Option<String> {
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut index = 0;
@@ -280,7 +280,7 @@ fn hex_value(value: u8) -> Option<u8> {
     }
 }
 
-fn encode_uri_component(value: &str) -> String {
+pub(crate) fn encode_uri_component(value: &str) -> String {
     let mut encoded = String::new();
     for byte in value.bytes() {
         if byte.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&byte) {

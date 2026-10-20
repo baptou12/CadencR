@@ -20,6 +20,7 @@ import { useAgentSessionDisplay } from "./useAgentSessionDisplay";
 import type { MetaBarHandle } from "./MetaBar";
 import { useNarrowContainer } from "./useNarrowContainer";
 import { useAutoScrollShortcut } from "./useAutoScrollShortcut";
+import { AgentImageScope } from "@/components/AgentMarkdownImage";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
   AGENT_MESSAGE_NAVIGATOR_SETTING_KEY,
@@ -330,7 +331,9 @@ export const AgentSession = memo(
           isIdle={s.isIdle}
           status={props.status}
           blocks={props.blocks}
-          streamContent={streamContent}
+          streamContent={
+            <AgentImageScope featureId={props.featureId}>{streamContent}</AgentImageScope>
+          }
           bottomContent={bottomSection}
           onToggle={s.handleToggle}
           IconComponent={s.IconComponent}

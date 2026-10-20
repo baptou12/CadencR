@@ -5,11 +5,14 @@ use clap::Parser as _;
 use serde_json::json;
 
 mod args;
+mod author_release;
 mod commands;
+mod metadata;
 mod output;
 mod pipeline;
 mod publication;
 mod signing;
+mod tab;
 mod theme;
 mod trust;
 

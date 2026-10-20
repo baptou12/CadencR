@@ -57,6 +57,7 @@ mod timeouts;
 mod trusted_mcp;
 mod turn_start;
 mod turn_steer_recovery;
+pub mod updates;
 mod worktree_config;
 
 use std::borrow::Cow;

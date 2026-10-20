@@ -20,14 +20,23 @@ files:
   - "!out/renderer/**"
   - package.json
 extraResources:
-  - from: resources/bin/cadencr-service
+  # Per-arch sidecar from `@cadencr/service build:macos-sidecars`; arch-checked
+  # in `build/after-pack.cjs`.
+  - from: resources/bin/${arch}/cadencr-service
     to: cadencr-service
   # The built SPA on the real filesystem — loaded directly by the packaged
   # window (the asar can't hold it, see above) and served over the remote
   # listener via `--renderer-dir` (the Rust sidecar can't read an asar).
   - from: out/renderer
     to: renderer
+  # Universal AppKit addon from `electron/mac-native-addon.ts` (see `mac-window.ts`).
+  - from: resources/native
+    to: native
+    filter: ["*.node"]
 mac:
+  # Spell out the arch: electron-builder's default drops it for x64. The zip
+  # uses this name; the dmg has its own below.
+  artifactName: ${productName}-${version}-${arch}-mac.${ext}
   category: public.app-category.developer-tools
   hardenedRuntime: true
   # We notarize with notarytool; electron-builder's legacy Gatekeeper precheck is intentionally disabled.
@@ -47,4 +56,5 @@ mac:
         - x64
 
 dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
   sign: true

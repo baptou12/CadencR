@@ -71,8 +71,12 @@ pub(super) async fn persist_and_close_query(
             },
         )
         .expect("runtime close error should serialize");
+        let message = Message::Text(String::from(envelope).into());
+        app_state
+            .ws_feature_senders
+            .notify_observers(feature_id, &message);
         for sender in app_state.ws_feature_senders.get_senders(feature_id).await {
-            let _ = sender.send(Message::Text(String::from(envelope.clone()).into()));
+            let _ = sender.send(message.clone());
         }
     }
     resume_sid

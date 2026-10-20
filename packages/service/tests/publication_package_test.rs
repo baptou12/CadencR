@@ -9,7 +9,7 @@ use cadencr_service::{api, app_state::AppState, domain::settings_store};
 use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
 use sqlx::SqlitePool;
-use std::{net::SocketAddr, path::Path, process::Command};
+use std::{net::SocketAddr, path::Path};
 use tower::ServiceExt;
 
 const TARGET: &str = "linux-x86_64";
@@ -172,27 +172,9 @@ fn assert_export(result: &Value, input: &Value, root: &Path) {
         std::fs::read(extracted.join("bin/acme-agent")).unwrap(),
         b"this artifact must never be executed\n"
     );
-    let library = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tooling/marketplace-registry/scripts/lib.mjs");
-    let output = Command::new("node")
-        .args([
-            "--input-type=module",
-            "-e",
-            r#"
-import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
-const { validatePackage } = await import(pathToFileURL(process.argv[1]).href);
-const errors = validatePackage(JSON.parse(readFileSync(process.argv[2], 'utf8')));
-if (errors.length) { console.error(errors); process.exitCode = 1; }
-"#,
-        ])
-        .arg(library)
-        .arg(metadata_path)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let package = json!({"kind": "provider", "package": exported});
+    cadencr_registry_core::validate_marketplace_package(&package).unwrap();
+    let mut invalid = package;
+    invalid["package"]["agent"]["distribution"]["binary"][TARGET]["sha256"] = json!("invalid");
+    assert!(cadencr_registry_core::validate_marketplace_package(&invalid).is_err());
 }

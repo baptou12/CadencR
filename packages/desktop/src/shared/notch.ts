@@ -76,8 +76,19 @@ export const notchNotificationSchema = z.object({
 /** The island enriches a notification (provider, project) from its latest snapshot. */
 export type NotchNotification = z.infer<typeof notchNotificationSchema>;
 
+/** The Settings preview: no conversation behind it, and never muted by a snooze. */
+export function isNotchPreview(notification: NotchNotification): boolean {
+  return notification.featureId == null;
+}
+
 export const notchFeatureRefSchema = z.object({ featureId: id, projectId: id });
 export type NotchFeatureRef = z.infer<typeof notchFeatureRefSchema>;
+
+/** How long the island can be snoozed for, in minutes. */
+export const NOTCH_SNOOZE_MINUTES = [5, 30, 60, 90, 120] as const;
+export type NotchSnoozeMinutes = (typeof NOTCH_SNOOZE_MINUTES)[number];
+/** A snooze length, or `null` to resume. */
+export const notchSnoozeSchema = z.literal(NOTCH_SNOOZE_MINUTES).nullable();
 
 /** Window-relative rectangle (CSS px == DIP) the pointer must stay inside. */
 export const notchHotRectSchema = z.object({
@@ -88,8 +99,18 @@ export const notchHotRectSchema = z.object({
 });
 export type NotchHotRect = z.infer<typeof notchHotRectSchema>;
 
+/** Display targets for the island; built-in mode falls back to primary when disconnected. */
+export const notchDisplayModeSchema = z.enum(["builtin_always", "both", "primary"]);
+export type NotchDisplayMode = z.infer<typeof notchDisplayModeSchema>;
+
+/** Compact appearance on displays without a hardware cutout; peeks keep their full size. */
+export const notchPrimaryStyleSchema = z.enum(["none", "strip_4", "strip_8", "builtin"]);
+export type NotchPrimaryStyle = z.infer<typeof notchPrimaryStyleSchema>;
+
 /** The user's notch settings, pushed by the app renderer that reads them. */
 export const notchPrefsSchema = z.object({
+  displayMode: notchDisplayModeSchema.default("builtin_always"),
+  primaryStyle: notchPrimaryStyleSchema.default("strip_8"),
   /** Keep the compact island (ears) out while agents are tracked; off → hover and peeks only. */
   alwaysOn: z.boolean(),
   /** Keep the logo moving in the compact island; off → it only animates while open. */
@@ -98,6 +119,8 @@ export const notchPrefsSchema = z.object({
 export type NotchPrefs = z.infer<typeof notchPrefsSchema>;
 
 export const DEFAULT_NOTCH_PREFS: NotchPrefs = {
+  displayMode: "builtin_always",
+  primaryStyle: "strip_8",
   alwaysOn: true,
   alwaysAnimate: false,
 };
@@ -107,11 +130,13 @@ export const notchConfigSchema = z.object({ enabled: z.boolean(), prefs: notchPr
 export type NotchConfig = z.infer<typeof notchConfigSchema>;
 
 export interface NotchGeometry {
+  /** Virtual compact width in DIP, matching the built-in cutout's physical pixels. */
+  compactWidth?: number;
   /** Width of the cutout (or of the virtual notch drawn on a notchless screen). */
   notchWidth: number;
   /** Height of the cutout — equal to the menu bar on notched displays. */
   notchHeight: number;
-  /** False when no notched display is connected and the island is virtual. */
+  /** False when this display has no hardware notch and the island is virtual. */
   hardware: boolean;
   windowWidth: number;
   windowHeight: number;
@@ -122,6 +147,8 @@ export interface NotchReadyPayload {
   geometry: NotchGeometry | null;
   snapshot: NotchSnapshot;
   prefs: NotchPrefs;
+  /** Epoch ms the island stays muted until; `null` when it isn't snoozed. */
+  snoozedUntil: number | null;
 }
 
 /** The island renderer's bridge, exposed by `electron/preload/notch.ts`. */
@@ -130,11 +157,15 @@ export interface NotchBridge {
   setHotRect: (rect: NotchHotRect) => Promise<void>;
   openFeature: (ref: NotchFeatureRef) => Promise<void>;
   dismiss: (ref: NotchFeatureRef) => Promise<void>;
+  /** Close the island under the pointer until the pointer leaves it. */
+  collapse: () => Promise<void>;
+  snooze: (minutes: NotchSnoozeMinutes | null) => Promise<void>;
   onSnapshot: (cb: (snapshot: NotchSnapshot) => void) => () => void;
   onNotification: (cb: (notification: NotchNotification) => void) => () => void;
   onHover: (cb: (hovering: boolean) => void) => () => void;
   onGeometry: (cb: (geometry: NotchGeometry | null) => void) => () => void;
   onPrefs: (cb: (prefs: NotchPrefs) => void) => () => void;
+  onSnooze: (cb: (snoozedUntil: number | null) => void) => () => void;
 }
 
 export interface NotchCapabilities {

@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use reqwest::StatusCode;
@@ -10,6 +12,7 @@ use super::GitHubClient;
 use crate::PublisherError;
 use cadencr_registry_core::{validate_discovery_branch, DISCOVERY_FILENAME, MAX_DISCOVERY_BYTES};
 
+mod deadline;
 mod model;
 
 use model::{valid_sha, RawBlob, RawCommit, RawContent, RawRef, RawTree};
@@ -31,42 +34,33 @@ pub(crate) struct SetDiscoveryRequest<'a> {
 
 pub(crate) trait DiscoveryClient {
     fn get_discovery(&self, branch: &str) -> Result<Option<DiscoveryHead>, PublisherError>;
+    fn get_discovery_before(
+        &self,
+        branch: &str,
+        deadline: Instant,
+    ) -> Result<Option<DiscoveryHead>, PublisherError> {
+        super::request::check_deadline(Some(deadline))?;
+        let result = self.get_discovery(branch);
+        super::request::check_deadline(Some(deadline))?;
+        result
+    }
     fn set_discovery(&self, request: SetDiscoveryRequest<'_>) -> Result<(), PublisherError>;
 }
 
 impl DiscoveryClient for GitHubClient {
     fn get_discovery(&self, branch: &str) -> Result<Option<DiscoveryHead>, PublisherError> {
-        validate_discovery_branch(branch)?;
-        let reference: RawRef = self.request.get(&format!(
-            "/repos/{}/git/ref/heads/{branch}",
-            self.repository
-        ))?;
-        let commit_sha = reference.validate(branch)?;
-        let commit: RawCommit = self.request.get(&format!(
-            "/repos/{}/git/commits/{commit_sha}",
-            self.repository
-        ))?;
-        let tree_sha = commit.validate(&commit_sha)?;
-        let tree: RawTree = self
-            .request
-            .get(&format!("/repos/{}/git/trees/{tree_sha}", self.repository))?;
-        let Some(entry) = tree.validate(&tree_sha)? else {
-            return Ok(None);
-        };
-        // Contents responses omit base64 data above 1 MiB; pin the Git blob
-        // discovered in the reviewed commit tree instead, retaining SHA checks.
-        if entry.size > 1024 * 1024 {
-            let blob: RawBlob = self.request.get_catalog_blob(&format!(
-                "/repos/{}/git/blobs/{}",
-                self.repository, entry.sha
-            ))?;
-            return blob.validate(&entry).map(Some);
-        }
-        let content: RawContent = self.request.get(&format!(
-            "/repos/{}/contents/{DISCOVERY_FILENAME}?ref={commit_sha}",
-            self.repository
-        ))?;
-        content.validate(&entry).map(Some)
+        self.read_discovery(branch, None)
+    }
+
+    fn get_discovery_before(
+        &self,
+        branch: &str,
+        deadline: Instant,
+    ) -> Result<Option<DiscoveryHead>, PublisherError> {
+        super::request::check_deadline(Some(deadline))?;
+        let result = self.read_discovery(branch, Some(deadline));
+        super::request::check_deadline(Some(deadline))?;
+        result
     }
 
     fn set_discovery(&self, request: SetDiscoveryRequest<'_>) -> Result<(), PublisherError> {
@@ -235,7 +229,14 @@ mod tests {
             ),
         ]);
         assert_eq!(
-            client(api).get_discovery("catalog").unwrap().unwrap().bytes,
+            client(api)
+                .get_discovery_before(
+                    "catalog",
+                    Instant::now() + std::time::Duration::from_secs(5)
+                )
+                .unwrap()
+                .unwrap()
+                .bytes,
             bytes
         );
         assert!(observed.join().unwrap()[3].starts_with(&format!(

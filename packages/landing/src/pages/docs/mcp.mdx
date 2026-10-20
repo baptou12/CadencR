@@ -2,7 +2,12 @@
 layout: "@/layouts/DocLayout.astro"
 title: "MCP & orchestration"
 description: "Use CadencR's workspace and project MCP tools to search session history, coordinate agents, and run provider-neutral orchestration commands."
+lastReviewed: "2026-10-13"
+version: "0.13.0"
 ---
+
+import DocScreenshot from "@/components/docs/DocScreenshot.astro";
+import pageImage from "@/assets/docs/v0.13.0/mcp.png";
 
 import DocCallout from "@/components/docs/DocCallout.astro";
 
@@ -10,11 +15,20 @@ CadencR can attach its own [Model Context Protocol (MCP)](https://modelcontextpr
 
 You normally **ask for an outcome in plain language**. The agent chooses and calls the tools; you do not need to write MCP JSON yourself.
 
+<DocScreenshot
+  src={pageImage}
+  alt="The current MCP settings expose Browser, Project, and Workspace tools independently. Changes apply on the next agent turn."
+  caption="The current MCP settings expose Browser, Project, and Workspace tools independently. Changes apply on the next agent turn."
+  bordered={false}
+  rounded
+  elevated
+/>
+
 ## The three CadencR MCP servers
 
 | Server              | Scope                                                                               | What it enables                                                                                                              |
 | ------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `cadencr-workspace` | Every project registered in this CadencR workspace                                  | Read-only discovery across projects, session search, conversation reads, activity, and session relationships                 |
+| `cadencr-workspace` | Every project registered in this CadencR workspace                                  | Discovery across projects, session search, conversation reads, activity, relationships, and cross-project follow-up messages |
 | `cadencr-project`   | The current project, except that new sessions may target another registered project | Read and compare sessions, inspect worktrees, spawn or message agents, and answer linked child gates                         |
 | `cadencr-browser`   | Browser tabs belonging to the current feature                                       | Open, inspect, screenshot, and interact with pages; see the [Browser tool reference](../browser/#browser-mcp-tool-reference) |
 
@@ -112,7 +126,7 @@ show the pending gate but do not answer it.
 
 ## Workspace MCP tool reference
 
-Workspace tools are read-only and include project, feature, session, provider, and model provenance where applicable.
+Workspace discovery and history tools are read-only. `workspace_send_session_message` is the write operation for deliberate follow-ups across projects. Results include project, feature, session, provider, and model provenance where applicable.
 
 | Tool                        | What it does                                                                                                                         | Important inputs                                                                                                                                           |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -121,6 +135,18 @@ Workspace tools are read-only and include project, feature, session, provider, a
 | `workspace_read_sessions`   | Full-text searches messages across projects and returns matching session snippets with provenance.                                   | Optional `query`, `project_ids`, `roles`, `message_types`, `providers`, `models`, `statuses`, `tool_names`, date range, `cursor`, `snippet_chars`, `limit` |
 | `workspace_session_graph`   | Reads recorded `spawned`, `messaged`, `referenced`, and `handoff` links plus metadata for the connected session nodes.               | Optional anchor `session_id` and `limit`                                                                                                                   |
 | `workspace_recent_activity` | Returns the newest messages across projects with short snippets and their project, feature, session, provider, model, and status.    | Optional `limit` and `snippet_chars`                                                                                                                       |
+
+### Follow up across projects
+
+`workspace_send_session_message` messages an existing conversation in another registered project. Use it after cross-project delegation to refine the same worker's task, instead of creating another worker.
+
+| Tool                             | What it does                                                                                                                       | Important inputs                                                                                                                   |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `workspace_send_session_message` | Sends a provenance-tracked follow-up across workspace projects, with the same reactive delivery/reply policies as project messages | Required `target_session_id` and `message`; optional `delivery`, `reply`, `message_uuid`, `source_note`, `link_to_current_session` |
+
+For a result to return automatically, use `reply: "on_turn_end"`. The default `delivery: "steer_current_turn"` steers active work; `next_turn` queues explicitly, and `reject_if_active` refuses a busy target. Read the target's project/session provenance before sending.
+
+An `@@` composer reference can point an agent to prior history through Workspace MCP. Reusing that conversation's worktree is a separate prompt-time choice; a history reference alone does not create or attach a checkout.
 
 ### Workspace search tips
 
@@ -131,7 +157,7 @@ Workspace tools are read-only and include project, feature, session, provider, a
 
 ## Project MCP tool reference
 
-Most project tools are scoped to sessions in the caller's current project. This prevents an agent from accidentally reading or messaging an unrelated project just because it knows a session ID. `project_spawn_session` is the exception: it can deliberately target any project returned by `workspace_list_projects`.
+Most project tools are scoped to sessions in the caller's current project. This prevents an agent from accidentally reading or messaging an unrelated project just because it knows a session ID. `project_spawn_session` can deliberately create a session in any project returned by `workspace_list_projects`. Workspace MCP supplies the separate cross-project follow-up messaging tool.
 
 ### Discover and read
 
@@ -155,6 +181,10 @@ Most project tools are scoped to sessions in the caller's current project. This 
 | `project_send_session_message` | Sends a provenance-tracked message that steers the target's active turn by default. It can explicitly queue for the next turn or push the target result back.                      | Required `target_session_id` and `message`; optional `delivery` (`steer_current_turn`, `next_turn`, `reject_if_active`), `reply`, `message_uuid`, `source_note`, `link_to_current_session`               |
 | `project_list_pending_gates`   | Recovers the current permission, plan, or question gate for a linked child. Live `<cadencr-gate>` notifications already contain the full payload, so use this mainly for recovery. | Required `session_id`                                                                                                                                                                                    |
 | `project_respond_gate`         | Answers a linked child's pending permission, plan, or question using the exact request data from the live gate.                                                                    | Required `session_id`, `request_id`, and typed `decision` payload                                                                                                                                        |
+| `project_create_schedule`      | Schedules a prompt back into the caller's own conversation, optionally only when a shell command it writes exits non-zero. The schedule appears in the Schedules view.             | Required `prompt` and `recurrence` (`kind` plus its fields); optional `name`, `condition` (`command`, `timeout_seconds`), `model`, `thinking_level`, `permission_mode`                                   |
+| `project_list_schedules`       | Lists the schedules that deliver into the caller's own conversation, whoever created them, with their id, rule, condition, state, and last run.                                    | None                                                                                                                                                                                                     |
+| `project_update_schedule`      | Changes a schedule of the caller's own conversation; only the passed fields change. `enabled` pauses or resumes it.                                                                | Required `schedule_id`; optional `prompt`, `name`, `recurrence`, `condition`, `remove_condition`, `enabled`, `model`, `thinking_level`, `permission_mode`                                                |
+| `project_delete_schedule`      | Permanently deletes a schedule of the caller's own conversation.                                                                                                                   | Required `schedule_id`                                                                                                                                                                                   |
 
 ### Worktree modes for `project_spawn_session`
 

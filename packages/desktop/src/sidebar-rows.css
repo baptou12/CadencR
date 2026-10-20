@@ -256,6 +256,7 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
 .sidebar-sticky {
   container-type: scroll-state;
 }
+.sidebar-sticky,
 .sidebar-sticky-fill,
 .sidebar-sticky > * {
   --sidebar-sticky-fill:
@@ -271,6 +272,20 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
     background: var(--sidebar-sticky-fill);
     box-shadow: var(--sidebar-sticky-shadow);
   }
+}
+/* WebKit (every iOS browser) has no scroll-state queries: the header would
+ * float bare over the rows. There it is always filled, on the wrapper so the
+ * row's own hover and active fills still paint over it; unstuck, the fill
+ * matches the sidebar it sits on. */
+@supports not (container-type: scroll-state) {
+  .sidebar-sticky {
+    background: var(--sidebar-sticky-fill);
+  }
+}
+/* A row revealed or reached by the keyboard stops below its stuck project
+ * header (the project row's height, plus a gap) instead of under it. */
+[data-sidebar-sticky-header] + .sidebar-project-children [data-nav-item] {
+  scroll-margin-top: calc(2rem + 2 * var(--sidebar-row-pad, 6px));
 }
 
 /* Display options: the option under the pointer or focus outlines what it
@@ -302,6 +317,7 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
 [data-sidebar-highlight="stickyHeaders"]
   :is([data-sidebar-sticky-header], [data-sidebar-lens-header]),
 [data-sidebar-highlight="forMe"] [data-sidebar-block="for-me"],
+[data-sidebar-highlight="forMeLimit"] [data-sidebar-block="for-me"],
 [data-sidebar-highlight="workingBlock"] [data-sidebar-block="working"],
 [data-sidebar-highlight="recentBlock"] [data-sidebar-block="recent"],
 [data-sidebar-highlight="recentCount"] [data-sidebar-block="recent"],
@@ -318,4 +334,27 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
   outline: 1.5px solid color-mix(in oklab, var(--primary) 75%, transparent);
   outline-offset: 1px;
   border-radius: 4px;
+}
+
+/* Manual order: where a dragged conversation would land, a 2px primary line
+ * across the gap above or below the hovered row (`useRowReorder`), and the
+ * dragged row stepping back while it travels. */
+.sidebar-row[data-drop-position]::before {
+  content: "";
+  position: absolute;
+  inset-inline: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--primary);
+  pointer-events: none;
+  z-index: 1;
+}
+.sidebar-row[data-drop-position="before"]::before {
+  top: -2px;
+}
+.sidebar-row[data-drop-position="after"]::before {
+  bottom: -2px;
+}
+.sidebar-row[data-dragging] {
+  opacity: 0.45;
 }

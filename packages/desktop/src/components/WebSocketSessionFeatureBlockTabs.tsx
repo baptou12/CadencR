@@ -1,5 +1,11 @@
 import { lazy, Suspense, useCallback, useMemo, useRef, type ReactElement } from "react";
-import { CodeIcon, GitCompareArrowsIcon, GlobeIcon, TerminalIcon } from "lucide-react";
+import {
+  CodeIcon,
+  FileTextIcon,
+  GitCompareArrowsIcon,
+  GlobeIcon,
+  TerminalIcon,
+} from "lucide-react";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { FeatureTerminalTab } from "@/components/FeatureTerminalTab";
 import { AgentBrowserActivityDot } from "@/components/feature-layout/AgentBrowserActivityDot";
@@ -16,8 +22,14 @@ import {
   type useSessionRefs,
 } from "@/components/WebSocketSessionFeatureBlockHooks";
 import type { NonAgentTabReadiness } from "@/components/useAgentFirstNonAgentWork";
+import { usePluginTabDefs, type PluginTabDefs } from "@/components/plugin-tabs/usePluginTabDefs";
 import { useAgentTab } from "./WebSocketSessionAgentTab";
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
+const FeaturePreviewTab = lazy(() =>
+  import("@/components/document-preview/FeaturePreviewTab").then((module) => ({
+    default: module.FeaturePreviewTab,
+  })),
+);
 const BrowserWorkspaceTab = lazy(() =>
   import("@/components/BrowserWorkspaceTab").then((module) => ({
     default: module.BrowserWorkspaceTab,
@@ -42,6 +54,11 @@ export interface UseSessionTabsArgs {
   sendFromGitTab: (message: string) => void;
   /** Opener for file references clicked inside the agent conversation. */
   openAgentFileInEditor: OpenDiffInEditor;
+  /**
+   * Offer the project's custom tabs (`plugin:<id>`). Only the feature route:
+   * an embedded unified-grid card shows built-ins only.
+   */
+  pluginTabsEnabled: boolean;
 }
 
 export function useSessionTabs(args: UseSessionTabsArgs): FeatureTabs {
@@ -50,6 +67,8 @@ export function useSessionTabs(args: UseSessionTabsArgs): FeatureTabs {
   const gitTab = useGitTab(args);
   const editorTab = useEditorTab(args);
   const browserTab = useBrowserTab(args);
+  const previewTab = usePreviewTab(args);
+  const pluginTabs = useSessionPluginTabs(args);
   return useMemo(
     () => ({
       agent: agentTab,
@@ -57,9 +76,21 @@ export function useSessionTabs(args: UseSessionTabsArgs): FeatureTabs {
       git: gitTab,
       editor: editorTab,
       browser: browserTab,
+      preview: previewTab,
+      ...pluginTabs,
     }),
-    [agentTab, browserTab, editorTab, gitTab, terminalTab],
+    [agentTab, browserTab, editorTab, gitTab, pluginTabs, previewTab, terminalTab],
   );
+}
+
+function useSessionPluginTabs(args: UseSessionTabsArgs): PluginTabDefs {
+  const { featureId, projectId, data, pluginTabsEnabled } = args;
+  return usePluginTabDefs({
+    featureId,
+    projectId,
+    contextData: data,
+    enabled: pluginTabsEnabled,
+  });
 }
 
 /**
@@ -166,6 +197,25 @@ function useBrowserTab(args: UseSessionTabsArgs): FeatureTabDef {
       ),
     }),
     [featureId, browserReady, sendContext],
+  );
+}
+
+function usePreviewTab(args: UseSessionTabsArgs): FeatureTabDef {
+  const { featureId, projectId } = args;
+  const previewReady = args.tabReady.preview;
+  return useMemo(
+    () => ({
+      label: "Preview",
+      Icon: FileTextIcon,
+      content: previewReady ? (
+        <Suspense fallback={null}>
+          <FeaturePreviewTab featureId={featureId} projectId={projectId} />
+        </Suspense>
+      ) : (
+        <DeferredTabContent label="Preview" />
+      ),
+    }),
+    [featureId, previewReady, projectId],
   );
 }
 

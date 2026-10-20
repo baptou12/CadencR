@@ -268,10 +268,7 @@ mod pending_user_input_tests {
         tokio::sync::broadcast::Receiver<crate::domain::session_status::SessionStatusEvent>,
     ) {
         let (tx, rx) = tokio::sync::broadcast::channel(16);
-        let bc = crate::domain::session_status::SessionStatusBroadcaster::new(
-            tx,
-            std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
-        );
+        let bc = crate::domain::session_status::SessionStatusBroadcaster::new(tx);
         (bc, rx)
     }
 
@@ -388,10 +385,11 @@ mod pending_user_input_tests {
 
     #[tokio::test]
     async fn mark_agent_resumed_supports_deny_path() {
-        use crate::domain::session_status::AgentStatus;
+        use crate::domain::session_status::{AgentStatus, PendingKind};
         let pool = setup_pool().await;
         let id = insert_session(&pool).await;
         let (bc, mut rx) = test_broadcaster();
+        bc.broadcast_gate(id, 1, PendingKind::Permission, "req-1".into());
 
         WsSessionPersistence::mark_agent_resumed_static(
             &pool,
@@ -403,6 +401,7 @@ mod pending_user_input_tests {
         )
         .await;
 
+        rx.recv().await.unwrap();
         let event = rx.recv().await.unwrap();
         assert_eq!(event.status, AgentStatus::Idle);
     }

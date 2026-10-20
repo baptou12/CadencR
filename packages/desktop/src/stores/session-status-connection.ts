@@ -16,6 +16,7 @@ import { isBrowserRemote } from "@/lib/remote/device-token";
 import { hydratePrStatuses } from "@/stores/pr-status-hydration";
 import { subscribeForgeStatus } from "@/stores/forge-visibility";
 import { clearStorageMaintenanceStatus } from "@/stores/storage-maintenance-store";
+import { resetServerClock } from "@/lib/server-clock";
 import type { EnvelopeDispatcher, SessionStatusState } from "@/stores/session-status-store";
 
 const APP_WS_SOURCE = "app-ws";
@@ -54,6 +55,7 @@ interface AppWsConnection {
 function handleAppWsOpen(connection: AppWsConnection): void {
   const { ws, set } = connection;
   resetReconnectState(APP_WS_SOURCE);
+  resetServerClock();
   set({ isConnected: true });
   useConnectionStatusStore.getState().reportSource(APP_WS_SOURCE, "connected");
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.session_status", {})));
@@ -63,12 +65,17 @@ function handleAppWsOpen(connection: AppWsConnection): void {
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.schedule_events", {})));
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.settings_events", {})));
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.theme_events", {})));
+  // Custom tab folders changed on disk: refetch the list, reload live tabs.
+  ws.send(JSON.stringify(createEnvelope("app", "subscribe.plugin_tab_events", {})));
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.alacritty_config_events", {})));
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.storage_maintenance_events", {})));
   connection.unsubscribeForgeVisibility = subscribeForgeStatus(ws);
   void hydratePrStatuses();
   if (!isBrowserRemote()) {
     ws.send(JSON.stringify(createEnvelope("app", "subscribe.remote_events", {})));
+    // Version checks and update outcomes toast on the host only: updates run
+    // on this machine. The subscription starts with the current status list.
+    ws.send(JSON.stringify(createEnvelope("app", "subscribe.provider_update_events", {})));
   }
 }
 

@@ -2,7 +2,8 @@ import { memo, useCallback, useMemo, type ReactElement, type ReactNode } from "r
 import { FeatureRowBody } from "@/components/FeatureRowBody";
 import { ProjectBadge } from "@/components/ProjectBadge";
 import { FeatureHierarchyGutter } from "@/components/FeatureHierarchyGutter";
-import { shouldIgnoreFeatureRowKeyDown } from "@/components/ProjectFeatureRow";
+import { openFeatureRowOnKey } from "@/components/ProjectFeatureRow";
+import type { NextActionKind } from "@/lib/next-actions";
 import type { SampleRow } from "@/lib/sidebar-sample-views";
 import type { Attention } from "@/lib/sidebar-attention";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,8 @@ interface SidebarSampleRowProps {
   hierarchyControl?: ReactNode;
   /** A collapsed parent shows its most urgent child's state: the child it comes from. */
   foldedSource?: SampleRow;
+  /** A "For me" sample names what to do next under its title. */
+  nextAction?: NextActionKind;
 }
 
 /**
@@ -33,6 +36,7 @@ export const SidebarSampleRow = memo(function SidebarSampleRow({
   depth = 0,
   hierarchyControl,
   foldedSource,
+  nextAction,
 }: SidebarSampleRowProps): ReactElement {
   const { conversation } = row;
   const { feature } = conversation;
@@ -54,13 +58,7 @@ export const SidebarSampleRow = memo(function SidebarSampleRow({
         isActive && "bg-sidebar-accent",
       )}
       onClick={select}
-      onKeyDown={(event) => {
-        if (shouldIgnoreFeatureRowKeyDown(event.target)) return;
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          select();
-        }
-      }}
+      onKeyDown={(event) => openFeatureRowOnKey(event, select)}
     >
       {variant === "block" ? (
         <span className="flex h-6 shrink-0 items-center self-start">
@@ -79,6 +77,7 @@ export const SidebarSampleRow = memo(function SidebarSampleRow({
         attention={attention}
         isActive={isActive}
         onOpenConversation={select}
+        nextAction={nextAction}
         prStatus={conversation.prStatus}
         gitStats={conversation.gitStats}
         shellCount={conversation.shellCount}

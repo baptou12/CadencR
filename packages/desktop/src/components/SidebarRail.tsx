@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo, type CSSProperties, type ReactElement } from "react";
-import { PanelLeft } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { PanelLeft, Settings } from "lucide-react";
 import type { Feature } from "@/api/generated";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -33,16 +34,24 @@ export function SidebarRail({ onExpand }: { onExpand: () => void }): ReactElemen
   const content = useSidebarOption("rail");
   const { featureId: activeFeatureId } = useRouteFeatureIds();
   const { keys } = useResolvedShortcut("toggle-sidebar");
+  const { keys: settingsKeys } = useResolvedShortcut("open-settings");
   if (content === "none") return null;
   return (
     <TooltipProvider delayDuration={300}>
       <nav
         aria-label="Collapsed sidebar"
         data-sidebar-rail={content}
-        className="glass-surface flex h-full w-12 shrink-0 flex-col items-center gap-1 border-r border-border/60 bg-sidebar pb-2"
+        className={cn(
+          "glass-surface flex h-full w-12 shrink-0 flex-col items-center gap-1 bg-sidebar pb-2",
+          // The traffic lights straddle the rail's edge, so on Mac its hairline
+          // starts under the titlebar band instead of cutting through them.
+          HAS_MAC_WINDOW_CONTROLS
+            ? "relative before:absolute before:top-18 before:right-0 before:bottom-0 before:w-px before:bg-border/60"
+            : "border-r border-border/60",
+        )}
       >
         <div
-          className={cn("titlebar-drag w-full shrink-0", HAS_MAC_WINDOW_CONTROLS ? "h-12" : "h-2")}
+          className={cn("titlebar-drag w-full shrink-0", HAS_MAC_WINDOW_CONTROLS ? "h-18" : "h-2")}
         />
         <Button
           variant="ghost"
@@ -66,6 +75,19 @@ export function SidebarRail({ onExpand }: { onExpand: () => void }): ReactElemen
             </SidebarSurfaceContext.Provider>
           )}
         </div>
+        {/* The sidebar footer's Settings entry, kept reachable while collapsed:
+            the titlebar stays free of chrome so the page title owns it. */}
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+          title={`Settings (${formatCombo(settingsKeys).join("")})`}
+        >
+          <Link to="/settings" aria-label="Settings">
+            <Settings className="size-4" />
+          </Link>
+        </Button>
       </nav>
     </TooltipProvider>
   );

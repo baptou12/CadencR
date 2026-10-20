@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { MARKETPLACE_ENABLED } from "@/lib/marketplace-gate";
 
 const settingsSearchSchema = z.object({
-  tab: z.enum(["general", "marketplace"]).optional().catch(undefined),
   section: z.string().optional().catch(undefined),
+  /** `create` opens the Custom tabs create dialog (`section=custom-tabs`). */
+  action: z.enum(["create"]).optional().catch(undefined),
+  /** Legacy: the marketplace used to be a Settings tab (`?tab=marketplace`). */
+  tab: z.string().optional().catch(undefined),
 });
 
 export type SettingsSearch = z.infer<typeof settingsSearchSchema>;
@@ -13,25 +15,7 @@ export function parseSettingsSearch(search: Record<string, unknown>): SettingsSe
   return settingsSearchSchema.parse(search);
 }
 
-export function resolveSettingsTab(search: SettingsSearch): "general" | "marketplace" {
-  if (!MARKETPLACE_ENABLED) return "general";
-  return search.tab ?? (search.section === "marketplace" ? "marketplace" : "general");
-}
-
-/** Retain visited views so pending settings saves and mutation callbacks survive tab changes. */
-export function useVisitedSettingsViews(activeTab: "general" | "marketplace") {
-  const [visited, setVisited] = useState(() => ({
-    general: activeTab === "general",
-    marketplace: activeTab === "marketplace",
-  }));
-  useEffect(() => {
-    setVisited((previous) => (previous[activeTab] ? previous : { ...previous, [activeTab]: true }));
-  }, [activeTab]);
-  return useMemo(
-    () => ({
-      general: visited.general || activeTab === "general",
-      marketplace: visited.marketplace || activeTab === "marketplace",
-    }),
-    [visited, activeTab],
-  );
+/** Old marketplace deep links into Settings now open the Marketplace page. */
+export function isLegacyMarketplaceLink(search: SettingsSearch): boolean {
+  return MARKETPLACE_ENABLED && (search.tab === "marketplace" || search.section === "marketplace");
 }

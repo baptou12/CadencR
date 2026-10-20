@@ -65,6 +65,8 @@ pub struct Candidate {
     pub canonical: PathBuf,
     /// Parsed semver, if `--version` returned something we could parse.
     pub version: Option<VersionKey>,
+    /// The version as printed, build suffix included (`2026.08.25-3e8eec8`).
+    pub version_text: Option<String>,
     /// Where the candidate was discovered.
     pub source: CandidateSource,
 }

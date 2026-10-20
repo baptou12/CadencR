@@ -7,6 +7,7 @@ mod questions;
 mod runtime_error;
 mod stream_synthesizer;
 mod tool_names;
+pub mod updates;
 mod worktree_config;
 use async_trait::async_trait;
 use serde_json::Value;

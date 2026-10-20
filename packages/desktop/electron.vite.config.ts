@@ -17,6 +17,7 @@ import {
   electronBundleContractPlugin,
   type ElectronBundleContract,
 } from "./electron/bundle-contract";
+import { macNativeAddonPlugin } from "./electron/mac-native-addon";
 import pkg from "./package.json" with { type: "json" };
 
 const excalidrawFontsDir = path.join(
@@ -24,33 +25,55 @@ const excalidrawFontsDir = path.join(
   "fonts",
 );
 
+const pdfjsDir = path.dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"));
+
+/** MIME types for the static assets served below; anything else gets none. */
+const STATIC_ASSET_TYPES: Record<string, string> = {
+  ".woff2": "font/woff2",
+  ".wasm": "application/wasm",
+};
+
+interface StaticAssetDir {
+  /** URL prefix under the renderer root, e.g. `/fonts/`. */
+  urlPrefix: string;
+  sourceDir: string;
+  /** Skip files the renderer never loads (e.g. pdf.js's scripting engine). */
+  include?: (fileName: string) => boolean;
+}
+
 /**
- * Serves Excalidraw's fonts (Excalifont, Nunito, …) from the renderer origin
- * so they satisfy the `font-src 'self'` CSP — Excalidraw's default CDN fetch is
- * blocked. In dev a middleware streams them from `node_modules`; for the
- * packaged build they're copied into `out/renderer/fonts`. The runtime base is
- * set via `window.EXCALIDRAW_ASSET_PATH` (see `excalidraw-asset-path.ts`).
+ * Serves third-party runtime assets from the renderer origin so they satisfy
+ * the `'self'` CSP sources instead of a blocked CDN fetch:
+ *  - Excalidraw's fonts (Excalifont, Nunito, …) under `/fonts/`; the runtime
+ *    base is set via `window.EXCALIDRAW_ASSET_PATH` (`excalidraw-asset-path.ts`).
+ *  - pdf.js's CMaps, standard fonts, ICC profiles and image-decoder wasm under
+ *    `/pdfjs/` (see `pdfjs-assets.ts`).
+ * In dev a middleware streams them from `node_modules`; for the packaged build
+ * they're copied into the renderer output.
  */
-function excalidrawFontsPlugin(): Plugin {
+function staticAssetDirsPlugin(dirs: readonly StaticAssetDir[]): Plugin {
   let outDir = "";
   return {
-    name: "cadencr-excalidraw-fonts",
+    name: "cadencr-static-asset-dirs",
     configResolved(config) {
       outDir = path.resolve(config.root, config.build.outDir);
     },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (!req.url?.startsWith("/fonts/")) return next();
-        const rel = decodeURIComponent(req.url.slice("/fonts/".length).split(/[?#]/)[0]);
-        const filePath = path.join(excalidrawFontsDir, rel);
-        if (!filePath.startsWith(excalidrawFontsDir + path.sep)) {
+        const dir = dirs.find((entry) => req.url?.startsWith(entry.urlPrefix));
+        if (!dir || !req.url) return next();
+        const rel = decodeURIComponent(req.url.slice(dir.urlPrefix.length).split(/[?#]/)[0]);
+        const filePath = path.join(dir.sourceDir, rel);
+        if (!filePath.startsWith(dir.sourceDir + path.sep)) {
           res.statusCode = 403;
           res.end("Forbidden");
           return;
         }
+        if (dir.include && !dir.include(path.basename(filePath))) return next();
         fs.readFile(filePath, (err, data) => {
           if (err) return next();
-          if (filePath.endsWith(".woff2")) res.setHeader("Content-Type", "font/woff2");
+          const type = STATIC_ASSET_TYPES[path.extname(filePath)];
+          if (type) res.setHeader("Content-Type", type);
           res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
           res.end(data);
         });
@@ -58,10 +81,26 @@ function excalidrawFontsPlugin(): Plugin {
     },
     closeBundle() {
       if (!outDir) return;
-      fs.cpSync(excalidrawFontsDir, path.join(outDir, "fonts"), { recursive: true });
+      for (const dir of dirs) {
+        fs.cpSync(dir.sourceDir, path.join(outDir, dir.urlPrefix), {
+          recursive: true,
+          filter: (source) =>
+            !dir.include || fs.statSync(source).isDirectory() || dir.include(path.basename(source)),
+        });
+      }
     },
   };
 }
+
+const STATIC_ASSET_DIRS: readonly StaticAssetDir[] = [
+  { urlPrefix: "/fonts/", sourceDir: excalidrawFontsDir },
+  ...["cmaps", "standard_fonts", "iccs", "wasm"].map((name) => ({
+    urlPrefix: `/pdfjs/${name}/`,
+    sourceDir: path.join(pdfjsDir, name),
+    // pdf.js ships a QuickJS engine for PDF scripting, which the preview never enables.
+    include: (fileName: string) => !fileName.startsWith("quickjs"),
+  })),
+];
 
 function cspMetaPlugin(
   isProduction: boolean,
@@ -112,6 +151,7 @@ const electronBundleContracts = {
     processName: "preload",
     entryFileName: "index.js",
     externalizationSentinels: ["electron"],
+    sandboxedEntryFileNames: ["notch.js", "plugin-tab.js"],
   },
 } as const satisfies Record<"main" | "preload", ElectronBundleContract>;
 
@@ -123,6 +163,7 @@ export default defineConfig(({ mode }) => {
       plugins: [
         externalizeDepsPlugin(),
         electronBundleContractPlugin(electronBundleContracts.main),
+        macNativeAddonPlugin(__dirname),
       ],
       build: {
         rollupOptions: {
@@ -141,6 +182,9 @@ export default defineConfig(({ mode }) => {
             index: path.resolve(__dirname, "electron/preload/index.ts"),
             // The notch island's own, minimal preload (see electron/preload/notch.ts).
             notch: path.resolve(__dirname, "electron/preload/notch.ts"),
+            // A custom-tab guest's preload: theme CSS + port forwarding only
+            // (see electron/preload/plugin-tab.ts).
+            "plugin-tab": path.resolve(__dirname, "electron/preload/plugin-tab.ts"),
           },
         },
       },
@@ -163,10 +207,16 @@ export default defineConfig(({ mode }) => {
           "@": path.resolve(__dirname, "src"),
         },
       },
+      // The Office preview engine loads its parser `.wasm` and render workers
+      // via `new URL(…, import.meta.url)`; Vite < 8's dependency optimizer
+      // moves the module and breaks those paths (production builds are fine).
+      optimizeDeps: {
+        exclude: ["@silurus/ooxml"],
+      },
       plugins: [
         react(),
         tailwindcss(),
-        excalidrawFontsPlugin(),
+        staticAssetDirsPlugin(STATIC_ASSET_DIRS),
         cspMetaPlugin(mode === "production", development),
         TanStackRouterVite({
           routesDirectory: "src/routes",

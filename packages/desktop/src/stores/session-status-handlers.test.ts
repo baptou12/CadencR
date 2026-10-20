@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   handleAppEnvelope,
+  lookupFeature,
   resetEditorInvalidationSchedulingForTest,
 } from "./session-status-handlers";
 import { queryClient } from "@/lib/queryClient";
@@ -83,10 +84,44 @@ describe("handleAppEnvelope · editor/file_tree.changed", () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
+  it("refetches only the document previews the event names", () => {
+    const spy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+    const documentKey = (file_path: string) => [
+      "/api/editor/read-document",
+      { project_id: 1, feature_id: 2, file_path },
+    ];
+
+    fireFileTreeChanged();
+    const editorWave = getInvalidatePredicate(spy.mock.calls[0]?.[0]);
+    expect(editorWave({ queryKey: documentKey("out/report.xlsx") })).toBe(false);
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    handleAppEnvelope("editor", "file_tree.changed", { documents: ["out/report.xlsx"] });
+    const documents = getInvalidatePredicate(spy.mock.calls.at(-1)?.[0]);
+    expect(documents({ queryKey: documentKey("out/report.xlsx") })).toBe(true);
+    expect(documents({ queryKey: documentKey("deck.pptx") })).toBe(false);
+    expect(documents({ queryKey: ["/api/editor/read", { path: "out/report.xlsx" }] })).toBe(false);
+  });
+
   it("refreshes managed inventory without rereading authored themes or project settings", () => {
     const spy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
     handleAppEnvelope("app", "theme_event", { id: "managed:midnight" });
     expect(spy).toHaveBeenCalledOnce();
     expect(spy).toHaveBeenCalledWith({ queryKey: ["marketplace", "managed-themes"] });
+  });
+});
+
+describe("lookupFeature", () => {
+  afterEach(() => queryClient.clear());
+
+  it("skips per-feature queries that share the feature lists' key prefix", () => {
+    // A pending gate cached (or restored from the persisted cache) under the
+    // lists' prefix used to throw here and abort the whole status snapshot.
+    queryClient.setQueryData(["/api/features", 7, "pending-gate", "req-1"], {
+      request_id: "req-1",
+    });
+    queryClient.setQueryData(["/api/features", { project_id: 1 }], [{ id: 7, title: "Seven" }]);
+    expect(lookupFeature(7)).toMatchObject({ id: 7, title: "Seven" });
+    expect(lookupFeature(8)).toBeUndefined();
   });
 });

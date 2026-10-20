@@ -1,7 +1,7 @@
 # Installed code-backed providers (local substrate)
 
 > - **Status:** Backend and developer-project substrate implemented; general-purpose desktop installation deliberately withdrawn
-> - **Last reviewed:** 2026-09-05 (local substrate and release-gate alignment)
+> - **Last reviewed:** 2026-10-13 against v0.13.0 (local creation/import and inactive public marketplace)
 > - **Code:** `packages/service/src/domain/agents/providers/installed/`
 > - **Executable contract:** [`PROVIDER_PACKAGE.md`](./PROVIDER_PACKAGE.md)
 
@@ -24,6 +24,21 @@ future packages cannot contain credentials or authentication behavior, and the
 generic adapter does not broker ACP authentication. Cadencr's loopback API
 authentication and package signature/checksum verification are separate host
 security requirements.
+
+## Local creation and import in v0.13.0
+
+![Current provider connector entry point](../../packages/landing/src/assets/docs/v0.13.0/providers.png)
+
+Settings → CLI Providers → Add provider can also import an existing Git repository
+whose code-backed connector has already been built at the required executable
+path. Importing source does not build or install dependencies. Validation and
+model discovery use the same executable contract as a generated connector.
+Restart Cadencr after registration or descriptor changes to activate them.
+
+Public marketplace browsing, package installation, and publication are inactive
+in this release. The developer-project flow and local descriptor lifecycle remain
+available. See [release configuration](../MARKETPLACE_RELEASE_CONFIG.md) and the
+[user guide](../../packages/landing/src/pages/docs/providers.mdx).
 
 ## Where descriptors live
 

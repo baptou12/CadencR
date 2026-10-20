@@ -28,7 +28,7 @@ async fn owner_with_live_turn(
     }
     app_state
         .active_turns
-        .begin_turn(db_id, &owner_sessions, 1_000)
+        .begin_turn(db_id, &owner_sessions)
         .await;
     // Drain everything `init` emitted so later assertions only see the mirror.
     while rx_a.try_recv().is_ok() {}

@@ -54,7 +54,7 @@ Extensibility has four capability tracks, each independently mergeable and valua
 
 1. **Custom themes** — pure data, zero new security surface, immediate visible value. Establishes the import → validate → enable → persist pipeline everything later reuses.
 2. **Bring your own agent (ACP)** — the ACP layer (`packages/service/src/domain/agents/acp/`, ~13k lines) is a strong provider-neutral base; Cursor and OpenCode ride it today, but provider hooks and shared-code leaks still need the boundary work in `docs/PROVIDER_SPEC/BOUNDARIES.md`. Third-party integrations become **independently distributed, code-backed connector processes that speak standard ACP**. Their provider-native mapping code never becomes Cadencr source code.
-3. **Custom tabs** — first user-created tabs ride the existing browser-tab infrastructure; plugin-declared tabs come later, on step 4's foundations.
+3. **Custom tabs** — local plugins that add a web UI tab to the feature page. Each runs in an isolated `WebContentsView` (own process, partition and `cadencr-tab://` origin) and reaches Cadencr only through a `MessagePort` broker and a service-enforced grant. Amended 2026-10-16; contract in [Custom tabs](./CUSTOM_TABS.md).
 4. **Deeper behavior changes** — the plugin system proper: manifests, installer, a `plugin` WS domain, declarative UI contributions. **Declarative-first**: plugins describe UI, first-party React renders it. No third-party JS in the renderer, ever.
 
 Skills and MCP servers are deliberately **not** on this ladder. They are provider-portable configuration with their own ecosystems — the future feature there is a _helper_ that checks and installs them into the user's harness, not a plugin plane (§8). Parked for later.
@@ -111,11 +111,23 @@ Provider-account authentication is outside Cadencr's connector contract. A user 
 
 ## 4. Step 3 — Custom tabs
 
+**Amended 2026-10-16.** The declarative-only plan below (3c) cannot host what
+users asked for — a code graph, an in-house VCS dashboard, a bridge to their own
+tools. Custom tabs are therefore arbitrary web UI, isolated by construction: a
+static bundle in its own `WebContentsView`, no network of its own, an API surface
+reached through a first-party broker and a deny-by-default policy table the
+service enforces per grant. The renderer invariant (no third-party JS in the
+renderer) holds; what changes is that 4d's `WebContentsView` escape hatch is now
+the custom-tab runtime. The declarative tier stays in reserve for contribution
+surfaces that must look native (settings sections, tool renderers).
+[Custom tabs](./CUSTOM_TABS.md) is the authoritative contract.
+
 **Phases (each mergeable):**
 
 - **3a — Groundwork (also fixes a live hazard).** `parseTabKindArray` (`stores/feature-layout-schema.ts:118-126`) rejects the _entire_ saved layout on one unknown tab id — it must drop unknown ids instead, or any later tab removal nukes user layouts. Then open the `TabKind` union (`string & {}`) and back the known kinds with a registry (`getRegisteredTabKinds()`, `FeatureTabs` → `Partial<Record<…>>`). `TabContentRegistry.tsx` + `tab-host-registry.ts` + `FeatureTabDef` are already generic over kind, so this is small — and it unlocks splits, DnD, and layout persistence work for core regardless.
 - **3b — User-created web tabs (first visible value, zero new infra).** Let users add a named tab pointing at a URL — localhost dashboards, Storybook, CI, docs — riding the existing browser-tab infrastructure (scoped, sandboxed, partitioned, bounds-synced `WebContentsView`). This is tab creation as a _user_ feature, before any plugin exists.
-- **3c — Plugin-declared tabs.** Tabs contributed by manifest and rendered from the first-party declarative vocabulary over the `plugin` WS domain. Depends on step 4's foundations; sequenced after 4a/4b.
+- **3c — Plugin tabs (implemented as isolated web UI, superseding the declarative plan).** `tab.json` manifest, local authoring projects (`authoring_target='tab'`), global/per-project enablement with consent, `@cadencr/tab-sdk` (API, streams, storage, egress relay) and `@cadencr/tab-kit` (tokens, Tailwind preset, components built from the desktop design system). Desktop only in v1.
+- **3b status.** User-created URL tabs on the browser infrastructure remain possible; a custom tab already covers the localhost-dashboard case with better context.
 
 ## 5. Step 4 — Deeper behavior changes (the plugin system proper)
 
@@ -126,7 +138,7 @@ Here the provider package/installer foundations expand into general plugin contr
 - **4a — Foundations (no user-visible plugins).** Electron hardening (`@electron/fuses` disabling `RunAsNode` / `EnableNodeCliInspectArguments` / `EnableNodeOptionsEnvironmentVariable` + ASAR integrity — ~hours, worth doing regardless and earlier); `plugins (id PK, version, source, enabled, installed_at, manifest_json)` + `plugin_settings` tables mirroring the `feature_settings` EAV shape; `~/.cadencr/plugins/<id>/<version>/` installer copied from the LSP downloader (SHA-256, 0700); a `plugin` WS domain on both sides — backend dispatch is a 3-domain match (`handler/dispatch.rs`), frontend router is a 4-branch if-chain with a **silent** default (`ws-envelope-handler.ts:54-103`); one new branch each, dispatching `{domain:"plugin", action:"<pluginId>.<method>"}` to a per-plugin handler registry, plugin state in its own store namespace.
 - **4b — Contribution surfaces.** The frontend registry refactors (§5.1) — each pays off for core before any plugin uses it (command-palette drift bug, EditorPane cleanup, settings composition). Ship the settings-section registry first as proof-of-pattern; then commands, sidebar sections, tool-call renderers, editor renderers.
 - **4c — Behavior + events.** Plugins subscribe via the `plugin` domain to teed versions of existing broadcasters (session status, feature events, git status, settings, turn lifecycle). The two existing pre-spawn hooks (`prompt_pending.rs` — permission bridge + MCP attach) are the _only_ sanctioned "inject into the agent" points; no new ambient hook API. Plugin processes never receive `CADENCR_AUTH_TOKEN`/`CADENCR_MCP_CONTROL_TOKEN` unscoped — mint per-plugin scoped tokens on the `x-cadencr-mcp-token` pattern, audited. Plugin surfaces are WS-first by design (`openapi.rs`/orval are compile-time, so plugin REST is untyped anyway); if needed, a `/api/plugins/{id}/{*rest}` passthrough, with remote-device reachability a deliberate per-route choice (the `mcp::control` loopback-only precedent).
-- **4d — Escape hatches, in reserve only.** `WebContentsView` panes for plugins that genuinely need arbitrary rendering (infra exists; costs: OS-level overlay, no portal/DnD integration). WASM (`wasm32-wasip2` on wasmtime) hosted in the Rust service — Zed's model — only if demand proves it. **Rejected:** sandboxed iframes (widens CSP), module federation/remote ESM, unsandboxed renderer JS (irreversible).
+- **4d — Escape hatches.** `WebContentsView` panes are now the custom-tab runtime (§4, [Custom tabs](./CUSTOM_TABS.md)); their costs — OS-level overlay above the DOM, a process per live view — are handled by overlay suppression and a live-view cap. WASM (`wasm32-wasip2` on wasmtime) hosted in the Rust service — Zed's model — only if demand proves it. **Rejected:** sandboxed iframes (widens CSP), module federation/remote ESM, unsandboxed renderer JS (irreversible).
 
 ### 5.1 Frontend extension points (registry refactors)
 
@@ -147,7 +159,8 @@ Precedent that the team already accepts DB-backed, user-contributed UI: **Custom
 ## 6. Security invariants
 
 1. Every plugin-reachable HTTP path stays behind `auth_middleware` + the Host/DNS-rebinding check; no router bypasses `build_router`'s stack.
-2. Renderer CSP never widens (`script-src 'self'` packaged is absolute). No plugin JS in the renderer.
+2. Renderer CSP never widens (`script-src 'self'` packaged is absolute). No plugin JS in the renderer. Custom-tab guests get their own, stricter CSP (`connect-src 'none'`) and partition.
+9. A plugin credential is a grant: short-lived, in memory, bound to one plugin, project and feature, checked against the policy table on every request. It never reaches plugin code, and the plugin socket accepts no session-control action.
 3. Third-party installs never touch the signed bundle or the sqlx migration chain.
 4. Third-party artifacts get their own supply-chain gates (the workspace's `minimumReleaseAge`/`blockExoticSubdeps`/`allowBuilds:false` don't cover them): pinned versions, distribution-specific integrity verification, and no lifecycle scripts. Binary ACP distributions require SHA-256 under Cadencr policy even though the ACP field is optional; package distributions require exact versions and captured package-manager integrity.
 5. **Hash host authority and re-prompt on change.** For plugins, this means declared host capabilities. For agents, this means the signed distribution and launch policy (command, arguments, non-secret environment, sandbox/filesystem scope). Runtime ACP capabilities from `initialize` are compatibility metadata, not a security permission manifest. Provider credentials stay in the provider's already-configured native CLI and never enter the marketplace package.
@@ -192,7 +205,7 @@ Skills and MCP servers are **not plugins and not registry content**: they are pr
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
 | **1 — Custom themes**        | 1a themes-as-data → 1b user theme import + validation → 1c theme sharing through the registry after provider marketplace V1                                                                                                                                                                                                      | S–M  |
 | **2 — Bring your own agent** | 2a registry dynamism + de-staticization → 2b generic ACP adapter + local agent entries → 2b.1 code-backed executable contract, pre-session models, native Pi validation, developer workspace, and stable v1 resume/close → 2c existing signed package backend → GitHub publication + M1/M2 release gates → in-app marketplace V1 | L    |
-| **3 — Custom tabs**          | 3a `parseTabKindArray` fix + open `TabKind` → 3b user web tabs on browser infra → 3c plugin-declared tabs (after 4a/4b)                                                                                                                                                                                                          | M    |
+| **3 — Custom tabs**          | 3a `parseTabKindArray` fix + open `TabKind` → 3c isolated web-UI plugin tabs (manifest, authoring, enablement, SDK + kit; amended 2026-10-16) → npm publication of the SDK/kit → mobile host                                                                                                                                 | M–L  |
 | **4 — Deeper behavior**      | 4a foundations (fuses/ASAR, tables, installer, `plugin` WS domain, M2 kill-switch) → 4b contribution surfaces (§5.1) → 4c behavior + events + scoped tokens → 4d escape hatches only on proven demand; broader publishing UX when warranted                                                                                      | XL   |
 
 Each phase merges on its own; gate releases on their actual runtime and security dependencies, not on completion of an unrelated content track. The skills/MCP helper (§8) is scheduled independently, later.
@@ -200,7 +213,9 @@ Each phase merges on its own; gate releases on their actual runtime and security
 ## 10. Risks & open questions
 
 - **ACP fidelity gap:** a generic ACP provider may expose less detail than rich built-in adapters (for example nested subagents or provider-native compaction/background signals). Show negotiated capability coverage and identify the ACP source in the catalog instead of using a quality-coded "community" label or papering over missing detail.
-- **Saved-layout durability** is the sharpest UX edge of custom tabs — the unknown-id tolerance fix (3a) must land _before_ any non-built-in tab ships.
+- **Saved-layout durability** is the sharpest UX edge of custom tabs — the unknown-id tolerance fix (3a) landed with them: unknown tab ids are dropped, not fatal.
+- **Custom tabs on mobile:** v1 is desktop only. A remote host would need a sandboxed-iframe runtime, which reopens the iframe rejection in §5 4d — revisit deliberately.
+- **Accidental API freeze:** every plugin-reachable route is `proposed` until promoted to `stable` in the policy table; only `stable` routes will be publishable.
 - **Component vocabulary scope creep:** the declarative UI tier will face constant "can I do X → no." Hold the line; the pressure valve is a first-party component addition, not an escape hatch to raw JS.
 - **Registry ops load:** human approval of executable versions and revocation operations need named owners for the kill-switch. Decide who owns it before M0 opens.
 - **Open (needs a decision, not research):** plugin API versioning scheme (single `apiVersion` int vs semver); whether plugin WS events are remote-device-reachable at launch (recommend: loopback-only first); registry naming ("Cadencr Registry" vs "Extensions").

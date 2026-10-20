@@ -170,6 +170,22 @@ pub(crate) async fn ensure_user_message_count_prerequisites(pool: &SqlitePool) {
     if migration_applied(pool, 20260712200000).await {
         ensure_column(pool, "agent_messages", "message_uuid", "TEXT").await;
     }
+    ensure_schedule_condition_prerequisites(pool).await;
+}
+
+/// The command-condition migration (20261016120000) adds columns to
+/// `schedules`. Fixtures baselined after the runtime-pins migration
+/// (20260725101500) never created it, because nothing later touched it. An
+/// `ADD COLUMN` needs only the table to exist, so the bare shape suffices.
+async fn ensure_schedule_condition_prerequisites(pool: &SqlitePool) {
+    if migration_applied(pool, 20260725101500).await {
+        sqlx::raw_sql(
+            "CREATE TABLE IF NOT EXISTS schedules (id INTEGER PRIMARY KEY AUTOINCREMENT)",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
 }
 
 /// Panics on an unseeded fixture: "not applied" would then silently skip the
@@ -198,6 +214,31 @@ pub(crate) async fn ensure_agent_session_context_window(pool: &SqlitePool) {
         "INTEGER DEFAULT 200000",
     )
     .await;
+}
+
+/// The plugin-tabs migration (20261017090000) moves the authoring-marker
+/// columns aside and re-adds them, so fixtures baselined after the marker
+/// migration (20260912090000) need its era-accurate shape: both columns, their
+/// CHECKs and the partial identity index.
+pub(crate) async fn ensure_project_authoring_marker(pool: &SqlitePool) {
+    if !support::table_exists(pool, "projects").await.unwrap()
+        || support::table_has_column(pool, "projects", "authoring_target")
+            .await
+            .unwrap()
+    {
+        return;
+    }
+    sqlx::raw_sql(
+        "ALTER TABLE projects ADD COLUMN authoring_target TEXT \
+         CHECK (authoring_target IN ('theme', 'provider')); \
+         ALTER TABLE projects ADD COLUMN plugin_id TEXT \
+         CHECK ((authoring_target IS NULL) = (plugin_id IS NULL)); \
+         CREATE UNIQUE INDEX projects_authoring_identity ON projects (authoring_target, plugin_id) \
+         WHERE authoring_target IS NOT NULL;",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 }
 
 /// Add `column` to `table` when the fixture's baseline predates it.

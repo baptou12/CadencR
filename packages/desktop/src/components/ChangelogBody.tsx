@@ -1,6 +1,8 @@
 import { memo, type ReactElement } from "react";
 import { Loader2 } from "lucide-react";
+import { ChangelogImage } from "@/components/ChangelogImage";
 import { Markdown } from "@/components/Markdown";
+import { MarkdownImageProvider } from "@/components/markdown-image";
 
 /**
  * Discriminated state for changelog rendering, shared by the pre-install
@@ -35,7 +37,9 @@ export const ChangelogBody = memo(function ChangelogBody({
   }
   return (
     <div className="max-h-[60vh] overflow-y-auto pr-1">
-      <Markdown content={state.markdown} />
+      <MarkdownImageProvider value={ChangelogImage}>
+        <Markdown content={state.markdown} />
+      </MarkdownImageProvider>
     </div>
   );
 });

@@ -59,48 +59,34 @@ impl Fixture {
             .output()
             .unwrap()
     }
-
-    fn javascript(&self, output: &Path) -> Output {
-        let script = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tooling/marketplace-registry/scripts/pack-provider.mjs");
-        Command::new("node")
-            .arg(script)
-            .arg("--package")
-            .arg(&self.metadata)
-            .args(["--target", "darwin-aarch64", "--directory"])
-            .arg(&self.staging)
-            .arg("--output")
-            .arg(output)
-            .output()
-            .unwrap()
-    }
 }
 
 #[test]
-fn rust_archive_matches_javascript_tar_and_receipt_contract() {
+fn rust_archive_matches_frozen_legacy_tar_and_receipt_contract() {
     let fixture = Fixture::new();
     let rust_path = fixture.root.path().join("rust.tar.gz");
-    let javascript_path = fixture.root.path().join("javascript.tar.gz");
     let rust = fixture.rust(&rust_path);
-    let javascript = fixture.javascript(&javascript_path);
     assert!(
         rust.status.success(),
         "{}",
         String::from_utf8_lossy(&rust.stderr)
     );
-    assert!(
-        javascript.status.success(),
-        "{}",
-        String::from_utf8_lossy(&javascript.stderr)
-    );
     let rust_bytes = std::fs::read(&rust_path).unwrap();
-    let javascript_bytes = std::fs::read(&javascript_path).unwrap();
-    assert_eq!(decode_gzip(&rust_bytes), decode_gzip(&javascript_bytes));
+    // Frozen legacy pack-provider output: compare the exact tar wire bytes, not gzip
+    // compressor output (see fixtures/legacy-v1/README.md for capture provenance).
+    use sha2::{Digest as _, Sha256};
+    let legacy_tar = include_bytes!("fixtures/legacy-v1/provider.tar");
+    assert_eq!(
+        Sha256::digest(legacy_tar)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>(),
+        "418003582162f591358df410f7336251843509aeb4abfa1cf86ad11487201beb"
+    );
+    assert_eq!(decode_gzip(&rust_bytes).as_slice(), legacy_tar.as_slice());
     let rust_receipt: serde_json::Value = serde_json::from_slice(&rust.stdout).unwrap();
-    let javascript_receipt: serde_json::Value = serde_json::from_slice(&javascript.stdout).unwrap();
-    assert_eq!(rust_receipt["target"], javascript_receipt["target"]);
+    assert_eq!(rust_receipt["target"], "darwin-aarch64");
     assert_digest_and_size(&rust_receipt, &rust_bytes);
-    assert_digest_and_size(&javascript_receipt, &javascript_bytes);
     assert_eq!(
         rust_receipt["archive"],
         rust_path.to_string_lossy().as_ref()

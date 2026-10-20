@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { z } from "zod";
 import { getGetWorkspaceSettingQueryKey, type SettingValueResponse } from "@/api/generated";
@@ -20,6 +20,35 @@ export function parseIdList(raw: string | null | undefined): ParsedIdList {
   return { ids: value ?? [], error };
 }
 
+/** Says once that a stored id list is corrupt: it reads as empty until the next write replaces it. */
+export function useIdListError(key: string, error: string | null): void {
+  useEffect(() => {
+    if (error) {
+      toast.error(`Could not read setting "${key}": ${error}. Your next change will replace it.`, {
+        id: `setting-${key}`,
+      });
+    }
+  }, [key, error]);
+}
+
+/**
+ * The stored ids as of now, read from the cache rather than a render closure
+ * so two writes in one tick compose. Null, with a toast, while the setting
+ * hasn't loaded: writing then would replace the stored list.
+ */
+export function readLoadedIdList(queryClient: QueryClient, key: string): number[] | null {
+  const cached = queryClient.getQueryData<SettingValueResponse>(
+    getGetWorkspaceSettingQueryKey(key),
+  );
+  if (cached === undefined) {
+    toast.error(`Could not save setting "${key}": it has not loaded yet.`, {
+      id: `setting-${key}`,
+    });
+    return null;
+  }
+  return parseIdList(cached.value).ids;
+}
+
 export interface PersistedIdSet {
   ids: ReadonlySet<number>;
   setMember: (id: number, member: boolean) => void;
@@ -38,30 +67,14 @@ export function usePersistedIdSet(key: string): PersistedIdSet {
   const parsed = useMemo(() => parseIdList(setting.value), [setting.value]);
   const ids = useMemo(() => new Set(parsed.ids), [parsed]);
 
-  useEffect(() => {
-    if (parsed.error) {
-      toast.error(
-        `Could not read setting "${key}": ${parsed.error}. Your next change will replace it.`,
-        { id: `setting-${key}` },
-      );
-    }
-  }, [key, parsed.error]);
+  useIdListError(key, parsed.error);
 
   const { setValue } = setting;
   const setMember = useCallback(
     (id: number, member: boolean): void => {
-      // Read the cache, not the render closure: two toggles in one tick must compose.
-      const cached = queryClient.getQueryData<SettingValueResponse>(
-        getGetWorkspaceSettingQueryKey(key),
-      );
-      if (cached === undefined) {
-        // Writing now would replace the stored list with this single id.
-        toast.error(`Could not save setting "${key}": it has not loaded yet.`, {
-          id: `setting-${key}`,
-        });
-        return;
-      }
-      const next = new Set(parseIdList(cached.value).ids);
+      const stored = readLoadedIdList(queryClient, key);
+      if (!stored) return;
+      const next = new Set(stored);
       if (next.has(id) === member) return;
       if (member) next.add(id);
       else next.delete(id);

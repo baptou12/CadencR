@@ -178,11 +178,9 @@ async fn run_local(
     let cwd = PathBuf::from(worktree::resolve_feature_cwd(&app_state.read_pool, feature_id).await?);
     let cancellation = app_state.user_shell_runs.register(session_id).await?;
     WsSessionPersistence::mark_running_static(&app_state.write_pool, session_id).await;
-    app_state.session_status_tx.broadcast_running_with_start(
-        session_id,
-        feature_id,
-        super::super::active_turns::now_ms(),
-    );
+    app_state
+        .session_status_tx
+        .broadcast_running(session_id, feature_id);
     let request = LocalUserShellRequest {
         session_id,
         feature_id,

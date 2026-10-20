@@ -21,11 +21,13 @@ import { createStreamingState } from "./ws-message-processing";
 import type { TurnLifecycle } from "./ws-turn-lifecycle";
 import { createIdleTurnLifecycle } from "./ws-turn-lifecycle";
 import {
+  anchorTurnTiming,
   createTurnTiming,
   formatTurnDuration,
   transitionTurnTiming,
   type TurnTimingState,
 } from "./ws-turn-timing";
+import { serverTurnStartLocalMs } from "./server-turn-start";
 import { blocksPatchWithDerived } from "./ws-block-mutations";
 import { DEFAULT_PROVIDER } from "../shared/models";
 import type { RuntimeSelection } from "../shared/models";
@@ -181,6 +183,8 @@ export interface SessionEntry extends SessionConfigState {
   pendingQuestionToolInput: Record<string, unknown>;
   permissionMode: PermissionMode;
   accessMode: AccessMode;
+  /** Access choice made before initialization, replayed before queued prompts. */
+  pendingInitAccessMode: AccessMode | null;
   currentThinkingEffort?: string;
   fastMode: boolean;
   currentProfile?: string;
@@ -240,6 +244,12 @@ export interface SessionEntry extends SessionConfigState {
   cwd: string | null;
   queuedPrompts: QueuedPrompt[];
   /**
+   * Envelope id of the in-flight `session.init`, cleared once it is answered
+   * or the socket drops. A `session.error` echoing it as `ref` means the
+   * queued prompts will never be sent.
+   */
+  initRequestId: string | null;
+  /**
    * Transport health for the agent stream (driven by
    * `session.stream_status`). Providers that do not support this stay at
    * `"ok"`. See `StreamHealth`.
@@ -268,6 +278,7 @@ export function createSessionEntry(): SessionEntry {
     pendingQuestionToolInput: {},
     permissionMode: defaultEditModeFor(DEFAULT_PROVIDER),
     accessMode: "default",
+    pendingInitAccessMode: null,
     currentThinkingEffort: undefined,
     fastMode: false,
     pendingPlanApproval: null,
@@ -306,6 +317,7 @@ export function createSessionEntry(): SessionEntry {
     sessionDbId: null,
     cwd: null,
     queuedPrompts: [],
+    initRequestId: null,
     streamHealth: createStreamHealth(),
   };
 }
@@ -331,9 +343,7 @@ export function updateSession(
   if (!prev) return {};
   const normalizedPatch = normalizeSessionPatch(prev, patch);
   const next = { ...prev, ...normalizedPatch };
-  // Recompute timing on a lifecycle change UNLESS the caller supplied its own
-  // `turnTiming` (e.g. a status-driven sync anchoring the timer to the
-  // server-stamped turn start) — honoring it keeps all devices in sync.
+  // Recompute timing on a lifecycle change unless the caller supplied its own.
   if (
     normalizedPatch.lifecycle &&
     normalizedPatch.turnTiming === undefined &&
@@ -345,6 +355,13 @@ export function updateSession(
       normalizedPatch.lifecycle,
     );
   }
+  // Every session's timer runs from the server-stamped turn start, the one
+  // value all devices share.
+  next.turnTiming = anchorTurnTiming(
+    next.turnTiming,
+    next.lifecycle,
+    serverTurnStartLocalMs(next.sessionDbId),
+  );
   if (shouldAppendTurnSummary(prev.lifecycle, next.lifecycle, next.turnTiming, next.blocks)) {
     const blocks = [...next.blocks, buildTurnSummaryBlock(next.turnTiming)];
     Object.assign(next, blocksPatchWithDerived(next.streamingState, blocks));

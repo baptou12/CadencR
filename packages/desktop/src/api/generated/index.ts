@@ -450,10 +450,11 @@ export interface AlacrittyConfigResponse {
   parse_error?: string | null;
   /**
    * Set while live reload is unavailable (the file watcher failed to
-   * start or to watch part of the import chain): `config` is still
-   * accurate, but external edits won't show up until a restart. Unlike
-   * `parse_error` this is not fatal — the frontend warns and keeps
-   * rendering.
+   * start, failed to watch part of the import chain, or part of the
+   * chain sits under a missing directory that no existing ancestor can
+   * observe): `config` is still accurate, but external edits won't show
+   * up until a restart. Unlike `parse_error` this is not fatal — the
+   * frontend warns and keeps rendering.
    * @nullable
    */
   watch_error?: string | null;
@@ -630,6 +631,105 @@ export interface BranchInfo {
   name: string;
 }
 
+/**
+ * How a branch came to belong to a conversation.
+ */
+export type BranchOrigin = (typeof BranchOrigin)[keyof typeof BranchOrigin];
+
+export const BranchOrigin = {
+  provisioned: "provisioned",
+  checked_out: "checked_out",
+  agent: "agent",
+  manual: "manual",
+  head: "head",
+} as const;
+
+export type CiState = (typeof CiState)[keyof typeof CiState];
+
+export const CiState = {
+  none: "none",
+  running: "running",
+  passing: "passing",
+  failing: "failing",
+} as const;
+
+export interface CiCheck {
+  name: string;
+  state: CiState;
+  /** @nullable */
+  url?: string | null;
+}
+
+export interface CiRollup {
+  checks: CiCheck[];
+  state: CiState;
+}
+
+export type BranchPrCi = null | CiRollup;
+
+export interface ForgeUser {
+  /** @nullable */
+  avatar_url?: string | null;
+  /** @nullable */
+  display_name?: string | null;
+  username: string;
+}
+
+export type ReviewState = (typeof ReviewState)[keyof typeof ReviewState];
+
+export const ReviewState = {
+  approved: "approved",
+  changes_requested: "changes_requested",
+  pending: "pending",
+  none: "none",
+} as const;
+
+export type PrState = (typeof PrState)[keyof typeof PrState];
+
+export const PrState = {
+  open: "open",
+  draft: "draft",
+  merged: "merged",
+  closed: "closed",
+} as const;
+
+export interface PrSummary {
+  author: ForgeUser;
+  body_markdown: string;
+  head_sha: string;
+  /** @minimum 0 */
+  number: number;
+  /**
+   * Provider-neutral display noun. Values are currently `Pull request` and
+   * `Merge request` — spelled out, because the abbreviations read as jargon
+   * in the UI surfaces that show them (Git sub-tab, sidebar menu, header).
+   */
+  pr_label: string;
+  review_state: ReviewState;
+  source_branch: string;
+  state: PrState;
+  target_branch: string;
+  title: string;
+  updated_at: string;
+  url: string;
+}
+
+/**
+ * The proposal of one of a conversation's non-current branches, with the
+ * same health signals the snapshot carries for the current one.
+ */
+export interface BranchPr {
+  branch: string;
+  ci?: BranchPrCi;
+  pr: PrSummary;
+  /**
+   * Same contract as [`PrStatusSnapshot::unresolved_threads`].
+   * @minimum 0
+   * @nullable
+   */
+  unresolved_threads?: number | null;
+}
+
 export interface BranchResponse {
   /** @nullable */
   branch?: string | null;
@@ -706,27 +806,6 @@ export interface CheckoutBody {
 export interface CheckoutValidateBody {
   branch: string;
   project_id: number;
-}
-
-export type CiState = (typeof CiState)[keyof typeof CiState];
-
-export const CiState = {
-  none: "none",
-  running: "running",
-  passing: "passing",
-  failing: "failing",
-} as const;
-
-export interface CiCheck {
-  name: string;
-  state: CiState;
-  /** @nullable */
-  url?: string | null;
-}
-
-export interface CiRollup {
-  checks: CiCheck[];
-  state: CiState;
 }
 
 export interface ClaudeCodeSuccessResponse {
@@ -903,14 +982,6 @@ export const ThreadSide = {
 
 export type CommentThreadSide = null | ThreadSide;
 
-export interface ForgeUser {
-  /** @nullable */
-  avatar_url?: string | null;
-  /** @nullable */
-  display_name?: string | null;
-  username: string;
-}
-
 export interface PrComment {
   author: ForgeUser;
   body_markdown: string;
@@ -951,8 +1022,30 @@ export interface CommitBody {
 }
 
 /**
+ * What a decorating ref points from: the branch checked out (`HEAD ->`), any
+ * other local branch, a remote-tracking branch, or a tag.
+ */
+export type CommitRefKind = (typeof CommitRefKind)[keyof typeof CommitRefKind];
+
+export const CommitRefKind = {
+  head: "head",
+  local: "local",
+  remote: "remote",
+  tag: "tag",
+} as const;
+
+/**
+ * One decorating ref on a graph commit, by its short name (`main`,
+ * `origin/main`, `v1.0`).
+ */
+export interface CommitRef {
+  kind: CommitRefKind;
+  name: string;
+}
+
+/**
  * One commit row in the graph view. Carries `parents` so the frontend can
- * compute lane positions, `refs` (decorating branch/tag labels), and the
+ * compute lane positions, `decorations` (typed branch/tag labels), and the
  * `--shortstat` summary (`files_changed` / `additions` / `deletions`).
  */
 export interface CommitGraphEntry {
@@ -960,11 +1053,21 @@ export interface CommitGraphEntry {
   author: string;
   body: string;
   date: string;
+  /**
+   * The decorating refs with their kind, so the UI can tell the checked-out branch, a
+   * local branch, a remote-tracking branch and a tag apart — the names
+   * alone cannot (`feature/x` and `origin/x` both contain a slash).
+   */
+  decorations: CommitRef[];
   deletions: number;
   files_changed: number;
   is_pushed: boolean;
   message: string;
   parents: string[];
+  /**
+   * Short names of `decorations`. The desktop reads `decorations`; this
+   * stays for custom tabs, which reach this route through the tab SDK.
+   */
   refs: string[];
   sha: string;
   short_sha: string;
@@ -1150,6 +1253,21 @@ export interface CreateFolderRequest {
 
 export interface CreateFolderResponse {
   path: string;
+}
+
+export interface CreatePluginTabGrantRequest {
+  /**
+   * The feature the tab instance is shown in; the grant binds to it and
+   * its project.
+   */
+  feature_id: number;
+}
+
+export interface CreatePluginTabRequest {
+  /** @nullable */
+  description?: string | null;
+  /** Human-readable name; the id is slugified from it. */
+  name: string;
 }
 
 export interface CreateProjectRequest {
@@ -1777,6 +1895,10 @@ export interface FeatureAgentStateResponse {
   sessions: SessionState[];
 }
 
+export interface FeatureBranchBody {
+  branch: string;
+}
+
 export type FeatureGateDecisionOneOfType =
   (typeof FeatureGateDecisionOneOfType)[keyof typeof FeatureGateDecisionOneOfType];
 
@@ -2220,6 +2342,29 @@ export interface SharedFeatureRef {
 }
 
 /**
+ * A conversation branch as the header lists it.
+ */
+export interface ThreadBranch {
+  is_current: boolean;
+  /**
+   * `None` for a branch that has no row of its own (the provisioned branch
+   * before it ever carried a target, or the followed checkout).
+   * @nullable
+   */
+  last_seen_at?: string | null;
+  name: string;
+  origin: BranchOrigin;
+  /**
+   * The branch's compare target. For the current branch this is the
+   * resolved target (the snapshot's `target_branch`); for the others it is
+   * the one configured for them (their own, else the conversation-wide
+   * one), or `None` when they follow the default.
+   * @nullable
+   */
+  target_branch?: string | null;
+}
+
+/**
  * One-shot snapshot of the worktree's git state. Field semantics:
  *
  * - `*_count` fields are derived from `git status --porcelain=v2`.
@@ -2243,6 +2388,9 @@ export interface SharedFeatureRef {
  * - `host` / `compare_url` / `action_label` are populated only when a remote
  *   exists. The frontend disables the open-PR button when `compare_url` is
  *   `None`.
+ * - `thread_branches` lists the conversation's branches; the current one
+ *   (first, `is_current`) can differ from `current_branch` when a
+ *   worktree-free conversation's branch is no longer checked out.
  * - `shared_with` lists OTHER features that point at the same worktree
  *   directory (reuse-branch flow). Filled in by the caller via
  *   `enrich_with_sharing` — `compute_status` itself leaves it empty.
@@ -2290,6 +2438,11 @@ export interface GitStatusSnapshot {
    * from a zero divergence count.
    */
   target_resolved?: boolean;
+  /**
+   * Every branch of the conversation, the current one first. Filled in
+   * by the caller via `enrich_snapshot`, like `shared_with`.
+   */
+  thread_branches?: ThreadBranch[];
   /** @minimum 0 */
   uncommitted_count: number;
   /** @minimum 0 */
@@ -2543,6 +2696,12 @@ export type SignedProviderCatalog = SignedManagedProviderIndex | SignedMixedCata
 export interface InstallManagedProviderRequest {
   index: SignedProviderCatalog;
   provider_id: string;
+  version: string;
+}
+
+export interface InstallManagedTabRequest {
+  index: SignedMixedCatalog;
+  tab_id: string;
   version: string;
 }
 
@@ -2939,6 +3098,14 @@ export interface ManagedProvidersInventory {
   trust: ManagedTrustInventory;
 }
 
+export interface ManagedTabInventoryEntry {
+  /** @nullable */
+  error?: string | null;
+  id: string;
+  name: string;
+  version: string;
+}
+
 export type ManagedThemeCatalogResponseIndex = null | SignedMixedCatalog;
 
 export type ManagedThemeCatalogResponseRecommendedVersions = { [key: string]: string };
@@ -3261,52 +3428,472 @@ export interface PermissionRespondPayload {
   updated_input?: unknown;
 }
 
+export interface PluginBackendCallError {
+  code: string;
+  message: string;
+}
+
+export type PluginBackendRequestParams = { [key: string]: unknown };
+
+/**
+ * `POST /api/plugin-tabs/self/backend`.
+ */
+export interface PluginBackendRequest {
+  /** The backend's own method name, 1–128 characters. */
+  method: string;
+  params?: PluginBackendRequestParams;
+  /**
+   * 1 ms – 120 s; 30 s when omitted.
+   * @minimum 0
+   * @nullable
+   */
+  timeout_ms?: number | null;
+}
+
+export type PluginBackendResponseError = null | PluginBackendCallError;
+
+export type PluginBackendResponseResultAnyOf = { [key: string]: unknown };
+
+/**
+ * @nullable
+ */
+export type PluginBackendResponseResult = PluginBackendResponseResultAnyOf | null;
+
+/**
+ * The backend's answer: exactly one of `result` and `error`. A backend
+ * error is the backend's own (`{code, message}`), passed through as is;
+ * failures of the relay itself are ordinary `{error, code}` HTTP errors.
+ */
+export interface PluginBackendResponse {
+  error?: PluginBackendResponseError;
+  /** @nullable */
+  result?: PluginBackendResponseResult;
+}
+
+/**
+ * `POST /api/plugin-tabs/self/exec`.
+ */
+export interface PluginExecRequest {
+  args?: string[];
+  /** Exactly as listed in the manifest's `commands[].program`. */
+  program: string;
+  /**
+   * 1 ms – 120 s; 30 s when omitted.
+   * @minimum 0
+   * @nullable
+   */
+  timeout_ms?: number | null;
+}
+
+/**
+ * The finished command. A non-zero exit is a result, not an error.
+ */
+export interface PluginExecResult {
+  /** @minimum 0 */
+  duration_ms: number;
+  /**
+   * `None` when the process was ended by a signal.
+   * @nullable
+   */
+  exit_code?: number | null;
+  stderr: string;
+  /** UTF-8, lossily decoded; each stream is at most 1 MiB. */
+  stdout: string;
+  success: boolean;
+}
+
+export type PluginTabBackendState =
+  (typeof PluginTabBackendState)[keyof typeof PluginTabBackendState];
+
+export const PluginTabBackendState = {
+  running: "running",
+  stopped: "stopped",
+  crashed: "crashed",
+} as const;
+
+/**
+ * One tab's backend in one conversation, as the Activity dialog shows it.
+ */
+export interface PluginTabBackendStatus {
+  /** @nullable */
+  exit_code?: number | null;
+  /**
+   * Why the last run ended, in words.
+   * @nullable
+   */
+  exit_reason?: string | null;
+  /** @nullable */
+  exited_at?: string | null;
+  /**
+   * @minimum 0
+   * @nullable
+   */
+  pid?: number | null;
+  /**
+   * RFC 3339, of the current or last run.
+   * @nullable
+   */
+  started_at?: string | null;
+  /**
+   * How many times it was started since Cadencr launched.
+   * @minimum 0
+   */
+  starts: number;
+  state: PluginTabBackendState;
+  /** The last lines it wrote to stderr (its log), oldest first. */
+  stderr_tail: string[];
+}
+
+export type PluginTabActivityBackend = null | PluginTabBackendStatus;
+
+/**
+ * How one requested command ended.
+ */
+export type PluginTabExecOutcome = (typeof PluginTabExecOutcome)[keyof typeof PluginTabExecOutcome];
+
+export const PluginTabExecOutcome = {
+  exited: "exited",
+  refused: "refused",
+  timed_out: "timed_out",
+  failed: "failed",
+} as const;
+
+/**
+ * One command a tab asked Cadencr to run.
+ */
+export interface PluginTabExecRecord {
+  /**
+   * At most [`MAX_RECORDED_ARGS_CHARS`] characters; a cut argument ends
+   * with `…` and the ones after it are left out.
+   */
+  args: string[];
+  /** @minimum 0 */
+  duration_ms: number;
+  /**
+   * Why it was refused or failed.
+   * @nullable
+   */
+  error?: string | null;
+  /** @nullable */
+  exit_code?: number | null;
+  outcome: PluginTabExecOutcome;
+  program: string;
+  /** RFC 3339. */
+  started_at: string;
+}
+
+/**
+ * What a tab ran in one conversation since Cadencr started.
+ */
+export interface PluginTabActivity {
+  backend?: PluginTabActivityBackend;
+  /** The commands it asked Cadencr to run, newest first (at most 50). */
+  commands: PluginTabExecRecord[];
+}
+
+export type PluginTabConfigurationGlobal = { [key: string]: unknown };
+
+/**
+ * The requested project's values; `None` when no project was given.
+ */
+export type PluginTabConfigurationProjectAnyOf = { [key: string]: unknown };
+
+/**
+ * The requested project's values; `None` when no project was given.
+ * @nullable
+ */
+export type PluginTabConfigurationProject = PluginTabConfigurationProjectAnyOf | null;
+
+/**
+ * Where a configuration value is stored: once for every project, or per project.
+ */
+export type TabConfigScope = (typeof TabConfigScope)[keyof typeof TabConfigScope];
+
+export const TabConfigScope = {
+  global: "global",
+  project: "project",
+} as const;
+
+export type TabConfigFieldType = (typeof TabConfigFieldType)[keyof typeof TabConfigFieldType];
+
+export const TabConfigFieldType = {
+  string: "string",
+  number: "number",
+  boolean: "boolean",
+  select: "select",
+  secret: "secret",
+} as const;
+
+export type TabConfigFieldDefaultAnyOf = { [key: string]: unknown };
+
+/**
+ * @nullable
+ */
+export type TabConfigFieldDefault = TabConfigFieldDefaultAnyOf | null;
+
+/**
+ * One settings-form field the plugin reads through `config.get`.
+ */
+export interface TabConfigField {
+  /** @nullable */
+  default?: TabConfigFieldDefault;
+  key: string;
+  label: string;
+  options?: string[];
+  scope: TabConfigScope;
+  type: TabConfigFieldType;
+}
+
+/**
+ * The settings form: the declared fields and the stored values. Secret values
+ * are never returned; a set secret reads `{ "is_set": true }`.
+ */
+export interface PluginTabConfiguration {
+  fields: TabConfigField[];
+  global: PluginTabConfigurationGlobal;
+  /**
+   * The requested project's values; `None` when no project was given.
+   * @nullable
+   */
+  project?: PluginTabConfigurationProject;
+}
+
+export interface PluginTabConsentRequest {
+  /** The hash the user was shown; must equal the current one. */
+  permissions_hash: string;
+}
+
+export interface PluginTabEnablement {
+  /** No consent, or consent for an older permissions hash. */
+  consent_required: boolean;
+  /** Switched on, consented at the current hash, and valid. */
+  effective: boolean;
+  /**
+   * The global switch; `None` when never set (off).
+   * @nullable
+   */
+  global?: boolean | null;
+  /**
+   * The requested project's override; `None` when unset or no project was given.
+   * @nullable
+   */
+  project?: boolean | null;
+}
+
+/**
+ * A plugin token for one tab instance. Opaque; send it as
+ * `x-cadencr-plugin-token` (HTTP) or the `cadencr-plugin.<token>`
+ * subprotocol (`/api/plugin-tabs/ws`). In memory only, never persisted.
+ */
+export interface PluginTabGrant {
+  /** @minimum 0 */
+  api_version: number;
+  /** RFC 3339; mint a new grant before then. */
+  expires_at: string;
+  /** The consented scopes (§6) the token carries. */
+  scopes: string[];
+  token: string;
+}
+
+export interface PluginTabNetwork {
+  allowed_origins: string[];
+  /** @nullable */
+  reasoning?: string | null;
+}
+
+/**
+ * The conversation an open tab instance shows.
+ */
+export interface PluginTabPresenceRequest {
+  feature_id: number;
+}
+
+export type PluginTabStatus = (typeof PluginTabStatus)[keyof typeof PluginTabStatus];
+
+export const PluginTabStatus = {
+  valid: "valid",
+  invalid: "invalid",
+} as const;
+
+/**
+ * The tab's native backend process (`backend`).
+ */
+export interface TabBackend {
+  args?: string[];
+  /**
+   * A path inside the tab folder (`bin/backend`) or a bare program name
+   * looked up on `PATH` (`node`, with the script in `args`).
+   */
+  command: string;
+  /**
+   * Shown to the user at consent time; required.
+   * @nullable
+   */
+  reasoning?: string | null;
+}
+
+export type PluginTabSummaryBackend = null | TabBackend;
+
+/**
+ * How far a tab reaches beyond its page, from least to most. Shown on the
+ * tab's card and drives how insistent the consent dialog is.
+ */
+export type TabAccessLevel = (typeof TabAccessLevel)[keyof typeof TabAccessLevel];
+
+export const TabAccessLevel = {
+  ui: "ui",
+  commands: "commands",
+  backend: "backend",
+} as const;
+
+/**
+ * One program a tab may ask Cadencr to run (`commands[]`).
+ */
+export interface TabCommand {
+  /** A bare program name looked up on `PATH`, e.g. `git`. */
+  program: string;
+  /**
+   * Shown to the user at consent time; required.
+   * @nullable
+   */
+  reasoning?: string | null;
+}
+
+export type TabIssueCode = (typeof TabIssueCode)[keyof typeof TabIssueCode];
+
+export const TabIssueCode = {
+  MANIFEST_UNREADABLE: "MANIFEST_UNREADABLE",
+  MANIFEST_INVALID_JSON: "MANIFEST_INVALID_JSON",
+  SCHEMA_VERSION_UNSUPPORTED: "SCHEMA_VERSION_UNSUPPORTED",
+  KIND_INVALID: "KIND_INVALID",
+  ID_INVALID: "ID_INVALID",
+  ID_RESERVED: "ID_RESERVED",
+  ID_MISMATCH: "ID_MISMATCH",
+  NAME_INVALID: "NAME_INVALID",
+  VERSION_INVALID: "VERSION_INVALID",
+  DESCRIPTION_TOO_LONG: "DESCRIPTION_TOO_LONG",
+  LABEL_INVALID: "LABEL_INVALID",
+  API_VERSION_UNSUPPORTED: "API_VERSION_UNSUPPORTED",
+  PATH_INVALID: "PATH_INVALID",
+  ICON_INVALID: "ICON_INVALID",
+  ICON_MISSING: "ICON_MISSING",
+  PERMISSION_UNKNOWN: "PERMISSION_UNKNOWN",
+  PERMISSION_DUPLICATE: "PERMISSION_DUPLICATE",
+  ORIGIN_INVALID: "ORIGIN_INVALID",
+  ORIGIN_DUPLICATE: "ORIGIN_DUPLICATE",
+  ORIGINS_TOO_MANY: "ORIGINS_TOO_MANY",
+  ORIGIN_INSECURE_LOCALHOST: "ORIGIN_INSECURE_LOCALHOST",
+  NETWORK_REASONING_REQUIRED: "NETWORK_REASONING_REQUIRED",
+  CONFIG_TOO_MANY: "CONFIG_TOO_MANY",
+  CONFIG_KEY_INVALID: "CONFIG_KEY_INVALID",
+  CONFIG_KEY_DUPLICATE: "CONFIG_KEY_DUPLICATE",
+  CONFIG_LABEL_INVALID: "CONFIG_LABEL_INVALID",
+  CONFIG_OPTIONS_REQUIRED: "CONFIG_OPTIONS_REQUIRED",
+  CONFIG_OPTIONS_UNEXPECTED: "CONFIG_OPTIONS_UNEXPECTED",
+  CONFIG_OPTION_INVALID: "CONFIG_OPTION_INVALID",
+  CONFIG_SECRET_DEFAULT: "CONFIG_SECRET_DEFAULT",
+  CONFIG_DEFAULT_INVALID: "CONFIG_DEFAULT_INVALID",
+  COMMANDS_TOO_MANY: "COMMANDS_TOO_MANY",
+  COMMAND_INVALID: "COMMAND_INVALID",
+  COMMAND_DUPLICATE: "COMMAND_DUPLICATE",
+  COMMAND_NOT_ALLOWED: "COMMAND_NOT_ALLOWED",
+  COMMAND_REASONING_REQUIRED: "COMMAND_REASONING_REQUIRED",
+  BACKEND_COMMAND_INVALID: "BACKEND_COMMAND_INVALID",
+  BACKEND_ARGS_INVALID: "BACKEND_ARGS_INVALID",
+  BACKEND_REASONING_REQUIRED: "BACKEND_REASONING_REQUIRED",
+  BACKEND_UNAVAILABLE: "BACKEND_UNAVAILABLE",
+} as const;
+
+/**
+ * One finding. `field` is a dotted path into the manifest (`network.allowed_origins[0]`)
+ * or `None` for document-level problems.
+ */
+export interface TabIssue {
+  code: TabIssueCode;
+  /** @nullable */
+  field?: string | null;
+  message: string;
+}
+
+/**
+ * One local custom tab, valid or not.
+ */
+export interface PluginTabSummary {
+  /**
+   * How far the tab reaches: its page only, commands, or a native backend.
+   * `ui` when the manifest is unreadable (such a tab cannot run).
+   */
+  access_level: TabAccessLevel;
+  /**
+   * @minimum 0
+   * @nullable
+   */
+  api_version?: number | null;
+  /**
+   * The project this tab is authored in, when Cadencr created one.
+   * @nullable
+   */
+  authoring_project_id?: number | null;
+  backend?: PluginTabSummaryBackend;
+  /** Programs the tab may ask Cadencr to run. */
+  commands: TabCommand[];
+  configuration: TabConfigField[];
+  /** @nullable */
+  description?: string | null;
+  /** Absolute path of the tab folder. */
+  dir: string;
+  enablement: PluginTabEnablement;
+  /** @nullable */
+  entry?: string | null;
+  /** Whether `entry` exists — `false` until the author first builds. */
+  entry_present: boolean;
+  errors: TabIssue[];
+  /**
+   * The icon's SVG markup, inlined so the renderer needs no extra request.
+   * @nullable
+   */
+  icon_svg?: string | null;
+  id: string;
+  /** The tab trigger text (`tab.label`, else the name). */
+  label: string;
+  /**
+   * Present for an immutable marketplace installation.
+   * @nullable
+   */
+  managed?: boolean | null;
+  /** The manifest name, or the id when `tab.json` could not be parsed. */
+  name: string;
+  network: PluginTabNetwork;
+  permissions: string[];
+  /**
+   * What consent is recorded against; `None` when the manifest is unreadable.
+   * @nullable
+   */
+  permissions_hash?: string | null;
+  status: PluginTabStatus;
+  /** @nullable */
+  version?: string | null;
+  warnings: TabIssue[];
+}
+
+/**
+ * Where a tab is authored. The renderer navigates to the conversation.
+ */
+export interface PluginTabWorkspace {
+  /** The tab folder — the project root and the agent's cwd. */
+  dir: string;
+  feature_id: number;
+  plugin_id: string;
+  project_id: number;
+}
+
 export interface PrCommentsResponse {
   feature_id: number;
   fetched_at: number;
   threads: CommentThread[];
 }
 
-export type PrState = (typeof PrState)[keyof typeof PrState];
-
-export const PrState = {
-  open: "open",
-  draft: "draft",
-  merged: "merged",
-  closed: "closed",
-} as const;
-
 export type PrStatusSnapshotCi = null | CiRollup;
-
-export type ReviewState = (typeof ReviewState)[keyof typeof ReviewState];
-
-export const ReviewState = {
-  approved: "approved",
-  changes_requested: "changes_requested",
-  pending: "pending",
-  none: "none",
-} as const;
-
-export interface PrSummary {
-  author: ForgeUser;
-  body_markdown: string;
-  head_sha: string;
-  /** @minimum 0 */
-  number: number;
-  /**
-   * Provider-neutral display noun. Values are currently `Pull request` and
-   * `Merge request` — spelled out, because the abbreviations read as jargon
-   * in the UI surfaces that show them (Git sub-tab, sidebar menu, header).
-   */
-  pr_label: string;
-  review_state: ReviewState;
-  source_branch: string;
-  state: PrState;
-  target_branch: string;
-  title: string;
-  updated_at: string;
-  url: string;
-}
 
 export type PrStatusSnapshotPr = null | PrSummary;
 
@@ -3316,6 +3903,11 @@ export interface PrStatusSnapshot {
   error?: string | null;
   feature_id: number;
   fetched_at: number;
+  /**
+   * The proposals of the conversation's other branches — everything above
+   * describes the current branch's. Only branches that have one.
+   */
+  other_prs?: BranchPr[];
   pr?: PrStatusSnapshotPr;
   /**
    * The forge cannot be reached until the user finishes connecting it — no
@@ -3433,6 +4025,7 @@ export type ProjectAuthoringTarget =
 export const ProjectAuthoringTarget = {
   theme: "theme",
   provider: "provider",
+  tab: "tab",
 } as const;
 
 export type ProjectAuthoringTargetProperty = null | ProjectAuthoringTarget;
@@ -3613,6 +4206,103 @@ export interface ProviderSetPayload {
 export interface ProviderSettings {
   auto_name: string;
   session: string;
+}
+
+/**
+ * Work currently running for a provider.
+ */
+export type ProviderUpdateActivity =
+  (typeof ProviderUpdateActivity)[keyof typeof ProviderUpdateActivity];
+
+export const ProviderUpdateActivity = {
+  checking: "checking",
+  updating: "updating",
+} as const;
+
+/**
+ * How a finished update ended. Carried once, on the event that closes it.
+ */
+export interface ProviderUpdateOutcome {
+  /** @nullable */
+  current_version?: string | null;
+  label: string;
+  /**
+   * Failure reason, or the provider's own summary on success.
+   * @nullable
+   */
+  message?: string | null;
+  /** @nullable */
+  previous_version?: string | null;
+  provider_id: string;
+  success: boolean;
+}
+
+export type ProviderUpdateEventOutcome = null | ProviderUpdateOutcome;
+
+/**
+ * Result of the latest version check.
+ */
+export type ProviderUpdateState = (typeof ProviderUpdateState)[keyof typeof ProviderUpdateState];
+
+export const ProviderUpdateState = {
+  unchecked: "unchecked",
+  up_to_date: "up_to_date",
+  update_available: "update_available",
+  not_installed: "not_installed",
+  unsupported: "unsupported",
+  check_failed: "check_failed",
+} as const;
+
+export type ProviderUpdateStatusActivity = null | ProviderUpdateActivity;
+
+export interface ProviderUpdateStatus {
+  activity?: ProviderUpdateStatusActivity;
+  /** Installable versions, newest first. */
+  available_versions: string[];
+  /** @nullable */
+  current_version?: string | null;
+  /**
+   * Why the last check failed, when `state` is `check_failed`.
+   * @nullable
+   */
+  error?: string | null;
+  label: string;
+  /** @nullable */
+  latest_version?: string | null;
+  origin: ProviderOrigin;
+  provider_id: string;
+  state: ProviderUpdateState;
+  /** Whether an explicit version may be requested instead of the latest. */
+  supports_target_version: boolean;
+}
+
+/**
+ * `app/provider_updates` WebSocket payload: the full status list plus, when
+ * an update just finished, its outcome.
+ */
+export interface ProviderUpdateEvent {
+  /** @nullable */
+  checked_at?: string | null;
+  outcome?: ProviderUpdateEventOutcome;
+  providers: ProviderUpdateStatus[];
+}
+
+export interface ProviderUpdateRequest {
+  /**
+   * Version to install. Omit for the latest version.
+   * @nullable
+   */
+  version?: string | null;
+}
+
+export interface ProviderUpdatesResponse {
+  /**
+   * RFC 3339 timestamp of the last completed full check.
+   * @nullable
+   */
+  checked_at?: string | null;
+  /** Every registered provider, in catalog order. */
+  providers: ProviderUpdateStatus[];
 }
 
 /**
@@ -3868,6 +4558,20 @@ export interface PushSubscriptionResponse {
  */
 export interface PushUnsubscribeRequest {
   endpoint: string;
+}
+
+/**
+ * Key → new value; `null` removes the stored value. Keys not listed are
+ * left untouched, so a form can omit secrets it did not change.
+ */
+export type PutPluginTabConfigurationRequestValues = { [key: string]: unknown };
+
+export interface PutPluginTabConfigurationRequest {
+  /**
+   * Key → new value; `null` removes the stored value. Keys not listed are
+   * left untouched, so a form can omit secrets it did not change.
+   */
+  values: PutPluginTabConfigurationRequestValues;
 }
 
 export interface ReadFileResponse {
@@ -4209,6 +4913,24 @@ export interface SaveDraftResponse {
 }
 
 /**
+ * Gates a run on a shell command: at each firing the command runs in the
+ * target's working copy, and the prompt is only delivered when it exits
+ * non-zero — "every 15 minutes, if `cargo test` fails, fix it". The command's
+ * output rides along with the prompt so the agent sees what broke.
+ */
+export interface ScheduleCondition {
+  /** Run through the user's login shell, like a custom action. */
+  command: string;
+  /**
+   * Seconds before the evaluation is abandoned. Defaults to 300, at most 600.
+   * @nullable
+   */
+  timeout_seconds?: number | null;
+}
+
+export type SaveScheduleRequestCondition = null | ScheduleCondition;
+
+/**
  * What a schedule delivers into when it fires.
  */
 export type TargetKind = (typeof TargetKind)[keyof typeof TargetKind];
@@ -4285,6 +5007,7 @@ export interface ScheduleTarget {
  * counters are preserved), so the editor can send one shape for both.
  */
 export interface SaveScheduleRequest {
+  condition?: SaveScheduleRequestCondition;
   /**
    * Defaults to `true` on create; on update, omitting it leaves the current
    * paused/active state alone.
@@ -4297,6 +5020,35 @@ export interface SaveScheduleRequest {
   recurrence: RecurrenceInput;
   target: ScheduleTarget;
 }
+
+export type ScheduleConditionProperty = null | ScheduleCondition;
+
+/**
+ * What the latest condition evaluation concluded.
+ */
+export type ScheduleCheckStatus = (typeof ScheduleCheckStatus)[keyof typeof ScheduleCheckStatus];
+
+export const ScheduleCheckStatus = {
+  passed: "passed",
+  triggered: "triggered",
+  busy: "busy",
+  error: "error",
+} as const;
+
+/**
+ * Outcome of the most recent condition evaluation. Separate from
+ * [`ScheduleLastRun`]: a passing check delivers nothing, so it must not
+ * overwrite the record of the last message actually sent.
+ */
+export interface ScheduleLastCheck {
+  /** ISO-8601 UTC. */
+  at: string;
+  /** @nullable */
+  exit_code?: number | null;
+  status: ScheduleCheckStatus;
+}
+
+export type ScheduleLastCheckProperty = null | ScheduleLastCheck;
 
 /**
  * Outcome of the most recent run.
@@ -4352,10 +5104,12 @@ export interface Schedule {
    * rather than being re-derived from two other fields on every render.
    */
   completed: boolean;
+  condition?: ScheduleConditionProperty;
   context: ScheduleContext;
   created_at: string;
   enabled: boolean;
   id: number;
+  last_check?: ScheduleLastCheckProperty;
   last_run?: ScheduleLastRunProperty;
   /** @nullable */
   name?: string | null;
@@ -4379,6 +5133,11 @@ export interface ScheduleDeleted {
  * Result of a manual "run now".
  */
 export interface ScheduleRunResult {
+  /**
+   * The schedule's command exited 0, so there was nothing to send. `ran` is
+   * false without that being a failure.
+   */
+  condition_passed: boolean;
   /** @nullable */
   error?: string | null;
   /**
@@ -4515,6 +5274,19 @@ export interface SetManagedProviderEnabledRequest {
 export interface SetModelSettingRequest {
   agent_type: string;
   model_id: string;
+}
+
+export interface SetPluginTabEnablementRequest {
+  /**
+   * `null` clears the switch (a project falls back to global, global to off).
+   * @nullable
+   */
+  enabled?: boolean | null;
+  /**
+   * `null` targets the global switch.
+   * @nullable
+   */
+  project_id?: number | null;
 }
 
 export interface SetProjectSettingRequest {
@@ -4810,6 +5582,13 @@ export interface UpdateStatusRequest {
 }
 
 export interface UpdateTargetBranchBody {
+  /**
+   * The conversation branch this target is for. Defaults to the current
+   * one: targets are per branch, so a stacked branch can target the branch
+   * it was cut from while the others keep theirs.
+   * @nullable
+   */
+  branch?: string | null;
   target_branch: string;
 }
 
@@ -5374,6 +6153,13 @@ export type GetPrParams = {
 
 export type GetPrCommentsParams = {
   feature_id: number;
+  /**
+   * One of the conversation's proposals (the current branch's or another
+   * branch's); the current branch's when absent.
+   * @minimum 0
+   * @nullable
+   */
+  pr_number?: number | null;
 };
 
 export type ListStashesParams = {
@@ -5437,6 +6223,43 @@ export type LspRootParams = {
    * @nullable
    */
   lsp_id?: string | null;
+};
+
+export type PluginTabListParams = {
+  project_id?: number;
+};
+
+export type PluginTabSelfConfiguration200 = { [key: string]: unknown };
+
+export type PluginTabSelfNetFetchParams = {
+  /**
+   * Absolute URL whose origin is in the manifest's `network.allowed_origins`.
+   */
+  url: string;
+  /**
+   * HTTP method, `GET` when omitted.
+   */
+  method?: string;
+};
+
+export type PluginTabGetParams = {
+  project_id?: number;
+};
+
+export type PluginTabActivityParams = {
+  feature_id: number;
+};
+
+export type PluginTabGetConfigurationParams = {
+  project_id?: number;
+};
+
+export type PluginTabPutConfigurationParams = {
+  project_id?: number;
+};
+
+export type PluginTabConsentParams = {
+  project_id?: number;
 };
 
 export type ListPublicationOperationsParams = {
@@ -7025,6 +7848,241 @@ export const useUpdate = <TError = ErrorType<unknown>, TContext = unknown>(
   TContext
 > => {
   return useMutation(getUpdateMutationOptions(options), queryClient);
+};
+
+export const getProviderUpdates = (signal?: AbortSignal) => {
+  return customInstance<ProviderUpdatesResponse>({
+    url: `/api/agents/provider-updates`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetProviderUpdatesQueryKey = () => {
+  return [`/api/agents/provider-updates`] as const;
+};
+
+export const getGetProviderUpdatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProviderUpdates>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderUpdates>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetProviderUpdatesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProviderUpdates>>> = ({ signal }) =>
+    getProviderUpdates(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProviderUpdates>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetProviderUpdatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProviderUpdates>>
+>;
+export type GetProviderUpdatesQueryError = ErrorType<unknown>;
+
+export function useGetProviderUpdates<
+  TData = Awaited<ReturnType<typeof getProviderUpdates>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderUpdates>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProviderUpdates>>,
+          TError,
+          Awaited<ReturnType<typeof getProviderUpdates>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetProviderUpdates<
+  TData = Awaited<ReturnType<typeof getProviderUpdates>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getProviderUpdates>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProviderUpdates>>,
+          TError,
+          Awaited<ReturnType<typeof getProviderUpdates>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetProviderUpdates<
+  TData = Awaited<ReturnType<typeof getProviderUpdates>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderUpdates>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useGetProviderUpdates<
+  TData = Awaited<ReturnType<typeof getProviderUpdates>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderUpdates>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProviderUpdatesQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const checkProviderUpdates = (signal?: AbortSignal) => {
+  return customInstance<ProviderUpdatesResponse>({
+    url: `/api/agents/provider-updates/check`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getCheckProviderUpdatesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkProviderUpdates>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof checkProviderUpdates>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["checkProviderUpdates"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof checkProviderUpdates>>,
+    void
+  > = () => {
+    return checkProviderUpdates();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CheckProviderUpdatesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof checkProviderUpdates>>
+>;
+
+export type CheckProviderUpdatesMutationError = ErrorType<unknown>;
+
+export const useCheckProviderUpdates = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof checkProviderUpdates>>,
+      TError,
+      void,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<Awaited<ReturnType<typeof checkProviderUpdates>>, TError, void, TContext> => {
+  return useMutation(getCheckProviderUpdatesMutationOptions(options), queryClient);
+};
+
+export const updateProvider = (
+  providerId: string,
+  providerUpdateRequest: ProviderUpdateRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ProviderUpdateStatus>({
+    url: `/api/agents/provider-updates/${providerId}/update`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: providerUpdateRequest,
+    signal,
+  });
+};
+
+export const getUpdateProviderMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProvider>>,
+    TError,
+    UpdateProviderMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateProvider>>,
+  TError,
+  UpdateProviderMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["updateProvider"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateProvider>>,
+    UpdateProviderMutationVariables
+  > = (props) => {
+    const { providerId, data } = props ?? {};
+
+    return updateProvider(providerId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateProviderMutationResult = NonNullable<Awaited<ReturnType<typeof updateProvider>>>;
+export type UpdateProviderMutationBody = ProviderUpdateRequest;
+export type UpdateProviderMutationError = ErrorType<void>;
+export type UpdateProviderMutationVariables = { providerId: string; data: ProviderUpdateRequest };
+
+export const useUpdateProvider = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateProvider>>,
+      TError,
+      UpdateProviderMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateProvider>>,
+  TError,
+  UpdateProviderMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateProviderMutationOptions(options), queryClient);
 };
 
 export const createProviderWorkspace = (
@@ -13517,6 +14575,156 @@ export const useAutoNameFeature = <TError = ErrorType<unknown>, TContext = unkno
   return useMutation(getAutoNameFeatureMutationOptions(options), queryClient);
 };
 
+export const linkFeatureBranch = (
+  id: number,
+  featureBranchBody: FeatureBranchBody,
+  signal?: AbortSignal,
+) => {
+  return customInstance<GitSuccessResponse>({
+    url: `/api/features/${id}/branches/link`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: featureBranchBody,
+    signal,
+  });
+};
+
+export const getLinkFeatureBranchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof linkFeatureBranch>>,
+    TError,
+    LinkFeatureBranchMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof linkFeatureBranch>>,
+  TError,
+  LinkFeatureBranchMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["linkFeatureBranch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof linkFeatureBranch>>,
+    LinkFeatureBranchMutationVariables
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return linkFeatureBranch(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LinkFeatureBranchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof linkFeatureBranch>>
+>;
+export type LinkFeatureBranchMutationBody = FeatureBranchBody;
+export type LinkFeatureBranchMutationError = ErrorType<unknown>;
+export type LinkFeatureBranchMutationVariables = { id: number; data: FeatureBranchBody };
+
+export const useLinkFeatureBranch = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof linkFeatureBranch>>,
+      TError,
+      LinkFeatureBranchMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof linkFeatureBranch>>,
+  TError,
+  LinkFeatureBranchMutationVariables,
+  TContext
+> => {
+  return useMutation(getLinkFeatureBranchMutationOptions(options), queryClient);
+};
+
+export const unlinkFeatureBranch = (
+  id: number,
+  featureBranchBody: FeatureBranchBody,
+  signal?: AbortSignal,
+) => {
+  return customInstance<GitSuccessResponse>({
+    url: `/api/features/${id}/branches/unlink`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: featureBranchBody,
+    signal,
+  });
+};
+
+export const getUnlinkFeatureBranchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unlinkFeatureBranch>>,
+    TError,
+    UnlinkFeatureBranchMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unlinkFeatureBranch>>,
+  TError,
+  UnlinkFeatureBranchMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["unlinkFeatureBranch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unlinkFeatureBranch>>,
+    UnlinkFeatureBranchMutationVariables
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return unlinkFeatureBranch(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnlinkFeatureBranchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unlinkFeatureBranch>>
+>;
+export type UnlinkFeatureBranchMutationBody = FeatureBranchBody;
+export type UnlinkFeatureBranchMutationError = ErrorType<unknown>;
+export type UnlinkFeatureBranchMutationVariables = { id: number; data: FeatureBranchBody };
+
+export const useUnlinkFeatureBranch = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unlinkFeatureBranch>>,
+      TError,
+      UnlinkFeatureBranchMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof unlinkFeatureBranch>>,
+  TError,
+  UnlinkFeatureBranchMutationVariables,
+  TContext
+> => {
+  return useMutation(getUnlinkFeatureBranchMutationOptions(options), queryClient);
+};
+
 export const isFeatureEmpty = (id: number, signal?: AbortSignal) => {
   return customInstance<IsEmptyResponse>({
     url: `/api/features/${id}/empty`,
@@ -19951,6 +21159,490 @@ export const useOpenSession = <TError = ErrorType<void>, TContext = unknown>(
   return useMutation(getOpenSessionMutationOptions(options), queryClient);
 };
 
+export const getManagedTabs = (signal?: AbortSignal) => {
+  return customInstance<ManagedTabInventoryEntry[]>({
+    url: `/api/marketplace/tabs`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetManagedTabsQueryKey = () => {
+  return [`/api/marketplace/tabs`] as const;
+};
+
+export const getGetManagedTabsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getManagedTabs>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabs>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetManagedTabsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getManagedTabs>>> = ({ signal }) =>
+    getManagedTabs(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getManagedTabs>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetManagedTabsQueryResult = NonNullable<Awaited<ReturnType<typeof getManagedTabs>>>;
+export type GetManagedTabsQueryError = ErrorType<unknown>;
+
+export function useGetManagedTabs<
+  TData = Awaited<ReturnType<typeof getManagedTabs>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabs>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getManagedTabs>>,
+          TError,
+          Awaited<ReturnType<typeof getManagedTabs>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetManagedTabs<
+  TData = Awaited<ReturnType<typeof getManagedTabs>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabs>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getManagedTabs>>,
+          TError,
+          Awaited<ReturnType<typeof getManagedTabs>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetManagedTabs<
+  TData = Awaited<ReturnType<typeof getManagedTabs>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabs>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useGetManagedTabs<
+  TData = Awaited<ReturnType<typeof getManagedTabs>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabs>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetManagedTabsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const installManagedTab = (
+  installManagedTabRequest: InstallManagedTabRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ManagedTabInventoryEntry>({
+    url: `/api/marketplace/tabs`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: installManagedTabRequest,
+    signal,
+  });
+};
+
+export const getInstallManagedTabMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof installManagedTab>>,
+    TError,
+    InstallManagedTabMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof installManagedTab>>,
+  TError,
+  InstallManagedTabMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["installManagedTab"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof installManagedTab>>,
+    InstallManagedTabMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return installManagedTab(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type InstallManagedTabMutationResult = NonNullable<
+  Awaited<ReturnType<typeof installManagedTab>>
+>;
+export type InstallManagedTabMutationBody = InstallManagedTabRequest;
+export type InstallManagedTabMutationError = ErrorType<unknown>;
+export type InstallManagedTabMutationVariables = { data: InstallManagedTabRequest };
+
+export const useInstallManagedTab = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof installManagedTab>>,
+      TError,
+      InstallManagedTabMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof installManagedTab>>,
+  TError,
+  InstallManagedTabMutationVariables,
+  TContext
+> => {
+  return useMutation(getInstallManagedTabMutationOptions(options), queryClient);
+};
+
+export const getManagedTabCatalog = (signal?: AbortSignal) => {
+  return customInstance<ManagedThemeCatalogResponse>({
+    url: `/api/marketplace/tabs/catalog`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetManagedTabCatalogQueryKey = () => {
+  return [`/api/marketplace/tabs/catalog`] as const;
+};
+
+export const getGetManagedTabCatalogQueryOptions = <
+  TData = Awaited<ReturnType<typeof getManagedTabCatalog>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabCatalog>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetManagedTabCatalogQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getManagedTabCatalog>>> = ({ signal }) =>
+    getManagedTabCatalog(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getManagedTabCatalog>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetManagedTabCatalogQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getManagedTabCatalog>>
+>;
+export type GetManagedTabCatalogQueryError = ErrorType<unknown>;
+
+export function useGetManagedTabCatalog<
+  TData = Awaited<ReturnType<typeof getManagedTabCatalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabCatalog>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getManagedTabCatalog>>,
+          TError,
+          Awaited<ReturnType<typeof getManagedTabCatalog>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetManagedTabCatalog<
+  TData = Awaited<ReturnType<typeof getManagedTabCatalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabCatalog>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getManagedTabCatalog>>,
+          TError,
+          Awaited<ReturnType<typeof getManagedTabCatalog>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetManagedTabCatalog<
+  TData = Awaited<ReturnType<typeof getManagedTabCatalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabCatalog>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useGetManagedTabCatalog<
+  TData = Awaited<ReturnType<typeof getManagedTabCatalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabCatalog>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetManagedTabCatalogQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const refreshManagedTabCatalog = (signal?: AbortSignal) => {
+  return customInstance<ManagedThemeCatalogResponse>({
+    url: `/api/marketplace/tabs/catalog/refresh`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getRefreshManagedTabCatalogMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshManagedTabCatalog>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof refreshManagedTabCatalog>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["refreshManagedTabCatalog"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof refreshManagedTabCatalog>>,
+    void
+  > = () => {
+    return refreshManagedTabCatalog();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefreshManagedTabCatalogMutationResult = NonNullable<
+  Awaited<ReturnType<typeof refreshManagedTabCatalog>>
+>;
+
+export type RefreshManagedTabCatalogMutationError = ErrorType<unknown>;
+
+export const useRefreshManagedTabCatalog = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof refreshManagedTabCatalog>>,
+      TError,
+      void,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof refreshManagedTabCatalog>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRefreshManagedTabCatalogMutationOptions(options), queryClient);
+};
+
+export const removeManagedTab = (id: string, signal?: AbortSignal) => {
+  return customInstance<boolean>({ url: `/api/marketplace/tabs/${id}`, method: "DELETE", signal });
+};
+
+export const getRemoveManagedTabMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeManagedTab>>,
+    TError,
+    RemoveManagedTabMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof removeManagedTab>>,
+  TError,
+  RemoveManagedTabMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["removeManagedTab"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removeManagedTab>>,
+    RemoveManagedTabMutationVariables
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return removeManagedTab(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoveManagedTabMutationResult = NonNullable<
+  Awaited<ReturnType<typeof removeManagedTab>>
+>;
+
+export type RemoveManagedTabMutationError = ErrorType<unknown>;
+export type RemoveManagedTabMutationVariables = { id: string };
+
+export const useRemoveManagedTab = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof removeManagedTab>>,
+      TError,
+      RemoveManagedTabMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof removeManagedTab>>,
+  TError,
+  RemoveManagedTabMutationVariables,
+  TContext
+> => {
+  return useMutation(getRemoveManagedTabMutationOptions(options), queryClient);
+};
+
+export const updateManagedTab = (
+  id: string,
+  installManagedTabRequest: InstallManagedTabRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ManagedTabInventoryEntry>({
+    url: `/api/marketplace/tabs/${id}/update`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: installManagedTabRequest,
+    signal,
+  });
+};
+
+export const getUpdateManagedTabMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateManagedTab>>,
+    TError,
+    UpdateManagedTabMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateManagedTab>>,
+  TError,
+  UpdateManagedTabMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["updateManagedTab"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateManagedTab>>,
+    UpdateManagedTabMutationVariables
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateManagedTab(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateManagedTabMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateManagedTab>>
+>;
+export type UpdateManagedTabMutationBody = InstallManagedTabRequest;
+export type UpdateManagedTabMutationError = ErrorType<unknown>;
+export type UpdateManagedTabMutationVariables = { id: string; data: InstallManagedTabRequest };
+
+export const useUpdateManagedTab = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateManagedTab>>,
+      TError,
+      UpdateManagedTabMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateManagedTab>>,
+  TError,
+  UpdateManagedTabMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateManagedTabMutationOptions(options), queryClient);
+};
+
 export const detectRoute = (signal?: AbortSignal) => {
   return customInstance<NeovimDetectResponse>({ url: `/api/neovim/detect`, method: "GET", signal });
 };
@@ -20274,6 +21966,2094 @@ export function useOpenapiSpec<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+export const pluginTabList = (params?: PluginTabListParams, signal?: AbortSignal) => {
+  return customInstance<PluginTabSummary[]>({
+    url: `/api/plugin-tabs`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getPluginTabListQueryKey = (params?: PluginTabListParams) => {
+  return [`/api/plugin-tabs`, ...(params ? [params] : [])] as const;
+};
+
+export const getPluginTabListQueryOptions = <
+  TData = Awaited<ReturnType<typeof pluginTabList>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: PluginTabListParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabList>>, TError, TData>>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPluginTabListQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof pluginTabList>>> = ({ signal }) =>
+    pluginTabList(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof pluginTabList>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PluginTabListQueryResult = NonNullable<Awaited<ReturnType<typeof pluginTabList>>>;
+export type PluginTabListQueryError = ErrorType<unknown>;
+
+export function usePluginTabList<
+  TData = Awaited<ReturnType<typeof pluginTabList>>,
+  TError = ErrorType<unknown>,
+>(
+  params: undefined | PluginTabListParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabList>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabList>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabList>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabList<
+  TData = Awaited<ReturnType<typeof pluginTabList>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: PluginTabListParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabList>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabList>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabList>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabList<
+  TData = Awaited<ReturnType<typeof pluginTabList>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: PluginTabListParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabList>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function usePluginTabList<
+  TData = Awaited<ReturnType<typeof pluginTabList>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: PluginTabListParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabList>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPluginTabListQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Create a new custom tab and its authoring project (§8).
+ */
+export const pluginTabAuthoring = (
+  createPluginTabRequest: CreatePluginTabRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<PluginTabWorkspace>({
+    url: `/api/plugin-tabs/authoring`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: createPluginTabRequest,
+    signal,
+  });
+};
+
+export const getPluginTabAuthoringMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabAuthoring>>,
+    TError,
+    PluginTabAuthoringMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabAuthoring>>,
+  TError,
+  PluginTabAuthoringMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabAuthoring"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabAuthoring>>,
+    PluginTabAuthoringMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return pluginTabAuthoring(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabAuthoringMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabAuthoring>>
+>;
+export type PluginTabAuthoringMutationBody = CreatePluginTabRequest;
+export type PluginTabAuthoringMutationError = ErrorType<unknown>;
+export type PluginTabAuthoringMutationVariables = { data: CreatePluginTabRequest };
+
+/**
+ * @summary Create a new custom tab and its authoring project (§8).
+ */
+export const usePluginTabAuthoring = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabAuthoring>>,
+      TError,
+      PluginTabAuthoringMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabAuthoring>>,
+  TError,
+  PluginTabAuthoringMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabAuthoringMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Revoke the presenting grant (plugin token). The instance is going away.
+ */
+export const pluginTabRevokeCurrentGrant = (signal?: AbortSignal) => {
+  return customInstance<void>({ url: `/api/plugin-tabs/grants/current`, method: "DELETE", signal });
+};
+
+export const getPluginTabRevokeCurrentGrantMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabRevokeCurrentGrant>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabRevokeCurrentGrant>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["pluginTabRevokeCurrentGrant"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabRevokeCurrentGrant>>,
+    void
+  > = () => {
+    return pluginTabRevokeCurrentGrant();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabRevokeCurrentGrantMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabRevokeCurrentGrant>>
+>;
+
+export type PluginTabRevokeCurrentGrantMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Revoke the presenting grant (plugin token). The instance is going away.
+ */
+export const usePluginTabRevokeCurrentGrant = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabRevokeCurrentGrant>>,
+      TError,
+      void,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabRevokeCurrentGrant>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getPluginTabRevokeCurrentGrantMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Send one request to the tab's native backend, starting it if it is not
+running (plugin token). A backend error is a 200 with `error`. 403
+`PLUGIN_BACKEND_UNDECLARED` / `PLUGIN_BACKEND_UNSUPPORTED`, 422
+`PLUGIN_BACKEND_UNAVAILABLE`, 429 `PLUGIN_BACKEND_BUSY`, 503
+`PLUGIN_BACKEND_CRASHING`, 504 `PLUGIN_BACKEND_TIMEOUT`, 502
+`PLUGIN_BACKEND_EXITED`.
+ */
+export const pluginTabSelfBackend = (
+  pluginBackendRequest: PluginBackendRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<PluginBackendResponse>({
+    url: `/api/plugin-tabs/self/backend`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: pluginBackendRequest,
+    signal,
+  });
+};
+
+export const getPluginTabSelfBackendMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabSelfBackend>>,
+    TError,
+    PluginTabSelfBackendMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabSelfBackend>>,
+  TError,
+  PluginTabSelfBackendMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabSelfBackend"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabSelfBackend>>,
+    PluginTabSelfBackendMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return pluginTabSelfBackend(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabSelfBackendMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfBackend>>
+>;
+export type PluginTabSelfBackendMutationBody = PluginBackendRequest;
+export type PluginTabSelfBackendMutationError = ErrorType<unknown>;
+export type PluginTabSelfBackendMutationVariables = { data: PluginBackendRequest };
+
+/**
+ * @summary Send one request to the tab's native backend, starting it if it is not
+running (plugin token). A backend error is a 200 with `error`. 403
+`PLUGIN_BACKEND_UNDECLARED` / `PLUGIN_BACKEND_UNSUPPORTED`, 422
+`PLUGIN_BACKEND_UNAVAILABLE`, 429 `PLUGIN_BACKEND_BUSY`, 503
+`PLUGIN_BACKEND_CRASHING`, 504 `PLUGIN_BACKEND_TIMEOUT`, 502
+`PLUGIN_BACKEND_EXITED`.
+ */
+export const usePluginTabSelfBackend = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabSelfBackend>>,
+      TError,
+      PluginTabSelfBackendMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabSelfBackend>>,
+  TError,
+  PluginTabSelfBackendMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabSelfBackendMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary The tab's non-secret settings for its project: project values over global
+over declared defaults (plugin token).
+ */
+export const pluginTabSelfConfiguration = (signal?: AbortSignal) => {
+  return customInstance<PluginTabSelfConfiguration200>({
+    url: `/api/plugin-tabs/self/configuration`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getPluginTabSelfConfigurationQueryKey = () => {
+  return [`/api/plugin-tabs/self/configuration`] as const;
+};
+
+export const getPluginTabSelfConfigurationQueryOptions = <
+  TData = Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfConfiguration>>, TError, TData>
+  >;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPluginTabSelfConfigurationQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof pluginTabSelfConfiguration>>> = ({
+    signal,
+  }) => pluginTabSelfConfiguration(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PluginTabSelfConfigurationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfConfiguration>>
+>;
+export type PluginTabSelfConfigurationQueryError = ErrorType<unknown>;
+
+export function usePluginTabSelfConfiguration<
+  TData = Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfConfiguration>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabSelfConfiguration>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabSelfConfiguration<
+  TData = Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfConfiguration>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabSelfConfiguration>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabSelfConfiguration<
+  TData = Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfConfiguration>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary The tab's non-secret settings for its project: project values over global
+over declared defaults (plugin token).
+ */
+
+export function usePluginTabSelfConfiguration<
+  TData = Awaited<ReturnType<typeof pluginTabSelfConfiguration>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfConfiguration>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPluginTabSelfConfigurationQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Run one of the tab's declared `commands` in its conversation's folder,
+without a shell (plugin token). A non-zero exit is a 200 result. 403
+`PLUGIN_EXEC_DENIED` for an undeclared program, 422
+`PLUGIN_EXEC_NOT_FOUND`, 429 `PLUGIN_EXEC_BUSY`, 504 `PLUGIN_EXEC_TIMEOUT`,
+502 `PLUGIN_EXEC_OUTPUT_TOO_LARGE` / `PLUGIN_EXEC_FAILED`.
+ */
+export const pluginTabSelfExec = (pluginExecRequest: PluginExecRequest, signal?: AbortSignal) => {
+  return customInstance<PluginExecResult>({
+    url: `/api/plugin-tabs/self/exec`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: pluginExecRequest,
+    signal,
+  });
+};
+
+export const getPluginTabSelfExecMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabSelfExec>>,
+    TError,
+    PluginTabSelfExecMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabSelfExec>>,
+  TError,
+  PluginTabSelfExecMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabSelfExec"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabSelfExec>>,
+    PluginTabSelfExecMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return pluginTabSelfExec(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabSelfExecMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfExec>>
+>;
+export type PluginTabSelfExecMutationBody = PluginExecRequest;
+export type PluginTabSelfExecMutationError = ErrorType<unknown>;
+export type PluginTabSelfExecMutationVariables = { data: PluginExecRequest };
+
+/**
+ * @summary Run one of the tab's declared `commands` in its conversation's folder,
+without a shell (plugin token). A non-zero exit is a 200 result. 403
+`PLUGIN_EXEC_DENIED` for an undeclared program, 422
+`PLUGIN_EXEC_NOT_FOUND`, 429 `PLUGIN_EXEC_BUSY`, 504 `PLUGIN_EXEC_TIMEOUT`,
+502 `PLUGIN_EXEC_OUTPUT_TOO_LARGE` / `PLUGIN_EXEC_FAILED`.
+ */
+export const usePluginTabSelfExec = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabSelfExec>>,
+      TError,
+      PluginTabSelfExecMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabSelfExec>>,
+  TError,
+  PluginTabSelfExecMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabSelfExecMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary The egress relay (§4.5, plugin token). The body is sent upstream as is;
+outbound headers ride in `x-cadencr-net-headers` (a JSON object whose
+values may hold `{{secret:<key>}}`). Whatever the upstream answers comes
+back as a 200 whose body is the upstream body, with
+`x-cadencr-net-status` and `x-cadencr-net-headers`. Relay failures are
+plain errors: 403 `PLUGIN_NETWORK_DENIED` (origin not allowed, or a
+non-public address), 400 `PLUGIN_TAB_SECRET_UNKNOWN`, 429
+`PLUGIN_NETWORK_BUSY`, 504 `PLUGIN_NETWORK_TIMEOUT`, 502 `PLUGIN_NETWORK_*`.
+ */
+export const pluginTabSelfNetFetch = (
+  pluginTabSelfNetFetchBody: Blob,
+  params: PluginTabSelfNetFetchParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<Blob>({
+    url: `/api/plugin-tabs/self/net/fetch`,
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    data: pluginTabSelfNetFetchBody,
+    params,
+    responseType: "blob",
+    signal,
+  });
+};
+
+export const getPluginTabSelfNetFetchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabSelfNetFetch>>,
+    TError,
+    PluginTabSelfNetFetchMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabSelfNetFetch>>,
+  TError,
+  PluginTabSelfNetFetchMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabSelfNetFetch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabSelfNetFetch>>,
+    PluginTabSelfNetFetchMutationVariables
+  > = (props) => {
+    const { data, params } = props ?? {};
+
+    return pluginTabSelfNetFetch(data, params);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabSelfNetFetchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfNetFetch>>
+>;
+export type PluginTabSelfNetFetchMutationBody = Blob;
+export type PluginTabSelfNetFetchMutationError = ErrorType<unknown>;
+export type PluginTabSelfNetFetchMutationVariables = {
+  data: Blob;
+  params: PluginTabSelfNetFetchParams;
+};
+
+/**
+ * @summary The egress relay (§4.5, plugin token). The body is sent upstream as is;
+outbound headers ride in `x-cadencr-net-headers` (a JSON object whose
+values may hold `{{secret:<key>}}`). Whatever the upstream answers comes
+back as a 200 whose body is the upstream body, with
+`x-cadencr-net-status` and `x-cadencr-net-headers`. Relay failures are
+plain errors: 403 `PLUGIN_NETWORK_DENIED` (origin not allowed, or a
+non-public address), 400 `PLUGIN_TAB_SECRET_UNKNOWN`, 429
+`PLUGIN_NETWORK_BUSY`, 504 `PLUGIN_NETWORK_TIMEOUT`, 502 `PLUGIN_NETWORK_*`.
+ */
+export const usePluginTabSelfNetFetch = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabSelfNetFetch>>,
+      TError,
+      PluginTabSelfNetFetchMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabSelfNetFetch>>,
+  TError,
+  PluginTabSelfNetFetchMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabSelfNetFetchMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Every key in the tab's store for its project, sorted (plugin token).
+ */
+export const pluginTabSelfStorageList = (signal?: AbortSignal) => {
+  return customInstance<string[]>({ url: `/api/plugin-tabs/self/storage`, method: "GET", signal });
+};
+
+export const getPluginTabSelfStorageListQueryKey = () => {
+  return [`/api/plugin-tabs/self/storage`] as const;
+};
+
+export const getPluginTabSelfStorageListQueryOptions = <
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageList>>, TError, TData>
+  >;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPluginTabSelfStorageListQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof pluginTabSelfStorageList>>> = ({
+    signal,
+  }) => pluginTabSelfStorageList(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type PluginTabSelfStorageListQueryResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfStorageList>>
+>;
+export type PluginTabSelfStorageListQueryError = ErrorType<unknown>;
+
+export function usePluginTabSelfStorageList<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageList>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabSelfStorageList>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabSelfStorageList<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageList>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabSelfStorageList>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabSelfStorageList<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageList>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Every key in the tab's store for its project, sorted (plugin token).
+ */
+
+export function usePluginTabSelfStorageList<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageList>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageList>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPluginTabSelfStorageListQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary One stored JSON value; 404 `PLUGIN_TAB_STORAGE_NOT_FOUND` (plugin token).
+ */
+export const pluginTabSelfStorageGet = (key: string, signal?: AbortSignal) => {
+  return customInstance<unknown>({
+    url: `/api/plugin-tabs/self/storage/${key}`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getPluginTabSelfStorageGetQueryKey = (key: string) => {
+  return [`/api/plugin-tabs/self/storage/${key}`] as const;
+};
+
+export const getPluginTabSelfStorageGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+  TError = ErrorType<unknown>,
+>(
+  key: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>, TError, TData>
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPluginTabSelfStorageGetQueryKey(key);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>> = ({
+    signal,
+  }) => pluginTabSelfStorageGet(key, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: key !== null && key !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type PluginTabSelfStorageGetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfStorageGet>>
+>;
+export type PluginTabSelfStorageGetQueryError = ErrorType<unknown>;
+
+export function usePluginTabSelfStorageGet<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+  TError = ErrorType<unknown>,
+>(
+  key: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabSelfStorageGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabSelfStorageGet<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+  TError = ErrorType<unknown>,
+>(
+  key: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabSelfStorageGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabSelfStorageGet<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+  TError = ErrorType<unknown>,
+>(
+  key: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary One stored JSON value; 404 `PLUGIN_TAB_STORAGE_NOT_FOUND` (plugin token).
+ */
+
+export function usePluginTabSelfStorageGet<
+  TData = Awaited<ReturnType<typeof pluginTabSelfStorageGet>>,
+  TError = ErrorType<unknown>,
+>(
+  key: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabSelfStorageGet>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPluginTabSelfStorageGetQueryOptions(key, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Store any JSON value (≤ 256 KiB, ≤ 500 keys) under `key` (plugin token).
+ */
+export const pluginTabSelfStoragePut = (
+  key: string,
+  pluginTabSelfStoragePutBody: unknown,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/api/plugin-tabs/self/storage/${key}`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: pluginTabSelfStoragePutBody,
+    signal,
+  });
+};
+
+export const getPluginTabSelfStoragePutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabSelfStoragePut>>,
+    TError,
+    PluginTabSelfStoragePutMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabSelfStoragePut>>,
+  TError,
+  PluginTabSelfStoragePutMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabSelfStoragePut"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabSelfStoragePut>>,
+    PluginTabSelfStoragePutMutationVariables
+  > = (props) => {
+    const { key, data } = props ?? {};
+
+    return pluginTabSelfStoragePut(key, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabSelfStoragePutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfStoragePut>>
+>;
+export type PluginTabSelfStoragePutMutationBody = unknown;
+export type PluginTabSelfStoragePutMutationError = ErrorType<unknown>;
+export type PluginTabSelfStoragePutMutationVariables = { key: string; data: unknown };
+
+/**
+ * @summary Store any JSON value (≤ 256 KiB, ≤ 500 keys) under `key` (plugin token).
+ */
+export const usePluginTabSelfStoragePut = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabSelfStoragePut>>,
+      TError,
+      PluginTabSelfStoragePutMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabSelfStoragePut>>,
+  TError,
+  PluginTabSelfStoragePutMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabSelfStoragePutMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Remove `key`; absent keys succeed too (plugin token).
+ */
+export const pluginTabSelfStorageDelete = (key: string, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/api/plugin-tabs/self/storage/${key}`,
+    method: "DELETE",
+    signal,
+  });
+};
+
+export const getPluginTabSelfStorageDeleteMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabSelfStorageDelete>>,
+    TError,
+    PluginTabSelfStorageDeleteMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabSelfStorageDelete>>,
+  TError,
+  PluginTabSelfStorageDeleteMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabSelfStorageDelete"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabSelfStorageDelete>>,
+    PluginTabSelfStorageDeleteMutationVariables
+  > = (props) => {
+    const { key } = props ?? {};
+
+    return pluginTabSelfStorageDelete(key);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabSelfStorageDeleteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSelfStorageDelete>>
+>;
+
+export type PluginTabSelfStorageDeleteMutationError = ErrorType<unknown>;
+export type PluginTabSelfStorageDeleteMutationVariables = { key: string };
+
+/**
+ * @summary Remove `key`; absent keys succeed too (plugin token).
+ */
+export const usePluginTabSelfStorageDelete = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabSelfStorageDelete>>,
+      TError,
+      PluginTabSelfStorageDeleteMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabSelfStorageDelete>>,
+  TError,
+  PluginTabSelfStorageDeleteMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabSelfStorageDeleteMutationOptions(options), queryClient);
+};
+
+export const pluginTabGet = (id: string, params?: PluginTabGetParams, signal?: AbortSignal) => {
+  return customInstance<PluginTabSummary>({
+    url: `/api/plugin-tabs/${id}`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getPluginTabGetQueryKey = (id: string, params?: PluginTabGetParams) => {
+  return [`/api/plugin-tabs/${id}`, ...(params ? [params] : [])] as const;
+};
+
+export const getPluginTabGetQueryOptions = <
+  TData = Awaited<ReturnType<typeof pluginTabGet>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: PluginTabGetParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabGet>>, TError, TData>>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPluginTabGetQueryKey(id, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof pluginTabGet>>> = ({ signal }) =>
+    pluginTabGet(id, params, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof pluginTabGet>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type PluginTabGetQueryResult = NonNullable<Awaited<ReturnType<typeof pluginTabGet>>>;
+export type PluginTabGetQueryError = ErrorType<unknown>;
+
+export function usePluginTabGet<
+  TData = Awaited<ReturnType<typeof pluginTabGet>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: undefined | PluginTabGetParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabGet>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabGet>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabGet<
+  TData = Awaited<ReturnType<typeof pluginTabGet>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: PluginTabGetParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabGet>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabGet>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabGet>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabGet<
+  TData = Awaited<ReturnType<typeof pluginTabGet>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: PluginTabGetParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabGet>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function usePluginTabGet<
+  TData = Awaited<ReturnType<typeof pluginTabGet>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: PluginTabGetParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabGet>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPluginTabGetQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const pluginTabActivity = (
+  id: string,
+  params: PluginTabActivityParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<PluginTabActivity>({
+    url: `/api/plugin-tabs/${id}/activity`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getPluginTabActivityQueryKey = (id: string, params?: PluginTabActivityParams) => {
+  return [`/api/plugin-tabs/${id}/activity`, ...(params ? [params] : [])] as const;
+};
+
+export const getPluginTabActivityQueryOptions = <
+  TData = Awaited<ReturnType<typeof pluginTabActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: PluginTabActivityParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabActivity>>, TError, TData>>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPluginTabActivityQueryKey(id, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof pluginTabActivity>>> = ({ signal }) =>
+    pluginTabActivity(id, params, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof pluginTabActivity>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type PluginTabActivityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabActivity>>
+>;
+export type PluginTabActivityQueryError = ErrorType<unknown>;
+
+export function usePluginTabActivity<
+  TData = Awaited<ReturnType<typeof pluginTabActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: PluginTabActivityParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabActivity>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabActivity>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabActivity>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabActivity<
+  TData = Awaited<ReturnType<typeof pluginTabActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: PluginTabActivityParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabActivity>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabActivity>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabActivity>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabActivity<
+  TData = Awaited<ReturnType<typeof pluginTabActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: PluginTabActivityParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabActivity>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function usePluginTabActivity<
+  TData = Awaited<ReturnType<typeof pluginTabActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: PluginTabActivityParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof pluginTabActivity>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPluginTabActivityQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Stop the tab's backend in one conversation and clear its crash history:
+the tab's next request starts it afresh.
+ */
+export const pluginTabStopBackend = (id: string, featureId: number, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/api/plugin-tabs/${id}/backends/${featureId}`,
+    method: "DELETE",
+    signal,
+  });
+};
+
+export const getPluginTabStopBackendMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabStopBackend>>,
+    TError,
+    PluginTabStopBackendMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabStopBackend>>,
+  TError,
+  PluginTabStopBackendMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabStopBackend"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabStopBackend>>,
+    PluginTabStopBackendMutationVariables
+  > = (props) => {
+    const { id, featureId } = props ?? {};
+
+    return pluginTabStopBackend(id, featureId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabStopBackendMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabStopBackend>>
+>;
+
+export type PluginTabStopBackendMutationError = ErrorType<unknown>;
+export type PluginTabStopBackendMutationVariables = { id: string; featureId: number };
+
+/**
+ * @summary Stop the tab's backend in one conversation and clear its crash history:
+the tab's next request starts it afresh.
+ */
+export const usePluginTabStopBackend = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabStopBackend>>,
+      TError,
+      PluginTabStopBackendMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabStopBackend>>,
+  TError,
+  PluginTabStopBackendMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabStopBackendMutationOptions(options), queryClient);
+};
+
+export const pluginTabGetConfiguration = (
+  id: string,
+  params?: PluginTabGetConfigurationParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<PluginTabConfiguration>({
+    url: `/api/plugin-tabs/${id}/configuration`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getPluginTabGetConfigurationQueryKey = (
+  id: string,
+  params?: PluginTabGetConfigurationParams,
+) => {
+  return [`/api/plugin-tabs/${id}/configuration`, ...(params ? [params] : [])] as const;
+};
+
+export const getPluginTabGetConfigurationQueryOptions = <
+  TData = Awaited<ReturnType<typeof pluginTabGetConfiguration>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: PluginTabGetConfigurationParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabGetConfiguration>>, TError, TData>
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getPluginTabGetConfigurationQueryKey(id, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof pluginTabGetConfiguration>>> = ({
+    signal,
+  }) => pluginTabGetConfiguration(id, params, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof pluginTabGetConfiguration>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type PluginTabGetConfigurationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabGetConfiguration>>
+>;
+export type PluginTabGetConfigurationQueryError = ErrorType<unknown>;
+
+export function usePluginTabGetConfiguration<
+  TData = Awaited<ReturnType<typeof pluginTabGetConfiguration>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: undefined | PluginTabGetConfigurationParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabGetConfiguration>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabGetConfiguration>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabGetConfiguration>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabGetConfiguration<
+  TData = Awaited<ReturnType<typeof pluginTabGetConfiguration>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: PluginTabGetConfigurationParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabGetConfiguration>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof pluginTabGetConfiguration>>,
+          TError,
+          Awaited<ReturnType<typeof pluginTabGetConfiguration>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function usePluginTabGetConfiguration<
+  TData = Awaited<ReturnType<typeof pluginTabGetConfiguration>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: PluginTabGetConfigurationParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabGetConfiguration>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function usePluginTabGetConfiguration<
+  TData = Awaited<ReturnType<typeof pluginTabGetConfiguration>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: PluginTabGetConfigurationParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof pluginTabGetConfiguration>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getPluginTabGetConfigurationQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Write settings at `project_id` (global when omitted); `null` removes a
+value. Returns the form as `GET` does, secrets masked.
+ */
+export const pluginTabPutConfiguration = (
+  id: string,
+  putPluginTabConfigurationRequest: PutPluginTabConfigurationRequest,
+  params?: PluginTabPutConfigurationParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<PluginTabConfiguration>({
+    url: `/api/plugin-tabs/${id}/configuration`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: putPluginTabConfigurationRequest,
+    params,
+    signal,
+  });
+};
+
+export const getPluginTabPutConfigurationMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabPutConfiguration>>,
+    TError,
+    PluginTabPutConfigurationMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabPutConfiguration>>,
+  TError,
+  PluginTabPutConfigurationMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabPutConfiguration"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabPutConfiguration>>,
+    PluginTabPutConfigurationMutationVariables
+  > = (props) => {
+    const { id, data, params } = props ?? {};
+
+    return pluginTabPutConfiguration(id, data, params);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabPutConfigurationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabPutConfiguration>>
+>;
+export type PluginTabPutConfigurationMutationBody = PutPluginTabConfigurationRequest;
+export type PluginTabPutConfigurationMutationError = ErrorType<unknown>;
+export type PluginTabPutConfigurationMutationVariables = {
+  id: string;
+  data: PutPluginTabConfigurationRequest;
+  params?: PluginTabPutConfigurationParams;
+};
+
+/**
+ * @summary Write settings at `project_id` (global when omitted); `null` removes a
+value. Returns the form as `GET` does, secrets masked.
+ */
+export const usePluginTabPutConfiguration = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabPutConfiguration>>,
+      TError,
+      PluginTabPutConfigurationMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabPutConfiguration>>,
+  TError,
+  PluginTabPutConfigurationMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabPutConfigurationMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Accept the tab's current permissions. 409 `PLUGIN_TAB_CONSENT_STALE` when
+`permissions_hash` is not the current one. A changed consent revokes the
+tab's live grants.
+ */
+export const pluginTabConsent = (
+  id: string,
+  pluginTabConsentRequest: PluginTabConsentRequest,
+  params?: PluginTabConsentParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<PluginTabSummary>({
+    url: `/api/plugin-tabs/${id}/consent`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: pluginTabConsentRequest,
+    params,
+    signal,
+  });
+};
+
+export const getPluginTabConsentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabConsent>>,
+    TError,
+    PluginTabConsentMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabConsent>>,
+  TError,
+  PluginTabConsentMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabConsent"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabConsent>>,
+    PluginTabConsentMutationVariables
+  > = (props) => {
+    const { id, data, params } = props ?? {};
+
+    return pluginTabConsent(id, data, params);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabConsentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabConsent>>
+>;
+export type PluginTabConsentMutationBody = PluginTabConsentRequest;
+export type PluginTabConsentMutationError = ErrorType<unknown>;
+export type PluginTabConsentMutationVariables = {
+  id: string;
+  data: PluginTabConsentRequest;
+  params?: PluginTabConsentParams;
+};
+
+/**
+ * @summary Accept the tab's current permissions. 409 `PLUGIN_TAB_CONSENT_STALE` when
+`permissions_hash` is not the current one. A changed consent revokes the
+tab's live grants.
+ */
+export const usePluginTabConsent = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabConsent>>,
+      TError,
+      PluginTabConsentMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabConsent>>,
+  TError,
+  PluginTabConsentMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabConsentMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Set or clear the global switch or a project override. Turning a tab on
+requires a valid manifest (422 `PLUGIN_TAB_INVALID`) and a current consent
+(409 `PLUGIN_TAB_CONSENT_REQUIRED`). Anything but `enabled: true` revokes
+the tab's live grants.
+ */
+export const pluginTabSetEnablement = (
+  id: string,
+  setPluginTabEnablementRequest: SetPluginTabEnablementRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<PluginTabSummary>({
+    url: `/api/plugin-tabs/${id}/enablement`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: setPluginTabEnablementRequest,
+    signal,
+  });
+};
+
+export const getPluginTabSetEnablementMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabSetEnablement>>,
+    TError,
+    PluginTabSetEnablementMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabSetEnablement>>,
+  TError,
+  PluginTabSetEnablementMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabSetEnablement"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabSetEnablement>>,
+    PluginTabSetEnablementMutationVariables
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return pluginTabSetEnablement(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabSetEnablementMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabSetEnablement>>
+>;
+export type PluginTabSetEnablementMutationBody = SetPluginTabEnablementRequest;
+export type PluginTabSetEnablementMutationError = ErrorType<unknown>;
+export type PluginTabSetEnablementMutationVariables = {
+  id: string;
+  data: SetPluginTabEnablementRequest;
+};
+
+/**
+ * @summary Set or clear the global switch or a project override. Turning a tab on
+requires a valid manifest (422 `PLUGIN_TAB_INVALID`) and a current consent
+(409 `PLUGIN_TAB_CONSENT_REQUIRED`). Anything but `enabled: true` revokes
+the tab's live grants.
+ */
+export const usePluginTabSetEnablement = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabSetEnablement>>,
+      TError,
+      PluginTabSetEnablementMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabSetEnablement>>,
+  TError,
+  PluginTabSetEnablementMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabSetEnablementMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Mint a plugin token for one tab instance in `feature_id`. 404 when the tab
+or feature does not exist, 422 `PLUGIN_TAB_INVALID` for an invalid
+manifest, 403 `PLUGIN_TAB_DISABLED` unless the tab is effective for the
+feature's project.
+ */
+export const pluginTabCreateGrant = (
+  id: string,
+  createPluginTabGrantRequest: CreatePluginTabGrantRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<PluginTabGrant>({
+    url: `/api/plugin-tabs/${id}/grants`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: createPluginTabGrantRequest,
+    signal,
+  });
+};
+
+export const getPluginTabCreateGrantMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabCreateGrant>>,
+    TError,
+    PluginTabCreateGrantMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabCreateGrant>>,
+  TError,
+  PluginTabCreateGrantMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabCreateGrant"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabCreateGrant>>,
+    PluginTabCreateGrantMutationVariables
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return pluginTabCreateGrant(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabCreateGrantMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabCreateGrant>>
+>;
+export type PluginTabCreateGrantMutationBody = CreatePluginTabGrantRequest;
+export type PluginTabCreateGrantMutationError = ErrorType<unknown>;
+export type PluginTabCreateGrantMutationVariables = {
+  id: string;
+  data: CreatePluginTabGrantRequest;
+};
+
+/**
+ * @summary Mint a plugin token for one tab instance in `feature_id`. 404 when the tab
+or feature does not exist, 422 `PLUGIN_TAB_INVALID` for an invalid
+manifest, 403 `PLUGIN_TAB_DISABLED` unless the tab is effective for the
+feature's project.
+ */
+export const usePluginTabCreateGrant = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabCreateGrant>>,
+      TError,
+      PluginTabCreateGrantMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabCreateGrant>>,
+  TError,
+  PluginTabCreateGrantMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabCreateGrantMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Take or renew a presence lease: an instance of the tab is open in the
+conversation, so its backend keeps running, idle or not. The desktop
+renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
+malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases.
+ */
+export const pluginTabRenewPresence = (
+  id: string,
+  leaseId: string,
+  pluginTabPresenceRequest: PluginTabPresenceRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<void>({
+    url: `/api/plugin-tabs/${id}/presence/${leaseId}`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: pluginTabPresenceRequest,
+    signal,
+  });
+};
+
+export const getPluginTabRenewPresenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+    TError,
+    PluginTabRenewPresenceMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+  TError,
+  PluginTabRenewPresenceMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabRenewPresence"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+    PluginTabRenewPresenceMutationVariables
+  > = (props) => {
+    const { id, leaseId, data } = props ?? {};
+
+    return pluginTabRenewPresence(id, leaseId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabRenewPresenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabRenewPresence>>
+>;
+export type PluginTabRenewPresenceMutationBody = PluginTabPresenceRequest;
+export type PluginTabRenewPresenceMutationError = ErrorType<unknown>;
+export type PluginTabRenewPresenceMutationVariables = {
+  id: string;
+  leaseId: string;
+  data: PluginTabPresenceRequest;
+};
+
+/**
+ * @summary Take or renew a presence lease: an instance of the tab is open in the
+conversation, so its backend keeps running, idle or not. The desktop
+renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
+malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases.
+ */
+export const usePluginTabRenewPresence = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+      TError,
+      PluginTabRenewPresenceMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabRenewPresence>>,
+  TError,
+  PluginTabRenewPresenceMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabRenewPresenceMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Release a presence lease: that instance closed. Its backend stops 30 s
+after the conversation's last lease goes.
+ */
+export const pluginTabReleasePresence = (id: string, leaseId: string, signal?: AbortSignal) => {
+  return customInstance<void>({
+    url: `/api/plugin-tabs/${id}/presence/${leaseId}`,
+    method: "DELETE",
+    signal,
+  });
+};
+
+export const getPluginTabReleasePresenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+    TError,
+    PluginTabReleasePresenceMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+  TError,
+  PluginTabReleasePresenceMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabReleasePresence"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+    PluginTabReleasePresenceMutationVariables
+  > = (props) => {
+    const { id, leaseId } = props ?? {};
+
+    return pluginTabReleasePresence(id, leaseId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabReleasePresenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabReleasePresence>>
+>;
+
+export type PluginTabReleasePresenceMutationError = ErrorType<unknown>;
+export type PluginTabReleasePresenceMutationVariables = { id: string; leaseId: string };
+
+/**
+ * @summary Release a presence lease: that instance closed. Its backend stops 30 s
+after the conversation's last lease goes.
+ */
+export const usePluginTabReleasePresence = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+      TError,
+      PluginTabReleasePresenceMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabReleasePresence>>,
+  TError,
+  PluginTabReleasePresenceMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabReleasePresenceMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary The tab's authoring project, created if missing. Idempotent; also the retry
+for a `PLUGIN_TAB_PROJECT_SETUP_FAILED` creation, which it finishes.
+ */
+export const pluginTabWorkspace = (id: string, signal?: AbortSignal) => {
+  return customInstance<PluginTabWorkspace>({
+    url: `/api/plugin-tabs/${id}/workspace`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getPluginTabWorkspaceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pluginTabWorkspace>>,
+    TError,
+    PluginTabWorkspaceMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pluginTabWorkspace>>,
+  TError,
+  PluginTabWorkspaceMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["pluginTabWorkspace"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pluginTabWorkspace>>,
+    PluginTabWorkspaceMutationVariables
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return pluginTabWorkspace(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PluginTabWorkspaceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pluginTabWorkspace>>
+>;
+
+export type PluginTabWorkspaceMutationError = ErrorType<unknown>;
+export type PluginTabWorkspaceMutationVariables = { id: string };
+
+/**
+ * @summary The tab's authoring project, created if missing. Idempotent; also the retry
+for a `PLUGIN_TAB_PROJECT_SETUP_FAILED` creation, which it finishes.
+ */
+export const usePluginTabWorkspace = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof pluginTabWorkspace>>,
+      TError,
+      PluginTabWorkspaceMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof pluginTabWorkspace>>,
+  TError,
+  PluginTabWorkspaceMutationVariables,
+  TContext
+> => {
+  return useMutation(getPluginTabWorkspaceMutationOptions(options), queryClient);
+};
 
 export const listProjects = (signal?: AbortSignal) => {
   return customInstance<Project[]>({ url: `/api/projects`, method: "GET", signal });

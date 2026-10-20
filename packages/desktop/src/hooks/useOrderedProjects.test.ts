@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Feature, Project } from "@/api/generated";
-import { applyOrder, orderProjects } from "./useOrderedProjects";
+import { applyOrder } from "@/lib/frozen-order";
+import { orderProjects } from "./useOrderedProjects";
 
 function project(id: number): Project {
   return { id, name: `p${id}`, path: `/p${id}` } as Project;

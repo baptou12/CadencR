@@ -9,8 +9,7 @@ use crate::error::AppError;
 use crate::shared::git_cli::run_git_capture;
 
 use super::{
-    get_project_and_branch, normalize_git_path, resolve_feature_git_path, SETTING_TARGET_BRANCH,
-    SETTING_WORKTREE_PATH,
+    get_project_and_branch, normalize_git_path, resolve_feature_git_path, SETTING_WORKTREE_PATH,
 };
 
 pub async fn get_original_branch(
@@ -43,15 +42,6 @@ async fn resolve_feature_repo_and_target(
     feature_id: i64,
     fallback_project_path: &str,
 ) -> Result<(String, String), AppError> {
-    if let Some(stored) =
-        repository::get_feature_setting(&state.read_pool, feature_id, SETTING_TARGET_BRANCH).await?
-    {
-        let target = stored.trim();
-        if !target.is_empty() {
-            return Ok((fallback_project_path.to_string(), target.to_string()));
-        }
-    }
-
     let git_path = resolve_feature_git_path(state, feature_id)
         .await?
         .unwrap_or_else(|| fallback_project_path.to_string());

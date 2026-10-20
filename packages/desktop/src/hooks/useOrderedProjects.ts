@@ -6,6 +6,7 @@ import {
   type Feature,
   type Project,
 } from "@/api/generated";
+import { applyOrder } from "@/lib/frozen-order";
 import { queryClient } from "@/lib/queryClient";
 import type { SidebarConfig } from "@/lib/sidebar-config";
 import { lastActivityOf, NAME_COLLATOR } from "@/lib/sidebar-lens";
@@ -45,18 +46,6 @@ export function orderProjects<T extends { id: number; name: string }>(
   if (sort === "name") return [...projects].sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
   if (sort === "live") return orderByLiveActivity(projects, activeFeatures);
   return applyOrder(projects, order);
-}
-
-export function applyOrder<T extends { id: number }>(
-  projects: readonly T[],
-  order: readonly number[] | null,
-): T[] {
-  if (order === null) return [...projects];
-  const rank = new Map(order.map((id, index) => [id, index]));
-  // Unknown ids (newly created, not yet reconciled into `order`) get rank -1
-  // so they sort to the front while keeping their backend relative order via
-  // the stable sort.
-  return [...projects].sort((a, b) => (rank.get(a.id) ?? -1) - (rank.get(b.id) ?? -1));
 }
 
 interface UseOrderedProjectsResult {

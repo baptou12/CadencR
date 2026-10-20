@@ -6,8 +6,9 @@
 //!    future resolves, so that future does nothing but wait for the signal —
 //!    anything it did first would be time spent still accepting new requests
 //!    against services we are in the middle of tearing down.
-//! 2. Tear down what is already running (remote listener, PTYs, agent runtimes)
-//!    while axum drains the requests it had already accepted. Concurrently: the
+//! 2. Tear down what is already running (remote listener, PTYs, agent runtimes,
+//!    custom tab backends) while axum drains the requests it had already
+//!    accepted. Concurrently: the
 //!    teardown is what lets a live agent stream end, so serialising them would
 //!    guarantee the drain runs out its grace period on every quit.
 //! 3. Flush tracked provider-usage writes after the drain and teardown have
@@ -41,6 +42,7 @@ pub async fn serve_then_shutdown<S>(
     drain_started: oneshot::Receiver<()>,
     pty_manager: crate::domain::terminal::service::PtyManager,
     remote: std::sync::Arc<crate::remote::RemoteController>,
+    plugin_tab_backends: crate::domain::plugin_tabs::backend::BackendSupervisor,
     write_pool: sqlx::SqlitePool,
 ) -> std::io::Result<()>
 where
@@ -49,7 +51,7 @@ where
     let served = serve_then_shutdown_within(
         server,
         drain_started,
-        stop_background_work(pty_manager, remote),
+        stop_background_work(pty_manager, remote, plugin_tab_backends),
         DRAIN_GRACE,
     )
     .await;
@@ -67,6 +69,7 @@ where
 async fn stop_background_work(
     pty_manager: crate::domain::terminal::service::PtyManager,
     remote: std::sync::Arc<crate::remote::RemoteController>,
+    plugin_tab_backends: crate::domain::plugin_tabs::backend::BackendSupervisor,
 ) {
     // Drop the remote listener first: it has its own admission path, so it is
     // the one thing that could still start new work. Bounded internally so a
@@ -75,6 +78,8 @@ async fn stop_background_work(
 
     pty_manager.kill_all();
     crate::domain::agents::shutdown_runtime_servers().await;
+    // Their process trees, not just their main processes (bounded).
+    plugin_tab_backends.shutdown().await;
     tracing::info!("Runtime servers stopped.");
 }
 

@@ -1,6 +1,7 @@
 import type { AgentActivityDigestEntry } from "@/api/generated";
 import type { LiveAgentStatus, PendingKind } from "@/types/agent";
 import { NOTCH_MAX_AGENTS, type NotchAgent, type NotchSnapshot } from "@/shared/notch";
+import { serverToLocalMs } from "@/lib/server-clock";
 import { notchActionKind, notchActionLabel, plainPreview } from "./notch-action";
 
 /**
@@ -132,7 +133,11 @@ function toAgent(input: NotchComposeInput, entry: AgentActivityDigestEntry): Not
     providerLabel: provider?.label ?? null,
     providerIconSrc: provider?.iconSrc ?? null,
     providerIconMono: provider?.mono ?? false,
-    turnStartedAtMs: status === "done" ? null : (live?.turnStartedAtMs ?? null),
+    // Server-stamped; the island measures against this machine's clock.
+    turnStartedAtMs:
+      status === "done" || live?.turnStartedAtMs == null
+        ? null
+        : serverToLocalMs(live.turnStartedAtMs),
     lastActivityAtMs:
       status === "done"
         ? (input.finishedAt[entry.feature_id] ?? parseIsoMs(entry.last_activity_at))

@@ -16,6 +16,7 @@ interface TabPaneProps extends FeatureTabActivationHandlers {
   leaf: LayoutLeaf;
   tabs: FeatureTabs;
   splitsEnabled?: boolean;
+  rootStripActions?: ReactNode;
 }
 
 /**
@@ -25,7 +26,7 @@ interface TabPaneProps extends FeatureTabActivationHandlers {
  *     can target it.
  *   - 5 drop zones (4 edges + 1 center) overlaid on the content area when a
  *     drag is active. Each zone is a `useDroppable` with edge metadata.
- *   - For the root pane, the LayoutMenu trailing the strip.
+ *   - For the root pane, `rootStripActions` + the LayoutMenu trailing the strip.
  */
 export function TabPane({
   featureId,
@@ -34,11 +35,13 @@ export function TabPane({
   onTerminalActivate,
   onEditorActivate,
   splitsEnabled = true,
+  rootStripActions,
 }: TabPaneProps): ReactNode {
   const registerHost = useTabHostRegistry((s) => s.registerHost);
   const unregisterHost = useTabHostRegistry((s) => s.unregisterHost);
   const setPaneActiveTab = useFeatureLayoutStore((s) => s.setPaneActiveTab);
   const dockTab = useFeatureLayoutStore((s) => s.dockTab);
+  const removeTab = useFeatureLayoutStore((s) => s.removeTab);
   const setFocusedPane = useFeatureLayoutStore((s) => s.setFocusedPane);
   const focusedPaneId = useFeatureLayoutStore(
     (s) => getFocusedLeaf(selectFeatureLayout(featureId)(s))?.id ?? ROOT_LEAF_ID,
@@ -123,6 +126,7 @@ export function TabPane({
       isRoot={isRoot}
       isFocused={isFocused}
       splitsEnabled={splitsEnabled}
+      stripActions={isRoot ? rootStripActions : undefined}
       containerRef={containerRef}
       contentRef={setContentRef}
       onFocusPane={markPaneFocused}
@@ -131,6 +135,10 @@ export function TabPane({
       onDockTab={(tab) => {
         noteUserLayoutChange(featureId, { structural: true });
         dockTab(featureId, tab);
+      }}
+      onCloseTab={(tab) => {
+        noteUserLayoutChange(featureId, { structural: true });
+        removeTab(featureId, tab);
       }}
     />
   );

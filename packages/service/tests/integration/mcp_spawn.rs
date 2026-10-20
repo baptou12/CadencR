@@ -9,6 +9,10 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 /// Upper bound for MCP child-process I/O: response reads and shutdown wait.
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
+/// Upper bound for the first reply, which also pays for the process start.
+/// `cargo test --workspace` re-copies the service binary on every run, and
+/// macOS scans a fresh 158 MB binary for several seconds before it executes.
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct McpTestProcess {
     child: Child,
@@ -57,7 +61,7 @@ async fn test_mcp_modern_initialize_returns_conformant_tools() {
     let init_req = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}"#;
     write_json_line(&mut process.stdin, init_req).await;
     let mut line = String::new();
-    tokio::time::timeout(IO_TIMEOUT, process.reader.read_line(&mut line))
+    tokio::time::timeout(STARTUP_TIMEOUT, process.reader.read_line(&mut line))
         .await
         .expect("timed out waiting for initialize response")
         .unwrap();

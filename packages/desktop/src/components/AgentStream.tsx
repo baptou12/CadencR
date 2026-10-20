@@ -26,7 +26,7 @@ import type { MessageNavigatorControls } from "./agent-session/useMessageNavigat
 import type { DisplayItem } from "./agentStreamDisplay";
 import { useAgentDisplayItems, useRootBlocks, useToolResultMap } from "./useAgentStreamData";
 import type { TurnLifecycle } from "@/stores/ws-turn-lifecycle";
-import { isTurnInProgress } from "@/components/TurnWorkingLabel";
+import { isTurnInProgress } from "@/stores/ws-turn-lifecycle";
 import type { AgentVerbosityMode } from "@/lib/agent-verbosity";
 
 type ScrollRef = (el: HTMLElement | null) => void;

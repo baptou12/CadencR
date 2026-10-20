@@ -160,6 +160,40 @@ describe("Markdown", () => {
     expect(screen.getByText("click me")).not.toHaveAttribute("href", "javascript:alert(1)");
   });
 
+  it("unwraps <picture> so only the <img> loads, and drops the link's external mark", () => {
+    const { container } = render(
+      <Markdown
+        content={
+          '<h2><a href="https://example.com/retrigger"><picture>' +
+          '<source media="(prefers-color-scheme: dark)" srcset="https://example.com/dark.svg">' +
+          '<img alt="Retrigger" src="https://example.com/light.svg" align="right">' +
+          "</picture></a>Confidence Score: 5/5</h2>"
+        }
+      />,
+    );
+    const link = screen.getByRole("link", { name: "Retrigger" });
+    expect(container.querySelector("picture, source")).toBeNull();
+    expect(link.querySelector("img")).toHaveAttribute("src", "https://example.com/light.svg");
+    expect(link.querySelector("svg")).toBeNull();
+    expect(link).toHaveAttribute("data-image-link", "true");
+  });
+
+  it("keeps the external mark on a plain web link", () => {
+    render(<Markdown content="[docs](https://example.com/docs)" />);
+    const link = screen.getByRole("link", { name: "docs" });
+    expect(link.querySelector("svg")).not.toBeNull();
+    expect(link).not.toHaveAttribute("data-image-link");
+  });
+
+  it("keeps the external mark on an icon-and-text link", () => {
+    render(
+      <Markdown content='<a href="https://example.com/fix"><img alt="" src="https://example.com/i.svg"> Fix in Cursor</a>' />,
+    );
+    const link = screen.getByRole("link", { name: /Fix in Cursor/ });
+    expect(link.querySelector("svg")).not.toBeNull();
+    expect(link).not.toHaveAttribute("data-image-link");
+  });
+
   it("applies custom className", () => {
     const { container } = render(<Markdown content="text" className="custom-class" />);
     expect(container.firstChild).toHaveClass("custom-class");
