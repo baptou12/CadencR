@@ -5,6 +5,14 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing version tag to publish without moving it (for example, v0.14.0)
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 permissions:
   contents: write
@@ -16,21 +24,30 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Validate release tag
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected an existing version tag such as v0.14.0" >&2
+            exit 1
+          fi
+
       # actions/checkout@v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
 
       # actions/setup-node@v7.0.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         with:
           node-version-file: .nvmrc
 
       - name: Install Rust stable toolchain
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: rustup toolchain install stable --profile minimal
 
       - name: Test CLI and supporting libraries
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
           node scripts/cargo-env.mjs cargo test --locked \
             -p cadencr-cli \
@@ -39,21 +56,21 @@ jobs:
             -p cadencr-registry-publisher
 
       - name: Build CLI
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: node scripts/cargo-env.mjs cargo build --locked --release -p cadencr-cli
 
       - name: Smoke test and package CLI release assets
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
           scripts/package-cli-release.sh \
-            "$GITHUB_REF_NAME" \
+            "$RELEASE_TAG" \
             x86_64-unknown-linux-gnu \
             target/release/cadencr \
             "$RUNNER_TEMP/cli-release"
 
       # actions/upload-artifact@v4.6.2
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         with:
           name: cadencr-cli-linux-release
           path: ${{ runner.temp }}/cli-release/
@@ -98,6 +115,8 @@ jobs:
     steps:
       # actions/checkout@v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
 
       - name: Test Homebrew cask update script
         run: env -u BASH_ENV bash scripts/update-homebrew-cask.test.sh
@@ -115,9 +134,9 @@ jobs:
         run: rustup toolchain install
 
       - name: Verify release tag matches desktop version
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
-          node -e "const pkg=require('./packages/desktop/package.json'); const expected='v'+pkg.version; const actual=process.env.GITHUB_REF_NAME; if (actual !== expected) { console.error('Release tag '+actual+' does not match desktop version '+expected); process.exit(1); }"
+          node -e "const pkg=require('./packages/desktop/package.json'); const expected='v'+pkg.version; const actual=process.env.RELEASE_TAG; if (actual !== expected) { console.error('Release tag '+actual+' does not match desktop version '+expected); process.exit(1); }"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -139,42 +158,39 @@ jobs:
           done
 
       - name: Build renderer + main bundles
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm --filter @cadencr/desktop exec electron-vite build
 
       # actions/download-artifact@v4.3.0
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         with:
           name: cadencr-cli-linux-release
           path: ${{ runner.temp }}/cli-release
 
       - name: Verify downloaded CLI release assets
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
           cli_dist="$RUNNER_TEMP/cli-release"
-          cli_asset="cadencr-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu"
-          cli_manifest="cadencr-${GITHUB_REF_NAME}-SHA256SUMS"
+          cli_asset="cadencr-${RELEASE_TAG}-x86_64-unknown-linux-gnu"
+          cli_manifest="cadencr-${RELEASE_TAG}-SHA256SUMS"
           test -f "$cli_dist/$cli_asset"
           test -f "$cli_dist/$cli_manifest"
           (cd "$cli_dist" && shasum -a 256 --check "$cli_manifest")
 
       - name: Prepare GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
           releases_file="$RUNNER_TEMP/existing-releases.tsv"
           gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
-            --jq ".[] | select(.tag_name == \"$GITHUB_REF_NAME\") | [.id, .draft, (.assets | length)] | @tsv" \
+            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | [.id, .draft, (.assets | length)] | @tsv" \
             > "$releases_file"
 
-          while IFS=$'\t' read -r release_id is_draft asset_count; do
-            [ -n "$release_id" ] || continue
-            if [ "$is_draft" != "true" ] && [ "$asset_count" != "0" ]; then
-              echo "Release $GITHUB_REF_NAME already exists with assets. Refusing to overwrite it." >&2
-              exit 1
-            fi
-
-            gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" -X DELETE
-          done < "$releases_file"
+          if [ -s "$releases_file" ]; then
+            echo "Release $RELEASE_TAG already exists. Refusing to delete or overwrite it." >&2
+            exit 1
+          fi
 
       - name: Import Developer ID certificate
         run: |
@@ -210,9 +226,9 @@ jobs:
             --publish never
 
       - name: Verify local desktop release assets
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           dist_dir="packages/desktop/dist-electron"
           expected_assets=(
             "Cadencr-${version}-x64.dmg"
@@ -239,24 +255,25 @@ jobs:
           grep -F "Cadencr-${version}-arm64.dmg" "$dist_dir/latest-mac.yml" >/dev/null
 
       - name: Extract GitHub release notes
-        if: startsWith(github.ref, 'refs/tags/')
-        run: scripts/release-notes.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-notes.md"
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
+        run: scripts/release-notes.sh "$RELEASE_TAG" "$RUNNER_TEMP/release-notes.md"
 
       - name: Create draft GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
             --draft \
-            --title "${GITHUB_REF_NAME#v}" \
+            --title "${RELEASE_TAG#v}" \
             --notes-file "$RUNNER_TEMP/release-notes.md"
 
       - name: Upload GitHub release assets
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           dist_dir="packages/desktop/dist-electron"
-          gh release upload "$GITHUB_REF_NAME" \
+          gh release upload "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             "$dist_dir/Cadencr-${version}-x64.dmg" \
             "$dist_dir/Cadencr-${version}-x64.dmg.blockmap" \
@@ -267,13 +284,13 @@ jobs:
             "$dist_dir/Cadencr-${version}-arm64-mac.zip" \
             "$dist_dir/Cadencr-${version}-arm64-mac.zip.blockmap" \
             "$dist_dir/latest-mac.yml" \
-            "$RUNNER_TEMP/cli-release/cadencr-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu" \
-            "$RUNNER_TEMP/cli-release/cadencr-${GITHUB_REF_NAME}-SHA256SUMS"
+            "$RUNNER_TEMP/cli-release/cadencr-${RELEASE_TAG}-x86_64-unknown-linux-gnu" \
+            "$RUNNER_TEMP/cli-release/cadencr-${RELEASE_TAG}-SHA256SUMS"
 
       - name: Verify uploaded GitHub release assets
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           expected_assets=(
             "Cadencr-${version}-x64.dmg"
             "Cadencr-${version}-x64.dmg.blockmap"
@@ -284,17 +301,17 @@ jobs:
             "Cadencr-${version}-arm64-mac.zip"
             "Cadencr-${version}-arm64-mac.zip.blockmap"
             "latest-mac.yml"
-            "cadencr-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu"
-            "cadencr-${GITHUB_REF_NAME}-SHA256SUMS"
+            "cadencr-${RELEASE_TAG}-x86_64-unknown-linux-gnu"
+            "cadencr-${RELEASE_TAG}-SHA256SUMS"
           )
 
-          is_draft="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+          is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
           if [ "$is_draft" != "true" ]; then
-            echo "Release $GITHUB_REF_NAME must still be draft before final publication" >&2
+            echo "Release $RELEASE_TAG must still be draft before final publication" >&2
             exit 1
           fi
 
-          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
             > "$RUNNER_TEMP/uploaded-release-assets.txt"
 
           for asset in "${expected_assets[@]}"; do
@@ -305,9 +322,9 @@ jobs:
           done
 
       - name: Publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
-          gh release edit "$GITHUB_REF_NAME" \
+          gh release edit "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
             --draft=false \
@@ -317,5 +334,5 @@ jobs:
         # Pushes the refreshed cask to the merkr-software/homebrew-cadencr tap.
         # Skipped until the HOMEBREW_TAP_TOKEN secret (write access to that repo)
         # is configured.
-        if: startsWith(github.ref, 'refs/tags/') && env.HOMEBREW_TAP_TOKEN != ''
-        run: scripts/update-homebrew-cask.sh "$GITHUB_REF_NAME"
+        if: (startsWith(github.ref, 'refs/tags/') || inputs.release_tag != '') && env.HOMEBREW_TAP_TOKEN != ''
+        run: scripts/update-homebrew-cask.sh "$RELEASE_TAG"

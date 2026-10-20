@@ -48,7 +48,7 @@ case "$workflow_text" in
 esac
 
 case "$workflow_text" in
-  *'cadencr-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu'*'cadencr-${GITHUB_REF_NAME}-SHA256SUMS'*) ;;
+  *'cadencr-${RELEASE_TAG}-x86_64-unknown-linux-gnu'*'cadencr-${RELEASE_TAG}-SHA256SUMS'*) ;;
   *) fail "workflow must upload the versioned Linux CLI and SHA256 manifest" ;;
 esac
 
