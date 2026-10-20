@@ -24,7 +24,7 @@ import {
 import { PluginTabAccessBadge } from "./PluginTabAccess";
 import { ActivitySection, BackendPanel, CommandList } from "./PluginTabActivitySections";
 import { PluginTabIcon } from "./PluginTabIcon";
-import { ACCESS_LEVEL_COPY, backendCommandLine } from "./plugin-tab-access";
+import { ACCESS_LEVEL_COPY, backendBinaries } from "./plugin-tab-access";
 
 /** Refetch while open: commands and the backend move on their own. */
 const REFRESH_MS = 2000;
@@ -115,7 +115,7 @@ function ActivityBody({
       {summary.backend ? (
         <ActivitySection title="Native backend">
           <p className="break-all font-mono text-[11.5px] text-muted-foreground">
-            {backendCommandLine(summary.backend)}
+            {backendBinaries(summary.backend)}
           </p>
           <BackendPanel
             status={activity.data.backend}

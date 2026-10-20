@@ -5,9 +5,10 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
+use super::managed::storage::{InstalledBackend, ManagedFacts};
 pub use cadencr_plugin_core::tab::{
     TabAccessLevel, TabBackend, TabCommand, TabConfigField, TabConfigFieldType, TabConfigScope,
-    TabIssue, TabIssueCode,
+    TabIssue, TabIssueCode, TabPlatform,
 };
 
 /// One local custom tab, valid or not.
@@ -36,12 +37,28 @@ pub struct PluginTabSummary {
     pub commands: Vec<TabCommand>,
     /// The native process the tab ships, which runs with the user's rights.
     pub backend: Option<TabBackend>,
+    /// Whether `backend` can run where Cadencr runs; `None` without one.
+    pub backend_availability: Option<PluginTabBackendAvailability>,
+    /// A marketplace tab's installed backend binary (what consent binds),
+    /// with the platform it was installed for; `None` for a local tab or a
+    /// tab without a backend.
+    pub backend_binary: Option<PluginTabBackendBinary>,
+    /// A marketplace update staged beside this revision because it would
+    /// run something new. Accept it by consenting to its `permissions_hash`
+    /// (`PUT /api/plugin-tabs/{id}/consent`), or discard it
+    /// (`DELETE /api/marketplace/tabs/{id}/pending`); until then this
+    /// revision keeps running.
+    pub pending_update: Option<PluginTabPendingUpdate>,
     /// How far the tab reaches: its page only, commands, or a native backend.
     /// `ui` when the manifest is unreadable (such a tab cannot run).
     pub access_level: TabAccessLevel,
     /// What consent is recorded against; `None` when the manifest is unreadable.
     pub permissions_hash: Option<String>,
     pub status: PluginTabStatus,
+    /// Why Cadencr's signed revocation policy blocks this marketplace tab
+    /// (`status` is then `blocked`): it cannot be enabled, opened or run its
+    /// backend, only removed. `None` when not blocked.
+    pub blocked_reason: Option<String>,
     pub errors: Vec<TabIssue>,
     pub warnings: Vec<TabIssue>,
     /// Absolute path of the tab folder.
@@ -49,6 +66,82 @@ pub struct PluginTabSummary {
     /// The project this tab is authored in, when Cadencr created one.
     pub authoring_project_id: Option<i64>,
     pub enablement: PluginTabEnablement,
+}
+
+/// What a staged marketplace update would run, for the review dialog.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PluginTabPendingUpdate {
+    pub version: String,
+    /// What accepting it records; differs from the installed revision's.
+    pub permissions_hash: String,
+    pub access_level: TabAccessLevel,
+    pub permissions: Vec<String>,
+    pub network: PluginTabNetwork,
+    pub commands: Vec<TabCommand>,
+    pub backend: Option<TabBackend>,
+    /// The staged revision's backend binary, to compare with the installed
+    /// `backend_binary`; `None` when the update ships no backend.
+    pub backend_binary: Option<PluginTabBackendBinary>,
+    /// Why Cadencr's revocation policy blocks it: it cannot be accepted
+    /// (403 `PLUGIN_TAB_BLOCKED`), only discarded.
+    pub blocked_reason: Option<String>,
+}
+
+/// One installed (or staged) marketplace backend binary: the signed facts a
+/// binary-only update changes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct PluginTabBackendBinary {
+    /// The platform it was installed for (`darwin-aarch64`, …).
+    pub platform: TabPlatform,
+    /// The backend protocol version it speaks.
+    pub protocol: u32,
+    /// The signed SHA-256 of the executable, checked before each launch.
+    pub executable_sha256: String,
+}
+
+/// A backend's availability on the platform Cadencr runs on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginTabBackendAvailability {
+    /// It declares a binary for this platform (which may still be unbuilt
+    /// or refused at launch; see `warnings`).
+    Available,
+    /// It ships no binary for this platform, or Cadencr runs where tab
+    /// backends are not supported: it never starts here.
+    UnavailableOnPlatform,
+}
+
+impl PluginTabBackendAvailability {
+    /// A local tab's: whether its manifest declares this platform's binary.
+    pub fn of(backend: &TabBackend) -> Self {
+        Self::when(
+            TabPlatform::current().is_some_and(|platform| backend.binary_for(platform).is_some()),
+        )
+    }
+
+    /// A marketplace revision's: whether it installed this platform's binary.
+    pub fn of_installed(facts: &ManagedFacts) -> Self {
+        Self::when(installed_here(facts).is_some())
+    }
+
+    fn when(available: bool) -> Self {
+        if available {
+            Self::Available
+        } else {
+            Self::UnavailableOnPlatform
+        }
+    }
+}
+
+/// A marketplace revision's backend binary when it is the one for the
+/// platform Cadencr runs on. A revision holds the binary of the platform it
+/// was installed on, or none: the same data copied to another machine is
+/// not this platform's.
+pub fn installed_here(facts: &ManagedFacts) -> Option<&InstalledBackend> {
+    facts
+        .backend
+        .as_ref()
+        .filter(|backend| TabPlatform::current() == Some(backend.platform))
 }
 
 #[derive(Debug, Clone, Default, Serialize, ToSchema)]
@@ -62,6 +155,9 @@ pub struct PluginTabNetwork {
 pub enum PluginTabStatus {
     Valid,
     Invalid,
+    /// A marketplace revision Cadencr's revocation policy blocks
+    /// (`blocked_reason` says why), whatever its manifest.
+    Blocked,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
@@ -70,7 +166,7 @@ pub struct PluginTabEnablement {
     pub global: Option<bool>,
     /// The requested project's override; `None` when unset or no project was given.
     pub project: Option<bool>,
-    /// Switched on, consented at the current hash, and valid.
+    /// Switched on, consented at the current hash, valid, and not blocked.
     pub effective: bool,
     /// No consent, or consent for an older permissions hash.
     pub consent_required: bool,

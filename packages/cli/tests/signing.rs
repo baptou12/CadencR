@@ -338,7 +338,7 @@ fn verification_only_allows_expired_indexes_when_explicitly_requested() {
     let canonical = files.payload.with_file_name("expired-payload.json");
     fs::write(
         &canonical,
-        cadencr_registry_core::validate_signing_payload_at(&envelope["signed"], true, Utc::now())
+        cadencr_registry_core::validate_catalog_payload_at(&envelope["signed"], true, Utc::now())
             .unwrap(),
     )
     .unwrap();
@@ -424,7 +424,7 @@ fn signing_payload_bytes_match_frozen_legacy_canonical_document() {
         .unwrap()
         .with_timezone(&Utc);
     assert_eq!(
-        cadencr_registry_core::validate_signing_payload_at(&payload, false, now)
+        cadencr_registry_core::validate_catalog_payload_at(&payload, false, now)
             .unwrap()
             .as_slice(),
         bytes.as_slice()

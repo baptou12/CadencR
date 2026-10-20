@@ -1,31 +1,88 @@
+mod backend;
 mod cache;
 mod filesystem;
 #[cfg(test)]
 pub(in crate::domain::plugin_tabs) mod fixtures;
+mod pending;
 mod retention;
+mod write;
 use super::invalid;
 use crate::{
     domain::themes::managed::{catalog, models::SignedMixedCatalog, storage as io},
     error::AppError,
 };
-use cadencr_plugin_core::tab::TabManifest;
+pub use backend::{revision_id, BackendPayload, InstalledBackend};
+use cadencr_plugin_core::tab::{TabManifest, TabPlatform};
+use cadencr_registry_core::SignedTabBackend;
 use filesystem::check_directory;
 pub use filesystem::{secure, write_file};
+pub use pending::{discard_pending, lease_pending, pending_directory, promote_pending};
 pub use retention::{lease, RevisionLease};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
 };
+pub use write::commit_revision;
 
 const LIMIT: usize = 32 * 1024 * 1024;
 const MAX_ACTIVE_TABS: usize = 128;
+/// The owner's pointer at its active revision (`pending.json` names a staged one).
+const ACTIVE: &str = "active.json";
+/// A revision's signed web archive, beside its payload folder.
+const WEB_ARCHIVE: &str = "archive.tar.gz";
+/// A revision's catalog proof: the signed index it was installed from.
+const RECEIPT: &str = "receipt.json";
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Receipt {
     pub index: SignedMixedCatalog,
     pub id: String,
     pub version: String,
+    /// The platform whose backend binary this revision holds; absent for a
+    /// UI-only tab (and every receipt written before tab backends).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<TabPlatform>,
+}
+
+/// What a verified managed revision is, beyond its manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManagedFacts {
+    /// The revision directory name ([`revision_id`]).
+    pub revision: String,
+    /// SHA-256 of the signed web archive.
+    pub archive_sha256: String,
+    pub backend: Option<InstalledBackend>,
+}
+impl ManagedFacts {
+    /// The signed executable digest consent binds (`None` without a backend).
+    pub fn backend_digest(&self) -> Option<&str> {
+        self.backend
+            .as_ref()
+            .map(|backend| backend.executable_sha256.as_str())
+    }
+}
+
+/// A revision whose every byte was checked against its signed package.
+#[derive(Debug, Clone)]
+pub struct VerifiedRevision {
+    pub manifest: TabManifest,
+    pub facts: ManagedFacts,
+}
+impl VerifiedRevision {
+    /// The hash consent is recorded against, the signed binary included.
+    pub fn permissions_hash(&self) -> String {
+        self.manifest
+            .permissions_hash_with_backend_digest(self.facts.backend_digest())
+    }
+}
+
+/// Whether a committed revision goes live or awaits review.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Activation {
+    Activate,
+    /// Beside the active revision, until the user accepts what it may run.
+    Stage,
 }
 
 pub fn root() -> PathBuf {
@@ -40,24 +97,30 @@ pub fn owner(root: &Path, id: &str) -> Result<PathBuf, AppError> {
     Ok(root.join(id))
 }
 pub fn directory(root: &Path, id: &str) -> Result<Option<PathBuf>, AppError> {
+    pointer_directory(root, id, ACTIVE)
+}
+fn pointer_directory(root: &Path, id: &str, name: &str) -> Result<Option<PathBuf>, AppError> {
     let owner = owner(root, id)?;
-    let pointer = owner.join("active.json");
+    let pointer = owner.join(name);
     if !pointer.try_exists().map_err(invalid)? {
         return Ok(None);
     }
     check_directory(root, &owner)?;
     let revision: String =
         serde_json::from_slice(&io::regular(&pointer, 1024)?).map_err(invalid)?;
-    if revision.len() != 64
-        || !revision
-            .bytes()
-            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-    {
+    if !is_revision(&revision) {
         return Err(invalid("invalid tab revision pointer"));
     }
     let dir = owner.join(revision).join(id);
     check_directory(root, &dir)?;
     Ok(Some(dir))
+}
+/// A revision directory name: a lowercase SHA-256.
+fn is_revision(name: &str) -> bool {
+    name.len() == 64
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 pub fn ids(root: &Path) -> Result<Vec<String>, AppError> {
     if !root.try_exists().map_err(invalid)? {
@@ -74,7 +137,7 @@ pub fn ids(root: &Path) -> Result<Vec<String>, AppError> {
         if id.starts_with('.') {
             continue;
         }
-        match owner(root, &id)?.join("active.json").symlink_metadata() {
+        match owner(root, &id)?.join(ACTIVE).symlink_metadata() {
             Ok(_) => ids.push(id),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(invalid(error)),
@@ -82,15 +145,31 @@ pub fn ids(root: &Path) -> Result<Vec<String>, AppError> {
     }
     Ok(ids)
 }
-pub fn read(root: &Path, id: &str) -> Result<TabManifest, AppError> {
-    cache::read(root, id)
+/// The active revision of `id`, verified.
+pub fn read(root: &Path, id: &str) -> Result<VerifiedRevision, AppError> {
+    let lease = lease(root, id)?.ok_or_else(|| invalid("managed tab is not installed"))?;
+    lease.read()
+}
+/// The update staged beside `id`, verified, if one awaits review.
+pub fn read_pending(root: &Path, id: &str) -> Result<Option<VerifiedRevision>, AppError> {
+    lease_pending(root, id)?
+        .map(|lease| lease.read())
+        .transpose()
+}
+
+/// A revision as read back from disk, every byte checked against its proof.
+pub(super) struct Trusted {
+    pub files: BTreeMap<String, Vec<u8>>,
+    pub revision: VerifiedRevision,
+    /// `backend.tar.gz`, when the revision has a backend.
+    pub backend_archive: Option<PathBuf>,
 }
 #[cfg(test)]
 pub(super) fn read_trusted(
     root: &Path,
     id: &str,
     trust: &crate::domain::agents::providers::installed::managed::trust::ManagedTrustStore,
-) -> Result<(Receipt, BTreeMap<String, Vec<u8>>, TabManifest), AppError> {
+) -> Result<Trusted, AppError> {
     let dir = directory(root, id)?.ok_or_else(|| invalid("managed tab is not installed"))?;
     read_trusted_directory(root, id, &dir, trust)
 }
@@ -99,138 +178,66 @@ pub(super) fn read_trusted_directory(
     id: &str,
     dir: &Path,
     trust: &crate::domain::agents::providers::installed::managed::trust::ManagedTrustStore,
-) -> Result<(Receipt, BTreeMap<String, Vec<u8>>, TabManifest), AppError> {
+) -> Result<Trusted, AppError> {
     check_directory(root, dir)?;
     let revision = dir.parent().ok_or_else(|| invalid("revision missing"))?;
-    let receipt: Receipt = serde_json::from_slice(&io::regular(
-        &revision.join("receipt.json"),
-        LIMIT + 64 * 1024,
-    )?)
-    .map_err(invalid)?;
+    let receipt: Receipt =
+        serde_json::from_slice(&io::regular(&revision.join(RECEIPT), LIMIT + 64 * 1024)?)
+            .map_err(invalid)?;
     if receipt.id != id {
         return Err(invalid("tab receipt identity mismatch"));
     }
     catalog::verify(&receipt.index, trust, true)?;
     let package = catalog::resolve_kind(&receipt.index, id, &receipt.version, "tab")?;
-    let archive = io::regular(&revision.join("archive.tar.gz"), LIMIT)?;
-    if package["tab"]["distribution"]["sha256"].as_str() != Some(io::digest(&archive).as_str()) {
+    let archive = io::regular(&revision.join(WEB_ARCHIVE), LIMIT)?;
+    let archive_sha256 = io::digest(&archive);
+    if package["tab"]["distribution"]["sha256"].as_str() != Some(archive_sha256.as_str()) {
         return Err(invalid("tab archive checksum mismatch"));
     }
     let files = cadencr_registry_core::read_tab_archive_bytes(&archive).map_err(invalid)?;
-    let manifest = verify_identity(&package, &files)?;
+    let (manifest, signed) = verify_package(&package, &files)?;
+    let backend = backend::verify_installed(revision, dir, &receipt, signed.as_ref())?;
+    let name = revision_id(
+        &archive_sha256,
+        backend
+            .as_ref()
+            .map(|backend| backend.archive_sha256.as_str()),
+    );
+    if revision.file_name().and_then(|name| name.to_str()) != Some(name.as_str()) {
+        return Err(invalid("tab revision identity mismatch"));
+    }
     for (name, bytes) in &files {
         if io::regular(&dir.join(name), LIMIT)? != *bytes {
             return Err(invalid("installed tab payload changed"));
         }
     }
-    Ok((receipt, files, manifest))
+    Ok(Trusted {
+        files,
+        backend_archive: backend.is_some().then(|| revision.join(backend::ARCHIVE)),
+        revision: VerifiedRevision {
+            manifest,
+            facts: ManagedFacts {
+                revision: name,
+                archive_sha256,
+                backend,
+            },
+        },
+    })
 }
-/// The signed package's manifest. Never a native backend: no publisher is verified.
-pub fn verify_identity(
+/// The signed package's manifest, bound to its native backend if it ships one.
+pub fn verify_package(
     package: &serde_json::Value,
     files: &BTreeMap<String, Vec<u8>>,
-) -> Result<TabManifest, AppError> {
-    let manifest =
-        cadencr_registry_core::validate_tab_package_files(package, files).map_err(invalid)?;
-    if manifest.backend.is_some() {
-        return Err(invalid("a marketplace tab cannot ship a native `backend`"));
-    }
-    Ok(manifest)
+) -> Result<(TabManifest, Option<SignedTabBackend>), AppError> {
+    cadencr_registry_core::validate_tab_package_binding(package, files).map_err(invalid)
 }
 
-pub fn commit(
-    root: &Path,
-    receipt: &Receipt,
-    archive: &[u8],
-    files: &BTreeMap<String, Vec<u8>>,
-) -> Result<(), AppError> {
-    if archive.len() > LIMIT {
-        return Err(invalid("tab archive exceeds 32 MiB"));
-    }
-    let owner = owner(root, &receipt.id)?;
-    let active = ids(root)?;
-    if !active.contains(&receipt.id) && active.len() >= MAX_ACTIVE_TABS {
-        return Err(invalid(
-            "at most 128 marketplace tabs can be installed at once",
-        ));
-    }
-    let cell = retention::admit_owner(root, &receipt.id)?;
-    let state = cell.lock().map_err(invalid)?;
-    secure(root, &owner)?;
-    let sha = io::digest(archive);
-    let destination = owner.join(&sha);
-    if !destination.try_exists().map_err(invalid)? {
-        retention::prepare(root, &receipt.id, &state)?;
-        let mut builder = tempfile::Builder::new();
-        builder.prefix(".stage-");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            builder.permissions(std::fs::Permissions::from_mode(0o700));
-        }
-        // Do not let TempDir recursively delete an interrupted/modified tree:
-        // partial stages stay bounded by retention admission and need review.
-        let staging = builder.tempdir_in(&owner).map_err(invalid)?.keep();
-        let payload = staging.join(&receipt.id);
-        secure(root, &payload)?;
-        for (name, bytes) in files {
-            let path = payload.join(name);
-            secure(
-                root,
-                path.parent()
-                    .ok_or_else(|| invalid("asset parent missing"))?,
-            )?;
-            write_file(&path, bytes)?;
-        }
-        write_file(&staging.join("archive.tar.gz"), archive)?;
-        crate::shared::atomic_file::write_atomic_private(
-            &staging.join("receipt.json"),
-            &serde_json::to_string(receipt).map_err(invalid)?,
-        )?;
-        std::fs::rename(&staging, &destination).map_err(invalid)?;
-    }
-    check_directory(root, &destination.join(&receipt.id))?;
-    if io::regular(&destination.join("archive.tar.gz"), LIMIT)? != archive {
-        return Err(invalid(
-            "retained tab archive differs from requested revision",
-        ));
-    }
-    for (name, bytes) in files {
-        if io::regular(&destination.join(&receipt.id).join(name), LIMIT)? != *bytes {
-            return Err(invalid("retained tab payload changed"));
-        }
-    }
-    // Only replace managed JSON, never an unknown file occupying a control path.
-    let retained: Receipt = serde_json::from_slice(&io::regular(
-        &destination.join("receipt.json"),
-        LIMIT + 64 * 1024,
-    )?)
-    .map_err(invalid)?;
-    if retained.id != receipt.id || retained.version != receipt.version {
-        return Err(invalid("retained tab receipt identity mismatch"));
-    }
-    if owner.join("active.json").symlink_metadata().is_ok() {
-        validate_pointer(&owner.join("active.json"))?;
-    }
-    // Store the newly authenticated catalog proof even when reusing identical bytes.
-    crate::shared::atomic_file::write_atomic_private(
-        &destination.join("receipt.json"),
-        &serde_json::to_string(receipt).map_err(invalid)?,
-    )?;
-    let previous = owner.join("active.json");
-    crate::shared::atomic_file::write_atomic_private(
-        &previous,
-        &serde_json::to_string(&sha).map_err(invalid)?,
-    )
-}
+#[cfg(test)]
+pub use fixtures::commit;
 
 fn validate_pointer(path: &Path) -> Result<(), AppError> {
     let pointer: String = serde_json::from_slice(&io::regular(path, 1024)?).map_err(invalid)?;
-    if pointer.len() != 64
-        || !pointer
-            .bytes()
-            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-    {
+    if !is_revision(&pointer) {
         return Err(invalid(
             "invalid tab revision pointer; unknown file preserved",
         ));
@@ -238,22 +245,25 @@ fn validate_pointer(path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Uninstall only the active pointer and recognized, unleased managed artifacts.
+/// Uninstall only the pointers and recognized, unleased managed artifacts.
 pub fn deactivate(root: &Path, id: &str) -> Result<(), AppError> {
     let cell = retention::owner_state(root, id)?;
     let state = cell.lock().map_err(invalid)?;
     let owned = owner(root, id)?;
     check_directory(root, &owned)?;
-    validate_pointer(&owned.join("active.json"))?;
-    std::fs::remove_file(owned.join("active.json")).map_err(invalid)?;
+    validate_pointer(&owned.join(ACTIVE))?;
+    pending::clear(&owned)?;
+    std::fs::remove_file(owned.join(ACTIVE)).map_err(invalid)?;
     retention::collect(root, id, &state)?;
     retention::remove_empty_owner(root, id, &cell)
 }
 
 #[cfg(test)]
 pub(super) mod tests {
-    use super::fixtures::fixture;
+    use super::fixtures::{self, backend_fixture, fixture};
     use super::*;
+    use crate::domain::plugin_tabs::test_support::error_code;
+    use cadencr_plugin_core::tab::TabPlatform;
 
     #[test]
     fn signed_revisions_preserve_payload_and_reject_forged_bytes() {
@@ -261,10 +271,18 @@ pub(super) mod tests {
         let (receipt, archive, files, trust) = fixture(temp.path());
         let root = temp.path().join("managed");
         commit(&root, &receipt, &archive, &files).unwrap();
-        let (_, found, manifest) = read_trusted(&root, "graph", &trust).unwrap();
-        assert_eq!(found, files);
-        assert_eq!(manifest.permissions, ["git:read"]);
+        let trusted = read_trusted(&root, "graph", &trust).unwrap();
+        assert_eq!(trusted.files, files);
+        assert_eq!(trusted.revision.manifest.permissions, ["git:read"]);
+        assert_eq!(trusted.revision.facts.backend, None);
+        assert_eq!(
+            trusted.revision.facts.revision, trusted.revision.facts.archive_sha256,
+            "a UI-only revision keeps its archive-digest name"
+        );
         let dir = directory(&root, "graph").unwrap().unwrap();
+        // Published read-only: tampering takes the user restoring write access.
+        assert!(std::fs::write(dir.join("dist/index.html"), "tampered").is_err() || is_root());
+        fixtures::unseal_tree(dir.parent().unwrap());
         crate::shared::atomic_file::write_atomic_private(&dir.join("dist/index.html"), "tampered")
             .unwrap();
         assert!(read_trusted(&root, "graph", &trust).is_err());
@@ -293,7 +311,7 @@ pub(super) mod tests {
         let (receipt, archive, files, _) = fixture(temp.path());
         let mut package = receipt.index.signed.packages[0]["package"].clone();
         package["tab"]["version"] = serde_json::json!("2.0.0");
-        assert!(verify_identity(&package, &files).is_err());
+        assert!(verify_package(&package, &files).is_err());
         let root = temp.path().join("managed");
         commit(&root, &receipt, &archive, &files).unwrap();
         for id in ["../graph", "self", "grants", "A"] {
@@ -338,6 +356,7 @@ pub(super) mod tests {
             .unwrap()
             .join("receipt.json");
         let database = b"SQLite format 3\0precious";
+        fixtures::unseal_tree(proof.parent().unwrap());
         std::fs::write(&proof, database).unwrap();
         assert!(commit(&root, &receipt, &archive, &files).is_err());
         assert_eq!(std::fs::read(proof).unwrap(), database);
@@ -385,16 +404,183 @@ pub(super) mod tests {
         read_trusted(&root, "graph", &trust).unwrap();
     }
 
+    /// Root ignores permission bits: sealing cannot be observed.
+    fn is_root() -> bool {
+        #[cfg(unix)]
+        return unsafe { libc::geteuid() } == 0;
+        #[cfg(not(unix))]
+        false
+    }
+
+    #[cfg(unix)]
+    fn mode(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
     #[test]
-    fn a_marketplace_package_cannot_ship_a_native_backend() {
+    fn a_backend_revision_stores_this_platforms_executable_beside_its_archive() {
         let temp = tempfile::tempdir().unwrap();
-        let (receipt, _, mut files, _) = fixture(temp.path());
-        let package = catalog::resolve_kind(&receipt.index, "graph", &receipt.version, "tab")
-            .expect("the fixture's package");
-        assert!(verify_identity(&package, &files).is_ok());
-        let mut manifest: serde_json::Value = serde_json::from_slice(&files["tab.json"]).unwrap();
-        manifest["backend"] = serde_json::json!({"command": "node", "reasoning": "r"});
-        files.insert("tab.json".into(), serde_json::to_vec(&manifest).unwrap());
-        assert!(format!("{:?}", verify_identity(&package, &files)).contains("native `backend`"));
+        let tab = backend_fixture().root(temp.path()).call();
+        let root = temp.path().join("managed");
+        let package = catalog::resolve_kind(&tab.receipt.index, "graph", "1.0.0", "tab").unwrap();
+        let (_, signed) = verify_package(&package, &tab.files).unwrap();
+        assert!(signed.is_some());
+        tab.commit(&root, Activation::Activate).unwrap();
+        let trusted = read_trusted(&root, "graph", &tab.trust).unwrap();
+        let backend = trusted.revision.facts.backend.clone().unwrap();
+        assert_eq!(Some(backend.platform), TabPlatform::current());
+        assert_eq!(backend.executable_sha256, io::digest(&tab.executable));
+        assert_eq!(backend.archive_sha256, io::digest(&tab.backend_archive));
+        assert_eq!(
+            trusted.revision.facts.revision,
+            revision_id(
+                &io::digest(&tab.archive),
+                Some(&io::digest(&tab.backend_archive))
+            )
+        );
+        // Only this platform's binary: the manifest's other paths stay absent.
+        let dir = directory(&root, "graph").unwrap().unwrap();
+        let executable = dir.join(&tab.cmd);
+        assert_eq!(std::fs::read(&executable).unwrap(), tab.executable);
+        #[cfg(unix)]
+        {
+            // A published revision is read-only, its owner included.
+            assert_eq!(mode(&executable), 0o500);
+            assert_eq!(mode(&dir.parent().unwrap().join("backend.tar.gz")), 0o400);
+            assert_eq!(mode(&dir.join("tab.json")), 0o400);
+            assert_eq!(mode(&dir), 0o500);
+            assert_eq!(mode(dir.parent().unwrap()), 0o500);
+        }
+        assert!(!trusted.files.contains_key(&tab.cmd), "never a web asset");
+        assert_ne!(
+            trusted.revision.permissions_hash(),
+            trusted.revision.manifest.permissions_hash(),
+            "consent binds the signed binary"
+        );
+        // The folder report accepts a revision holding only this platform's binary.
+        let report = cadencr_plugin_core::tab::inspect_tab_folder(&dir);
+        assert!(report.valid_manifest().is_some(), "{:?}", report.findings);
+        assert!(report.findings.warnings.is_empty(), "{:?}", report.findings);
+        // The stored archive is part of the proof; the executable's bytes are
+        // checked at launch, its shape here.
+        let archive = dir.parent().unwrap().join("backend.tar.gz");
+        fixtures::unseal_tree(dir.parent().unwrap());
+        std::fs::remove_file(&archive).unwrap();
+        write_file(&archive, b"forged").unwrap();
+        assert!(read_trusted(&root, "graph", &tab.trust).is_err());
+    }
+
+    #[test]
+    fn a_backend_package_needs_its_bound_archive_and_receipt_platform() {
+        let temp = tempfile::tempdir().unwrap();
+        let tab = backend_fixture()
+            .root(temp.path())
+            .also(vec![fixtures::other_platform()])
+            .call();
+        let root = temp.path().join("managed");
+        let commit = |receipt: &Receipt, backend: Option<BackendPayload<'_>>| {
+            commit_revision()
+                .root(&root)
+                .receipt(receipt)
+                .archive(&tab.archive)
+                .files(&tab.files)
+                .maybe_backend(backend)
+                .activation(Activation::Activate)
+                .call()
+        };
+        assert!(
+            commit(&tab.receipt, None).is_err(),
+            "the binary is required"
+        );
+        let ui_only = Receipt {
+            platform: None,
+            ..serde_json::from_value(serde_json::to_value(&tab.receipt).unwrap()).unwrap()
+        };
+        assert!(commit(&ui_only, Some(tab.payload())).is_err());
+        assert!(directory(&root, "graph").unwrap().is_none());
+        // A tab.json declaring a backend the signed entry lacks never binds.
+        let package = catalog::resolve_kind(&tab.receipt.index, "graph", "1.0.0", "tab").unwrap();
+        let mut unsigned = package.clone();
+        unsigned["tab"].as_object_mut().unwrap().remove("backend");
+        unsigned["tab"]["distribution"]
+            .as_object_mut()
+            .unwrap()
+            .remove("binary");
+        assert!(verify_package(&unsigned, &tab.files).is_err());
+        let (plain, _, files, _) = fixture(&temp.path().join("plain"));
+        let plain_package = catalog::resolve_kind(&plain.index, "graph", "1.0.0", "tab").unwrap();
+        let mut smuggled = plain_package.clone();
+        smuggled["tab"]["backend"] = package["tab"]["backend"].clone();
+        smuggled["tab"]["distribution"]["binary"] =
+            package["tab"]["distribution"]["binary"].clone();
+        assert!(verify_package(&smuggled, &files).is_err());
+        assert!(verify_package(&plain_package, &files).unwrap().1.is_none());
+    }
+
+    #[test]
+    fn staged_updates_wait_beside_the_active_revision_until_promoted_or_discarded() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("managed");
+        let revision = |number: usize| {
+            fixtures::backend_revision(&temp.path().join(format!("fixture-{number}")), number)
+        };
+        let commit = |tab: &fixtures::BackendFixture, activation| tab.commit(&root, activation);
+        let first = revision(0);
+        assert!(
+            commit(&first, Activation::Stage).is_err(),
+            "nothing to stage beside"
+        );
+        commit(&first, Activation::Activate).unwrap();
+        let active = directory(&root, "graph").unwrap().unwrap();
+        let second = revision(1);
+        commit(&second, Activation::Stage).unwrap();
+        assert_eq!(directory(&root, "graph").unwrap().unwrap(), active);
+        let staged = pending_directory(&root, "graph").unwrap().unwrap();
+        assert_ne!(staged, active);
+        let held = lease_pending(&root, "graph").unwrap().unwrap();
+        let trusted =
+            read_trusted_directory(&root, "graph", held.directory(), &first.trust).unwrap();
+        assert_eq!(trusted.revision.manifest.version, "1.0.1");
+        drop(held);
+        // A stale review cannot promote whatever replaced it.
+        let third = revision(2);
+        commit(&third, Activation::Stage).unwrap();
+        let name = |dir: &Path| {
+            dir.parent()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        assert_eq!(
+            error_code(&promote_pending(&root, "graph", &name(&staged)).unwrap_err()),
+            "MANAGED_TAB_UPDATE_CHANGED"
+        );
+        let staged = pending_directory(&root, "graph").unwrap().unwrap();
+        promote_pending(&root, "graph", &name(&staged)).unwrap();
+        assert_eq!(directory(&root, "graph").unwrap().unwrap(), staged);
+        assert!(pending_directory(&root, "graph").unwrap().is_none());
+        assert!(
+            !active.exists(),
+            "the unleased previous revision is reclaimed"
+        );
+        // Discard drops the staged revision and keeps the active one.
+        commit(&revision(3), Activation::Stage).unwrap();
+        let discarded = pending_directory(&root, "graph").unwrap().unwrap();
+        discard_pending(&root, "graph").unwrap();
+        assert!(!discarded.exists());
+        assert_eq!(
+            error_code(&discard_pending(&root, "graph").unwrap_err()),
+            "MANAGED_TAB_UPDATE_NOT_FOUND"
+        );
+        // An activation supersedes a staged update; uninstall removes both.
+        commit(&revision(4), Activation::Stage).unwrap();
+        commit(&revision(5), Activation::Activate).unwrap();
+        assert!(pending_directory(&root, "graph").unwrap().is_none());
+        commit(&revision(6), Activation::Stage).unwrap();
+        deactivate(&root, "graph").unwrap();
+        assert!(!root.join("graph").exists());
     }
 }

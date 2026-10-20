@@ -233,6 +233,14 @@ export const themeCatalogSchema = z
     error: z.string().nullable().optional(),
     recommended_versions: z.record(z.string(), z.string()),
     index: signedMixedCatalogSchema.nullable().optional(),
+    /** Custom-tab catalog only: the platform a tab backend must ship for to install here. */
+    host_platform: z.string().nullable().optional(),
+    /** Custom-tab catalog only: versions the revocation policy blocks here, id → version → reason. */
+    blocked_versions: z.record(z.string(), z.record(z.string(), z.string())).optional(),
+    /** Custom-tab catalog only: versions that cannot install here, id → version → why. */
+    unavailable_versions: z
+      .record(z.string(), z.record(z.string(), z.enum(["platform", "protocol"])))
+      .optional(),
   })
   .strict();
 export type ThemeMarketplacePackage = z.infer<typeof themePackageSchema>;

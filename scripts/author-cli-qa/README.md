@@ -116,6 +116,10 @@ SHA-256 of the exact candidate bytes.
 The Rust CI job builds the current source CLI and enables this additional fixture
 contract test. It catches compiled-entry and publication-metadata errors before
 hosted author QA; it does not replace the downloaded Linux executable checks.
+It also packs a backend tab (`pack-tab` plus `pack-tab-backend` for every
+platform, from synthesized inert native headers that are never executed) and
+checks the `backend-<platform>` publication targets. Backend tabs are not part
+of released-binary qualification yet.
 
 ```sh
 CADENCR_DEVELOPMENT_FIXTURE_CLI="$PWD/target/debug/cadencr" \

@@ -10,6 +10,8 @@ bon.workspace = true
 cadencr-plugin-core = { path = "../plugin-core" }
 cadencr-registry-core = { path = "../registry-core" }
 cadencr-registry-publisher = { path = "../registry-publisher" }
+# The stdio protocol's reference types and limits (transport only).
+cadencr-tab-backend = { path = "../tab-backend-sdk-rs" }
 claude-agent-sdk-rs = { path = "../claude-agent-sdk-rs" }
 cli-discovery = { path = "../cli-discovery" }
 codex-app-server-sdk-rs = { path = "../codex-app-server-sdk-rs" }

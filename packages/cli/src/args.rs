@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
+use crate::tab_backend::TabBackendCommand;
+
 #[derive(Debug, Parser)]
 #[command(
     name = "cadencr",
@@ -59,6 +61,10 @@ pub(crate) enum PluginCommand {
         /// manifest and need no provider descriptor.
         #[arg(long, value_enum, default_value_t = PluginKind::Provider)]
         kind: PluginKind,
+        /// Custom tabs: do not run the backend's protocol conformance checks
+        /// (static checks still apply), for machines that cannot execute it.
+        #[arg(long)]
+        no_run: bool,
     },
 }
 
@@ -80,6 +86,8 @@ pub(crate) struct RegistryArgs {
 pub(crate) enum RegistryCommand {
     #[command(flatten)]
     Diagnostics(crate::metadata::MetadataCommand),
+    #[command(flatten)]
+    TabBackend(TabBackendCommand),
     /// Validate a candidate contribution relative to a base registry.
     Validate {
         #[arg(long)]
@@ -256,6 +264,7 @@ impl Cli {
                 ) | RegistryCommand::PackProvider { .. }
                     | RegistryCommand::PackTheme { .. }
                     | RegistryCommand::PackTab { .. }
+                    | RegistryCommand::TabBackend(TabBackendCommand::PackTabBackend { .. })
             })
         )
     }

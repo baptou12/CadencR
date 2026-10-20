@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::signing::{parse_public_key, verify_envelope_at};
+use crate::signing::{parse_public_key, verify_envelope_at, PayloadCheck};
 use crate::{PreparedSigningPayload, RegistryError};
 
 /// Check the pinned key pair and signed baseline against an unsigned candidate.
@@ -46,7 +46,12 @@ pub fn preflight_publication_pipeline(
             )?;
         }
         None => {
-            verify_envelope_at(&prior, &public, key_id, true, chrono::Utc::now())?;
+            verify_envelope_at(
+                &prior,
+                &public,
+                key_id,
+                PayloadCheck::history(chrono::Utc::now()),
+            )?;
         }
     }
     let candidate = crate::parse_json_bytes(payload.canonical_payload())

@@ -17,6 +17,7 @@ import {
 import { PluginTabActivityDialog } from "./PluginTabActivityDialog";
 import { PluginTabExternalOpenDialog } from "./PluginTabExternalOpenDialog";
 import { PluginTabOverlay, type PluginTabOverlayState } from "./PluginTabOverlay";
+import { backendPlatforms, backendUnavailableHere } from "./plugin-tab-access";
 import { usePluginTabGuest, type GuestPhase } from "./usePluginTabGuest";
 import { usePluginTabNavigation } from "./usePluginTabNavigation";
 
@@ -26,13 +27,24 @@ export interface PluginTabViewProps {
   context: TabContext;
 }
 
-/** Why no guest runs for this tab, or `null` when one should. */
+/**
+ * Why no guest runs for this tab, or `null` when one should. A tab whose
+ * backend can't run on this platform gets no guest either — so no broker —
+ * rather than a page whose every backend call fails. The presence keeper
+ * leases exactly the tabs with a backend this returns `null` for.
+ */
 export function staticOverlayState(
   summary: PluginTabSummary,
   desktop: boolean,
 ): PluginTabOverlayState | null {
   if (!desktop) return { kind: "remote" };
+  // Blocked while open: `live` turns false, which disposes the guest and its broker.
+  if (summary.status === "blocked")
+    return { kind: "blocked", reason: summary.blocked_reason ?? null };
   if (summary.status === "invalid") return { kind: "invalid", errors: summary.errors };
+  if (backendUnavailableHere(summary)) {
+    return { kind: "unavailable", platforms: backendPlatforms(summary.backend) };
+  }
   if (!summary.enablement.effective) return { kind: "disabled" };
   if (!summary.entry_present) {
     return {
@@ -74,8 +86,9 @@ function useDocumentVisible(): boolean {
 /**
  * Body of a `plugin:<id>` tab. A placeholder the native guest view is laid
  * over (§5.1); while there is no guest to show — loading, not built,
- * invalid, off, failed, crashed, or outside the desktop app — the
- * placeholder renders that state instead and the view stays hidden.
+ * invalid, unavailable on this platform, off, failed, crashed, or outside
+ * the desktop app — the placeholder renders that state instead and the view
+ * stays hidden.
  */
 export const PluginTabView = memo(function PluginTabView({
   featureId,

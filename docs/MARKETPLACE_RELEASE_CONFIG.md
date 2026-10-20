@@ -53,16 +53,21 @@ blocklist checks remain authoritative; build validation does not replace them.
 
 ## Public repository variables
 
-| Variable                                     | Configuration rule                                                                                                                                                                                                             |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `CADENCR_MANAGED_PROVIDER_KEY_ID`            | Host-owned signing key ID; starts with an ASCII alphanumeric character, followed by ASCII alphanumeric, `.`, `_`, or `-`; at most 128 bytes.                                                                                   |
-| `CADENCR_MANAGED_PROVIDER_PUBLIC_KEY_BASE64` | Canonical base64 representation of the host-owned 32-byte Ed25519 public key. Never a private key.                                                                                                                             |
-| `CADENCR_MANAGED_PROVIDER_INDEX_URL`         | Credential-free HTTPS provider catalog URL. Existing schema-1 feeds remain supported; current clients may point at the signed mixed schema-2 feed.                                                                             |
-| `CADENCR_MANAGED_PROVIDER_BLOCKLIST_URL`     | Credential-free HTTPS signed policy URL, configured together with the provider catalog and both key variables.                                                                                                                 |
-| `CADENCR_MANAGED_THEME_INDEX_URL`            | Additional activation pair with the theme blocklist, requiring the complete four-variable trust group. It must point at `https://raw.githubusercontent.com/<owner>/<repository>/refs/heads/marketplace-v2/managed-index.json`. |
-| `CADENCR_MANAGED_THEME_BLOCKLIST_URL`        | Theme-only signed revocation policy at `https://raw.githubusercontent.com/<owner>/<repository>/refs/heads/marketplace-v2/managed-theme-blocklist.json`; same reviewed repository as the mixed catalog.                         |
+| Variable                                     | Configuration rule                                                                                                                                                                                                                                     |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `CADENCR_MANAGED_PROVIDER_KEY_ID`            | Host-owned signing key ID; starts with an ASCII alphanumeric character, followed by ASCII alphanumeric, `.`, `_`, or `-`; at most 128 bytes.                                                                                                           |
+| `CADENCR_MANAGED_PROVIDER_PUBLIC_KEY_BASE64` | Canonical base64 representation of the host-owned 32-byte Ed25519 public key. Never a private key.                                                                                                                                                     |
+| `CADENCR_MANAGED_PROVIDER_INDEX_URL`         | Credential-free HTTPS provider catalog URL. Existing schema-1 feeds remain supported; current clients may point at the signed mixed schema-2 feed.                                                                                                     |
+| `CADENCR_MANAGED_PROVIDER_BLOCKLIST_URL`     | Credential-free HTTPS signed policy URL, configured together with the provider catalog and both key variables.                                                                                                                                         |
+| `CADENCR_MANAGED_THEME_INDEX_URL`            | Additional activation pair with the theme blocklist, requiring the complete four-variable trust group. It must point at `https://raw.githubusercontent.com/<owner>/<repository>/refs/heads/marketplace-v2/managed-index.json`.                         |
+| `CADENCR_MANAGED_THEME_BLOCKLIST_URL`        | Theme-only signed revocation policy at `https://raw.githubusercontent.com/<owner>/<repository>/refs/heads/marketplace-v2/managed-theme-blocklist.json`; same reviewed repository as the mixed catalog.                                                 |
+| `CADENCR_MANAGED_TAB_BLOCKLIST_URL`          | Custom-tab-only signed revocation policy (`kind: "tab-blocklist"`), e.g. `https://raw.githubusercontent.com/<owner>/<repository>/refs/heads/marketplace-v2/managed-tab-blocklist.json`; same signing key and reviewed repository as the mixed catalog. |
 
 The first four variables are all-or-none. The two theme feeds are also all-or-none.
+The tab policy URL goes with the theme feeds: the desktop release workflow forwards it, and
+`validate-marketplace-build-env.mjs` requires it whenever the theme feeds are set, in the same
+reviewed repository. A build without it blocks nothing and refuses nothing
+(see [Custom tab revocation](#custom-tab-revocation)).
 Theme acquisition without a current verified revocation policy fails closed. Theme and provider acquisition use the
 same pinned host-owned key; there is no independent theme signing-key input.
 Current clients may set both catalog URL variables to the same mixed feed.
@@ -215,6 +220,79 @@ not an ordinary delegated-key rotation.
 - Missing, invalid, expired or revoked policy fails closed for theme usage;
   confirmed removal remains available. Feed renewal and incident ownership are
   still release-owner operational responsibilities.
+
+## Custom tab revocation
+
+Custom tabs have their own signed feed, separate from the theme and provider
+policies and signed with the same host-owned key. The service compiles its URL in
+with `option_env!("CADENCR_MANAGED_TAB_BLOCKLIST_URL")` (empty values count as unset);
+there is no runtime override. Tests configure a fixture feed per storage root.
+`scripts/validate-marketplace-build-env.mjs` refuses a release build that sets the
+mixed catalog without this feed (or the reverse), and requires the
+`marketplace-v2/managed-tab-blocklist.json` path in the catalog's repository;
+`desktop-release.yml` forwards it from the repository variable of the same name.
+
+**Custom builds have no such guard.** Only that release validator ties the two
+together; the service itself treats an unset tab feed as "no policy source". A
+build compiled with the mixed catalog URL but without
+`CADENCR_MANAGED_TAB_BLOCKLIST_URL` (a fork, a local `cargo build` with only the
+catalog variables) therefore lists, installs, updates and starts marketplace tabs
+with **no tab revocation at all**: nothing is ever blocked, and nothing is refused
+for want of a fresh policy. This is the same accepted gap as the other feeds'
+build-time pairing, not a runtime fail-closed rule; anyone shipping such a build
+to users owns the consequence, and should set both variables (or neither).
+
+Payload (`schema_version: 1`, `kind: "tab-blocklist"`, canonical UTC whole-second
+`generated_at` / `expires_at`, window at most 14 days, entries sorted and unique):
+
+```json
+{
+  "schema_version": 1,
+  "kind": "tab-blocklist",
+  "generated_at": "…",
+  "expires_at": "…",
+  "entries": [
+    {
+      "tab_id": "port-monitor",
+      "version_requirement": "<1.3.0",
+      "archive_sha256": "<web archive>",
+      "executable_sha256": "<backend binary>",
+      "reason": "…"
+    }
+  ]
+}
+```
+
+An entry matches when every field it sets matches: `tab_id` alone blocks every
+version; `version_requirement` is a semver range; `archive_sha256` names one signed web
+archive (`tab.distribution.sha256`); `executable_sha256` names one backend binary
+(`tab.distribution.binary.<platform>.executable_sha256`) and never matches a tab
+without a backend. Sign and verify with the released CLI:
+
+```sh
+cadencr registry sign-tab-blocklist --payload reviewed-tab-policy.json \
+  --private-key /protected/signing.pem --key-id reviewed-key-id \
+  --output new-signed-tab-policy.json
+cadencr registry verify-tab-blocklist --index new-signed-tab-policy.json \
+  --public-key reviewed-public.pem --key-id reviewed-key-id
+```
+
+Client behavior:
+
+- The service polls the feed at startup and every 10 minutes; concurrent refreshes
+  coalesce, forced refreshes wait at least 5 seconds, failures retry after 60 seconds.
+  The download uses the catalog client (HTTPS only, bounded size).
+- The verified envelope is cached at `<plugins>/managed-tabs/.tab-blocklist.json`.
+  The cache is a high-water mark: an older `generated_at`, or a different payload with the
+  same `generated_at`, is rejected. A corrupt or symlinked cache is never replaced.
+- Any authenticated cached policy blocks what it lists, even after it expires or after
+  its key is retired. Blocked tabs can still be removed.
+- Only a fresh policy (active signer, unexpired) lets a managed tab install, update or
+  start its native backend while the feed is configured. Otherwise those fail with
+  `MANAGED_TAB_POLICY_UNAVAILABLE`; the tab's web UI keeps working.
+- Key rotation and compromise recovery work as for the other policies, with their own
+  checkpoint list `recovery_tab_policy_sha256` in the registry trust manifest. A theme or
+  provider checkpoint never authenticates a tab policy.
 
 ## Deployment cutover still pending
 

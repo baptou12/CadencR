@@ -32,6 +32,9 @@ pub struct StageReceipt {
 }
 #[derive(Debug, Deserialize)]
 pub(crate) struct Target {
+    /// `tab`, `theme`, `backend-<platform>`, or a provider platform.
+    #[serde(default)]
+    pub(crate) target: String,
     pub(crate) asset: String,
     pub(crate) source_url: String,
     pub(crate) destination_url: String,
@@ -259,6 +262,7 @@ mod tests {
         std::fs::write(&partial, b"foreign").unwrap();
         let digest = crate::hex(&Sha256::digest(b"one"));
         let target = Target {
+            target: "asset".into(),
             asset: "asset".into(),
             source_url: "unused".into(),
             destination_url: "unused".into(),
@@ -318,5 +322,100 @@ mod tests {
             &downloader
         )
         .is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backend_tab_publication_verifies_each_target_by_kind() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let root = tempfile::tempdir().unwrap();
+        let manifest = json!({"schema_version":1,"kind":"tab","id":"ports","name":"Ports",
+            "version":"1.0.0","api_version":1,"entry":"dist/index.html",
+            "backend":{"protocol":1,"reasoning":"Lists ports.","binary":{"linux-x86_64":"bin/ports"}}});
+        let author = root.path().join("author");
+        let stage = root.path().join("payload");
+        for folder in [&author, &stage] {
+            std::fs::create_dir_all(folder.join("dist")).unwrap();
+            std::fs::write(folder.join("tab.json"), manifest.to_string()).unwrap();
+            std::fs::write(folder.join("dist/index.html"), "<html>Ports</html>").unwrap();
+        }
+        std::fs::create_dir_all(author.join("bin")).unwrap();
+        std::fs::write(
+            author.join("bin/ports"),
+            cadencr_plugin_core::tab::test_support::native_executable(
+                cadencr_plugin_core::tab::TabPlatform::LinuxX86_64,
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(
+            author.join("bin/ports"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        let web = cadencr_registry_core::pack_tab(
+            cadencr_registry_core::PackTabRequest::builder()
+                .directory(&stage)
+                .output(&root.path().join("tab.tar.gz"))
+                .build(),
+        )
+        .unwrap();
+        let backend = cadencr_registry_core::pack_tab_backend(
+            cadencr_registry_core::PackTabBackendRequest::builder()
+                .directory(&author)
+                .target(cadencr_plugin_core::tab::TabPlatform::LinuxX86_64)
+                .output(&root.path().join("tab-backend-linux-x86_64.tar.gz"))
+                .build(),
+        )
+        .unwrap();
+        let downloader = FixtureDownloader {
+            bodies: HashMap::from([
+                (web.sha256.clone(), std::fs::read(&web.archive).unwrap()),
+                (
+                    backend.sha256.clone(),
+                    std::fs::read(&backend.archive).unwrap(),
+                ),
+            ]),
+            calls: Mutex::new(Vec::new()),
+            fail_at: None,
+        };
+        let release = "https://github.com/acme/ports/releases/download/v1.0.0";
+        let submission = json!({"schema_version":2,"package":{"kind":"tab","package":{"tab":{
+            "id":"ports","name":"Ports","description":"Ports","version":"1.0.0","api_version":1,
+            "license":"MIT","repository":"https://github.com/acme/ports",
+            "backend":{"protocol":1,"reasoning":"Lists ports."},
+            "distribution":{"archive":format!("{release}/tab.tar.gz"),"sha256":web.sha256,
+                "binary":{"linux-x86_64":{"archive":format!("{release}/tab-backend-linux-x86_64.tar.gz"),
+                    "sha256":backend.sha256,"size":backend.size,"cmd":backend.cmd,
+                    "executable_sha256":backend.executable_sha256,"executable_size":backend.executable_size}}}},
+            "host":{"publisher":"acme","compatibility":{"min_app_version":"0.1.0"}}}},
+            "source":{"repository":"https://github.com/acme/ports","commit":"a".repeat(40),"tag":"v1.0.0"},
+            "changelog":"Release"});
+        let receipt = stage_loaded(
+            &submission,
+            "cadencr/registry",
+            &root.path().join("first"),
+            &downloader,
+        )
+        .unwrap();
+        let assets: Vec<&str> = receipt.artifacts.iter().map(|a| a.asset.as_str()).collect();
+        assert_eq!(
+            assets,
+            [
+                "tab.tar.gz",
+                &format!("backend-linux-x86_64-{}.tar.gz", backend.sha256)
+            ]
+        );
+        // A signed executable digest the archive does not hold fails staging.
+        let mut tampered = submission.clone();
+        tampered["package"]["package"]["tab"]["distribution"]["binary"]["linux-x86_64"]
+            ["executable_sha256"] = json!("0".repeat(64));
+        let error = stage_loaded(
+            &tampered,
+            "cadencr/registry",
+            &root.path().join("second"),
+            &downloader,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("executable"), "{error}");
     }
 }

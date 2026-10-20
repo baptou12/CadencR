@@ -237,6 +237,38 @@ Repository provisioning, branch protections, workflow deployment and real GitHub
 acceptance tests remain separate deployment gates. Local fixture success does not
 establish real token permissions, deployed CI or official registry availability.
 
+## Custom tabs with a native backend
+
+A tab whose `tab.json` declares `backend` is published as two kinds of
+archive, never one:
+
+```bash
+# Web archive: a staging folder with only tab.json, the icon and the built web root.
+cadencr registry pack-tab --directory ./stage --output ./out/tab.tar.gz
+# One backend archive per platform in tab.json backend.binary (any runner).
+cadencr registry pack-tab-backend --directory ./my-tab --target linux-x86_64 \
+  --output ./out/tab-backend-linux-x86_64.tar.gz
+```
+
+Each `pack-tab-backend` run prints `target`, `sha256`, `size`, `cmd`,
+`executable_sha256` and `executable_size`: copy them into
+`tab.distribution.binary.<target>` with the `archive` URL you upload the file
+to (recommended asset name `tab-backend-<platform>.tar.gz`), in the same
+release as `tab.tar.gz`. Add `tab.backend: {"protocol": 1, "reasoning": "…"}`
+equal to `tab.json`. Then `cadencr registry pack-tab --directory ./stage
+--package metadata.json --output …` re-checks the binding, and
+`validate-submission`/`plan-publication` show one `backend-<platform>` target
+per platform. Each executable must be code for its platform's CPU: an x86_64
+ELF for `linux-x86_64`, an x86_64 Mach-O image for `darwin-x86_64`, an arm64
+image for `darwin-aarch64` (a universal file is fine when it contains that
+slice; an Intel-only file is refused for `darwin-aarch64`). Every arm64 image
+must be code-signed (`codesign -s -` ad hoc is enough; the Rust linker does it
+by default). Only the three platform keys and the protocol versions the
+publishing tools support are accepted at submission; Cadencr apps reading the
+signed catalog treat a newer platform or protocol as "not installable here"
+rather than rejecting the catalog. Paths are compared case-insensitively when
+checking that an executable stays out of the web archive.
+
 ## Prepare the review submission
 
 Pin the source commit and release tag, record the changelog, and embed your final

@@ -11,13 +11,15 @@ function useFolderBadge(count: number | null) {
   const client = useCadencr();
   useEffect(() => {
     if (count === null) return;
-    client.ui.setBadge(count === 0 ? null : count > 999 ? "999+" : String(count)).catch((error: unknown) => {
-      void client.ui.toast({
-        title: "Couldn't update the tab badge",
-        description: toCadencrError(error).message,
-        variant: "error",
+    client.ui
+      .setBadge(count === 0 ? null : count > 999 ? "999+" : String(count))
+      .catch((error: unknown) => {
+        void client.ui.toast({
+          title: "Couldn't update the tab badge",
+          description: toCadencrError(error).message,
+          variant: "error",
+        });
       });
-    });
   }, [client, count]);
 }
 
@@ -38,16 +40,29 @@ export function App() {
             <Cpu className="size-3 shrink-0" aria-hidden />
             Read by this tab's native backend
             {conversation ? ` · ${conversation.title}` : null}
-            {conversationLoading ? <Skeleton className="h-3 w-24" aria-label="Loading the conversation" /> : null}
+            {conversationLoading ? (
+              <Skeleton className="h-3 w-24" aria-label="Loading the conversation" />
+            ) : null}
           </p>
         </div>
-        <Button variant="ghost" size="icon-xs" aria-label="Refresh" onClick={() => void reload()} disabled={refreshing}>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Refresh"
+          onClick={() => void reload()}
+          disabled={refreshing}
+        >
           <RefreshCw className={cn(refreshing && "animate-spin")} />
         </Button>
       </header>
       <section className="min-h-0 flex-1 space-y-5 overflow-y-auto p-3">
         {state.status === "loading" ? <Loading /> : null}
-        {state.status === "error" ? <Failed message={`${state.error.code}: ${state.error.message}`} onRetry={() => void reload()} /> : null}
+        {state.status === "error" ? (
+          <Failed
+            message={`${state.error.code}: ${state.error.message}`}
+            onRetry={() => void reload()}
+          />
+        ) : null}
         {ports ? (
           <>
             <PortGroup
@@ -56,7 +71,11 @@ export function App() {
               entries={mine}
               onStop={stop}
             />
-            <PortGroup title="Elsewhere on this computer" empty="No other process is listening." entries={others} />
+            <PortGroup
+              title="Elsewhere on this computer"
+              empty="No other process is listening."
+              entries={others}
+            />
           </>
         ) : null}
       </section>
@@ -75,12 +94,18 @@ function Loading() {
   );
 }
 
+/** A service message as a sentence: its final stop added once, never doubled. */
+function sentence(message: string): string {
+  const text = message.trim();
+  return /[.!?…]$/.test(text) ? text : `${text}.`;
+}
+
 function Failed({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <EmptyState
       icon={<TriangleAlert />}
       title="The backend couldn't list the ports"
-      description={`${message} Its log is in Cadencr: + → Activity….`}
+      description={`${sentence(message)} Its log is in the tab's Activity (+ menu → Activity).`}
       action={
         <Button variant="outline" size="sm" onClick={onRetry}>
           Try again
@@ -110,7 +135,10 @@ function PortGroup({
       {entries.length === 0 ? (
         <p className="text-xs text-muted-foreground">{empty}</p>
       ) : (
-        <ul className="divide-y divide-border/60 rounded-lg border border-border bg-card" aria-label={title}>
+        <ul
+          className="divide-y divide-border/60 rounded-lg border border-border bg-card"
+          aria-label={title}
+        >
           {entries.map((entry) => (
             <PortRow key={`${entry.pid}:${entry.port}`} entry={entry} onStop={onStop} />
           ))}
@@ -120,12 +148,21 @@ function PortGroup({
   );
 }
 
-function PortRow({ entry, onStop }: { entry: PortEntry; onStop?: (entry: PortEntry) => Promise<void> }) {
+function PortRow({
+  entry,
+  onStop,
+}: {
+  entry: PortEntry;
+  onStop?: (entry: PortEntry) => Promise<void>;
+}) {
   const [confirming, setConfirming] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
   return (
-    <li className="flex items-center gap-3 px-3 py-2">
-      <span className="w-14 shrink-0 font-mono text-sm font-semibold tabular-nums">{entry.port}</span>
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+      <span className="w-14 shrink-0 font-mono text-sm font-semibold tabular-nums">
+        {entry.port}
+      </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2 text-sm">
           <span className="truncate">{entry.command || "unknown"}</span>
@@ -140,7 +177,12 @@ function PortRow({ entry, onStop }: { entry: PortEntry; onStop?: (entry: PortEnt
       {onStop ? (
         confirming ? (
           <span className="flex shrink-0 gap-1.5">
-            <Button variant="ghost" size="sm" onClick={() => setConfirming(false)} disabled={stopping}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setConfirming(false)}
+              disabled={stopping}
+            >
               Cancel
             </Button>
             <Button
@@ -149,10 +191,14 @@ function PortRow({ entry, onStop }: { entry: PortEntry; onStop?: (entry: PortEnt
               disabled={stopping}
               onClick={() => {
                 setStopping(true);
-                void onStop(entry).finally(() => {
-                  setStopping(false);
-                  setConfirming(false);
-                });
+                setFailure(null);
+                onStop(entry)
+                  // The toast reporting the outcome could not be shown: say it here.
+                  .catch((error: unknown) => setFailure(toCadencrError(error).message))
+                  .finally(() => {
+                    setStopping(false);
+                    setConfirming(false);
+                  });
               }}
             >
               {stopping ? "Stopping…" : `Stop ${entry.command}`}
@@ -164,6 +210,11 @@ function PortRow({ entry, onStop }: { entry: PortEntry; onStop?: (entry: PortEnt
             Stop
           </Button>
         )
+      ) : null}
+      {failure ? (
+        <span role="alert" className="basis-full pl-17 text-[11px] text-destructive">
+          Couldn&apos;t report the result: {failure}
+        </span>
       ) : null}
     </li>
   );

@@ -21,6 +21,7 @@ import {
 import { useManagedThemes } from "./useManagedThemes";
 import { useStableMutation, useStableQuery } from "./stable-query";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
+import type { MarketplaceNotice } from "@/lib/marketplace";
 
 type ThemeAction =
   | { kind: "install" | "update"; id: string; version: string; index: SignedMixedCatalog }
@@ -39,7 +40,7 @@ export const themeCatalogQuery = queryOptions({
 });
 export function useThemeMarketplace() {
   const client = useQueryClient();
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<MarketplaceNotice | null>(null);
   const inventory = useStableQuery(useManagedThemes());
   const catalog = useStableQuery(useQuery(themeCatalogQuery));
   const refresh = useStableMutation(
@@ -61,15 +62,17 @@ export function useThemeMarketplace() {
       onMutate: () => setNotice(null),
       mutationFn: executeThemeAction,
       onSuccess: async (warning, action) => {
-        setNotice(
-          `${action.id}: ${action.kind} confirmed by Cadencr.${warning ? ` Warning: ${warning}` : ""}`,
-        );
+        setNotice({
+          tone: "done",
+          text: `${action.id}: ${action.kind} confirmed by Cadencr.${warning ? ` Warning: ${warning}` : ""}`,
+        });
         await reconcileThemeAction(client, action);
       },
       onError: async (_, action) => {
-        setNotice(
-          `${action.id}: the change was not confirmed. Reloading affected state before retrying.`,
-        );
+        setNotice({
+          tone: "error",
+          text: `${action.id}: the change was not confirmed. Reloading affected state before retrying.`,
+        });
         await reconcileThemeAction(client, action);
       },
     }),

@@ -21,7 +21,7 @@ function useActivityLines(): Line[] {
   ] as const) {
     if (kind.mutation.isPending)
       lines.push({ tone: "busy", text: `Applying ${kind.mutation.variables?.id} change…` });
-    if (kind.notice) lines.push({ tone: "done", text: kind.notice });
+    if (kind.notice) lines.push(kind.notice);
     error(label, kind.mutation.error);
   }
   error("Provider catalog", providers.catalogQuery.error ?? providers.refresh.error);

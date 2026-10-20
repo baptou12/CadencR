@@ -119,12 +119,7 @@ fn validate_source(source: Option<&Value>, package: &Value, errors: &mut Diagnos
     if !source
         .get("commit")
         .and_then(Value::as_str)
-        .is_some_and(|value| {
-            value.len() == 40
-                && value
-                    .bytes()
-                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-        })
+        .is_some_and(|value| crate::digest::is_lower_hex(value, 40))
     {
         errors.push(
             "submission.source.commit must be a 40-character lowercase hexadecimal commit".into(),

@@ -2,8 +2,9 @@ import { memo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, CloudOff, Loader2, PackageOpen, Search } from "lucide-react";
 import { Virtuoso } from "react-virtuoso";
+import { BLOCKED_COPY } from "@/components/plugin-tabs/plugin-tab-access";
 import { Button } from "@/components/ui/button";
-import type { MarketplaceListing } from "@/lib/marketplace-listings";
+import { downloadableUpdate, type MarketplaceListing } from "@/lib/marketplace-listings";
 import { cn } from "@/lib/utils";
 import { marketplaceError } from "@/lib/marketplace";
 import { KINDS } from "./kinds";
@@ -49,7 +50,7 @@ const LibraryRow = memo(function LibraryRow({
   actions: Actions;
 }): React.JSX.Element {
   const pending = actions.pending(listing);
-  const update = listing.update;
+  const update = downloadableUpdate(listing);
   return (
     <div
       className={cn(
@@ -70,6 +71,11 @@ const LibraryRow = memo(function LibraryRow({
           <KindChips kinds={listing.contributes} />
         </div>
         <InstalledFacts listing={listing} />
+        {listing.installed?.blocked && (
+          <p role="alert" className="mt-0.5 truncate text-[11px] text-destructive">
+            {BLOCKED_COPY.title}: {listing.installed.blocked}
+          </p>
+        )}
         {listing.installed?.error && (
           <p role="alert" className="mt-0.5 truncate text-[11px] text-destructive">
             {listing.installed.error}
@@ -77,7 +83,10 @@ const LibraryRow = memo(function LibraryRow({
         )}
       </div>
       {/* The update button already says it; keep the badge for every other state. */}
-      {(!update || listing.installed?.restartRequired || listing.installed?.error) && (
+      {(!update ||
+        listing.installed?.restartRequired ||
+        listing.installed?.error ||
+        listing.installed?.blocked) && (
         <PluginStateBadge listing={listing} className="hidden sm:inline-flex" />
       )}
       {update && (

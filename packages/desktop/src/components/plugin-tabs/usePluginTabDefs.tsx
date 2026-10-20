@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from "react";
 
 import { usePluginTabList, type PluginTabSummary } from "@/api/generated";
 import type { FeatureTabDef } from "@/components/feature-layout/types";
+import { rememberFeatureProject } from "@/lib/plugin-tabs/feature-projects";
 import { pluginTabInstanceId } from "@/lib/plugin-tabs/instance-id";
 import { clearInstanceState, usePluginTabRuntimeStore } from "@/lib/plugin-tabs/runtime-store";
 import {
@@ -128,6 +129,11 @@ export function usePluginTabDefs({
   const placedKey = usePlacedPluginTabsKey(featureId, enabled);
   const anyPlaced = placedKey !== "";
   useForgetClosedTabState(featureId, placedKey);
+  // The presence keeper needs it to tell whether these tabs may run while
+  // this conversation is off screen.
+  useEffect(() => {
+    if (anyPlaced) rememberFeatureProject(featureId, projectId);
+  }, [anyPlaced, featureId, projectId]);
   const context = usePluginTabContext(featureId, projectId, contextData, anyPlaced);
   const summaries = useProjectPluginTabs(projectId, anyPlaced).data;
   const badgesKey = useFeatureBadgesKey(featureId);

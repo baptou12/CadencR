@@ -18,6 +18,19 @@ impl VerifiedRegistryTrust {
             now,
         )
     }
+    pub fn verify_tab_policy_baseline(
+        &self,
+        envelope: &Value,
+        now: DateTime<Utc>,
+    ) -> Result<(), crate::RegistryError> {
+        let prepared = crate::prepare_tab_blocklist(&envelope["signed"], true, now)?;
+        self.verify_policy_baseline(
+            envelope,
+            prepared.signing.canonical_payload(),
+            &self.envelope.signed.recovery_tab_policy_sha256,
+            now,
+        )
+    }
     /// Callers also validate provider-policy entry semantics before using this baseline.
     pub fn verify_provider_policy_baseline(
         &self,
@@ -169,8 +182,17 @@ mod tests {
         );
         assert!(wrong.verify_theme_policy_baseline(&old, now).is_err());
         assert!(wrong.verify_provider_policy_baseline(&old, now).is_err());
-        let approved = trust(now, true, "recovery_theme_policy_sha256", vec![digest]);
+        let approved = trust(
+            now,
+            true,
+            "recovery_theme_policy_sha256",
+            vec![digest.clone()],
+        );
         approved.verify_theme_policy_baseline(&old, now).unwrap();
+        // A theme checkpoint never vouches for a tab policy, nor the reverse.
+        assert!(approved.verify_tab_policy_baseline(&old, now).is_err());
+        let tab_scoped = trust(now, true, "recovery_tab_policy_sha256", vec![digest]);
+        assert!(tab_scoped.verify_theme_policy_baseline(&old, now).is_err());
         assert!(approved.active_key("a").is_err());
         let mut changed = old;
         changed["signed"]["expires_at"] = (now + chrono::Duration::hours(2))
@@ -179,6 +201,28 @@ mod tests {
         assert!(approved
             .verify_theme_policy_baseline(&changed, now)
             .is_err());
+    }
+    #[test]
+    fn tab_policy_baselines_use_their_own_checkpoints() {
+        let now = Utc::now();
+        let mut signed = policy(now)["signed"].clone();
+        signed["kind"] = json!("tab-blocklist");
+        let signature =
+            SigningKey::from_bytes(&[19; 32]).sign(&crate::canonical_json_bytes(&signed));
+        let tab = json!({"signed":signed,"signature":{"algorithm":"ed25519","key_id":"a","value":BASE64_STANDARD.encode(signature.to_bytes())}});
+        let ordinary = trust(now, false, "recovery_tab_policy_sha256", vec![]);
+        ordinary.verify_tab_policy_baseline(&tab, now).unwrap();
+        assert!(ordinary.verify_theme_policy_baseline(&tab, now).is_err());
+        let digest = VerifiedRegistryTrust::catalog_digest(&tab);
+        let approved = trust(
+            now,
+            true,
+            "recovery_tab_policy_sha256",
+            vec![digest.clone()],
+        );
+        approved.verify_tab_policy_baseline(&tab, now).unwrap();
+        let theme_scoped = trust(now, true, "recovery_theme_policy_sha256", vec![digest]);
+        assert!(theme_scoped.verify_tab_policy_baseline(&tab, now).is_err());
     }
     #[test]
     fn malformed_signature_fields_never_panic_or_authenticate() {

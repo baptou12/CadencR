@@ -1,6 +1,8 @@
 //! The stdio protocol (`docs/CUSTOM_TABS.md` §4.7), one JSON object per line:
 //! - host → backend, first line: `{"type":"hello", …}` with the conversation,
 //!   its folder and the backend's own scoped Cadencr API token;
+//! - backend → host, first stdout line: `{"type":"ready","protocol":1}`
+//!   ([`super::handshake`]); nothing is requested before it;
 //! - host → backend: `{"type":"request","id","method","params"}`;
 //! - backend → host on stdout: `{"type":"response","id","result"}` or
 //!   `{"type":"response","id","error":{"code","message"}}`;
@@ -11,19 +13,18 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use cadencr_tab_backend::protocol::MAX_LINE_BYTES;
 use serde_json::Value;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
+use super::handshake::{self, Handshake, HandshakeState};
 use super::history::History;
 use super::lines::{next_line, Line};
 use super::models::{PluginBackendCallError, PluginBackendResponse};
 use crate::domain::agents::providers::installed::managed::process_policy::MANAGED_MAX_STDERR_LINE_BYTES;
-
-/// Largest stdout line (one response) accepted from a backend.
-pub const MAX_RESPONSE_LINE_BYTES: usize = 4 * 1024 * 1024;
 
 pub(super) enum Reply {
     Response(PluginBackendResponse),
@@ -63,15 +64,45 @@ pub(super) async fn write_stdin(
     // Dropping stdin is the backend's cue to exit.
 }
 
-pub(super) async fn read_stdout(stdout: ChildStdout, pending: Pending, history: Arc<History>) {
+/// The backend's stdout: its `ready` line, then responses.
+pub(super) struct Stdout {
+    pub stdout: ChildStdout,
+    pub pending: Pending,
+    pub history: Arc<History>,
+    pub handshake: HandshakeState,
+    /// The protocol its tab.json declares, which `ready` must name.
+    pub protocol: u32,
+}
+
+pub(super) async fn read_stdout(
+    Stdout {
+        stdout,
+        pending,
+        history,
+        handshake,
+        protocol,
+    }: Stdout,
+) {
     let mut reader = BufReader::new(stdout);
-    while let Ok(Some(line)) = next_line(&mut reader, MAX_RESPONSE_LINE_BYTES).await {
+    // A stream that ends first leaves the handshake to the supervisor, which
+    // settles it with how the process exited.
+    let outcome = match next_line(&mut reader, MAX_LINE_BYTES).await {
+        Ok(Some(Line::Text(line))) => handshake::check_ready(&line, protocol),
+        Ok(Some(Line::TooLong)) => handshake::check_ready(b"<a line over 4 MiB>", protocol),
+        Ok(None) | Err(_) => return,
+    };
+    let ready = outcome == Handshake::Ready;
+    handshake::settle(&handshake, outcome);
+    if !ready {
+        return;
+    }
+    while let Ok(Some(line)) = next_line(&mut reader, MAX_LINE_BYTES).await {
         let text = match line {
             Line::Text(bytes) => bytes,
             Line::TooLong => {
                 history.push_stderr(format!(
                     "[cadencr] dropped a stdout line over {} MiB",
-                    MAX_RESPONSE_LINE_BYTES / (1024 * 1024)
+                    MAX_LINE_BYTES / (1024 * 1024)
                 ));
                 continue;
             }

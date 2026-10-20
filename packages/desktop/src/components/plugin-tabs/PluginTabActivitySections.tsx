@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { formatAgo } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
 
+import { reasonClause } from "./plugin-tab-access";
+
 export function ActivitySection({
   title,
   children,
@@ -79,8 +81,13 @@ export function CommandList({ records }: { records: PluginTabExecRecord[] }): Re
 
 function backendHeadline(status: PluginTabBackendStatus | null | undefined): string {
   if (!status) return "Not started yet: it starts on the tab's first request.";
+  // A refused start spawned nothing: the last run's exit no longer says why it isn't running.
+  if (status.state === "stopped" && status.start_error)
+    return `Couldn't start: ${reasonClause(status.start_error)}.`;
   const since = formatAgo(status.state === "running" ? status.started_at : status.exited_at);
   switch (status.state) {
+    case "starting":
+      return `Starting… waiting for ${status.pid ? `process ${status.pid}` : "it"} to be ready.`;
     case "running":
       return `Running${status.pid ? ` as process ${status.pid}` : ""}${since ? `, started ${since}` : ""}.`;
     case "crashed":
@@ -90,7 +97,11 @@ function backendHeadline(status: PluginTabBackendStatus | null | undefined): str
   }
 }
 
-/** The backend's state, its stderr tail and the one control the user has: stop it. */
+/**
+ * The backend's state, its stderr tail and the one control the user has:
+ * stop it, or — once Cadencr holds its starts (crash loop, protocol
+ * mismatch, refused starts) — allow a restart.
+ */
 export function BackendPanel({
   status,
   stopping,
@@ -102,22 +113,47 @@ export function BackendPanel({
 }): ReactElement {
   const running = status?.state === "running";
   const crashed = status?.state === "crashed";
+  const starting = status?.state === "starting";
+  const held = status?.restart_held === true;
+  const failing = crashed || held;
   return (
     <div className="space-y-2">
       <div className="flex items-start justify-between gap-3">
         <p
+          role={starting ? "status" : undefined}
           className={cn(
-            "text-xs leading-snug",
-            crashed ? "text-[var(--acc-red)]" : "text-foreground",
+            // An exit reason can quote a long unbroken line (a protocol
+            // mismatch): wrap it rather than push the button out.
+            "min-w-0 flex-1 text-xs leading-snug [overflow-wrap:anywhere]",
+            failing ? "text-[var(--acc-red)]" : "text-foreground",
           )}
         >
+          {starting ? (
+            <Loader2Icon
+              aria-hidden
+              className="mr-1.5 inline size-3.5 animate-spin align-[-3px] text-muted-foreground"
+            />
+          ) : null}
           {backendHeadline(status)}
+          {held ? (
+            <span className="text-muted-foreground">
+              {" "}
+              Cadencr won't start it again until you allow a restart.
+            </span>
+          ) : null}
           {status && status.starts > 1 ? (
             <span className="text-muted-foreground"> Started {status.starts} times.</span>
           ) : null}
         </p>
-        {running || crashed ? (
-          <Button type="button" variant="outline" size="sm" onClick={onStop} disabled={stopping}>
+        {running || failing ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={onStop}
+            disabled={stopping}
+          >
             {stopping ? (
               <Loader2Icon className="animate-spin" aria-hidden />
             ) : (

@@ -28,4 +28,4 @@ workspace = true
 axum = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
 chrono = "0.4"
-cadencr-plugin-core = { path = "../plugin-core" }
+cadencr-plugin-core = { path = "../plugin-core", features = ["test-support"] }

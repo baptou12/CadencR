@@ -1,26 +1,43 @@
 //! Exact-tree proof for deletion; unrecognized content is never disposable.
 use super::*;
 
+/// What one recognized file must hold. The backend archive and executable
+/// are compared by signed digest, streamed: too large to keep in memory.
+enum Expected {
+    Bytes(Vec<u8>),
+    Digest {
+        sha256: String,
+        limit: u64,
+        executable: bool,
+    },
+}
+impl Expected {
+    fn holds(&self, path: &Path) -> Result<bool, AppError> {
+        Ok(match self {
+            Self::Bytes(bytes) => io::regular(path, LIMIT + 64 * 1024)? == *bytes,
+            Self::Digest {
+                sha256,
+                limit,
+                executable,
+            } => {
+                super::super::filesystem::hash_private_file(path, *limit, *executable)?.0 == *sha256
+            }
+        })
+    }
+}
 pub(super) struct Plan {
-    files: BTreeMap<PathBuf, Vec<u8>>,
+    files: BTreeMap<PathBuf, Expected>,
     directories: BTreeSet<PathBuf>,
 }
 pub(super) fn recognized(root: &Path, id: &str, revision: &Path) -> Result<Plan, AppError> {
     check_directory(root, revision)?;
-    let receipt_bytes = io::regular(&revision.join("receipt.json"), LIMIT + 64 * 1024)?;
+    let receipt_bytes = io::regular(&revision.join(RECEIPT), LIMIT + 64 * 1024)?;
     let receipt: Receipt = serde_json::from_slice(&receipt_bytes).map_err(invalid)?;
     if receipt.id != id {
         return Err(invalid("retained tab receipt identity mismatch"));
     }
-    let archive = io::regular(&revision.join("archive.tar.gz"), LIMIT)?;
+    let archive = io::regular(&revision.join(WEB_ARCHIVE), LIMIT)?;
     let sha = io::digest(&archive);
-    let name = revision
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    if is_digest(name) && name != sha {
-        return Err(invalid("retained tab archive identity mismatch"));
-    }
     // Deletion proves historical bytes, not whether they can run on this host.
     // In particular an app upgrade must not make max_app_version revisions immortal.
     let mut matches = receipt.index.signed.packages.iter().filter(|entry| {
@@ -38,18 +55,49 @@ pub(super) fn recognized(root: &Path, id: &str, revision: &Path) -> Result<Plan,
         return Err(invalid("retained tab archive checksum mismatch"));
     }
     let payload = cadencr_registry_core::read_tab_archive_bytes(&archive).map_err(invalid)?;
-    verify_identity(package, &payload)?;
+    let (_, signed) = verify_package(package, &payload)?;
     let mut files = BTreeMap::from([
-        (PathBuf::from("receipt.json"), receipt_bytes),
-        (PathBuf::from("archive.tar.gz"), archive),
+        (PathBuf::from(RECEIPT), Expected::Bytes(receipt_bytes)),
+        (PathBuf::from(WEB_ARCHIVE), Expected::Bytes(archive)),
     ]);
+    let mut backend_sha = None;
+    if let Some(signed) = &signed {
+        let (_, target) = super::super::backend::signed_target(&receipt, signed)?;
+        backend_sha = Some(target.sha256.clone());
+        files.insert(
+            PathBuf::from(super::super::backend::ARCHIVE),
+            Expected::Digest {
+                sha256: target.sha256.clone(),
+                limit: cadencr_registry_core::MAX_TAB_BACKEND_ARCHIVE_BYTES,
+                executable: false,
+            },
+        );
+        files.insert(
+            Path::new(id).join(&target.cmd),
+            Expected::Digest {
+                sha256: target.executable_sha256.clone(),
+                limit: cadencr_registry_core::MAX_TAB_BACKEND_EXECUTABLE_BYTES,
+                executable: true,
+            },
+        );
+    }
+    let name = revision
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    if is_revision(name) && name != super::super::revision_id(&sha, backend_sha.as_deref()) {
+        return Err(invalid("retained tab archive identity mismatch"));
+    }
     for (name, bytes) in payload {
-        files.insert(Path::new(id).join(name), bytes);
+        files.insert(Path::new(id).join(name), Expected::Bytes(bytes));
     }
     let mut directories = BTreeSet::new();
-    for (path, bytes) in &files {
-        if database(path, bytes) || io::regular(&revision.join(path), LIMIT + 64 * 1024)? != *bytes
-        {
+    for (path, expected) in &files {
+        let suspicious = match expected {
+            Expected::Bytes(bytes) => database(path, bytes),
+            Expected::Digest { .. } => database(path, b""),
+        };
+        if suspicious || !expected.holds(&revision.join(path))? {
             return Err(invalid("retained tab contains preserved or changed files"));
         }
         for parent in path
@@ -89,9 +137,16 @@ fn exact_tree(root: &Path, revision: &Path, relative: &Path, plan: &Plan) -> Res
 pub(super) fn remove(revision: &Path, plan: &Plan) -> Result<(), AppError> {
     // Never remove_dir_all: unexpected late additions remain untouched. Recheck
     // bounded regular bytes (including hardlink/permissions checks) before unlink.
-    for (path, bytes) in &plan.files {
+    // A published revision is sealed read-only: its folders (the proven ones
+    // only, never through a symlink) get their owner write bit back first.
+    let unseal = super::super::filesystem::unseal_directory;
+    unseal(revision)?;
+    for directory in &plan.directories {
+        unseal(&revision.join(directory))?;
+    }
+    for (path, expected) in &plan.files {
         let path = revision.join(path);
-        if io::regular(&path, LIMIT + 64 * 1024)? != *bytes {
+        if !expected.holds(&path)? {
             return Err(invalid("retained tab changed during collection"));
         }
         std::fs::remove_file(path).map_err(invalid)?;

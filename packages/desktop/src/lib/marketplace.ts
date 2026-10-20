@@ -104,6 +104,12 @@ export const inventorySchema = z
   })
   .passthrough();
 
+/** A confirmed result, or a change Cadencr did not confirm (shown as a failure). */
+export interface MarketplaceNotice {
+  tone: "done" | "error";
+  text: string;
+}
+
 export function usableCatalog(catalog?: ManagedCatalogResponse): boolean {
   return (
     catalog?.cache_status === "verified" &&

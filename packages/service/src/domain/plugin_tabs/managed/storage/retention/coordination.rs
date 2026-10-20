@@ -79,14 +79,14 @@ mod tests {
             let (other_root, trust) = (&root, &proofs[1]);
             scope.spawn(move || {
                 let selected = storage::lease(other_root, "owner-b").unwrap().unwrap();
-                let (_, _, manifest) = storage::read_trusted_directory(
+                let trusted = storage::read_trusted_directory(
                     other_root,
                     "owner-b",
                     selected.directory(),
                     trust,
                 )
                 .unwrap();
-                other_tx.send(manifest.id).unwrap();
+                other_tx.send(trusted.revision.manifest.id).unwrap();
             });
             // Release A even on timeout so a regression fails instead of hanging
             // while scoped-thread cleanup waits for the same-owner reader.

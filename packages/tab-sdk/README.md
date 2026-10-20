@@ -113,6 +113,23 @@ Every failure is a `CadencrError` with a `code`: `PLUGIN_API_UNSUPPORTED`,
 `HOST_ERROR` — or, from `api.*` helpers, the service's own stable code. HTTP
 errors also carry `status`.
 
+Some `backend.request` failures Cadencr reports to the user itself, with a link
+to the tab's Activity: the ones that keep the backend from running at all
+(`HOST_REPORTED_BACKEND_CODES` — unsigned or tampered binary, no build for
+this platform, crash loop, …). `isReportedByHost(error)` tells them apart, so a
+page doesn't show them twice; everything else (`TIMEOUT`, a busy or exited
+backend, the backend's own errors) is the page's to show.
+
+```ts
+import { isReportedByHost, toCadencrError } from "@cadencr/tab-sdk";
+
+try {
+  await client.backend.request("ports");
+} catch (error) {
+  if (!isReportedByHost(error)) showError(toCadencrError(error).message);
+}
+```
+
 ### Theme
 
 The theme arrives as tokens (`background`, `primary`, `muted-foreground`, …).

@@ -1,4 +1,4 @@
-use sha2::{Digest as _, Sha256};
+use crate::digest::sha256_hex as digest;
 
 use crate::{valid_publication_repository, CatalogSnapshot, RegistryError};
 
@@ -64,13 +64,6 @@ pub fn assess_discovery_head(
             "discovery does not match the signed baseline",
         ))
     }
-}
-
-fn digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 #[cfg(test)]

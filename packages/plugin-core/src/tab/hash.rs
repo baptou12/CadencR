@@ -3,11 +3,23 @@
 //! SHA-256 (lowercase hex) of the canonical JSON
 //! `{"permissions":[sorted],"allowed_origins":[sorted]}`, plus
 //! `"commands":[sorted programs]` when the tab lists commands and
-//! `"backend":{"command":…,"args":[…]}` when it ships a backend. The two
-//! later keys are omitted when empty, so a tab that declares neither keeps the
-//! hash it was consented under. Anything that widens what a tab can reach or
-//! run changes the hash, so a stored consent stops matching and the user is
-//! asked again. Labels, reasons, version bumps and configuration do not.
+//! `"backend":{"protocol":1,"binary":{<platform>:<path>, sorted by platform}}`
+//! when it ships a backend. The two later keys are omitted when empty, so a tab
+//! that declares neither keeps the hash it was consented under. Anything that
+//! widens what a tab can reach or run changes the hash, so a stored consent
+//! stops matching and the user is asked again: a new scope, origin or program,
+//! a backend, a platform's binary added or moved, a protocol change. Labels,
+//! reasons, version bumps and configuration do not.
+//!
+//! A local tab's binaries are identified by path only: the user consents to
+//! whatever its author builds there. A marketplace tab's binary also carries
+//! its published digest: `"digests":{<platform>:<executable_sha256>}` beside
+//! `binary`, for the platform Cadencr runs on only (an update that rebuilds
+//! another platform's binary asks nothing here), omitted when absent so local
+//! hashes stay as they are
+//! ([`TabManifest::permissions_hash_with_backend_digest`]).
+
+use std::collections::BTreeMap;
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -24,10 +36,15 @@ struct Canonical<'a> {
     backend: Option<CanonicalBackend<'a>>,
 }
 
+/// A backend as consent sees it. Field order is the canonical key order.
 #[derive(Serialize)]
-struct CanonicalBackend<'a> {
-    command: &'a str,
-    args: &'a [String],
+pub(crate) struct CanonicalBackend<'a> {
+    pub protocol: u32,
+    /// Sorted by platform key (a `BTreeMap` serializes in key order).
+    pub binary: BTreeMap<&'a str, &'a str>,
+    /// The signed executable digest of a marketplace tab, keyed by platform.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub digests: Option<BTreeMap<&'a str, &'a str>>,
 }
 
 /// What widens a tab beyond its page: the commands it may run and the
@@ -35,7 +52,7 @@ struct CanonicalBackend<'a> {
 #[derive(Default)]
 pub(crate) struct Execution<'a> {
     pub commands: Vec<&'a str>,
-    pub backend: Option<(&'a str, &'a [String])>,
+    pub backend: Option<CanonicalBackend<'a>>,
 }
 
 pub(crate) fn permissions_hash(
@@ -53,9 +70,7 @@ pub(crate) fn permissions_hash(
         permissions,
         allowed_origins,
         commands,
-        backend: execution
-            .backend
-            .map(|(command, args)| CanonicalBackend { command, args }),
+        backend: execution.backend,
     })
     .expect("a struct of string lists always serializes");
     Sha256::digest(&canonical)
@@ -67,16 +82,33 @@ pub(crate) fn permissions_hash(
 impl TabManifest {
     /// See the module docs.
     pub fn permissions_hash(&self) -> String {
+        self.permissions_hash_with_backend_digest(None)
+    }
+
+    /// [`Self::permissions_hash`] of a marketplace tab whose backend binary
+    /// for the platform Cadencr runs on has the signed SHA-256 `digest`
+    /// (`executable_sha256`). `None` — a local tab, or no backend — is the
+    /// plain hash. Where tab backends are unsupported there is no platform
+    /// to key it by and the digest is left out: no backend runs there.
+    pub fn permissions_hash_with_backend_digest(&self, digest: Option<&str>) -> String {
+        let digests = super::TabPlatform::current()
+            .zip(digest)
+            .map(|(platform, digest)| BTreeMap::from([(platform.as_str(), digest)]));
         let execution = Execution {
             commands: self
                 .commands
                 .iter()
                 .map(|command| command.program.as_str())
                 .collect(),
-            backend: self
-                .backend
-                .as_ref()
-                .map(|backend| (backend.command.as_str(), backend.args.as_slice())),
+            backend: self.backend.as_ref().map(|backend| CanonicalBackend {
+                protocol: backend.protocol,
+                binary: backend
+                    .binary
+                    .iter()
+                    .map(|(platform, path)| (platform.as_str(), path.as_str()))
+                    .collect(),
+                digests,
+            }),
         };
         permissions_hash(&self.permissions, self.allowed_origins(), execution)
     }
@@ -172,27 +204,112 @@ mod tests {
                 }
             )
         );
-        let args = strings(&["backend/server.mjs"]);
+        let backend = |protocol, binary: &[(&'static str, &'static str)]| {
+            Some(CanonicalBackend {
+                protocol,
+                binary: binary.iter().copied().collect(),
+                digests: None,
+            })
+        };
         let with_backend = permissions_hash(
             &strings(&["a"]),
             &[],
             Execution {
                 commands: vec!["git", "jq"],
-                backend: Some(("node", &args)),
+                backend: backend(1, &[("linux-x86_64", "bin/l"), ("darwin-aarch64", "bin/m")]),
             },
         );
         assert_ne!(with_commands, with_backend);
-        let other_args = strings(&["backend/other.mjs"]);
-        assert_ne!(
-            with_backend,
+        let hash_of = |protocol, binary| {
             permissions_hash(
                 &strings(&["a"]),
                 &[],
                 Execution {
                     commands: vec!["git", "jq"],
-                    backend: Some(("node", &other_args)),
+                    backend: backend(protocol, binary),
                 },
             )
+        };
+        // Declaration order does not matter; any path, platform or protocol change does.
+        assert_eq!(
+            with_backend,
+            hash_of(1, &[("darwin-aarch64", "bin/m"), ("linux-x86_64", "bin/l")])
+        );
+        assert_ne!(
+            with_backend,
+            hash_of(
+                1,
+                &[("linux-x86_64", "bin/other"), ("darwin-aarch64", "bin/m")]
+            )
+        );
+        assert_ne!(with_backend, hash_of(1, &[("darwin-aarch64", "bin/m")]));
+        assert_ne!(
+            with_backend,
+            hash_of(2, &[("linux-x86_64", "bin/l"), ("darwin-aarch64", "bin/m")])
+        );
+    }
+
+    #[test]
+    fn a_backend_hashes_the_documented_canonical_json() {
+        let manifest = crate::tab::test_support::manifest(serde_json::json!({
+            "permissions": ["git:read"],
+            "network": null,
+            "backend": {
+                "protocol": 1,
+                "binary": {"linux-x86_64": "bin/l", "darwin-aarch64": "bin/m"},
+                "reasoning": "r"
+            }
+        }));
+        let expected: String = Sha256::digest(
+            br#"{"permissions":["git:read"],"allowed_origins":[],"backend":{"protocol":1,"binary":{"darwin-aarch64":"bin/m","linux-x86_64":"bin/l"}}}"#,
+        )
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+        assert_eq!(manifest.permissions_hash(), expected);
+    }
+
+    #[test]
+    fn a_marketplace_digest_widens_only_backend_hashes_and_keys_the_current_platform() {
+        let manifest = |backend| {
+            crate::tab::test_support::manifest(serde_json::json!({
+                "permissions": ["git:read"],
+                "network": null,
+                "backend": backend
+            }))
+        };
+        let backend = manifest(serde_json::json!({
+            "protocol": 1,
+            "binary": {"linux-x86_64": "bin/l", "darwin-aarch64": "bin/m", "darwin-x86_64": "bin/m"},
+            "reasoning": "r"
+        }));
+        // A local tab keeps its hash: no digest is the plain hash.
+        assert_eq!(
+            backend.permissions_hash_with_backend_digest(None),
+            backend.permissions_hash()
+        );
+        let first = backend.permissions_hash_with_backend_digest(Some(&"a".repeat(64)));
+        let rebuilt = backend.permissions_hash_with_backend_digest(Some(&"b".repeat(64)));
+        let Some(platform) = crate::tab::TabPlatform::current() else {
+            assert_eq!(first, backend.permissions_hash());
+            return;
+        };
+        assert_ne!(first, backend.permissions_hash());
+        assert_ne!(first, rebuilt, "a new binary asks for consent again");
+        let canonical = format!(
+            r#"{{"permissions":["git:read"],"allowed_origins":[],"backend":{{"protocol":1,"binary":{{"darwin-aarch64":"bin/m","darwin-x86_64":"bin/m","linux-x86_64":"bin/l"}},"digests":{{"{platform}":"{}"}}}}}}"#,
+            "a".repeat(64)
+        );
+        let expected: String = Sha256::digest(canonical.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        assert_eq!(first, expected);
+        // A UI-only tab has no backend to bind a digest to.
+        let ui = manifest(serde_json::Value::Null);
+        assert_eq!(
+            ui.permissions_hash_with_backend_digest(Some(&"a".repeat(64))),
+            ui.permissions_hash()
         );
     }
 }

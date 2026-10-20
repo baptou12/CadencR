@@ -268,10 +268,10 @@ async fn main() -> anyhow::Result<()> {
                 &domain::plugin_tabs::paths::tabs_dir(),
                 state.plugin_tab_events_tx.clone(),
             );
-            // A manifest edit that changes a tab's permissions revokes its
-            // live grants (a `dist/` rebuild does not).
+            // Permission changes and revocations revoke live grants (blocked: backends stop first).
             tokio::spawn(domain::plugin_tabs::grants::revoke_on_manifest_change(
                 state.plugin_tab_grants.clone(),
+                state.plugin_tab_backends.clone(),
                 state.plugin_tab_events_tx.subscribe(),
             ));
             state

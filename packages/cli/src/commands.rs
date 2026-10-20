@@ -1,4 +1,4 @@
-use std::io::{self, Write as _};
+use std::io::Write as _;
 use std::path::Path;
 
 use serde_json::json;
@@ -25,11 +25,12 @@ pub(crate) fn run(cli: &Cli) -> Result<Option<String>, Diagnostic> {
                     folder,
                     descriptor,
                     kind,
+                    no_run,
                 },
         }) => match kind {
             PluginKind::Provider => validate_provider(folder, descriptor.as_deref()),
             PluginKind::Theme => crate::theme::validate(folder, descriptor.as_deref()),
-            PluginKind::Tab => crate::tab::validate(folder, descriptor.as_deref()),
+            PluginKind::Tab => crate::tab::validate(folder, descriptor.as_deref(), !no_run),
         },
         Command::Registry(registry) => run_registry(&registry.command),
     }
@@ -63,6 +64,7 @@ fn validate_provider(
 fn run_registry(command: &RegistryCommand) -> Result<Option<String>, Diagnostic> {
     match command {
         RegistryCommand::Diagnostics(command) => crate::metadata::run(command),
+        RegistryCommand::TabBackend(command) => crate::tab_backend::run(command),
         RegistryCommand::Validate { base, candidate } => validate_registry(base, candidate),
         RegistryCommand::BuildIndex {
             schema_version,
@@ -142,13 +144,25 @@ fn run_registry(command: &RegistryCommand) -> Result<Option<String>, Diagnostic>
             private_key,
             key_id,
             output,
-        } => signing::sign_theme_blocklist(payload, private_key, key_id, output),
+        } => signing::sign_blocklist(
+            signing::BlocklistKind::Theme,
+            payload,
+            private_key,
+            key_id,
+            output,
+        ),
         RegistryCommand::VerifyThemeBlocklist {
             index,
             public_key,
             key_id,
             allow_expired,
-        } => signing::verify_theme_blocklist(index, public_key, key_id, *allow_expired),
+        } => signing::verify_blocklist(
+            signing::BlocklistKind::Theme,
+            index,
+            public_key,
+            key_id,
+            *allow_expired,
+        ),
         RegistryCommand::AssembleSignedIndex {
             payload,
             signature,
@@ -201,14 +215,13 @@ fn pack_provider(
             .build(),
     )
     .map_err(|error| operation_error("REGISTRY_PACKAGING_FAILED", error))?;
-    let mut receipt = serde_json::to_vec(&json!({
-        "target": packed.target, "archive": packed.archive,
-        "sha256": packed.sha256, "size": packed.size,
-    }))
-    .map_err(|error| operation_error("REGISTRY_PACKAGING_FAILED", error))?;
-    receipt.push(b'\n');
-    output::write_stdout(&receipt, &mut io::stdout().lock())?;
-    Ok(None)
+    output::write_receipt(
+        &json!({
+            "target": packed.target, "archive": packed.archive,
+            "sha256": packed.sha256, "size": packed.size,
+        }),
+        "REGISTRY_PACKAGING_FAILED",
+    )
 }
 
 fn plan_publication(

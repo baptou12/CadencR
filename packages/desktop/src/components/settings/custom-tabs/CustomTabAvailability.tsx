@@ -6,7 +6,13 @@ import {
   UsageSegmentedControl,
   type SegmentedOption,
 } from "@/components/usage/UsageSegmentedControl";
-import { overrideOf, triStateOf, type ProjectOverride, type TriState } from "./custom-tab-model";
+import {
+  canTurnOn,
+  overrideOf,
+  triStateOf,
+  type ProjectOverride,
+  type TriState,
+} from "./custom-tab-model";
 import { enablementKey, type CustomTabEnablement } from "./useCustomTabEnablement";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +45,7 @@ export function CustomTabAvailability({
 }): React.JSX.Element {
   const switchId = useId();
   const global = tab.enablement.global === true;
-  const invalid = tab.status === "invalid";
+  const invalid = !canTurnOn(tab);
   const globalPending = enablement.pendingKey === enablementKey(tab.id, null);
 
   return (

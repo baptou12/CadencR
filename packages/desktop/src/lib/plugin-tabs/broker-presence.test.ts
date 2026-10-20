@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PRESENCE_RENEW_MS, PresenceLease, type PresenceDeps } from "./broker-presence";
+import {
+  PRESENCE_RENEW_MS,
+  PRESENCE_RERELEASE_MS,
+  PresenceLease,
+  type PresenceDeps,
+} from "./broker-presence";
 
 function deps(overrides: Partial<PresenceDeps> = {}): PresenceDeps {
   return {
@@ -22,7 +27,8 @@ describe("PresenceLease", () => {
   it("renews every minute while open, idle or not, and releases on close", async () => {
     const presence = deps();
     const lease = new PresenceLease("ports", 7, "Ports", presence);
-    expect(presence.renew).toHaveBeenCalledWith("ports", "lease-1", 7);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(presence.renew).toHaveBeenCalledWith("ports", "lease-1", 7, expect.any(AbortSignal));
     await vi.advanceTimersByTimeAsync(PRESENCE_RENEW_MS * 30);
     expect(presence.renew).toHaveBeenCalledTimes(31);
     lease.dispose();
@@ -33,10 +39,34 @@ describe("PresenceLease", () => {
     expect(presence.release).toHaveBeenCalledWith("ports", "lease-1");
   });
 
-  it("releases only after a renewal in flight, so the lease cannot come back", async () => {
+  it("releases at once on close, aborting a renewal that hangs", async () => {
+    let signal: AbortSignal | undefined;
+    const presence = deps({
+      renew: vi.fn((_plugin: string, _lease: string, _feature: number, abort: AbortSignal) => {
+        signal = abort;
+        return new Promise<void>(() => undefined);
+      }),
+    });
+    const lease = new PresenceLease("ports", 7, "Ports", presence);
+    await vi.advanceTimersByTimeAsync(0);
+    lease.dispose();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(signal?.aborted).toBe(true);
+    expect(presence.release).toHaveBeenCalledTimes(1);
+    expect(presence.report).not.toHaveBeenCalled();
+    // The aborted renewal might still have reached the service: release once more.
+    await vi.advanceTimersByTimeAsync(PRESENCE_RERELEASE_MS);
+    expect(presence.release).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(PRESENCE_RENEW_MS * 5);
+    expect(presence.release).toHaveBeenCalledTimes(2);
+    expect(presence.renew).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases again when a renewal lands after the close", async () => {
     let finish: () => void = () => undefined;
     const order: string[] = [];
     const presence = deps({
+      // A transport that ignores the abort.
       renew: vi.fn(
         () =>
           new Promise<void>((resolve) => {
@@ -50,12 +80,61 @@ describe("PresenceLease", () => {
         order.push("released");
       }),
     });
-    new PresenceLease("ports", 7, "Ports", presence).dispose();
+    const lease = new PresenceLease("ports", 7, "Ports", presence);
     await vi.advanceTimersByTimeAsync(0);
-    expect(presence.release).not.toHaveBeenCalled();
+    lease.dispose();
+    await vi.advanceTimersByTimeAsync(0);
     finish();
     await vi.advanceTimersByTimeAsync(0);
-    expect(order).toEqual(["renewed", "released"]);
+    expect(order).toEqual(["released", "renewed", "released"]);
+  });
+
+  it("takes no lease for an instance torn down at once, as StrictMode's remount does", async () => {
+    let next = 0;
+    const presence = deps({ newLeaseId: () => `lease-${++next}` });
+    new PresenceLease("ports", 7, "Ports", presence).dispose();
+    const open = new PresenceLease("ports", 7, "Ports", presence);
+    await vi.advanceTimersByTimeAsync(PRESENCE_RERELEASE_MS * 2);
+    expect(presence.renew).toHaveBeenCalledTimes(1);
+    expect(presence.renew).toHaveBeenCalledWith("ports", "lease-2", 7, expect.any(AbortSignal));
+    expect(presence.release).not.toHaveBeenCalled();
+    open.dispose();
+    await vi.advanceTimersByTimeAsync(PRESENCE_RERELEASE_MS * 2);
+    expect(presence.release).toHaveBeenCalledTimes(1);
+    expect(presence.release).toHaveBeenCalledWith("ports", "lease-2");
+  });
+
+  it("doesn't release twice when no renewal was in flight", async () => {
+    const presence = deps();
+    const lease = new PresenceLease("ports", 7, "Ports", presence);
+    await vi.advanceTimersByTimeAsync(0);
+    lease.dispose();
+    await vi.advanceTimersByTimeAsync(PRESENCE_RERELEASE_MS * 2);
+    expect(presence.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up on a renewal stuck for a minute, and reports it once", async () => {
+    const signals: AbortSignal[] = [];
+    const presence = deps({
+      renew: vi.fn((_plugin: string, _lease: string, _feature: number, signal: AbortSignal) => {
+        signals.push(signal);
+        return new Promise<void>((_, reject) =>
+          signal.addEventListener("abort", () => reject(new Error("canceled"))),
+        );
+      }),
+    });
+    const lease = new PresenceLease("ports", 7, "Ports", presence);
+    await vi.advanceTimersByTimeAsync(PRESENCE_RENEW_MS * 2);
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, true, false]);
+    expect(presence.report).toHaveBeenCalledTimes(1);
+    expect(presence.report).toHaveBeenCalledWith(
+      expect.stringContaining("could not be told the tab is open"),
+      expect.objectContaining({ message: expect.stringContaining("did not finish") }),
+    );
+    lease.dispose();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(signals[2]?.aborted).toBe(true);
+    expect(presence.release).toHaveBeenCalledTimes(1);
   });
 
   it("reports one failure per streak, and a failed release", async () => {

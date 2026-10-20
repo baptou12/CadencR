@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite build --watch",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run build:ui && npm run build:backend",
+    "build:ui": "tsc --noEmit && vite build",
+    "build:backend": "node scripts/build-backend.mjs",
+    "test:backend": "cargo test --manifest-path backend/Cargo.toml",
     "vendor": "node ../vendor.mjs"
   },
   "dependencies": {

@@ -6,8 +6,10 @@
 
 use std::path::{Path, PathBuf};
 
+use super::binary::check_backend_binary;
 use super::issues::{TabFindings, TabIssue, TabIssueCode as Code};
-use super::manifest::{BackendTarget, TabBackend, TabManifest};
+use super::manifest::{TabBackend, TabManifest};
+use super::platform::TabPlatform;
 use super::validate::{is_clean_relative_path, validate_manifest};
 use super::{MANIFEST_FILE_NAME, MAX_ICON_BYTES, MAX_MANIFEST_BYTES};
 
@@ -34,6 +36,17 @@ impl TabFolderReport {
 /// Read and validate `<directory>/tab.json`. The folder name must equal the
 /// manifest's `id`.
 pub fn inspect_tab_folder(directory: &Path) -> TabFolderReport {
+    inspect(directory, true)
+}
+
+/// [`inspect_tab_folder`] for a signed marketplace revision, without probing
+/// its backend binary: the host checked it byte for byte when it installed
+/// the revision and hashes it again before each launch.
+pub fn inspect_signed_tab_folder(directory: &Path) -> TabFolderReport {
+    inspect(directory, false)
+}
+
+fn inspect(directory: &Path, probe_backend: bool) -> TabFolderReport {
     let folder_name = directory
         .file_name()
         .and_then(|name| name.to_str())
@@ -60,10 +73,15 @@ pub fn inspect_tab_folder(directory: &Path) -> TabFolderReport {
     let manifest: TabManifest = match serde_json::from_slice(&bytes) {
         Ok(manifest) => manifest,
         Err(error) => {
-            report.findings.errors.push(TabIssue::document(
-                Code::ManifestInvalidJson,
-                format!("{MANIFEST_FILE_NAME}: {error}"),
-            ));
+            report
+                .findings
+                .errors
+                .push(removed_launch_line(&bytes).unwrap_or_else(|| {
+                    TabIssue::document(
+                        Code::ManifestInvalidJson,
+                        format!("{MANIFEST_FILE_NAME}: {error}"),
+                    )
+                }));
             return report;
         }
     };
@@ -78,7 +96,7 @@ pub fn inspect_tab_folder(directory: &Path) -> TabFolderReport {
     report.icon_svg = load_icon(&root, manifest.icon.as_deref(), &mut report.findings);
     report.entry_present =
         is_clean_relative_path(&manifest.entry) && resolve_file(&root, &manifest.entry).is_some();
-    if let Some(backend) = &manifest.backend {
+    if let Some(backend) = manifest.backend.as_ref().filter(|_| probe_backend) {
         check_backend_file(&root, backend, &mut report.findings);
     }
     report.manifest = Some(manifest);
@@ -132,30 +150,48 @@ fn load_icon(root: &Path, icon: Option<&str>, findings: &mut TabFindings) -> Opt
     }
 }
 
-/// A backend launched from the tab folder must be there, and executable, when
-/// the tab is loaded. A warning, like a missing build: the author may not have
-/// built it yet. A bare program name is looked up on `PATH` at launch instead.
-fn check_backend_file(root: &Path, backend: &TabBackend, findings: &mut TabFindings) {
-    let BackendTarget::FolderFile(command) = backend.target() else {
-        return;
-    };
-    if !is_clean_relative_path(command) {
-        return;
+/// A manifest from before backends were native executables: its `backend`
+/// still has a launch line. Named instead of the bare "unknown field" parse
+/// error, with what to write instead.
+fn removed_launch_line(bytes: &[u8]) -> Option<TabIssue> {
+    let document: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let backend = document.get("backend")?.as_object()?;
+    if !backend.contains_key("command") && !backend.contains_key("args") {
+        return None;
     }
-    if let Err(reason) = resolve_backend_file(root, command) {
-        findings.warning(Code::BackendUnavailable, "backend.command", reason);
-    }
+    Some(TabIssue::new(
+        Code::BackendCommandRemoved,
+        "backend",
+        format!(
+            "backends are native executables now: replace `command`/`args` with `protocol` and \
+             `binary`, e.g. {{\"protocol\": 1, \"binary\": {{\"darwin-aarch64\": \
+             \"bin/darwin-aarch64/backend\"}}, \"reasoning\": \"…\"}} — one executable per \
+             platform ({}), built from your backend's source; scripts and programs on PATH \
+             are no longer launched",
+            TabPlatform::list()
+        ),
+    ))
 }
 
-/// The executable file `relative` names inside the tab folder `root`
-/// (canonical), or why it cannot be launched.
-pub fn resolve_backend_file(root: &Path, relative: &str) -> Result<PathBuf, String> {
-    let path = resolve_file(root, relative)
-        .ok_or_else(|| format!("`{relative}` does not exist in the tab folder"))?;
-    if !crate::folder::executable_mode(&path) {
-        return Err(format!("`{relative}` is not executable (chmod +x)"));
+/// The backend binary for the platform Cadencr runs on must be there, and a
+/// native executable, when the tab is loaded. A warning, like a missing
+/// build: the author may not have built it yet. Other platforms' binaries are
+/// only reported by `cadencr plugin validate`; a platform with none declared
+/// is the summary's availability, not a finding.
+fn check_backend_file(root: &Path, backend: &TabBackend, findings: &mut TabFindings) {
+    let Some(platform) = TabPlatform::current() else {
+        return;
+    };
+    let Some(path) = backend.binary_for(platform) else {
+        return;
+    };
+    if let Err(problem) = check_backend_binary(root, path, platform) {
+        findings.warning(
+            Code::BackendUnavailable,
+            format!("backend.binary.{platform}"),
+            format!("`{path}` {problem}"),
+        );
     }
-    Ok(path)
 }
 
 /// `root/relative` when it canonicalizes to a regular file inside `root`.
@@ -214,6 +250,20 @@ mod tests {
         assert!(report.valid_manifest().is_some());
         assert!(report.icon_svg.unwrap().starts_with("<svg"));
         assert!(report.entry_present);
+    }
+
+    #[test]
+    fn a_signed_revision_skips_the_backend_probe() {
+        let Some(platform) = TabPlatform::current() else {
+            return;
+        };
+        let binary = json!({ platform.as_str(): "bin/backend" });
+        let backend = json!({"protocol": 1, "reasoning": "Reads ports.", "binary": binary});
+        let (_root, dir) = folder("ports", json!({ "backend": backend }));
+        let probed = inspect_tab_folder(&dir);
+        assert!(codes(&probed.findings.warnings).contains(&"BACKEND_UNAVAILABLE"));
+        let signed = inspect_signed_tab_folder(&dir);
+        assert!(!codes(&signed.findings.warnings).contains(&"BACKEND_UNAVAILABLE"));
     }
 
     #[test]
@@ -288,30 +338,76 @@ mod tests {
     }
 
     #[test]
-    fn a_folder_backend_must_exist_and_be_executable() {
-        let backend = json!({"command": "bin/backend", "reasoning": "r"});
+    fn the_current_platforms_binary_must_be_a_native_executable() {
+        let Some(platform) = TabPlatform::current() else {
+            return;
+        };
+        let backend = json!({
+            "protocol": 1,
+            "binary": {platform.as_str(): "bin/backend"},
+            "reasoning": "r"
+        });
         let (_root, dir) = folder("changed-files-graph", json!({"backend": backend}));
         std::fs::write(dir.join("icon.svg"), "<svg></svg>").unwrap();
         let missing = inspect_tab_folder(&dir);
         assert!(missing.findings.is_valid());
         assert_eq!(codes(&missing.findings.warnings), ["BACKEND_UNAVAILABLE"]);
+        assert!(missing.findings.warnings[0]
+            .message
+            .contains("not built yet"));
         std::fs::create_dir(dir.join("bin")).unwrap();
+        let native = crate::tab::test_support::native_executable(platform);
         std::fs::write(dir.join("bin/backend"), "#!/bin/sh\n").unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                codes(&inspect_tab_folder(&dir).findings.warnings),
-                ["BACKEND_UNAVAILABLE"]
-            );
+            assert!(inspect_tab_folder(&dir).findings.warnings[0]
+                .message
+                .contains("not executable"));
             let executable = std::fs::Permissions::from_mode(0o755);
             std::fs::set_permissions(dir.join("bin/backend"), executable).unwrap();
         }
+        let script = inspect_tab_folder(&dir);
+        assert!(script.findings.warnings[0].message.contains("script"));
+        std::fs::write(dir.join("bin/backend"), &native).unwrap();
         assert!(inspect_tab_folder(&dir).findings.warnings.is_empty());
-        let program = json!({"command": "node", "args": ["x.mjs"], "reasoning": "r"});
-        let (_other, dir) = folder("changed-files-graph", json!({"backend": program}));
+    }
+
+    #[test]
+    fn only_the_current_platforms_binary_is_checked_here() {
+        let backend = json!({
+            "protocol": 1,
+            "binary": {"linux-x86_64": "bin/linux", "darwin-aarch64": "bin/mac", "darwin-x86_64": "bin/mac"},
+            "reasoning": "r"
+        });
+        let (_root, dir) = folder("changed-files-graph", json!({"backend": backend}));
         std::fs::write(dir.join("icon.svg"), "<svg></svg>").unwrap();
-        assert!(inspect_tab_folder(&dir).findings.warnings.is_empty());
+        let report = inspect_tab_folder(&dir);
+        assert!(report.findings.is_valid(), "{:?}", report.findings);
+        let expected: &[&str] = if TabPlatform::current().is_some() {
+            &["BACKEND_UNAVAILABLE"]
+        } else {
+            &[]
+        };
+        assert_eq!(codes(&report.findings.warnings), expected);
+    }
+
+    #[test]
+    fn a_launch_line_backend_is_told_how_to_migrate() {
+        let legacy = json!({"command": "node", "args": ["server.mjs"], "reasoning": "r"});
+        let (_root, dir) = folder("changed-files-graph", json!({"backend": legacy}));
+        let report = inspect_tab_folder(&dir);
+        assert_eq!(codes(&report.findings.errors), ["BACKEND_COMMAND_REMOVED"]);
+        let message = &report.findings.errors[0].message;
+        assert!(message.contains("native executables now"), "{message}");
+        assert!(message.contains("`protocol` and `binary`"), "{message}");
+        assert!(report.manifest.is_none());
+        let unrelated = json!({"protocol": 1, "binary": {}, "port": 3});
+        let (_other, dir) = folder("changed-files-graph", json!({"backend": unrelated}));
+        assert_eq!(
+            codes(&inspect_tab_folder(&dir).findings.errors),
+            ["MANIFEST_INVALID_JSON"]
+        );
     }
 
     #[cfg(unix)]

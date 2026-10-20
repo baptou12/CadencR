@@ -14,6 +14,16 @@ pub fn tabs_dir() -> PathBuf {
     crate::domain::settings_store::dir::sibling_dir("plugins").join("tabs")
 }
 
+/// The writable folder of tab `id`'s backend (`~/.cadencr/plugins/tab-state/<id>`
+/// in production), outside the tab folder: a marketplace revision is
+/// immutable, and storage retention must never find a backend's files in it.
+/// `id` must already be a valid tab id.
+pub fn state_dir(id: &str) -> PathBuf {
+    crate::domain::settings_store::dir::sibling_dir("plugins")
+        .join("tab-state")
+        .join(id)
+}
+
 /// The folder of tab `id`. Refuses anything that is not a tab id — the id is a
 /// path segment here and a URL host label in the Electron host, so `.`, `/`
 /// and uppercase can never reach either.

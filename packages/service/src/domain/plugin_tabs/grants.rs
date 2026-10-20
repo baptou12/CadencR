@@ -15,6 +15,7 @@ use chrono::{DateTime, Utc};
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
+use super::backend::{BackendSupervisor, StopReason};
 use super::policy::Scope;
 use super::registry;
 use super::watcher::PluginTabChangedEvent;
@@ -230,10 +231,15 @@ fn token_key(token: &str) -> String {
 }
 
 /// Revoke grants when the watcher reports a tab whose manifest no longer
-/// matches them: widened/narrowed permissions or origins, or an invalid
-/// `tab.json`. A `dist/` rebuild leaves the hash alone and keeps grants live.
+/// matches them: widened/narrowed permissions or origins, an invalid
+/// `tab.json`, or a revision the revocation policy now blocks. A `dist/`
+/// rebuild leaves the hash alone and keeps grants live.
+///
+/// A blocked tab's backends are stopped first, so their Activity records
+/// "it was blocked" rather than the revoked grant's generic reason.
 pub async fn revoke_on_manifest_change(
     store: GrantStore,
+    backends: BackendSupervisor,
     mut events: broadcast::Receiver<PluginTabChangedEvent>,
 ) {
     loop {
@@ -248,7 +254,13 @@ pub async fn revoke_on_manifest_change(
                 continue;
             }
             let current = match registry::get(&plugin_id).await {
-                Ok(tab) => tab.require_valid().ok().map(|(_, hash)| hash),
+                Ok(tab) => {
+                    if let Some(reason) = &tab.blocked {
+                        let stopped = backends.stop_plugin(&plugin_id, StopReason::Blocked).await;
+                        tracing::warn!(plugin_id, reason, stopped, "custom tab blocked");
+                    }
+                    tab.require_valid().ok().map(|(_, hash)| hash)
+                }
                 Err(_) => None,
             };
             let revoked = store.revoke_stale(&plugin_id, current.as_deref());
@@ -367,7 +379,11 @@ mod tests {
         let live = store.mint(request("graph", &hash)).token;
         let stale = store.mint(request("graph", "old")).token;
         let (tx, rx) = broadcast::channel(4);
-        let task = tokio::spawn(revoke_on_manifest_change(store.clone(), rx));
+        let task = tokio::spawn(revoke_on_manifest_change(
+            store.clone(),
+            BackendSupervisor::default(),
+            rx,
+        ));
         tx.send(PluginTabChangedEvent {
             plugin_id: "graph".into(),
         })
