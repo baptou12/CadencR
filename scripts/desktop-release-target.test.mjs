@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -109,6 +109,67 @@ test("packaging raises the descriptor limit inherited by pnpm", () => {
       const index = steps.findIndex((step) => step.name === name);
       assert.ok(index >= 0 && index < nativeIndex, `${name} must fail before the native build`);
     }
+  } finally {
+    rmSync(scratch, { recursive: true });
+  }
+});
+
+test("only listing uses the patched pnpm with its pinned integrity", () => {
+  const setup = workflow.jobs.release.steps.find(
+    (step) => step.name === "Use bounded pnpm listing for packaging",
+  );
+  const scratch = mkdtempSync(join(tmpdir(), "cadencr-packaging-pnpm-"));
+  try {
+    const upstream = join(scratch, "upstream");
+    mkdirSync(upstream);
+    const callsFile = join(scratch, "calls.txt");
+    for (const command of ["pnpm", "corepack"]) {
+      writeFileSync(
+        join(upstream, command),
+        '#!/bin/sh\nprintf "' + command + ':%s\\n" "$*" >> "$CALL_LOG"\n',
+        { mode: 0o700 },
+      );
+    }
+    const envFile = join(scratch, "github-env");
+    const pathFile = join(scratch, "github-path");
+    writeFileSync(envFile, "");
+    writeFileSync(pathFile, "");
+    const env = {
+      ...process.env,
+      PATH: upstream + ":" + process.env.PATH,
+      RUNNER_TEMP: scratch,
+      GITHUB_ENV: envFile,
+      GITHUB_PATH: pathFile,
+      CALL_LOG: callsFile,
+    };
+    delete env.BASH_ENV;
+    const installed = spawnSync("bash", ["-e", "-c", setup.run], { env, encoding: "utf8" });
+    assert.equal(installed.status, 0, installed.stderr);
+    const exported = Object.fromEntries(
+      readFileSync(envFile, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => {
+          const separator = line.indexOf("=");
+          return [line.slice(0, separator), line.slice(separator + 1)];
+        }),
+    );
+    const wrapper = join(readFileSync(pathFile, "utf8").trim(), "pnpm");
+    writeFileSync(callsFile, "");
+    for (const args of [
+      ["list", "--prod", "--json"],
+      ["--filter", "@cadencr/desktop", "exec", "electron-builder"],
+    ]) {
+      const result = spawnSync(wrapper, args, { env: { ...env, ...exported }, encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr);
+    }
+    const calls = readFileSync(callsFile, "utf8").trim().split("\n");
+    assert.match(
+      calls[0],
+      /^corepack:pnpm@11\.13\.0\+sha512\.[a-f0-9]{128} --pm-on-fail=ignore list --prod --json$/,
+    );
+    assert.equal(calls[1], "pnpm:--filter @cadencr/desktop exec electron-builder");
+    assert.equal(calls.length, 2);
   } finally {
     rmSync(scratch, { recursive: true });
   }

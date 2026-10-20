@@ -144,6 +144,25 @@ jobs:
       - name: Validate marketplace build configuration
         run: node scripts/validate-marketplace-build-env.mjs
 
+      - name: Use bounded pnpm listing for packaging
+        run: |
+          packaging_pnpm="pnpm@11.13.0+sha512.88d94724d8f2e6c186744a5584c6e59ecac869ec7ba15e9cb4cd628e8dc7066820b2481d8ee3b51ea8da323a7378068aa58c556a3720d32b7c20a051d088363a"
+          COREPACK_ENABLE_PROJECT_SPEC=0 corepack "$packaging_pnpm" --pm-on-fail=ignore --version
+          original_pnpm="$(command -v pnpm)"
+          tool_dir="$RUNNER_TEMP/cadencr-packaging-tools"
+          mkdir -p "$tool_dir"
+          cat > "$tool_dir/pnpm" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [ "$#" -gt 0 ] && [ "$1" = list ]; then
+            exec env COREPACK_ENABLE_PROJECT_SPEC=0 corepack "$CADENCR_PACKAGING_PNPM" --pm-on-fail=ignore "$@"
+          fi
+          exec "$CADENCR_BUILD_PNPM" "$@"
+          SH
+          chmod +x "$tool_dir/pnpm"
+          printf 'CADENCR_PACKAGING_PNPM=%s\nCADENCR_BUILD_PNPM=%s\n' "$packaging_pnpm" "$original_pnpm" >> "$GITHUB_ENV"
+          printf '%s\n' "$tool_dir" >> "$GITHUB_PATH"
+
       - name: Verify packaging dependency graph
         working-directory: packages/desktop
         run: |
