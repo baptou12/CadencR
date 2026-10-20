@@ -69,6 +69,9 @@ async fn capture(
     let mut child = command
         .spawn()
         .map_err(|error| BoundedCommandError::new(format!("could not start: {error}")))?;
+    // `wait` clears the child's id when a launcher exits before its descendants.
+    #[cfg(unix)]
+    let process_group = child.id();
     let stdout = child
         .stdout
         .take()
@@ -115,7 +118,7 @@ async fn capture(
         }
     };
     #[cfg(unix)]
-    if let Some(pid) = child.id() {
+    if let Some(pid) = process_group {
         // Safety: a bare kill(2) on the child's own group; ESRCH only means the
         // group is already gone.
         unsafe {
@@ -219,36 +222,47 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn a_timeout_kills_what_the_shell_started() {
-        let pid_file = std::env::temp_dir().join(format!("bounded-{}.pid", std::process::id()));
-        let mut command = tokio::process::Command::new("/bin/sh");
-        command
-            .args([
-                "-c",
-                &format!("sleep 30 & echo $! > {}; wait", pid_file.display()),
-            ])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        capture_bounded(command, Duration::from_millis(500))
-            .await
-            .unwrap_err();
+        for launcher_action in ["wait", "exit 0"] {
+            let directory = tempfile::tempdir().unwrap();
+            let pid_file = directory.path().join("child.pid");
+            let mut command = tokio::process::Command::new("/bin/sh");
+            command
+                .args([
+                    "-c",
+                    &format!("sleep 30 & echo $! > \"$1\"; {launcher_action}"),
+                    "bounded-command-test",
+                ])
+                .arg(&pid_file)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true);
+            let error = capture_bounded(command, Duration::from_millis(500))
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("timed out"));
 
-        let pid: libc::pid_t = std::fs::read_to_string(&pid_file)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-        let _ = std::fs::remove_file(&pid_file);
-        // The orphaned `sleep` is reaped by init asynchronously.
-        let mut alive = true;
-        for _ in 0..40 {
-            alive = unsafe { libc::kill(pid, 0) } == 0;
-            if !alive {
-                break;
+            let pid: libc::pid_t = std::fs::read_to_string(&pid_file)
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap();
+            // The orphaned `sleep` is reaped by init asynchronously.
+            let mut alive = true;
+            for _ in 0..40 {
+                alive = unsafe { libc::kill(pid, 0) } == 0;
+                if !alive {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            if alive {
+                unsafe { libc::kill(pid, libc::SIGKILL) };
+            }
+            assert!(
+                !alive,
+                "the grandchild survived the timeout with launcher action `{launcher_action}`"
+            );
         }
-        assert!(!alive, "the grandchild `sleep` survived the timeout");
     }
 
     #[tokio::test]
