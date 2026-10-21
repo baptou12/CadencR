@@ -428,12 +428,20 @@ mod tests {
         (root, dir)
     }
 
+    /// Whether `pid` still runs. A zombie does not: a killed child whose
+    /// parent died too waits for init to reap it, and `kill -0` still
+    /// finds it meanwhile.
     #[cfg(unix)]
     fn is_alive(pid: &str) -> bool {
-        std::process::Command::new("kill")
-            .args(["-0", pid])
-            .status()
-            .is_ok_and(|status| status.success())
+        std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", pid])
+            .output()
+            .is_ok_and(|output| {
+                let state = String::from_utf8_lossy(&output.stdout);
+                output.status.success()
+                    && !state.trim().is_empty()
+                    && !state.trim().starts_with('Z')
+            })
     }
 
     #[cfg(unix)]
