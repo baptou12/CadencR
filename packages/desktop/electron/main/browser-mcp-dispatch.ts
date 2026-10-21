@@ -25,6 +25,8 @@ export interface BrowserMcpTarget {
   };
   openUrl(url: string, options?: BrowserOpenUrlOptions): Promise<BrowserTabMetadata>;
   openExternalUrl(url: string, options?: BrowserOpenUrlOptions): Promise<BrowserTabMetadata>;
+  restoreScopeMetadata(scopeId: number): Promise<BrowserStateSnapshot>;
+  closeTabsForScope(scopeId: number): Promise<BrowserStateSnapshot>;
   inspection: {
     snapshot(
       tabId: string,
@@ -141,6 +143,8 @@ export async function dispatchBrowserMcpTool(
         );
       }
       return text({ ok: true });
+    case "browser_close_scope_tabs":
+      return closeScopeTabs(target, scopeId);
     case "browser_select_element_context": {
       const id = tabId(target, args, scopeId);
       return text(
@@ -150,6 +154,23 @@ export async function dispatchBrowserMcpTool(
     default:
       throw new Error(`Unknown Browser MCP tool: ${toolName}`);
   }
+}
+
+/**
+ * Service-only command (`project_archive_session`'s cleanup): close every tab
+ * of one feature scope. The service's browser MCP server never forwards this
+ * name, so agents can't call it as a browser tool.
+ */
+async function closeScopeTabs(
+  target: BrowserMcpTarget,
+  scopeId?: number | null,
+): Promise<BrowserBridgeResult> {
+  if (scopeId == null) throw new Error("browser_close_scope_tabs needs a feature scope.");
+  // Like the sidebar's close (`browser:close-tabs-for-scope`): restore the
+  // scope's persisted tabs first, or a never-opened scope keeps them.
+  const before = (await target.restoreScopeMetadata(scopeId)).tabs.length;
+  const after = (await target.closeTabsForScope(scopeId)).tabs.length;
+  return text({ closed_tabs: before - after });
 }
 
 function parseOpenUrlArgs(

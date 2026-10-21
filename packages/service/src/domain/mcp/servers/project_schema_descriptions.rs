@@ -19,6 +19,7 @@ pub(super) fn tool_description(name: &str) -> &'static str {
         | "project_list_schedules"
         | "project_update_schedule"
         | "project_delete_schedule" => super::super::project_schedule_schema::description(name),
+        "project_archive_session" => super::super::project_archive_schema::DESCRIPTION,
         _ => "Coordinate CadencR sessions in the current project.",
     }
 }

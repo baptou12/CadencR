@@ -36,6 +36,9 @@ pub(super) async fn handle_app_action(
         "forge_visibility" => {
             super::app_forge::update_forge_visibility(envelope, sender, app_state).await
         }
+        "subscribe.agent_archived_events" => {
+            super::app_notifications::subscribe_agent_archived_events(sender, app_state)
+        }
         "subscribe.remote_events" => {
             super::app_notifications::subscribe_remote_events(sender, app_state)
         }

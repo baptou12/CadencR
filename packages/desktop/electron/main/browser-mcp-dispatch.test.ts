@@ -45,6 +45,8 @@ function target(): BrowserMcpTarget {
     automation: { state, assert: vi.fn(), guard: vi.fn(() => vi.fn()) },
     openUrl: vi.fn(async () => tabMeta()),
     openExternalUrl: vi.fn(async () => tabMeta()),
+    restoreScopeMetadata: vi.fn(async () => state()),
+    closeTabsForScope: vi.fn(async () => ({ ...state(), tabs: [] })),
     inspection: {
       snapshot: vi.fn(async () => ({ found: true, outline: "[e1] button" })),
       screenshot: vi.fn(async () => "fullpng"),
@@ -168,6 +170,22 @@ describe("dispatchBrowserMcpTool", () => {
       newTab: false,
       scopeId: 42,
     });
+  });
+
+  it("closes every tab of the given feature scope for archive cleanup", async () => {
+    const fake = target();
+    vi.mocked(fake.restoreScopeMetadata).mockResolvedValue({
+      ...fake.state(),
+      tabs: [tabMeta(), tabMeta()],
+    });
+    await expect(dispatchBrowserMcpTool(fake, "browser_close_scope_tabs", {}, 42)).resolves.toEqual(
+      { text: JSON.stringify({ closed_tabs: 2 }) },
+    );
+    expect(fake.restoreScopeMetadata).toHaveBeenCalledWith(42);
+    expect(fake.closeTabsForScope).toHaveBeenCalledWith(42);
+    await expect(dispatchBrowserMcpTool(fake, "browser_close_scope_tabs", {})).rejects.toThrow(
+      "needs a feature scope",
+    );
   });
 
   it("routes browser_open_external_url to the external opener", async () => {

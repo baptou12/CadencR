@@ -7,7 +7,7 @@ use crate::domain::agents::providers::valid_provider_ids;
 mod descriptions;
 
 use descriptions::{property_description, tool_description};
-const PROJECT_TOOL_NAMES: [&str; 17] = [
+const PROJECT_TOOL_NAMES: [&str; 18] = [
     "project_list_sessions",
     "project_read_session",
     "project_read_session_tail",
@@ -25,6 +25,7 @@ const PROJECT_TOOL_NAMES: [&str; 17] = [
     "project_list_schedules",
     "project_update_schedule",
     "project_delete_schedule",
+    "project_archive_session",
 ];
 pub(super) fn tools() -> Vec<Tool> {
     PROJECT_TOOL_NAMES
@@ -115,6 +116,7 @@ fn tool_schema(name: &str) -> Value {
         "project_create_schedule" | "project_update_schedule" | "project_delete_schedule" => {
             super::project_schedule_schema::schema(name)
         }
+        "project_archive_session" => super::project_archive_schema::schema(),
         _ => json!({ "type": "object", "properties": {} }),
     };
     document_schema(name, schema)

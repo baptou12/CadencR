@@ -1,7 +1,13 @@
 import type { BrowserAgentActivity } from "./browser-types";
 
 /** Tools that don't act on a page the user would want to watch. */
-const UNWATCHED_TOOLS = new Set(["browser_list_tabs", "browser_open_external_url"]);
+const UNWATCHED_TOOLS = new Set([
+  "browser_list_tabs",
+  "browser_open_external_url",
+  // Archive cleanup: revealing the browser of a conversation being put away
+  // would be the opposite of what was asked.
+  "browser_close_scope_tabs",
+]);
 
 /**
  * The `browser:agent-activity` event to push after an agent browser MCP call

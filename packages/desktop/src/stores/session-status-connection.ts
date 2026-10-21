@@ -60,6 +60,8 @@ function handleAppWsOpen(connection: AppWsConnection): void {
   useConnectionStatusStore.getState().reportSource(APP_WS_SOURCE, "connected");
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.session_status", {})));
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.feature_events", {})));
+  // An agent's project_archive_session: the Archive dialog's toast and teardown.
+  ws.send(JSON.stringify(createEnvelope("app", "subscribe.agent_archived_events", {})));
   // A schedule fires on the server's clock, into a conversation this client
   // need not have open, so nothing else tells the sidebar its rules moved.
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.schedule_events", {})));

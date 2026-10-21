@@ -1,5 +1,6 @@
 pub mod browser;
 pub mod project;
+mod project_archive_schema;
 mod project_gate_schema;
 mod project_schedule_schema;
 mod project_schema;

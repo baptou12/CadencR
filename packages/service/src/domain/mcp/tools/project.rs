@@ -75,6 +75,7 @@ pub async fn run_project_tool(
         "project_list_schedules" => project_schedules::list_schedules(&ctx).await,
         "project_update_schedule" => project_control::update_schedule(&args, &ctx).await,
         "project_delete_schedule" => project_control::delete_schedule(&args, &ctx).await,
+        "project_archive_session" => project_control::archive_session(&args, &ctx).await,
         "project_list_pending_gates" => project_control::list_pending_gates(&args, &ctx).await,
         "project_respond_gate" => project_control::respond_gate(&args, &ctx).await,
         _ => Err(format!("Unknown tool: {name}")),
