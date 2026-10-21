@@ -171,7 +171,7 @@ impl Drop for Waiting<'_> {
     }
 }
 
-fn exited_error(reason: &str) -> AppError {
+pub(super) fn exited_error(reason: &str) -> AppError {
     AppError::coded(
         StatusCode::BAD_GATEWAY,
         "PLUGIN_BACKEND_EXITED",

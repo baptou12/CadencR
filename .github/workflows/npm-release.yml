@@ -133,8 +133,16 @@ jobs:
       # For the npm provenance attestation.
       id-token: write
     steps:
-      # actions/setup-node@v7.0.0 — no checkout: only the checked tarball is
-      # uploaded.
+      # actions/checkout@v7.0.1 — `.nvmrc` alone, for setup-node: nothing
+      # from the source runs here, only the checked tarball is uploaded.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: .nvmrc
+          sparse-checkout-cone-mode: false
+
+      # actions/setup-node@v7.0.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version-file: .nvmrc

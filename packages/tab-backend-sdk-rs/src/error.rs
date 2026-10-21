@@ -18,6 +18,8 @@ pub mod codes {
     /// The result does not fit in one line of
     /// [`MAX_LINE_BYTES`](crate::protocol::MAX_LINE_BYTES).
     pub const RESPONSE_TOO_LARGE: &str = "RESPONSE_TOO_LARGE";
+    /// Too many requests are already waiting for a worker; retry later.
+    pub const BUSY: &str = "BUSY";
 }
 
 /// A failed request: a stable `SCREAMING_SNAKE_CASE` code and a message for

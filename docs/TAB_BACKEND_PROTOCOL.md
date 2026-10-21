@@ -374,6 +374,7 @@ Backends choose their own codes. These have a fixed meaning:
 | `INVALID_REQUEST` | backend | A line with a usable `id` that is not a well-formed request (e.g. no `method`). |
 | `INTERNAL_ERROR` | backend | The backend failed unexpectedly (e.g. a crash caught in a handler). |
 | `RESPONSE_TOO_LARGE` | backend | The result does not fit in one 4 MiB line. |
+| `BUSY` | backend | No room to queue the request; retry later. The Rust SDK answers it once 64 requests wait for a worker, rather than stop reading stdin. |
 | `BACKEND_ERROR` | host | Substituted when a backend error has no `code`. |
 
 Codes starting with `PLUGIN_` (and `MANAGED_TAB_`) are reserved for the

@@ -90,8 +90,10 @@ macOS binary must keep the ad-hoc signature the linker gives it: re-sign with
 
 The crate depends on `cadencr-tab-backend` by path inside this checkout. A
 copy of the folder installed elsewhere ships its `bin/` and does not need to
-rebuild it; rebuilding it there needs the crate from crates.io (the manifest
-already names its version).
+rebuild it. To rebuild it there, delete `path = "…", ` from both
+`cadencr-tab-backend` entries in `backend/Cargo.toml`: Cargo then takes the
+version it names from crates.io (it never falls back on its own when the path
+is missing).
 
 ## What the user sees
 

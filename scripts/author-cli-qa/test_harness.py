@@ -624,7 +624,8 @@ for kind in ("provider", "theme", "tab"):
             return struct.pack("<%dI" % (len(header) + len(commands)), *header, *commands)
         binaries = {"darwin-aarch64": mach_o(0x0100000c, True),
                     "darwin-x86_64": mach_o(0x01000007, False),
-                    "linux-x86_64": b"\x7fELF\x02\x01\x01\x00"}
+                    # 64-bit little-endian ident, then e_type EXEC and e_machine x86_64.
+                    "linux-x86_64": struct.pack("<16sHH", b"\x7fELF\x02\x01\x01", 2, 62)}
         reasoning = "Inert author CLI QA backend; never executed."
         with tempfile.TemporaryDirectory(prefix="author-fixture-backend-") as scratch:
             root = Path(scratch).resolve()

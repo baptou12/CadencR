@@ -4,7 +4,7 @@ use std::fmt;
 use std::io::{self, BufRead, BufReader, Write};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::ExitCode;
-use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 
@@ -22,9 +22,10 @@ use crate::stdio_guard;
 /// `ready.sdk` of backends built with this crate.
 pub const SDK: &str = concat!("cadencr-tab-backend/", env!("CARGO_PKG_VERSION"));
 
-/// Requests waiting for a free worker before reading stdin pauses: several
-/// times what a host keeps in flight ([`MAX_IN_FLIGHT`]), so a host within
-/// the protocol's limit never fills it.
+/// Requests that may wait for a free worker; past it, a request is answered
+/// [`codes::BUSY`] at once. Several times what a host keeps in flight
+/// ([`MAX_IN_FLIGHT`]), but a host's timed-out requests keep running here
+/// (protocol v1 cannot cancel them), so slow handlers can still fill it.
 const QUEUE: usize = 4 * MAX_IN_FLIGHT;
 
 /// How [`serve_with`] runs requests.
@@ -137,7 +138,7 @@ pub(crate) fn run(
             }
         };
         match classify(&line) {
-            Incoming::Request(request) => pool.submit(request),
+            Incoming::Request(request) => pool.submit(request, &output),
             Incoming::Invalid(id, error) => output.respond(Response::err(id, error.into())),
             Incoming::Ignored(reason) => log(reason),
         }
@@ -219,10 +220,24 @@ impl Pool {
         Ok(Self { jobs, workers })
     }
 
-    fn submit(&self, request: Request) {
-        let id = request.id.clone();
-        if self.jobs.send(request).is_err() {
-            log(format_args!("no worker is left to run request {id}"));
+    /// Queue `request`, or answer it `BUSY` when the queue is full: reading
+    /// stdin never waits for a worker, so its closing is always noticed.
+    fn submit(&self, request: Request, output: &Output) {
+        match self.jobs.try_send(request) {
+            Ok(()) => {}
+            Err(TrySendError::Full(request)) => {
+                let error = Error::new(
+                    codes::BUSY,
+                    format!("{QUEUE} requests are already waiting for a worker"),
+                );
+                output.respond(Response::err(request.id, error.into()));
+            }
+            Err(TrySendError::Disconnected(request)) => {
+                log(format_args!(
+                    "no worker is left to run request {}",
+                    request.id
+                ));
+            }
         }
     }
 

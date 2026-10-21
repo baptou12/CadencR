@@ -33,7 +33,7 @@ use tokio::sync::Mutex;
 use self::history::{History, LiveRun};
 pub use self::launch::{unavailable_on_platform, BackendLaunch};
 use self::models::{PluginBackendRequest, PluginBackendResponse, PluginTabBackendStatus};
-use self::process::Running;
+use self::process::{Prepared, Running};
 use self::request::check_request;
 pub use self::request::RunningBackend;
 pub use self::stop_reason::StopReason;
@@ -72,6 +72,8 @@ struct Slot {
     orphaned_since: Option<Instant>,
     /// Held across one start, so concurrent requests start one process.
     starting: Arc<Mutex<()>>,
+    /// Bumped by every stop of this tab: a start begun before it spawns nothing.
+    stops: u64,
 }
 
 /// What [`BackendSupervisor::reuse`] found.
@@ -80,6 +82,7 @@ enum Reuse {
     Start {
         history: Arc<History>,
         starting: Arc<Mutex<()>>,
+        stops: u64,
     },
 }
 
@@ -90,6 +93,12 @@ fn quitting() -> AppError {
         "PLUGIN_BACKEND_UNAVAILABLE",
         "Cadencr is quitting",
     )
+}
+
+/// `error`, also shown in the Activity's log as a refused start.
+fn failed_start(history: &History, error: AppError) -> AppError {
+    history.record_failed_start(&error);
+    error
 }
 
 impl Slot {
@@ -157,7 +166,9 @@ impl BackendSupervisor {
     /// The usable backend of `launch`, started first when there is none.
     /// Starts of one tab in one conversation are serialized by its slot; the
     /// checks before a start (the binary hashed against its signed digest)
-    /// run off the slots lock, so they hold up no other tab.
+    /// run off the slots lock, so they hold up no other tab. The process is
+    /// spawned and registered under that lock, and only if the tab was not
+    /// stopped meanwhile, so a stop or removal never misses it.
     async fn ensure_running(
         &self,
         grants: &GrantStore,
@@ -169,29 +180,39 @@ impl BackendSupervisor {
         };
         let _starting = starting.lock().await;
         // Another request may have started it while this one waited.
-        let history = match self.reuse(launch).await? {
+        let (history, stops) = match self.reuse(launch).await? {
             Reuse::Running(running) => return Ok(running),
-            Reuse::Start { history, .. } => history,
+            Reuse::Start { history, stops, .. } => (history, stops),
         };
         history.check_may_start()?;
-        let running = match launch
-            .prepare()
-            .await
-            .and_then(|prepared| process::spawn(launch, prepared, grants, history.clone()))
-        {
-            Ok(running) => running,
-            Err(error) => {
-                // Shown in the Activity's log as well as answered to the tab.
-                history.record_failed_start(&error);
-                return Err(error);
-            }
+        let prepared = match launch.prepare().await {
+            Ok(prepared) => prepared,
+            Err(error) => return Err(failed_start(&history, error)),
         };
+        self.spawn_unless_stopped(grants, launch, prepared, &history, stops)
+            .await
+    }
+
+    /// Spawn `prepared` and register it, unless `launch`'s tab was stopped
+    /// (its slot's `stops` moved past `stops`) since the start began.
+    async fn spawn_unless_stopped(
+        &self,
+        grants: &GrantStore,
+        launch: &BackendLaunch,
+        prepared: Prepared,
+        history: &Arc<History>,
+        stops: u64,
+    ) -> Result<Arc<Running>, AppError> {
         let mut slots = self.slots.lock().await;
         if slots.closed {
-            running.request_stop(StopReason::Quit);
             return Err(quitting());
         }
         let slot = slots.by_key.entry(Key::of(launch)).or_default();
+        if slot.stops != stops {
+            return Err(process::exited_error("it was stopped while starting"));
+        }
+        let running = process::spawn(launch, prepared, grants, history.clone())
+            .map_err(|error| failed_start(history, error))?;
         slot.running = Some(running.clone());
         slot.orphaned_since = None;
         Ok(running)
@@ -217,6 +238,7 @@ impl BackendSupervisor {
         Ok(Reuse::Start {
             history: slot.history.clone(),
             starting: slot.starting.clone(),
+            stops: slot.stops,
         })
     }
 
@@ -238,6 +260,7 @@ impl BackendSupervisor {
             return;
         };
         slot.history.reset_crashes();
+        slot.stops += 1;
         if let Some(running) = slot.usable() {
             running.request_stop(StopReason::FromActivity);
         }
@@ -248,12 +271,13 @@ impl BackendSupervisor {
     /// tab's grants: the first reason given wins, and a revoked grant alone
     /// records only "its permissions changed or it was turned off".
     pub async fn stop_plugin(&self, plugin_id: &str, reason: StopReason) -> usize {
-        let slots = self.slots.lock().await;
+        let mut slots = self.slots.lock().await;
         let mut stopped = 0;
-        for (key, slot) in &slots.by_key {
+        for (key, slot) in slots.by_key.iter_mut() {
             if key.plugin_id != plugin_id {
                 continue;
             }
+            slot.stops += 1;
             if let Some(running) = slot.usable() {
                 running.request_stop(reason);
                 stopped += 1;
@@ -268,12 +292,15 @@ impl BackendSupervisor {
     /// when they exit.
     pub async fn stop_plugin_and_wait(&self, plugin_id: &str, reason: StopReason) {
         let running: Vec<Arc<Running>> = {
-            let slots = self.slots.lock().await;
+            let mut slots = self.slots.lock().await;
             slots
                 .by_key
-                .iter()
+                .iter_mut()
                 .filter(|(key, _)| key.plugin_id == plugin_id)
-                .filter_map(|(_, slot)| slot.live().cloned())
+                .filter_map(|(_, slot)| {
+                    slot.stops += 1;
+                    slot.live().cloned()
+                })
                 .collect()
         };
         // Past the deadline, `supervise` still releases each one's revision.
@@ -811,6 +838,29 @@ mod tests {
             .unwrap();
         assert!(!revision.exists(), "released with its backend");
         assert!(!root.join("graph").exists());
+        supervisor.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_tab_stopped_while_its_binary_is_checked_starts_nothing() {
+        let (_root, _dir, launch) = fixture_tab("backend");
+        let (supervisor, grants) = (BackendSupervisor::default(), GrantStore::default());
+        let Reuse::Start { history, stops, .. } = supervisor.reuse(&launch).await.unwrap() else {
+            panic!("nothing runs yet");
+        };
+        let prepared = launch.prepare().await.unwrap();
+        supervisor.stop_plugin("tab", StopReason::TabRemoved).await;
+        let Err(error) = supervisor
+            .spawn_unless_stopped(&grants, &launch, prepared, &history, stops)
+            .await
+        else {
+            panic!("a stopped tab started its backend");
+        };
+        assert_eq!(error_code(&error), "PLUGIN_BACKEND_EXITED", "{error}");
+        let status = supervisor.status("tab", 2).await.unwrap();
+        assert_eq!((status.starts, status.start_error), (0, None));
+        // Not held: the next request starts it.
+        supervisor.ensure_running(&grants, &launch).await.unwrap();
         supervisor.shutdown().await;
     }
 
