@@ -607,6 +607,87 @@ for kind in ("provider", "theme", "tab"):
                         with tarfile.open(path) as tar:
                             self.assertEqual({member.name for member in tar if member.isfile()}, expected)
 
+    @unittest.skipUnless(os.environ.get("CADENCR_DEVELOPMENT_FIXTURE_CLI"),
+                         "explicit development CLI required; not released-CLI qualification")
+    def test_development_cli_packs_and_plans_a_backend_tab(self):
+        """Backend-tab contract regression: synthesized inert native headers, never executed."""
+        import hashlib
+        import packages
+        import shutil
+        import struct
+        import tarfile
+        cli = Path(os.environ["CADENCR_DEVELOPMENT_FIXTURE_CLI"]).resolve(strict=True)
+        # Minimal headers the native-format check accepts; not runnable programs.
+        def mach_o(cpu, signed):
+            commands = [0x1b, 24, 0, 0, 0, 0] + ([0x1d, 16, 0, 0] if signed else [])
+            header = [0xfeedfacf, cpu, 0, 2, 2 if signed else 1, len(commands) * 4, 0, 0]
+            return struct.pack("<%dI" % (len(header) + len(commands)), *header, *commands)
+        binaries = {"darwin-aarch64": mach_o(0x0100000c, True),
+                    "darwin-x86_64": mach_o(0x01000007, False),
+                    # 64-bit little-endian ident, then e_type EXEC and e_machine x86_64.
+                    "linux-x86_64": struct.pack("<16sHH", b"\x7fELF\x02\x01\x01", 2, 62)}
+        reasoning = "Inert author CLI QA backend; never executed."
+        with tempfile.TemporaryDirectory(prefix="author-fixture-backend-") as scratch:
+            root = Path(scratch).resolve()
+            home = root / "home"
+            home.mkdir()
+            def invoke(*args):
+                result = subprocess.run([str(cli), *map(str, args)], env=qa.cli_env(home),
+                                        capture_output=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                return result.stdout
+            source, stage = root / "qa-author-tab", root / "stage"
+            shutil.copytree(ROOT / "fixtures" / "tab", source)
+            shutil.copytree(ROOT / "fixtures" / "tab", stage)
+            manifest = json.loads((source / "tab.json").read_text())
+            manifest["backend"] = {"protocol": 1, "reasoning": reasoning,
+                "binary": {target: "bin/" + target + "/backend" for target in binaries}}
+            for folder in (source, stage):
+                packages.write_json(folder / "tab.json", manifest)
+            for target, header in binaries.items():
+                path = source / "bin" / target / "backend"
+                path.parent.mkdir(parents=True)
+                path.write_bytes(header)
+                path.chmod(0o755)
+            c = candidate()
+            package = packages.metadata("tab", c["repository"], c["tag"])
+            descriptor = package["package"]["tab"]
+            web = json.loads(invoke("registry", "pack-tab", "--directory", stage,
+                                    "--output", root / "tab.tar.gz"))
+            descriptor["distribution"]["sha256"] = web["sha256"]
+            descriptor["backend"] = {"protocol": 1, "reasoning": reasoning}
+            release = descriptor["distribution"]["archive"].rsplit("/", 1)[0]
+            binary = descriptor["distribution"]["binary"] = {}
+            for target in binaries:
+                output = root / ("tab-backend-" + target + ".tar.gz")
+                packed = json.loads(invoke("registry", "pack-tab-backend", "--directory", source,
+                                           "--target", target, "--output", output))
+                self.assertEqual(packed["kind"], "tab-backend")
+                self.assertEqual(packed["sha256"], hashlib.sha256(output.read_bytes()).hexdigest())
+                with tarfile.open(output) as tar:
+                    members = tar.getmembers()
+                self.assertEqual([(m.name, m.mode, m.isfile()) for m in members],
+                                 [("bin/" + target + "/backend", 0o755, True)])
+                binary[target] = {"archive": release + "/" + output.name,
+                    **{key: packed[key] for key in ("sha256", "size", "cmd",
+                                                    "executable_sha256", "executable_size")}}
+            package_path = root / "package.json"
+            packages.write_json(package_path, package)
+            invoke("registry", "validate-metadata", package_path)
+            invoke("registry", "pack-tab", "--directory", stage, "--package", package_path,
+                   "--output", root / "bound.tar.gz")
+            submission = root / "submission.json"
+            packages.write_json(submission, {"schema_version": 2, "package": package,
+                "source": {"repository": "https://github.com/" + c["repository"],
+                           "tag": c["tag"], "commit": c["source_commit"]},
+                "changelog": "Inert backend-tab CLI qualification."})
+            invoke("registry", "validate-submission", submission)
+            invoke("registry", "plan-publication", "--submission", submission,
+                   "--repository", c["repository"], "--output", root / "plan.json")
+            plan = json.loads((root / "plan.json").read_text())
+            self.assertEqual([t["target"] for t in plan["targets"]],
+                             ["tab", *("backend-" + target for target in sorted(binaries))])
+
     def test_actions_token_cannot_be_author_token(self):
         with tempfile.TemporaryDirectory() as root, patch.object(
             qa, "check_cli"

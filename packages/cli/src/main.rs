@@ -13,6 +13,7 @@ mod pipeline;
 mod publication;
 mod signing;
 mod tab;
+mod tab_backend;
 mod theme;
 mod trust;
 

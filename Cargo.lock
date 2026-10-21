@@ -837,6 +837,7 @@ dependencies = [
  "cadencr-plugin-core",
  "cadencr-registry-core",
  "cadencr-registry-publisher",
+ "cadencr-tab-backend",
  "chrono",
  "clap",
  "flate2",
@@ -866,7 +867,7 @@ dependencies = [
 
 [[package]]
 name = "cadencr-provider-sdk"
-version = "0.14.0"
+version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
  "bon",
@@ -936,6 +937,7 @@ dependencies = [
  "cadencr-plugin-core",
  "cadencr-registry-core",
  "cadencr-registry-publisher",
+ "cadencr-tab-backend",
  "chrono",
  "chrono-tz",
  "clap",
@@ -994,6 +996,17 @@ dependencies = [
  "windows-sys 0.61.2",
  "zeroize",
  "zip 6.0.0",
+]
+
+[[package]]
+name = "cadencr-tab-backend"
+version = "0.1.0"
+dependencies = [
+ "bon",
+ "libc",
+ "reqwest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

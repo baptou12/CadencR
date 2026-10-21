@@ -135,6 +135,25 @@ describe("CustomTabsSection", () => {
     );
   });
 
+  it("shows a blocked tab's reason and only lets its switch go off", async () => {
+    mocks.tabs = [
+      tabFixture({
+        managed: true,
+        status: "blocked",
+        blocked_reason: "Uploads repository contents",
+        enablement: { global: null, project: null, effective: false, consent_required: true },
+      }),
+    ];
+    render(<CustomTabsSection />);
+    const card = await screen.findByRole("button", { name: /Changed files graph/, expanded: true });
+    expect(within(card).getByText("Blocked")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Blocked by CadencrUploads repository contents. This version is on Cadencr's revocation list",
+    );
+    expect(screen.getByRole("switch", { name: /Enable in all projects/ })).toBeDisabled();
+    expect(within(card).getByText("Off")).toBeInTheDocument();
+  });
+
   it("opens a lone tab's card and leaves several closed until clicked", async () => {
     mocks.tabs = [tabFixture(), tabFixture({ id: "other", name: "Other" })];
     const { user } = render(<CustomTabsSection />);

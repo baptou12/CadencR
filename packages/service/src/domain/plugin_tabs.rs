@@ -49,6 +49,12 @@ pub mod surface;
 pub mod watcher;
 pub mod workspace;
 
+/// The shared native backend fixture (see its module docs).
+#[cfg(test)]
+#[path = "../../tests/fixtures/native_tab_backend/install.rs"]
+mod native_tab_backend;
+#[cfg(test)]
+mod revocation_tests;
 #[cfg(test)]
 mod test_support;
 

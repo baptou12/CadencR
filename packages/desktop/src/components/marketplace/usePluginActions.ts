@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { MarketplaceListing } from "@/lib/marketplace-listings";
+import { downloadableUpdate, type MarketplaceListing } from "@/lib/marketplace-listings";
 import { useMarketplaceState } from "./MarketplaceContext";
 
 const NO_CATALOG = "A current signed catalog is required to install.";
@@ -73,7 +73,7 @@ export function usePluginActions() {
        */
       updateAll: async (listings: MarketplaceListing[]) => {
         for (const listing of listings) {
-          const version = listing.update;
+          const version = downloadableUpdate(listing);
           if (!version) continue;
           await new Promise<void>((resolve, reject) => {
             try {

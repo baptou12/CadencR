@@ -1,5 +1,8 @@
 //! Reclaim only complete, byte-identical managed artifacts, never arbitrary trees.
-use super::{check_directory, invalid, io, owner, verify_identity, Receipt, LIMIT};
+use super::{
+    check_directory, invalid, io, is_revision, owner, verify_package, Receipt, ACTIVE, LIMIT,
+    RECEIPT, WEB_ARCHIVE,
+};
 use crate::error::AppError;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -36,21 +39,49 @@ impl RevisionLease {
     pub fn directory(&self) -> &Path {
         &self.directory
     }
-    pub fn read(&self) -> Result<cadencr_plugin_core::tab::TabManifest, AppError> {
+    pub fn read(&self) -> Result<super::VerifiedRevision, AppError> {
         super::cache::read_directory(&self.root, &self.id, &self.directory)
+            .map(|revision| (*revision).clone())
     }
-    pub fn verify_asset(&self, file: &Path) -> Result<(), AppError> {
+    /// Drop this pin. When it was the last one on a revision of a tab
+    /// uninstalled meanwhile (removed while its backend ran), reclaim that
+    /// revision now: with no `active.json` left, no later install of the
+    /// tab's owner would.
+    pub fn release(self) -> Result<(), AppError> {
+        let (root, id) = (self.root.clone(), self.id.clone());
+        drop(self);
+        let owned = owner(&root, &id)?;
+        if owned.join(ACTIVE).symlink_metadata().is_ok() || !owned.try_exists().map_err(invalid)? {
+            return Ok(());
+        }
+        let cell = owner_state(&root, &id)?;
+        let state = cell.lock().map_err(invalid)?;
+        collect(&root, &id, &state)?;
+        drop(state);
+        remove_empty_owner(&root, &id, &cell)
+    }
+    /// `file` is part of this signed revision, which is returned.
+    pub fn verify_asset(&self, file: &Path) -> Result<Arc<super::VerifiedRevision>, AppError> {
         super::cache::verify_directory_asset(&self.root, &self.id, &self.directory, file)
     }
 }
 pub fn lease(root: &Path, id: &str) -> Result<Option<RevisionLease>, AppError> {
+    lease_selected(root, id, super::directory)
+}
+/// Pin the revision `select` names (the active or the staged one) while
+/// holding the owner lock, so collection can never race the selection.
+pub(super) fn lease_selected(
+    root: &Path,
+    id: &str,
+    select: fn(&Path, &str) -> Result<Option<PathBuf>, AppError>,
+) -> Result<Option<RevisionLease>, AppError> {
     owner(root, id)?;
     if !root.try_exists().map_err(invalid)? {
         return Ok(None);
     }
     let cell = owner_state(root, id)?;
     let mut state = cell.lock().map_err(invalid)?;
-    let Some(directory) = super::directory(root, id)? else {
+    let Some(directory) = select(root, id)? else {
         return Ok(None);
     };
     state.leases.retain(|_, lease| lease.strong_count() > 0);
@@ -75,11 +106,18 @@ pub(super) fn prepare(root: &Path, id: &str, state: &State) -> Result<(), AppErr
     collect(root, id, state)?;
     // Count every entry, including unknown/interrupted staging. Unknown data is
     // preserved and consumes capacity rather than being silently deleted.
+    let pointers = usize::from(owned.join(ACTIVE).try_exists().map_err(invalid)?)
+        + usize::from(
+            owned
+                .join(super::pending::POINTER)
+                .try_exists()
+                .map_err(invalid)?,
+        );
     if std::fs::read_dir(&owned)
         .map_err(invalid)?
-        .take(MAX_REVISIONS + 1)
+        .take(MAX_REVISIONS + 2)
         .count()
-        >= MAX_REVISIONS + usize::from(owned.join("active.json").try_exists().map_err(invalid)?)
+        >= MAX_REVISIONS + pointers
     {
         return Err(full());
     }
@@ -93,17 +131,20 @@ fn full() -> AppError {
 pub(super) fn collect(root: &Path, id: &str, state: &State) -> Result<(), AppError> {
     let owned = owner(root, id)?;
     check_directory(root, &owned)?;
+    super::pending::clear_if_active(root, id)?;
     let active = super::directory(root, id)?;
+    let pending = super::pending_directory(root, id)?;
     for entry in std::fs::read_dir(&owned).map_err(invalid)? {
         let entry = entry.map_err(invalid)?;
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if !(is_digest(&name) || name.starts_with(".stage-")) {
+        if !(is_revision(&name) || name.starts_with(".stage-")) {
             continue;
         }
         let directory = path.join(id);
         if active.as_ref() == Some(&directory)
+            || pending.as_ref() == Some(&directory)
             || directory
                 .canonicalize()
                 .ok()
@@ -121,17 +162,16 @@ pub(super) fn collect(root: &Path, id: &str, state: &State) -> Result<(), AppErr
     }
     Ok(())
 }
-fn is_digest(name: &str) -> bool {
-    name.len() == 64
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-}
 
 #[cfg(test)]
 mod tests {
-    use super::super::{commit, deactivate, directory, fixtures::fixture_revision, secure};
+    use super::super::{
+        commit, deactivate, directory,
+        fixtures::{fixture_revision, unseal_tree},
+        secure,
+    };
     use super::*;
+    use crate::domain::plugin_tabs::test_support::error_code;
 
     fn install(temp: &Path, root: &Path, revision: usize) -> PathBuf {
         let (receipt, archive, files, _) =
@@ -186,13 +226,16 @@ mod tests {
         let root = temp.path().join("managed");
         let first = install(temp.path(), &root, 0);
         let database = first.join("dist/state.bin");
+        unseal_tree(first.parent().unwrap());
         std::fs::write(&database, b"SQLite format 3\0precious").unwrap();
         let second = install(temp.path(), &root, 1);
+        unseal_tree(second.parent().unwrap());
         std::fs::write(second.join("dist/index.html"), "editable work").unwrap();
         let stage = root.join("graph/.stage-interrupted");
         secure(&root, &stage).unwrap();
         std::fs::write(stage.join("notes.txt"), "user notes").unwrap();
         let third = install(temp.path(), &root, 2);
+        unseal_tree(third.parent().unwrap());
         std::fs::write(third.join("dist/cache.db"), "db").unwrap();
         install(temp.path(), &root, 3);
         deactivate(&root, "graph").unwrap();
@@ -223,13 +266,10 @@ mod tests {
             std::fs::write(root.join(format!("graph/unknown-{number}")), "preserve").unwrap();
         }
         let (receipt, archive, files, _) = fixture_revision(&temp.path().join("next"), 2);
-        assert!(matches!(
-            commit(&root, &receipt, &archive, &files),
-            Err(AppError::Coded {
-                code: "MANAGED_TAB_STORAGE_FULL",
-                ..
-            })
-        ));
+        assert_eq!(
+            error_code(&commit(&root, &receipt, &archive, &files).unwrap_err()),
+            "MANAGED_TAB_STORAGE_FULL"
+        );
         assert!(directory(&root, "graph")
             .unwrap()
             .unwrap()
@@ -249,18 +289,50 @@ mod tests {
         let current = directory(&root, "graph").unwrap().unwrap();
         let (receipt, archive, files, _) =
             fixture_revision(&temp.path().join("next"), MAX_REVISIONS);
-        assert!(matches!(
-            commit(&root, &receipt, &archive, &files),
-            Err(AppError::Coded {
-                code: "MANAGED_TAB_STORAGE_FULL",
-                ..
-            })
-        ));
+        assert_eq!(
+            error_code(&commit(&root, &receipt, &archive, &files).unwrap_err()),
+            "MANAGED_TAB_STORAGE_FULL"
+        );
         assert_eq!(directory(&root, "graph").unwrap().unwrap(), current);
         assert!(readers.iter().all(|reader| reader.directory().exists()));
         drop(readers);
         commit(&root, &receipt, &archive, &files).unwrap();
         assert!(std::fs::read_dir(root.join("graph")).unwrap().count() <= 3);
+    }
+
+    #[test]
+    fn backend_revisions_are_reclaimed_across_many_updates_and_a_staged_one_is_kept() {
+        use super::super::{fixtures::backend_revision, pending_directory, Activation};
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("managed");
+        let build = |revision: usize| {
+            backend_revision(&temp.path().join(format!("fixture-{revision}")), revision)
+        };
+        let commit_built = |tab: &super::super::fixtures::BackendFixture, activation| {
+            tab.commit(&root, activation)
+        };
+        let commit = |revision: usize, activation| commit_built(&build(revision), activation);
+        let update = build(1);
+        commit(0, Activation::Activate).unwrap();
+        commit_built(&update, Activation::Stage).unwrap();
+        let staged = pending_directory(&root, "graph").unwrap().unwrap();
+        for revision in 2..2 * MAX_REVISIONS + 2 {
+            commit(revision, Activation::Activate).unwrap_or_else(|error| {
+                panic!("update {revision} must reclaim history: {error:?}")
+            });
+            assert!(std::fs::read_dir(root.join("graph")).unwrap().count() <= 5);
+            commit_built(&update, Activation::Stage).unwrap();
+            assert_eq!(pending_directory(&root, "graph").unwrap().unwrap(), staged);
+        }
+        assert!(
+            staged.join("tab.json").is_file(),
+            "the staged update is never collected"
+        );
+        deactivate(&root, "graph").unwrap();
+        assert!(
+            !root.join("graph").exists(),
+            "every backend artifact is recognized"
+        );
     }
 
     #[test]
@@ -291,6 +363,7 @@ mod tests {
         let first = install(temp.path(), &root, 0);
         let outside = temp.path().join("database.db");
         std::fs::write(&outside, "precious").unwrap();
+        unseal_tree(first.parent().unwrap());
         symlink(&outside, first.join("dist/database-link")).unwrap();
         let second = install(temp.path(), &root, 1);
         let hardlink = temp.path().join("retained.html");

@@ -12,7 +12,8 @@ pub(super) enum Line {
     TooLong,
 }
 
-/// The next line without its `\n`; `None` at end of stream.
+/// The next line without its `\n` (and without a trailing `\r`, like the
+/// SDK's framing: protocol §3); `None` at end of stream.
 pub(super) async fn next_line<R: AsyncBufRead + Unpin>(
     reader: &mut R,
     max: usize,
@@ -25,7 +26,7 @@ pub(super) async fn next_line<R: AsyncBufRead + Unpin>(
             return Ok(match (too_long, line.is_empty()) {
                 (true, _) => Some(Line::TooLong),
                 (false, true) => None,
-                (false, false) => Some(Line::Text(line)),
+                (false, false) => Some(Line::Text(trim_cr(line))),
             });
         }
         let newline = available.iter().position(|byte| *byte == b'\n');
@@ -44,10 +45,17 @@ pub(super) async fn next_line<R: AsyncBufRead + Unpin>(
             return Ok(Some(if too_long {
                 Line::TooLong
             } else {
-                Line::Text(line)
+                Line::Text(trim_cr(line))
             }));
         }
     }
+}
+
+fn trim_cr(mut line: Vec<u8>) -> Vec<u8> {
+    if line.last() == Some(&b'\r') {
+        line.pop();
+    }
+    line
 }
 
 #[cfg(test)]
@@ -57,7 +65,7 @@ mod tests {
 
     #[tokio::test]
     async fn splits_lines_and_drops_overlong_ones() {
-        let input: &[u8] = b"one\ntoo-long-line\nthree\nlast";
+        let input: &[u8] = b"one\r\ntoo-long-line\nthree\nlast\r";
         let mut reader = BufReader::with_capacity(4, input);
         let mut lines = Vec::new();
         while let Some(line) = next_line(&mut reader, 8).await.unwrap() {

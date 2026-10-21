@@ -43,7 +43,48 @@ pub struct TabDescriptor {
     pub repository: String,
     pub license: String,
     pub api_version: u64,
-    pub distribution: ThemeDistribution,
+    /// The native backend the tab ships (`tab.json` `backend`), present
+    /// exactly when `distribution.binary` is: shown before download.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<TabBackendDescriptor>,
+    pub distribution: TabDistribution,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TabBackendDescriptor {
+    pub protocol: u32,
+    pub reasoning: String,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TabDistribution {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    /// The platform-neutral web archive (`tab.json`, icon, compiled web root).
+    pub archive: String,
+    pub sha256: String,
+    /// One native backend archive per platform. Strict: parsed only after
+    /// the publish rules accepted every key (a consumed catalog may carry
+    /// unknown ones — see [`crate::signed_tab_backend`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binary:
+        Option<std::collections::BTreeMap<cadencr_plugin_core::tab::TabPlatform, TabBinaryTarget>>,
+}
+/// One platform's backend archive: a single executable at `cmd`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TabBinaryTarget {
+    pub archive: String,
+    /// SHA-256 of the archive bytes.
+    pub sha256: String,
+    /// Archive length in bytes.
+    pub size: u64,
+    /// The executable's path inside the installed tab folder (`tab.json`
+    /// `backend.binary.<platform>`).
+    pub cmd: String,
+    /// SHA-256 of the executable, re-checked before every launch.
+    pub executable_sha256: String,
+    pub executable_size: u64,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

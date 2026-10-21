@@ -80,6 +80,27 @@ jobs:
         timeout-minutes: 20
         run: pnpm --filter @cadencr/service run test -- --nocapture
 
+      # The workspace steps build default features only, so the `api` and
+      # `conformance` features — and the conformance test, which requires the
+      # latter — need their own run.
+      - name: cadencr-tab-backend with all features
+        timeout-minutes: 10
+        run: |
+          pnpm rust -- clippy -p cadencr-tab-backend --all-features --all-targets -- -D warnings
+          pnpm rust -- test -p cadencr-tab-backend --all-features -- --nocapture
+
+      # Its own Cargo workspace (a tab folder builds outside the checkout), so
+      # the --workspace steps skip it. The tests include the conformance check
+      # of the built binary and a live `ports`/`stop` run on this runner.
+      - name: Port monitor example backend
+        timeout-minutes: 10
+        env:
+          MANIFEST: examples/custom-tabs/port-monitor/backend/Cargo.toml
+        run: |
+          pnpm rust -- fmt --manifest-path "$MANIFEST" -- --check
+          pnpm rust -- clippy --locked --manifest-path "$MANIFEST" --all-targets -- -D warnings
+          pnpm rust -- test --locked --manifest-path "$MANIFEST" -- --nocapture
+
       - name: Official release orchestration against the current Rust CLI
         timeout-minutes: 5
         run: |

@@ -16,6 +16,7 @@ export const GENERATION_ENV = [
 export const MIN_GENERATION_ENV = "CADENCR_REGISTRY_TRUST_MIN_GENERATION";
 export const THEME_ENV = "CADENCR_MANAGED_THEME_INDEX_URL";
 export const THEME_POLICY_ENV = "CADENCR_MANAGED_THEME_BLOCKLIST_URL";
+export const TAB_POLICY_ENV = "CADENCR_MANAGED_TAB_BLOCKLIST_URL";
 
 function httpsUrl(value, name) {
   let url;
@@ -68,6 +69,14 @@ function validateGeneration(output) {
   // Rust verifies the independent root signature and full closed schema before admission.
 }
 
+function sameRepository(policy, catalog, message) {
+  if (
+    policy.pathname.split("/").slice(0, 3).join("/") !==
+    catalog.pathname.split("/").slice(0, 3).join("/")
+  )
+    throw new Error(message);
+}
+
 export function validatedBuildEnv(env) {
   const output = { ...env };
   for (const name of [
@@ -76,6 +85,7 @@ export function validatedBuildEnv(env) {
     MIN_GENERATION_ENV,
     THEME_ENV,
     THEME_POLICY_ENV,
+    TAB_POLICY_ENV,
   ]) {
     if (!env[name]) delete output[name];
     else if (env[name].trim() !== env[name])
@@ -100,7 +110,7 @@ export function validatedBuildEnv(env) {
       "provider key id, public key, index URL and blocklist URL must be configured together",
     );
   if (!feeds.length) {
-    if (output[THEME_ENV] || output[THEME_POLICY_ENV])
+    if (output[THEME_ENV] || output[THEME_POLICY_ENV] || output[TAB_POLICY_ENV])
       throw new Error("theme discovery requires the complete shared provider trust configuration");
     return output;
   }
@@ -112,40 +122,62 @@ export function validatedBuildEnv(env) {
   if (Boolean(output[THEME_ENV]) !== Boolean(output[THEME_POLICY_ENV])) {
     throw new Error("theme catalog and signed revocation policy URLs must be configured together");
   }
+  // The mixed catalog also lists custom tabs, which may ship native code: it is
+  // never enabled without their own revocation feed.
+  if (Boolean(output[THEME_ENV]) !== Boolean(output[TAB_POLICY_ENV])) {
+    throw new Error(
+      "the mixed catalog and the custom tab revocation URL must be configured together",
+    );
+  }
   if (output[THEME_ENV]) {
-    const theme = httpsUrl(output[THEME_ENV], THEME_ENV);
-    if (
-      theme.hostname !== "raw.githubusercontent.com" ||
-      !/^\/[^/]+\/[^/]+\/refs\/heads\/marketplace-v2\/managed-index\.json$/.test(theme.pathname)
-    ) {
-      throw new Error(
-        "theme discovery must use the schema-2 marketplace-v2 branch managed-index.json feed",
-      );
-    }
+    marketplaceFeed(
+      output[THEME_ENV],
+      THEME_ENV,
+      "managed-index.json",
+      "theme discovery must use the schema-2 marketplace-v2 branch managed-index.json feed",
+    );
   }
   if (output[THEME_POLICY_ENV]) {
-    const policy = httpsUrl(output[THEME_POLICY_ENV], THEME_POLICY_ENV);
-    if (
-      policy.hostname !== "raw.githubusercontent.com" ||
-      !/^\/[^/]+\/[^/]+\/refs\/heads\/marketplace-v2\/managed-theme-blocklist\.json$/.test(
-        policy.pathname,
-      )
-    ) {
-      throw new Error(
-        "theme revocations must use the separate marketplace-v2 managed-theme-blocklist.json feed",
-      );
-    }
-    const catalog = new URL(output[THEME_ENV]);
-    if (
-      policy.pathname.split("/").slice(0, 3).join("/") !==
-      catalog.pathname.split("/").slice(0, 3).join("/")
-    ) {
-      throw new Error(
-        "theme catalog and revocations must belong to the same reviewed registry repository",
-      );
-    }
+    const policy = marketplaceFeed(
+      output[THEME_POLICY_ENV],
+      THEME_POLICY_ENV,
+      "managed-theme-blocklist.json",
+      "theme revocations must use the separate marketplace-v2 managed-theme-blocklist.json feed",
+    );
+    sameRepository(
+      policy,
+      new URL(output[THEME_ENV]),
+      "theme catalog and revocations must belong to the same reviewed registry repository",
+    );
+  }
+  if (output[TAB_POLICY_ENV]) {
+    const policy = marketplaceFeed(
+      output[TAB_POLICY_ENV],
+      TAB_POLICY_ENV,
+      "managed-tab-blocklist.json",
+      "custom tab revocations must use the separate marketplace-v2 managed-tab-blocklist.json feed",
+    );
+    sameRepository(
+      policy,
+      new URL(output[THEME_ENV]),
+      "the catalog and custom tab revocations must belong to the same reviewed registry repository",
+    );
   }
   return output;
+}
+
+/**
+ * `value` as `https://raw.githubusercontent.com/<owner>/<repo>/refs/heads/marketplace-v2/<file>`,
+ * else `message`.
+ */
+function marketplaceFeed(value, name, file, message) {
+  const url = httpsUrl(value, name);
+  const path = new RegExp(
+    `^/[^/]+/[^/]+/refs/heads/marketplace-v2/${file.replaceAll(".", "\\.")}$`,
+  );
+  if (url.hostname !== "raw.githubusercontent.com" || !path.test(url.pathname))
+    throw new Error(message);
+  return url;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

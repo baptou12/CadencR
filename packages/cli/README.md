@@ -2,7 +2,9 @@
 
 `cadencr` provides headless plugin validation, theme/provider/tab packaging, registry index
 signing and verified publication staging. Commands never contact the service or
-database, install a plugin, or execute a provider binary.
+database, install a plugin, or execute a provider binary; the one program they
+run is a custom tab's own backend, for `plugin validate --kind tab` (below,
+`--no-run` to skip it).
 `stage-publication` downloads inert GitHub Release assets. `mirror-publication`
 can upload already verified local artifacts to an explicitly confirmed GitHub
 draft; it never promotes that draft to a published release.
@@ -22,7 +24,7 @@ release into an existing empty or partial directory, never from author sources.
 ```text
 cadencr plugin validate <folder> --descriptor <descriptor.json>
 cadencr plugin validate <folder> --kind theme
-cadencr plugin validate <folder> --kind tab
+cadencr plugin validate <folder> --kind tab [--no-run]
 cadencr registry validate --base <directory> --candidate <directory>
 cadencr registry validate-metadata <file.json>...  # 1–32 local files; NOT authentication
 cadencr registry validate-submission <submission.json>...  # 1–32 local files
@@ -34,6 +36,10 @@ cadencr registry pack-provider --package <metadata.json> --target <target> \
   --directory <staging-directory> --output <new-archive.tar.gz>
 cadencr registry pack-theme --directory <theme-staging-directory> \
   --output <new-theme.tar.gz>
+cadencr registry pack-tab --directory <tab-staging-directory> \
+  [--package <metadata.json>] --output <new-tab.tar.gz>
+cadencr registry pack-tab-backend --directory <tab-folder> \
+  --target <darwin-aarch64|darwin-x86_64|linux-x86_64> --output <new-backend.tar.gz>
 cadencr registry plan-publication --submission <submission.json> \
   --repository <owner/repository> --output <new-plan.json>
 cadencr registry sign-index --payload <index.json> --private-key <private.pem> \
@@ -43,6 +49,10 @@ cadencr registry verify-index --index <envelope.json> --public-key <public.pem> 
 cadencr registry sign-theme-blocklist --payload <theme-policy.json> \
   --private-key <private.pem> --key-id <key-id> --output <new-envelope.json>
 cadencr registry verify-theme-blocklist --index <theme-envelope.json> \
+  --public-key <public.pem> --key-id <key-id> [--allow-expired]
+cadencr registry sign-tab-blocklist --payload <tab-policy.json> \
+  --private-key <private.pem> --key-id <key-id> --output <new-envelope.json>
+cadencr registry verify-tab-blocklist --index <tab-envelope.json> \
   --public-key <public.pem> --key-id <key-id> [--allow-expired]
 cadencr registry assemble-signed-index --payload <index.json> \
   --signature <signature.json> --output <new-envelope.json>
@@ -91,7 +101,16 @@ with the same rules the service applies before listing it (see
 `docs/CUSTOM_TABS.md` §3): the folder name must equal the manifest `id`, scopes
 must be known, origins canonical. It prints the permissions hash consent is
 recorded against; warnings (such as an `http://localhost` origin) and an entry
-that is not built yet are reported without failing. Local validation does not
+or backend binary that is not built yet are reported without failing. When the
+tab declares a native backend, every other platform's binary that is missing or
+not native is noted. This platform's binary, when it is there but the host
+would refuse to start it (a script, another format or CPU, unsigned arm64, not
+executable), fails the command with `TAB_BACKEND_BINARY_REFUSED`, `--no-run` or
+not; otherwise it is run, from the tab folder and with the manifest's
+`backend.protocol`, through the protocol conformance checks of
+`cadencr-tab-backend` (`docs/TAB_BACKEND_PROTOCOL.md`), and a failed check fails
+the command with `TAB_BACKEND_CONFORMANCE_FAILED`. `--no-run` skips that run,
+for machines that cannot execute the binary. Local validation does not
 establish publisher trust, publication completeness, or an installed managed
 version.
 
@@ -115,6 +134,53 @@ platform-independent data, never an ACP executable target. Desktop installation,
 preview, activation, update, confirmed removal and duplication into an editable
 author project reuse the shared validation libraries; the CLI does not change
 installed desktop state.
+
+### Custom tab boundary
+
+A marketplace tab ships one platform-neutral **web archive** and, when its
+`tab.json` declares a native `backend`, one **backend archive per platform**.
+The two never mix: the web archive holds only `tab.json`, the icon and the
+compiled web root (a backend executable found there is refused with a pointer
+to `pack-tab-backend`), and a backend archive holds only its executable.
+
+| Command                                                                                        | Input and guarantees                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registry pack-tab --directory <staging> [--package <metadata.json>] --output <new.tar.gz>`    | Staging holds exactly `tab.json`, the icon and the compiled web root; no executable bits survive. With `--package`, the schema-2 metadata is bound to `tab.json`: identity, and for a backend tab equal `backend.protocol`/`reasoning`, the same platform set and each `distribution.binary.<p>.cmd` equal to `backend.binary.<p>`                                                                                                                                                                                    |
+| `registry pack-tab-backend --directory <tab folder> --target <platform> --output <new.tar.gz>` | Packs the executable `tab.json` names for `<platform>`: a regular file inside the folder (not reached through a symlink), executable, native for the platform (ELF x86_64 for Linux; Mach-O, thin or universal, for macOS — arm64 code must carry a code signature), at most 128 MiB, outside `tab.json`, the icon and the web root. Deterministic ustar+gzip with exactly one entry at the manifest path, mode 0755, owner 0:0, mtime 0, no directory entries; at most 64 MiB; never overwrites. Nothing is executed |
+
+`pack-tab-backend` prints the values of `tab.distribution.binary.<target>`
+(the archive URL is yours to add, it is where you upload the file):
+
+```json
+{
+  "kind": "tab-backend",
+  "target": "darwin-aarch64",
+  "archive": "/abs/backend.tar.gz",
+  "sha256": "<archive sha256>",
+  "size": 237328,
+  "cmd": "bin/darwin-aarch64/port-monitor",
+  "executable_sha256": "<executable sha256>",
+  "executable_size": 602880
+}
+```
+
+Run it once per platform, on that platform's CI runner if you like (it mirrors
+`pack-provider --target`). The schema-2 entry then carries
+`tab.backend: {protocol, reasoning}` (equal to `tab.json`) and
+`tab.distribution.binary.<platform>: {archive, sha256, size, cmd,
+executable_sha256, executable_size}`; both or neither. Every backend archive
+must be a `.tar.gz` asset of the same GitHub release (same repository and tag)
+as the web archive. `plan-publication` adds one `backend-<platform>` target per
+platform, mirrored as `backend-<platform>-<sha256>.tar.gz` under the
+`tab-<id>-v<version>` registry release, and `stage-publication` verifies each
+backend archive (digests, single 0755 entry, native format) without executing
+it. Failures use `TAB_BACKEND_PACKAGING_FAILED`.
+
+`sign-tab-blocklist`/`verify-tab-blocklist` handle the custom-tab revocation
+feed: a separate `kind: "tab-blocklist"` policy signed with the catalog key,
+whose sorted, unique entries are `{tab_id, version_requirement?,
+archive_sha256?, executable_sha256?, reason}` within a validity window of at
+most 14 days.
 
 `build-index --schema-version 2` validates and wraps legacy provider source
 metadata in memory while retaining immutable files and ACP extensions. This is
@@ -373,8 +439,44 @@ The seven-day workflow artifact contains the executable
 before use. These are preparation artifacts, not an activated registry CLI pin.
 
 This preparation workflow has read-only repository permissions and no signing
-secrets. Normal application tags still distribute the stable CLI alongside the
-desktop app; the development-only path below is independent.
+secrets. Stable CLI releases come from the workflow below, not from application
+tags.
+
+## Stable CLI releases
+
+The CLI has its own semver, independent of the desktop app: an app release
+neither bumps it nor ships it (app releases up to `v0.14.0` carried a Linux CLI
+asset, which stays on those releases). To release a CLI version, bump `version`
+in `packages/cli/Cargo.toml` and `packages/cli/package.json` (and the
+`cadencr-cli` entry of `Cargo.lock`) in a normal PR; `scripts/cli-version.test.mjs`
+keeps the three equal. Once it is on `main` with green CI, launch **Release CLI**
+(`.github/workflows/cli-release.yml`) on `main` with that full main-tip SHA:
+
+```bash
+gh workflow run cli-release.yml --ref main \
+  -f source_commit=<full-reviewed-current-main-sha> -f dry_run=false
+```
+
+It uses the development release's gate (dispatch SHA = fetched `main` tip with
+successful main CI), refuses a version whose `cli/vX.Y.Z` tag or release exists,
+and runs tests, build and packaging read-only and secret-free. `dry_run`
+(default) stops there. Otherwise the `cli-release` environment's reviewers
+approve publication of exactly that artifact: tag `cli/vX.Y.Z` at the source
+commit, then a GitHub release with `cadencr-vX.Y.Z-x86_64-unknown-linux-gnu`, its
+`SHA256SUMS`, `provenance.json` and a `released-cli.env` pin:
+
+```dotenv
+CADENCR_RELEASE_VERSION=0.14.0
+CADENCR_RELEASE_TAG=cli/v0.14.0
+CADENCR_RELEASE_SHA256=<reviewed-64-character-lowercase-sha256>
+```
+
+The release is a normal release, never marked **Latest**: the desktop
+auto-updater and the landing download page follow the repository's latest
+release, which stays the app's. It is not flagged as a prerelease either, since
+it is a stable artifact and `--prerelease` marks the development channel below.
+A consumed version is never reused: if publication fails after the tag exists,
+bump the version and release again.
 
 ## Manual development CLI releases
 
@@ -397,8 +499,8 @@ For package base `0.13.1`, a run produces a unique version such as
 `cadencr 0.13.1-dev.123456789.1`. The narrowly validated compile-time
 `CADENCR_CLI_RELEASE_VERSION` override does not edit package manifests or the
 lockfile; ordinary builds continue to report their package version. Existing
-tags/releases/assets are never overwritten. These are prereleases, not the
-latest desktop release.
+tags/releases/assets are never overwritten. These are prereleases, never the
+repository's latest release.
 
 If publication fails after creating its tag or draft, retain that state and
 rerun the **whole workflow** to obtain a new attempt/version. Do not delete or
@@ -415,8 +517,9 @@ CADENCR_RELEASE_TAG=cli/v0.13.1-dev.123456789.1
 CADENCR_RELEASE_SHA256=<reviewed-64-character-lowercase-sha256>
 ```
 
-The trusted downloader accepts this exact tag/version binding as well as legacy
-two-field application-release pins. Independently verify the published source
+The trusted downloader accepts this exact tag/version binding, the stable
+`cli/vX.Y.Z` binding above, and legacy two-field pins, which resolve to the
+application release `vX.Y.Z` that carried CLIs up to `0.14.0`. Independently verify the published source
 binding, checksum and downloaded binary before selecting a candidate for QA.
 No workflow run changes the checked-in qualification or production pins; the
 production pair remains `PENDING` until real lifecycle qualification is complete.

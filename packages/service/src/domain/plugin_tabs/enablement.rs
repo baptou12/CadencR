@@ -2,7 +2,7 @@
 //!
 //! Effective for a project = project row ?? global row ?? off, **and** a
 //! consent whose hash equals the current permissions hash, **and** a valid
-//! manifest (`docs/CUSTOM_TABS.md` §4.1).
+//! manifest (`docs/CUSTOM_TABS.md` §4.1), **and** no revocation blocking it.
 
 use std::collections::HashMap;
 
@@ -88,7 +88,10 @@ pub fn from_stored(
     PluginTabEnablement {
         global: stored.global,
         project: stored.project,
-        effective: switched_on && consent_current && tab.valid_manifest().is_some(),
+        effective: switched_on
+            && consent_current
+            && tab.valid_manifest().is_some()
+            && tab.blocked.is_none(),
         consent_required: !consent_current,
     }
 }

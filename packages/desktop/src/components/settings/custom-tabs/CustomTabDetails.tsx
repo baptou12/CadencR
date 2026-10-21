@@ -2,6 +2,13 @@ import { useState, type ReactNode } from "react";
 import { Code2, Copy, FolderOpen, Loader2, RotateCcw } from "lucide-react";
 import type { TabIssue } from "@/api/generated";
 import { TabIssueList } from "@/components/plugin-tabs/TabIssueList";
+import {
+  backendPlatforms,
+  BLOCKED_COPY,
+  reasonSentence,
+  UNAVAILABLE_HERE,
+  unavailableReason,
+} from "@/components/plugin-tabs/plugin-tab-access";
 import { SettingsBanner, WARNING_BANNER_CLASS } from "@/components/settings/SettingsWarningsBanner";
 import { Button } from "@/components/ui/button";
 import { toastError } from "@/lib/api-errors";
@@ -9,9 +16,11 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
 import { cn } from "@/lib/utils";
 import { CustomTabAvailability } from "./CustomTabAvailability";
+import { customTabStatus } from "./custom-tab-model";
 import type { CustomTabCardProps } from "./CustomTabCard";
 import { CustomTabConfiguration } from "./CustomTabConfiguration";
 import { CustomTabPermissions } from "./CustomTabPermissions";
+import { CustomTabUpdateNotice } from "./CustomTabUpdateNotice";
 
 /** The expanded half of a custom tab card. */
 export function CustomTabDetails({
@@ -24,14 +33,19 @@ export function CustomTabDetails({
 }: CustomTabCardProps & { paused: boolean }): React.JSX.Element {
   const hasIssues = tab.errors.length > 0 || tab.warnings.length > 0;
   const notBuilt = tab.status === "valid" && !tab.entry_present;
+  const unavailable = customTabStatus(tab) === "unavailable" ? tab.backend : null;
+  const blocked = tab.status === "blocked";
   return (
     <>
-      {hasIssues || notBuilt || paused ? (
+      {hasIssues || notBuilt || paused || unavailable || blocked || tab.pending_update ? (
         <div className="space-y-2 px-4 pt-4">
+          {blocked ? <BlockedNote reason={tab.blocked_reason ?? null} /> : null}
           <IssueBanner tone="blocking" title="Not loaded" issues={tab.errors} />
           <IssueBanner tone="warning" title="Warnings" issues={tab.warnings} />
+          {unavailable ? <UnavailableNote platforms={backendPlatforms(unavailable)} /> : null}
           {notBuilt ? <NotBuiltNote dir={tab.dir} entry={tab.entry ?? "dist/index.html"} /> : null}
           {paused ? <PausedNote onReview={() => enablement.review(tab)} /> : null}
+          <CustomTabUpdateNotice tab={tab} onReview={() => enablement.reviewUpdate(tab)} />
         </div>
       ) : null}
       <DetailBlock title="Permissions" divided={false}>
@@ -51,7 +65,9 @@ export function CustomTabDetails({
             <CustomTabConfiguration tab={tab} projects={projects} />
           ) : (
             <p className="text-xs text-muted-foreground">
-              Fix the issues above to edit its settings.
+              {blocked
+                ? "A blocked tab's settings can't be changed."
+                : "Fix the issues above to edit its settings."}
             </p>
           )}
         </DetailBlock>
@@ -95,6 +111,28 @@ function IssueBanner({
     <SettingsBanner tone={tone} title={title} role={tone === "blocking" ? "alert" : "status"}>
       <TabIssueList issues={issues} className="mt-1.5" />
     </SettingsBanner>
+  );
+}
+
+/** Revoked through Cadencr's signed blocklist: only removal (or a version not blocked) helps. */
+function BlockedNote({ reason }: { reason: string | null }): React.JSX.Element {
+  return (
+    <SettingsBanner tone="blocking" title={BLOCKED_COPY.title} role="alert">
+      <p className="mt-1.5 text-muted-foreground">
+        {reason ? <span className="text-foreground">{reasonSentence(reason)} </span> : null}
+        {BLOCKED_COPY.effect} {BLOCKED_COPY.remedy}
+      </p>
+    </SettingsBanner>
+  );
+}
+
+function UnavailableNote({ platforms }: { platforms: string }): React.JSX.Element {
+  return (
+    <p className={cn(WARNING_BANNER_CLASS, "text-xs text-muted-foreground")}>
+      <span className="font-medium text-foreground">{UNAVAILABLE_HERE}.</span>{" "}
+      {unavailableReason(platforms)} It runs here once its tab.json lists a{" "}
+      <span className="font-mono">backend.binary</span> for this platform.
+    </p>
   );
 }
 

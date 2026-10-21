@@ -1130,9 +1130,10 @@ workflows and documented commands, then remove replaced JavaScript business code
 
 ### Activation acceptance gates
 
-1. Explicitly select the release version and coordinated source. The current
-   bootstrap expects the existing app release namespace `vX.Y.Z`; an independent
-   namespace requires an approved coordinated change.
+1. Explicitly select the release version and coordinated source. The bootstrap
+   accepts the CLI's own namespace, `cli/vX.Y.Z` from `cli-release.yml` (stable)
+   or `cli-dev-release.yml` (`-dev.<run>.<attempt>`), and legacy two-field pins
+   resolving to the app release `vX.Y.Z`, which carried CLIs up to `0.14.0`.
 2. Verify the actual released Linux asset, its checksum/version and orchestration
    command before atomically provisioning both pin values in a reviewed change.
 3. Exercise JS-to-Rust and Rust-to-JS canonical state handoff, interrupted remote

@@ -6,14 +6,16 @@ import type {
 } from "@/api/generated";
 import {
   buildListings,
-  compareVersions,
   displayVersion,
+  downloadableUpdate,
   matchesListing,
   offeredVersion,
   providerDates,
   spotlightListings,
 } from "./marketplace-listings";
+import { compareVersions } from "./marketplace-versions";
 import { sidebarFilterTerms } from "./sidebar-filter";
+import { themeCatalogSchema } from "./theme-marketplace";
 
 const sha = "a".repeat(64);
 const themeEntry = (id: string, version: string) => ({
@@ -190,5 +192,114 @@ describe("buildListings", () => {
 
   it("marks an installed theme without a valid document as unusable", () => {
     expect(byKey.get("theme:graphite")?.installed?.usable).toBe(false);
+  });
+});
+
+describe("custom tab listings with a native backend", () => {
+  const target = (platform: string) => ({
+    archive: `https://github.com/acme/tabs/releases/download/v1/backend-${platform}.tar.gz`,
+    sha256: sha,
+    size: 10,
+    cmd: `bin/${platform}/ports`,
+    executable_sha256: sha,
+    executable_size: 20,
+  });
+  const tabEntry = (id: string, version: string, platforms: string[] | null, protocol = 1) => ({
+    kind: "tab",
+    package: {
+      tab: {
+        id,
+        name: id,
+        description: `${id} tab`,
+        version,
+        repository: "https://github.com/acme/tabs",
+        license: "MIT",
+        api_version: 1,
+        ...(platforms ? { backend: { protocol, reasoning: "Lists ports." } } : {}),
+        distribution: {
+          archive: "https://github.com/acme/tabs/releases/download/v1/tab.tar.gz",
+          sha256: sha,
+          ...(platforms
+            ? { binary: Object.fromEntries(platforms.map((p) => [p, target(p)])) }
+            : {}),
+        },
+      },
+      host: { publisher: "acme", compatibility: { min_app_version: "0.13.0" } },
+    },
+  });
+  const tabCatalog = {
+    verified: true,
+    host_platform: "darwin-aarch64",
+    recommended_versions: { ports: "1.1.0" },
+    // The service's verdict: what each signed entry needs that this host lacks.
+    unavailable_versions: {
+      linuxonly: { "1.0.0": "platform" },
+      exotic: { "1.0.0": "protocol", "2.0.0": "protocol" },
+      future: { "2.0.0": "protocol" },
+    },
+    index: {
+      ...index,
+      signed: {
+        ...index.signed,
+        packages: [
+          tabEntry("ports", "1.0.0", ["darwin-aarch64"]),
+          tabEntry("ports", "1.1.0", ["darwin-aarch64", "linux-x86_64"]),
+          tabEntry("linuxonly", "1.0.0", ["linux-x86_64"]),
+          tabEntry("plain", "1.0.0", null),
+          // A platform this build does not know, and a protocol it does not speak.
+          tabEntry("exotic", "1.0.0", ["darwin-aarch64", "plan9-mips"]),
+          tabEntry("exotic", "2.0.0", ["plan9-mips"]),
+          tabEntry("future", "1.0.0", ["darwin-aarch64"], 1),
+          tabEntry("future", "2.0.0", ["darwin-aarch64"], 7),
+        ],
+      },
+    },
+  };
+  const listings = buildListings({
+    tabCatalog: tabCatalog as ManagedThemeCatalogResponse,
+    tabInventory: [{ id: "ports", name: "ports", version: "1.0.0", pending_version: "1.1.0" }],
+  });
+  const byId = new Map(listings.map((listing) => [listing.id, listing]));
+
+  it("names each version's native code, its reasoning and its platforms", () => {
+    expect(byId.get("ports")?.versions.map((v) => v.nativeCode)).toEqual([
+      { reasoning: "Lists ports.", protocol: 1, platforms: ["darwin-aarch64", "linux-x86_64"] },
+      { reasoning: "Lists ports.", protocol: 1, platforms: ["darwin-aarch64"] },
+    ]);
+    expect(byId.get("plain")?.versions[0]?.nativeCode).toBeNull();
+  });
+
+  it("marks the versions the service says do not install here", () => {
+    expect(themeCatalogSchema.safeParse(tabCatalog).success).toBe(true);
+    const exotic = byId.get("exotic");
+    expect(exotic?.versions.map((v) => [v.version, v.unavailable])).toEqual([
+      ["2.0.0", "protocol"],
+      ["1.0.0", "protocol"],
+    ]);
+    expect(exotic?.availableHere).toBe(false);
+    const future = byId.get("future");
+    expect(future?.versions.map((v) => [v.version, v.unavailable])).toEqual([
+      ["2.0.0", "protocol"],
+      ["1.0.0", undefined],
+    ]);
+    expect(future?.availableHere).toBe(true);
+    // The rest of the catalog is unaffected.
+    expect(byId.get("ports")?.availableHere).toBe(true);
+  });
+
+  it("says whether a version installs on the host platform", () => {
+    expect(byId.get("ports")?.availableHere).toBe(true);
+    expect(byId.get("linuxonly")?.availableHere).toBe(false);
+    expect(byId.get("linuxonly")?.versions[0]?.unavailable).toBe("platform");
+    expect(byId.get("plain")?.availableHere).toBe(true);
+  });
+
+  it("carries the update staged for review", () => {
+    expect(byId.get("ports")?.pendingVersion).toBe("1.1.0");
+    expect(byId.get("ports")?.update).toBe("1.1.0");
+    expect(byId.get("plain")?.pendingVersion).toBeNull();
+    // Staged already: what is left is its review, not a download.
+    const ports = byId.get("ports");
+    expect(ports && downloadableUpdate(ports)).toBeUndefined();
   });
 });

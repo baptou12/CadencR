@@ -46,8 +46,12 @@ pub enum TabIssueCode {
     CommandDuplicate,
     CommandNotAllowed,
     CommandReasoningRequired,
-    BackendCommandInvalid,
-    BackendArgsInvalid,
+    /// `backend.command`/`backend.args` (a launch line, possibly a script on
+    /// `PATH`) were replaced by `protocol` + per-platform native `binary`.
+    BackendCommandRemoved,
+    BackendProtocolUnsupported,
+    BackendBinaryRequired,
+    BackendPlatformUnknown,
     BackendReasoningRequired,
     BackendUnavailable,
 }
@@ -91,8 +95,10 @@ impl TabIssueCode {
             Self::CommandDuplicate => "COMMAND_DUPLICATE",
             Self::CommandNotAllowed => "COMMAND_NOT_ALLOWED",
             Self::CommandReasoningRequired => "COMMAND_REASONING_REQUIRED",
-            Self::BackendCommandInvalid => "BACKEND_COMMAND_INVALID",
-            Self::BackendArgsInvalid => "BACKEND_ARGS_INVALID",
+            Self::BackendCommandRemoved => "BACKEND_COMMAND_REMOVED",
+            Self::BackendProtocolUnsupported => "BACKEND_PROTOCOL_UNSUPPORTED",
+            Self::BackendBinaryRequired => "BACKEND_BINARY_REQUIRED",
+            Self::BackendPlatformUnknown => "BACKEND_PLATFORM_UNKNOWN",
             Self::BackendReasoningRequired => "BACKEND_REASONING_REQUIRED",
             Self::BackendUnavailable => "BACKEND_UNAVAILABLE",
         }

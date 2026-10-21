@@ -110,6 +110,35 @@ pub fn managed_command(
     package_env: &BTreeMap<String, String>,
     cwd: &Path,
 ) -> Result<Command, ManagedProcessPolicyError> {
+    direct_command(executable, args, package_env, cwd, CpuLimit::Applied)
+}
+
+/// [`managed_command`] for a process meant to run as long as its owner wants
+/// (a custom tab's backend, kept while its tab is open — for days): no
+/// arguments, no package environment, and no CPU-time ceiling, which would
+/// kill a busy one with `SIGXCPU` after an hour of work. The memory ceiling
+/// stays.
+pub fn long_lived_managed_command(
+    executable: &Path,
+    cwd: &Path,
+) -> Result<Command, ManagedProcessPolicyError> {
+    direct_command(executable, &[], &BTreeMap::new(), cwd, CpuLimit::None)
+}
+
+/// Whether a direct command gets [`MANAGED_CPU_TIME_SECONDS`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CpuLimit {
+    Applied,
+    None,
+}
+
+fn direct_command(
+    executable: &Path,
+    args: &[String],
+    package_env: &BTreeMap<String, String>,
+    cwd: &Path,
+    cpu: CpuLimit,
+) -> Result<Command, ManagedProcessPolicyError> {
     validate_paths(executable, cwd)?;
     validate_package_environment(package_env)?;
 
@@ -121,7 +150,7 @@ pub fn managed_command(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    resources::configure_resource_limits(&mut command)?;
+    resources::configure_resource_limits(&mut command, cpu == CpuLimit::Applied)?;
     for (key, _) in std::env::vars_os() {
         if is_cadencr_host_secret_env_key(&key) {
             command.env_remove(key);
@@ -395,6 +424,25 @@ mod tests {
             report.child_count_limit,
             ManagedProcessControlOutcome::Unavailable { .. }
         ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn only_long_lived_commands_run_without_a_cpu_time_limit() {
+        let directory = tempfile::tempdir().expect("test directory");
+        let cpu_limit = |mut command: Command| async move {
+            command.arg("-c").arg("ulimit -t");
+            let output = command.output().await.expect("run sh");
+            String::from_utf8(output.stdout).unwrap().trim().to_string()
+        };
+        let sh = Path::new("/bin/sh");
+        let one_shot = managed_command(sh, &[], &BTreeMap::new(), directory.path()).unwrap();
+        assert_eq!(
+            cpu_limit(one_shot).await,
+            MANAGED_CPU_TIME_SECONDS.to_string()
+        );
+        let long_lived = long_lived_managed_command(sh, directory.path()).unwrap();
+        assert_eq!(cpu_limit(long_lived).await, "unlimited");
     }
 
     #[cfg(unix)]

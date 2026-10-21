@@ -3098,23 +3098,119 @@ export interface ManagedProvidersInventory {
   trust: ManagedTrustInventory;
 }
 
+/**
+ * One `backend.binary` key. Windows is not supported yet.
+ */
+export type TabPlatform = (typeof TabPlatform)[keyof typeof TabPlatform];
+
+export const TabPlatform = {
+  "darwin-aarch64": "darwin-aarch64",
+  "darwin-x86_64": "darwin-x86_64",
+  "linux-x86_64": "linux-x86_64",
+} as const;
+
+export type ManagedTabInventoryEntryPlatform = null | TabPlatform;
+
 export interface ManagedTabInventoryEntry {
+  /**
+   * Why Cadencr's signed revocation policy blocks the active revision: it
+   * cannot run, only be removed (or updated to a version not blocked).
+   * @nullable
+   */
+  blocked?: string | null;
   /** @nullable */
   error?: string | null;
   id: string;
   name: string;
+  /**
+   * A verified update staged beside the active revision, waiting for the
+   * user to accept what it may now run (`PUT /api/plugin-tabs/{id}/consent`
+   * with its permissions hash) or to discard it.
+   * @nullable
+   */
+  pending_version?: string | null;
+  platform?: ManagedTabInventoryEntryPlatform;
+  /** The active revision's version. */
   version: string;
 }
+
+/**
+ * Whether the cached policy can vouch for new work.
+ */
+export type PolicyFreshness = (typeof PolicyFreshness)[keyof typeof PolicyFreshness];
+
+export const PolicyFreshness = {
+  not_configured: "not_configured",
+  fresh: "fresh",
+  stale: "stale",
+  missing: "missing",
+} as const;
+
+export interface ManagedTabPolicyStatus {
+  cache_status: PolicyFreshness;
+  /**
+   * Why the policy is not fresh, or the last feed failure.
+   * @nullable
+   */
+  detail?: string | null;
+  /** @nullable */
+  expires_at?: string | null;
+  /** @nullable */
+  generated_at?: string | null;
+  source_configured: boolean;
+}
+
+/**
+ * The custom-tab catalog only: the versions Cadencr's revocation policy
+ * blocks here, by tab id then version, with the policy's reason. They
+ * are never recommended, and installing one is refused.
+ */
+export type ManagedThemeCatalogResponseBlockedVersions = {
+  [key: string]: { [key: string]: string };
+};
+
+export type ManagedThemeCatalogResponseHostPlatform = null | TabPlatform;
 
 export type ManagedThemeCatalogResponseIndex = null | SignedMixedCatalog;
 
 export type ManagedThemeCatalogResponseRecommendedVersions = { [key: string]: string };
 
+/**
+ * Why a catalog tab version does not install on this host.
+ */
+export type TabVersionUnavailable =
+  (typeof TabVersionUnavailable)[keyof typeof TabVersionUnavailable];
+
+export const TabVersionUnavailable = {
+  platform: "platform",
+  protocol: "protocol",
+} as const;
+
+/**
+ * The custom-tab catalog only: the versions that cannot install here, by
+ * tab id then version, and why. They are never recommended.
+ */
+export type ManagedThemeCatalogResponseUnavailableVersions = {
+  [key: string]: { [key: string]: TabVersionUnavailable };
+};
+
 export interface ManagedThemeCatalogResponse {
+  /**
+   * The custom-tab catalog only: the versions Cadencr's revocation policy
+   * blocks here, by tab id then version, with the policy's reason. They
+   * are never recommended, and installing one is refused.
+   */
+  blocked_versions?: ManagedThemeCatalogResponseBlockedVersions;
   /** @nullable */
   error?: string | null;
+  host_platform?: ManagedThemeCatalogResponseHostPlatform;
   index?: ManagedThemeCatalogResponseIndex;
   recommended_versions: ManagedThemeCatalogResponseRecommendedVersions;
+  /**
+   * The custom-tab catalog only: the versions that cannot install here, by
+   * tab id then version, and why. They are never recommended.
+   */
+  unavailable_versions?: ManagedThemeCatalogResponseUnavailableVersions;
   verified: boolean;
 }
 
@@ -3506,6 +3602,7 @@ export type PluginTabBackendState =
   (typeof PluginTabBackendState)[keyof typeof PluginTabBackendState];
 
 export const PluginTabBackendState = {
+  starting: "starting",
   running: "running",
   stopped: "stopped",
   crashed: "crashed",
@@ -3529,6 +3626,19 @@ export interface PluginTabBackendStatus {
    * @nullable
    */
   pid?: number | null;
+  /**
+   * Cadencr refuses to start it until the user allows a restart (`DELETE
+   * /api/plugin-tabs/{id}/backends/{feature_id}`): it spoke another
+   * protocol, crashed 3 times in a minute, or could not start 3 times in
+   * a minute (that last one also lifts a minute after the first refusal).
+   */
+  restart_held: boolean;
+  /**
+   * Why the last start was refused before anything ran (tampered binary,
+   * policy unavailable, …), until a run starts again.
+   * @nullable
+   */
+  start_error?: string | null;
   /**
    * RFC 3339, of the current or last run.
    * @nullable
@@ -3589,6 +3699,33 @@ export interface PluginTabActivity {
   backend?: PluginTabActivityBackend;
   /** The commands it asked Cadencr to run, newest first (at most 50). */
   commands: PluginTabExecRecord[];
+}
+
+/**
+ * A backend's availability on the platform Cadencr runs on.
+ */
+export type PluginTabBackendAvailability =
+  (typeof PluginTabBackendAvailability)[keyof typeof PluginTabBackendAvailability];
+
+export const PluginTabBackendAvailability = {
+  available: "available",
+  unavailable_on_platform: "unavailable_on_platform",
+} as const;
+
+/**
+ * One installed (or staged) marketplace backend binary: the signed facts a
+ * binary-only update changes.
+ */
+export interface PluginTabBackendBinary {
+  /** The signed SHA-256 of the executable, checked before each launch. */
+  executable_sha256: string;
+  /** The platform it was installed for (`darwin-aarch64`, …). */
+  platform: TabPlatform;
+  /**
+   * The backend protocol version it speaks.
+   * @minimum 0
+   */
+  protocol: number;
 }
 
 export type PluginTabConfigurationGlobal = { [key: string]: unknown };
@@ -3666,7 +3803,7 @@ export interface PluginTabConsentRequest {
 export interface PluginTabEnablement {
   /** No consent, or consent for an older permissions hash. */
   consent_required: boolean;
-  /** Switched on, consented at the current hash, and valid. */
+  /** Switched on, consented at the current hash, valid, and not blocked. */
   effective: boolean;
   /**
    * The global switch; `None` when never set (off).
@@ -3702,29 +3839,30 @@ export interface PluginTabNetwork {
 }
 
 /**
- * The conversation an open tab instance shows.
+ * Platform key (`darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`) →
+ * path of its native executable inside the tab folder. A platform left
+ * out cannot run the backend.
  */
-export interface PluginTabPresenceRequest {
-  feature_id: number;
-}
-
-export type PluginTabStatus = (typeof PluginTabStatus)[keyof typeof PluginTabStatus];
-
-export const PluginTabStatus = {
-  valid: "valid",
-  invalid: "invalid",
-} as const;
+export type TabBackendBinary = { [key: string]: string };
 
 /**
- * The tab's native backend process (`backend`).
+ * The tab's native backend process (`backend`): one executable per
+ * platform, shipped inside the tab folder, speaking stdio protocol
+ * `protocol` (`docs/CUSTOM_TABS.md` §4.7).
  */
 export interface TabBackend {
-  args?: string[];
   /**
-   * A path inside the tab folder (`bin/backend`) or a bare program name
-   * looked up on `PATH` (`node`, with the script in `args`).
+   * Platform key (`darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`) →
+   * path of its native executable inside the tab folder. A platform left
+   * out cannot run the backend.
    */
-  command: string;
+  binary: TabBackendBinary;
+  /**
+   * The stdio protocol version the backend speaks: `1` (the versions a
+   * Cadencr accepts are `SUPPORTED_BACKEND_PROTOCOLS`).
+   * @minimum 0
+   */
+  protocol: number;
   /**
    * Shown to the user at consent time; required.
    * @nullable
@@ -3732,7 +3870,9 @@ export interface TabBackend {
   reasoning?: string | null;
 }
 
-export type PluginTabSummaryBackend = null | TabBackend;
+export type PluginTabPendingUpdateBackend = null | TabBackend;
+
+export type PluginTabPendingUpdateBackendBinary = null | PluginTabBackendBinary;
 
 /**
  * How far a tab reaches beyond its page, from least to most. Shown on the
@@ -3758,6 +3898,50 @@ export interface TabCommand {
    */
   reasoning?: string | null;
 }
+
+/**
+ * What a staged marketplace update would run, for the review dialog.
+ */
+export interface PluginTabPendingUpdate {
+  access_level: TabAccessLevel;
+  backend?: PluginTabPendingUpdateBackend;
+  backend_binary?: PluginTabPendingUpdateBackendBinary;
+  /**
+   * Why Cadencr's revocation policy blocks it: it cannot be accepted
+   * (403 `PLUGIN_TAB_BLOCKED`), only discarded.
+   * @nullable
+   */
+  blocked_reason?: string | null;
+  commands: TabCommand[];
+  network: PluginTabNetwork;
+  permissions: string[];
+  /** What accepting it records; differs from the installed revision's. */
+  permissions_hash: string;
+  version: string;
+}
+
+/**
+ * The conversation an open tab instance shows.
+ */
+export interface PluginTabPresenceRequest {
+  feature_id: number;
+}
+
+export type PluginTabStatus = (typeof PluginTabStatus)[keyof typeof PluginTabStatus];
+
+export const PluginTabStatus = {
+  valid: "valid",
+  invalid: "invalid",
+  blocked: "blocked",
+} as const;
+
+export type PluginTabSummaryBackend = null | TabBackend;
+
+export type PluginTabSummaryBackendAvailability = null | PluginTabBackendAvailability;
+
+export type PluginTabSummaryBackendBinary = null | PluginTabBackendBinary;
+
+export type PluginTabSummaryPendingUpdate = null | PluginTabPendingUpdate;
 
 export type TabIssueCode = (typeof TabIssueCode)[keyof typeof TabIssueCode];
 
@@ -3798,8 +3982,10 @@ export const TabIssueCode = {
   COMMAND_DUPLICATE: "COMMAND_DUPLICATE",
   COMMAND_NOT_ALLOWED: "COMMAND_NOT_ALLOWED",
   COMMAND_REASONING_REQUIRED: "COMMAND_REASONING_REQUIRED",
-  BACKEND_COMMAND_INVALID: "BACKEND_COMMAND_INVALID",
-  BACKEND_ARGS_INVALID: "BACKEND_ARGS_INVALID",
+  BACKEND_COMMAND_REMOVED: "BACKEND_COMMAND_REMOVED",
+  BACKEND_PROTOCOL_UNSUPPORTED: "BACKEND_PROTOCOL_UNSUPPORTED",
+  BACKEND_BINARY_REQUIRED: "BACKEND_BINARY_REQUIRED",
+  BACKEND_PLATFORM_UNKNOWN: "BACKEND_PLATFORM_UNKNOWN",
   BACKEND_REASONING_REQUIRED: "BACKEND_REASONING_REQUIRED",
   BACKEND_UNAVAILABLE: "BACKEND_UNAVAILABLE",
 } as const;
@@ -3835,6 +4021,15 @@ export interface PluginTabSummary {
    */
   authoring_project_id?: number | null;
   backend?: PluginTabSummaryBackend;
+  backend_availability?: PluginTabSummaryBackendAvailability;
+  backend_binary?: PluginTabSummaryBackendBinary;
+  /**
+   * Why Cadencr's signed revocation policy blocks this marketplace tab
+   * (`status` is then `blocked`): it cannot be enabled, opened or run its
+   * backend, only removed. `None` when not blocked.
+   * @nullable
+   */
+  blocked_reason?: string | null;
   /** Programs the tab may ask Cadencr to run. */
   commands: TabCommand[];
   configuration: TabConfigField[];
@@ -3864,6 +4059,7 @@ export interface PluginTabSummary {
   /** The manifest name, or the id when `tab.json` could not be parsed. */
   name: string;
   network: PluginTabNetwork;
+  pending_update?: PluginTabSummaryPendingUpdate;
   permissions: string[];
   /**
    * What consent is recorded against; `None` when the manifest is unreadable.
@@ -21503,6 +21699,123 @@ export const useRefreshManagedTabCatalog = <TError = ErrorType<unknown>, TContex
   return useMutation(getRefreshManagedTabCatalogMutationOptions(options), queryClient);
 };
 
+/**
+ * @summary The custom-tab revocation policy in force: whether this build has a feed,
+how fresh the cached policy is, and why not. Installing, updating and
+starting a backend need `cache_status` `fresh` (or `not_configured`).
+ */
+export const getManagedTabPolicy = (signal?: AbortSignal) => {
+  return customInstance<ManagedTabPolicyStatus>({
+    url: `/api/marketplace/tabs/policy`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetManagedTabPolicyQueryKey = () => {
+  return [`/api/marketplace/tabs/policy`] as const;
+};
+
+export const getGetManagedTabPolicyQueryOptions = <
+  TData = Awaited<ReturnType<typeof getManagedTabPolicy>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabPolicy>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetManagedTabPolicyQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getManagedTabPolicy>>> = ({ signal }) =>
+    getManagedTabPolicy(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getManagedTabPolicy>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetManagedTabPolicyQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getManagedTabPolicy>>
+>;
+export type GetManagedTabPolicyQueryError = ErrorType<unknown>;
+
+export function useGetManagedTabPolicy<
+  TData = Awaited<ReturnType<typeof getManagedTabPolicy>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabPolicy>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getManagedTabPolicy>>,
+          TError,
+          Awaited<ReturnType<typeof getManagedTabPolicy>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetManagedTabPolicy<
+  TData = Awaited<ReturnType<typeof getManagedTabPolicy>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabPolicy>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getManagedTabPolicy>>,
+          TError,
+          Awaited<ReturnType<typeof getManagedTabPolicy>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetManagedTabPolicy<
+  TData = Awaited<ReturnType<typeof getManagedTabPolicy>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabPolicy>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary The custom-tab revocation policy in force: whether this build has a feed,
+how fresh the cached policy is, and why not. Installing, updating and
+starting a backend need `cache_status` `fresh` (or `not_configured`).
+ */
+
+export function useGetManagedTabPolicy<
+  TData = Awaited<ReturnType<typeof getManagedTabPolicy>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabPolicy>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetManagedTabPolicyQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 export const removeManagedTab = (id: string, signal?: AbortSignal) => {
   return customInstance<boolean>({ url: `/api/marketplace/tabs/${id}`, method: "DELETE", signal });
 };
@@ -21566,6 +21879,83 @@ export const useRemoveManagedTab = <TError = ErrorType<unknown>, TContext = unkn
   TContext
 > => {
   return useMutation(getRemoveManagedTabMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Discard the update staged for review; the installed revision stays. 404
+`MANAGED_TAB_UPDATE_NOT_FOUND` when none is staged.
+ */
+export const discardManagedTabUpdate = (id: string, signal?: AbortSignal) => {
+  return customInstance<boolean>({
+    url: `/api/marketplace/tabs/${id}/pending`,
+    method: "DELETE",
+    signal,
+  });
+};
+
+export const getDiscardManagedTabUpdateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof discardManagedTabUpdate>>,
+    TError,
+    DiscardManagedTabUpdateMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof discardManagedTabUpdate>>,
+  TError,
+  DiscardManagedTabUpdateMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["discardManagedTabUpdate"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof discardManagedTabUpdate>>,
+    DiscardManagedTabUpdateMutationVariables
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return discardManagedTabUpdate(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DiscardManagedTabUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof discardManagedTabUpdate>>
+>;
+
+export type DiscardManagedTabUpdateMutationError = ErrorType<unknown>;
+export type DiscardManagedTabUpdateMutationVariables = { id: string };
+
+/**
+ * @summary Discard the update staged for review; the installed revision stays. 404
+`MANAGED_TAB_UPDATE_NOT_FOUND` when none is staged.
+ */
+export const useDiscardManagedTabUpdate = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof discardManagedTabUpdate>>,
+      TError,
+      DiscardManagedTabUpdateMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof discardManagedTabUpdate>>,
+  TError,
+  DiscardManagedTabUpdateMutationVariables,
+  TContext
+> => {
+  return useMutation(getDiscardManagedTabUpdateMutationOptions(options), queryClient);
 };
 
 export const updateManagedTab = (
@@ -22223,8 +22613,12 @@ export const usePluginTabRevokeCurrentGrant = <TError = ErrorType<unknown>, TCon
 /**
  * @summary Send one request to the tab's native backend, starting it if it is not
 running (plugin token). A backend error is a 200 with `error`. 403
-`PLUGIN_BACKEND_UNDECLARED` / `PLUGIN_BACKEND_UNSUPPORTED`, 422
-`PLUGIN_BACKEND_UNAVAILABLE`, 429 `PLUGIN_BACKEND_BUSY`, 503
+`PLUGIN_BACKEND_UNDECLARED`, 422 `PLUGIN_BACKEND_UNAVAILABLE` /
+`PLUGIN_BACKEND_UNAVAILABLE_ON_PLATFORM`, 409 `PLUGIN_BACKEND_TAMPERED` (a
+marketplace binary that differs from its signed digest) /
+`MANAGED_TAB_POLICY_UNAVAILABLE` (a revocation feed is configured but no
+fresh policy is cached: the backend does not start), 429
+`PLUGIN_BACKEND_BUSY`, 503
 `PLUGIN_BACKEND_CRASHING`, 504 `PLUGIN_BACKEND_TIMEOUT`, 502
 `PLUGIN_BACKEND_EXITED`.
  */
@@ -22286,8 +22680,12 @@ export type PluginTabSelfBackendMutationVariables = { data: PluginBackendRequest
 /**
  * @summary Send one request to the tab's native backend, starting it if it is not
 running (plugin token). A backend error is a 200 with `error`. 403
-`PLUGIN_BACKEND_UNDECLARED` / `PLUGIN_BACKEND_UNSUPPORTED`, 422
-`PLUGIN_BACKEND_UNAVAILABLE`, 429 `PLUGIN_BACKEND_BUSY`, 503
+`PLUGIN_BACKEND_UNDECLARED`, 422 `PLUGIN_BACKEND_UNAVAILABLE` /
+`PLUGIN_BACKEND_UNAVAILABLE_ON_PLATFORM`, 409 `PLUGIN_BACKEND_TAMPERED` (a
+marketplace binary that differs from its signed digest) /
+`MANAGED_TAB_POLICY_UNAVAILABLE` (a revocation feed is configured but no
+fresh policy is cached: the backend does not start), 429
+`PLUGIN_BACKEND_BUSY`, 503
 `PLUGIN_BACKEND_CRASHING`, 504 `PLUGIN_BACKEND_TIMEOUT`, 502
 `PLUGIN_BACKEND_EXITED`.
  */
@@ -23539,9 +23937,12 @@ export const usePluginTabPutConfiguration = <TError = ErrorType<unknown>, TConte
 };
 
 /**
- * @summary Accept the tab's current permissions. 409 `PLUGIN_TAB_CONSENT_STALE` when
-`permissions_hash` is not the current one. A changed consent revokes the
-tab's live grants.
+ * @summary Accept the tab's current permissions — or, with the hash of a staged
+marketplace update (`pending_update.permissions_hash`), accept that update:
+it becomes the installed revision and its backend restarts on it. 409
+`PLUGIN_TAB_CONSENT_STALE` when `permissions_hash` is neither (409
+`MANAGED_TAB_UPDATE_CHANGED` when the staged update was replaced
+meanwhile). A changed consent revokes the tab's live grants.
  */
 export const pluginTabConsent = (
   id: string,
@@ -23606,9 +24007,12 @@ export type PluginTabConsentMutationVariables = {
 };
 
 /**
- * @summary Accept the tab's current permissions. 409 `PLUGIN_TAB_CONSENT_STALE` when
-`permissions_hash` is not the current one. A changed consent revokes the
-tab's live grants.
+ * @summary Accept the tab's current permissions — or, with the hash of a staged
+marketplace update (`pending_update.permissions_hash`), accept that update:
+it becomes the installed revision and its backend restarts on it. 409
+`PLUGIN_TAB_CONSENT_STALE` when `permissions_hash` is neither (409
+`MANAGED_TAB_UPDATE_CHANGED` when the staged update was replaced
+meanwhile). A changed consent revokes the tab's live grants.
  */
 export const usePluginTabConsent = <TError = ErrorType<unknown>, TContext = unknown>(
   options?: {

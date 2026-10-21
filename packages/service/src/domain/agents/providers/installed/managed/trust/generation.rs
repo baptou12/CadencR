@@ -63,6 +63,20 @@ impl ManagedTrustStore {
             None => self.verify_policy_legacy(envelope),
         }
     }
+    /// Custom-tab revocation high-water continuity: its own recovery
+    /// checkpoints (`recovery_tab_policy_sha256`), never the theme/provider ones.
+    pub(crate) fn authenticate_tab_policy_baseline(
+        &self,
+        envelope: &Value,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), ManagedTrustError> {
+        match &self.profile {
+            Some(profile) => profile
+                .verify_tab_policy_baseline(envelope, now)
+                .map_err(trust_error),
+            None => self.verify_policy_legacy(envelope),
+        }
+    }
     pub(crate) fn authenticate_provider_policy_baseline(
         &self,
         envelope: &Value,

@@ -1,5 +1,7 @@
 [package]
 name = "cadencr-cli"
+# Own semver, independent of the Cadencr app version; keep packages/cli/package.json
+# and Cargo.lock equal. Released by hand with .github/workflows/cli-release.yml.
 version = "0.14.0"
 edition = "2021"
 license.workspace = true
@@ -13,12 +15,14 @@ bon.workspace = true
 cadencr-plugin-core = { path = "../plugin-core" }
 cadencr-registry-core = { path = "../registry-core" }
 cadencr-registry-publisher = { path = "../registry-publisher" }
+cadencr-tab-backend = { path = "../tab-backend-sdk-rs", features = ["conformance"] }
 clap = { version = "4", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
 tokio = { version = "1", features = ["rt", "net", "time"] }
 
 [dev-dependencies]
+cadencr-plugin-core = { path = "../plugin-core", features = ["test-support"] }
 flate2 = "1"
 libc = "0.2"
 sha2 = "0.11"

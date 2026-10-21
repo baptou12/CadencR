@@ -9,6 +9,7 @@ import {
   MIN_GENERATION_ENV,
   THEME_ENV,
   THEME_POLICY_ENV,
+  TAB_POLICY_ENV,
   validatedBuildEnv,
 } from "./validate-marketplace-build-env.mjs";
 
@@ -31,13 +32,19 @@ const mixed =
   "https://raw.githubusercontent.com/test-fixture/registry/refs/heads/marketplace-v2/managed-index.json";
 
 const policy = mixed.replace("managed-index.json", "managed-theme-blocklist.json");
+const tabPolicy = mixed.replace("managed-index.json", "managed-tab-blocklist.json");
 
 test("unconfigured releases omit empty compile-time trust values and retain ordinary env", () => {
   const env = validatedBuildEnv({
     ...Object.fromEntries(
-      [...TRUST_ENV, ...GENERATION_ENV, MIN_GENERATION_ENV, THEME_ENV, THEME_POLICY_ENV].map(
-        (name) => [name, ""],
-      ),
+      [
+        ...TRUST_ENV,
+        ...GENERATION_ENV,
+        MIN_GENERATION_ENV,
+        THEME_ENV,
+        THEME_POLICY_ENV,
+        TAB_POLICY_ENV,
+      ].map((name) => [name, ""]),
     ),
     SENTINEL: "keep",
   });
@@ -50,6 +57,7 @@ test("legacy complete configuration remains supported; themes share the exact pi
     ...legacy,
     [THEME_ENV]: mixed,
     [THEME_POLICY_ENV]: policy,
+    [TAB_POLICY_ENV]: tabPolicy,
     [TRUST_ENV[2]]: mixed,
   };
   assert.deepEqual(validatedBuildEnv(shared), shared);
@@ -81,13 +89,24 @@ test("invalid key IDs, key bytes, unsafe feeds and schema1 theme feeds are rejec
     `${mixed}?token=secret`,
   ]) {
     assert.throws(() =>
-      validatedBuildEnv({ ...configured(), [THEME_ENV]: url, [THEME_POLICY_ENV]: policy }),
+      validatedBuildEnv({
+        ...configured(),
+        [THEME_ENV]: url,
+        [THEME_POLICY_ENV]: policy,
+        [TAB_POLICY_ENV]: tabPolicy,
+      }),
     );
   }
 });
 test("command wrapper forwards configured env and removes blank option_env pins", () => {
-  const env = { ...process.env, ...configured(), [THEME_ENV]: mixed, [THEME_POLICY_ENV]: policy };
-  const code = `console.log(JSON.stringify(Object.fromEntries(${JSON.stringify([...TRUST_ENV, ...GENERATION_ENV, MIN_GENERATION_ENV, THEME_ENV, THEME_POLICY_ENV])}.map(k=>[k,process.env[k]??null]))))`;
+  const env = {
+    ...process.env,
+    ...configured(),
+    [THEME_ENV]: mixed,
+    [THEME_POLICY_ENV]: policy,
+    [TAB_POLICY_ENV]: tabPolicy,
+  };
+  const code = `console.log(JSON.stringify(Object.fromEntries(${JSON.stringify([...TRUST_ENV, ...GENERATION_ENV, MIN_GENERATION_ENV, THEME_ENV, THEME_POLICY_ENV, TAB_POLICY_ENV])}.map(k=>[k,process.env[k]??null]))))`;
   const result = spawnSync(
     process.execPath,
     ["scripts/validate-marketplace-build-env.mjs", "--", process.execPath, "-e", code],
@@ -101,6 +120,7 @@ test("command wrapper forwards configured env and removes blank option_env pins"
     MIN_GENERATION_ENV,
     THEME_ENV,
     THEME_POLICY_ENV,
+    TAB_POLICY_ENV,
   ])
     env[name] = "";
   const empty = spawnSync(
@@ -119,6 +139,7 @@ test("desktop release forwards all public pins and validates before sidecar comp
     MIN_GENERATION_ENV,
     THEME_ENV,
     THEME_POLICY_ENV,
+    TAB_POLICY_ENV,
   ])
     assert.ok(text.includes(`${name}: \${{ vars.${name} }}`));
   assert.ok(
@@ -147,9 +168,34 @@ test("theme catalog and domain-bound revocation feed are an inseparable activati
     mixed,
   ]) {
     assert.throws(() =>
-      validatedBuildEnv({ ...base, [THEME_ENV]: mixed, [THEME_POLICY_ENV]: url }),
+      validatedBuildEnv({
+        ...base,
+        [THEME_ENV]: mixed,
+        [THEME_POLICY_ENV]: url,
+        [TAB_POLICY_ENV]: tabPolicy,
+      }),
     );
   }
+});
+
+test("the mixed catalog never activates without the custom tab revocation feed", () => {
+  const base = { ...configured(), [THEME_ENV]: mixed, [THEME_POLICY_ENV]: policy };
+  assert.throws(() => validatedBuildEnv(base), /custom tab revocation URL/);
+  assert.throws(
+    () => validatedBuildEnv({ ...configured(), [TAB_POLICY_ENV]: tabPolicy }),
+    /configured together/,
+  );
+  assert.throws(() => validatedBuildEnv({ [TAB_POLICY_ENV]: tabPolicy }), /complete shared/);
+  for (const url of [
+    tabPolicy.replace("marketplace-v2", "catalog"),
+    `${tabPolicy}?token=x`,
+    tabPolicy.replace("test-fixture", "other-fixture"),
+    policy,
+  ]) {
+    assert.throws(() => validatedBuildEnv({ ...base, [TAB_POLICY_ENV]: url }));
+  }
+  const env = { ...base, [TAB_POLICY_ENV]: tabPolicy };
+  assert.deepEqual(validatedBuildEnv(env), env);
 });
 
 function generationConfigured() {
@@ -165,6 +211,7 @@ function generationConfigured() {
     [TRUST_ENV[3]]: legacy[TRUST_ENV[3]],
     [THEME_ENV]: mixed,
     [THEME_POLICY_ENV]: policy,
+    [TAB_POLICY_ENV]: tabPolicy,
   };
 }
 test("root-authorized generation configuration replaces legacy trust without activating placeholders", () => {

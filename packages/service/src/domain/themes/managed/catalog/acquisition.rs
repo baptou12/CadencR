@@ -66,12 +66,18 @@ async fn acquire_with_policy(refresh: bool, check_policy: bool) -> ManagedThemeC
                 (Some(catalog), Some(policy)) => Some(format!("{catalog}; {policy}")),
                 (catalog, policy) => catalog.or(policy),
             },
+            host_platform: None,
+            blocked_versions: Default::default(),
+            unavailable_versions: Default::default(),
         },
         Err(error) => ManagedThemeCatalogResponse {
             index: None,
             recommended_versions: Default::default(),
             verified: false,
             error: Some(error.to_string()),
+            host_platform: None,
+            blocked_versions: Default::default(),
+            unavailable_versions: Default::default(),
         },
     }
 }

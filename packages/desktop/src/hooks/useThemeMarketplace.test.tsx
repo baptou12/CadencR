@@ -86,8 +86,9 @@ describe("server-confirmed theme operations", () => {
         );
       });
       expect(result.current.mutation.isSuccess).toBe(true);
-      expect(result.current.notice).toContain(`${kind} confirmed by Cadencr.`);
-      expect(result.current.notice).toContain(warning);
+      expect(result.current.notice?.tone).toBe("done");
+      expect(result.current.notice?.text).toContain(`${kind} confirmed by Cadencr.`);
+      expect(result.current.notice?.text).toContain(warning);
       client.clear();
     },
   );
@@ -165,7 +166,10 @@ describe("server-confirmed theme operations", () => {
       await waitFor(() => expect(result.current.mutation.isError).toBe(true));
       expect(spy).toHaveBeenCalledWith({ queryKey: getWorkspaceSettingsQueryKey() });
       expect(spy).toHaveBeenCalledWith({ queryKey: ["marketplace", "managed-themes"] });
-      expect(result.current.notice).toMatch(/not confirmed/i);
+      expect(result.current.notice).toMatchObject({
+        tone: "error",
+        text: expect.stringMatching(/not confirmed/i),
+      });
       spy.mockClear();
       await act(async () => {
         await result.current.recovery.mutateAsync();
@@ -183,7 +187,10 @@ describe("server-confirmed theme operations", () => {
     );
     await waitFor(() => expect(result.current.mutation.isError).toBe(true));
     expect(spy.mock.calls.some(([options]) => typeof options?.predicate === "function")).toBe(true);
-    expect(result.current.notice).toMatch(/not confirmed/i);
+    expect(result.current.notice).toMatchObject({
+      tone: "error",
+      text: expect.stringMatching(/not confirmed/i),
+    });
   });
   it("revalidates installed themes after a confirmed catalog and policy refresh", async () => {
     vi.mocked(refreshManagedThemeCatalog).mockResolvedValue({

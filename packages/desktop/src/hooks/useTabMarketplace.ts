@@ -12,6 +12,9 @@ import {
   type SignedMixedCatalog,
 } from "@/api/generated";
 import { themeCatalogSchema } from "@/lib/theme-marketplace";
+import { apiErrorCode } from "@/lib/api-errors";
+import { PLUGIN_TAB_ERROR } from "@/lib/plugin-tabs/error-codes";
+import type { MarketplaceNotice } from "@/lib/marketplace";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { useStableMutation, useStableQuery } from "./stable-query";
 
@@ -22,6 +25,7 @@ const entry = z.object({
   name: z.string(),
   version: z.string(),
   error: z.string().nullable().optional(),
+  pending_version: z.string().nullable().optional(),
 });
 type Action =
   | { kind: "install" | "update"; id: string; version: string; index: SignedMixedCatalog }
@@ -29,7 +33,7 @@ type Action =
 
 export function useTabMarketplace() {
   const client = useQueryClient();
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<MarketplaceNotice | null>(null);
   const catalog = useStableQuery(
     useQuery({
       queryKey: catalogKey,
@@ -80,25 +84,43 @@ export function useTabMarketplace() {
     useMutation({
       retry: false,
       onMutate: () => setNotice(null),
-      mutationFn: async (action: Action) => {
+      mutationFn: async (action: Action): Promise<string | null> => {
         if (action.kind === "remove") {
           z.literal(true).parse(await removeManagedTab(action.id));
-        } else {
-          const body = { tab_id: action.id, version: action.version, index: action.index };
-          entry.parse(
-            action.kind === "install"
-              ? await installManagedTab(body)
-              : await updateManagedTab(action.id, body),
-          );
+          return null;
         }
+        const body = { tab_id: action.id, version: action.version, index: action.index };
+        const result = entry.parse(
+          action.kind === "install"
+            ? await installManagedTab(body)
+            : await updateManagedTab(action.id, body),
+        );
+        return result.pending_version ?? null;
       },
-      onSuccess: async (_, action) => {
-        setNotice(`${action.id}: ${action.kind} confirmed by Cadencr.`);
+      onSuccess: async (staged, action) => {
+        setNotice({
+          tone: "done",
+          text: staged
+            ? `${action.id}: update ${staged} downloaded and verified. Review its permissions to install it.`
+            : `${action.id}: ${action.kind} confirmed by Cadencr.`,
+        });
         await reconcile();
       },
-      onError: async (_, action) => {
-        setNotice(`${action.id}: the change was not confirmed. Reloading tab state.`);
+      onError: async (error, action) => {
+        // A coded refusal is a known outcome — nothing changed — and the
+        // Activity already shows it (with its code) as the one error line.
+        // Only an unknown outcome (transport failure, unreadable answer)
+        // earns the "not confirmed" notice.
+        const code = apiErrorCode(error);
+        if (code === null)
+          setNotice({
+            tone: "error",
+            text: `${action.id}: the change was not confirmed. Reloading tab state.`,
+          });
         await reconcile();
+        // Which versions install here comes with the catalog: reload it too.
+        if (code === PLUGIN_TAB_ERROR.platformUnsupported)
+          await client.invalidateQueries({ queryKey: catalogKey });
       },
     }),
   );

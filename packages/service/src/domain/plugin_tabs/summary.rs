@@ -5,8 +5,12 @@ use std::collections::HashMap;
 use cadencr_plugin_core::tab::{TabAccessLevel, TabManifest};
 use sqlx::SqlitePool;
 
-use super::models::{PluginTabEnablement, PluginTabNetwork, PluginTabStatus, PluginTabSummary};
-use super::registry::{self, LocalTab};
+use super::managed::storage::ManagedFacts;
+use super::models::{
+    PluginTabBackendAvailability, PluginTabBackendBinary, PluginTabEnablement, PluginTabNetwork,
+    PluginTabPendingUpdate, PluginTabStatus, PluginTabSummary,
+};
+use super::registry::{self, LocalTab, PendingTab};
 use super::{consent, enablement, workspace};
 use crate::error::AppError;
 
@@ -59,12 +63,21 @@ fn build(
     enablement: PluginTabEnablement,
     authoring_project_id: Option<i64>,
 ) -> PluginTabSummary {
-    let status = if tab.valid_manifest().is_some() {
+    let status = if tab.blocked.is_some() {
+        PluginTabStatus::Blocked
+    } else if tab.valid_manifest().is_some() {
         PluginTabStatus::Valid
     } else {
         PluginTabStatus::Invalid
     };
     let managed = tab.is_managed();
+    let permissions_hash = tab.permissions_hash();
+    let backend_binary = tab.facts().and_then(backend_binary);
+    let managed_availability = managed.then(|| match tab.facts() {
+        Some(facts) => PluginTabBackendAvailability::of_installed(facts),
+        None => PluginTabBackendAvailability::UnavailableOnPlatform,
+    });
+    let pending_update = tab.pending.as_ref().and_then(pending_update);
     let report = tab.report;
     let manifest = report.manifest.as_ref();
     let name = manifest.map_or_else(|| tab.id.clone(), |manifest| manifest.name.clone());
@@ -78,13 +91,7 @@ fn build(
         permissions: manifest
             .map(|manifest| manifest.permissions.clone())
             .unwrap_or_default(),
-        network: manifest
-            .and_then(|manifest| manifest.network.as_ref())
-            .map(|network| PluginTabNetwork {
-                allowed_origins: network.allowed_origins.clone(),
-                reasoning: network.reasoning.clone(),
-            })
-            .unwrap_or_default(),
+        network: manifest.map(network).unwrap_or_default(),
         configuration: manifest
             .map(|manifest| manifest.configuration.clone())
             .unwrap_or_default(),
@@ -92,12 +99,20 @@ fn build(
             .map(|manifest| manifest.commands.clone())
             .unwrap_or_default(),
         backend: manifest.and_then(|manifest| manifest.backend.clone()),
+        backend_availability: manifest.and_then(|manifest| manifest.backend.as_ref()).map(
+            |backend| {
+                managed_availability.unwrap_or_else(|| PluginTabBackendAvailability::of(backend))
+            },
+        ),
+        backend_binary,
+        pending_update,
         access_level: manifest.map_or(TabAccessLevel::Ui, TabManifest::access_level),
         name,
         icon_svg: report.icon_svg,
         entry_present: report.entry_present,
-        permissions_hash: manifest.map(|manifest| manifest.permissions_hash()),
+        permissions_hash,
         status,
+        blocked_reason: tab.blocked,
         errors: report.findings.errors,
         warnings: report.findings.warnings,
         dir: report.directory.to_string_lossy().into_owned(),
@@ -105,6 +120,45 @@ fn build(
         enablement,
         id: tab.id,
     }
+}
+
+fn network(manifest: &TabManifest) -> PluginTabNetwork {
+    manifest
+        .network
+        .as_ref()
+        .map(|network| PluginTabNetwork {
+            allowed_origins: network.allowed_origins.clone(),
+            reasoning: network.reasoning.clone(),
+        })
+        .unwrap_or_default()
+}
+
+/// What a staged update would run; `None` when its manifest is invalid
+/// (it can then never be accepted).
+fn pending_update(pending: &PendingTab) -> Option<PluginTabPendingUpdate> {
+    let manifest = pending.report.valid_manifest()?;
+    Some(PluginTabPendingUpdate {
+        version: manifest.version.clone(),
+        permissions_hash: pending.permissions_hash()?,
+        access_level: manifest.access_level(),
+        permissions: manifest.permissions.clone(),
+        network: network(manifest),
+        commands: manifest.commands.clone(),
+        backend: manifest.backend.clone(),
+        backend_binary: backend_binary(&pending.managed.facts),
+        blocked_reason: pending.blocked.clone(),
+    })
+}
+
+fn backend_binary(facts: &ManagedFacts) -> Option<PluginTabBackendBinary> {
+    facts
+        .backend
+        .as_ref()
+        .map(|backend| PluginTabBackendBinary {
+            platform: backend.platform,
+            protocol: backend.protocol,
+            executable_sha256: backend.executable_sha256.clone(),
+        })
 }
 
 /// `plugin_id → project id` for every tab authoring project.
@@ -120,8 +174,36 @@ async fn authoring_projects(pool: &SqlitePool) -> Result<HashMap<String, i64>, A
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::plugin_tabs::models;
+    use crate::domain::plugin_tabs::models::{self, TabPlatform};
     use crate::domain::plugin_tabs::test_support::{pool, write_tab};
+
+    #[test]
+    fn a_backend_without_this_platforms_binary_is_unavailable_here() {
+        let backend = |platforms: &[TabPlatform]| models::TabBackend {
+            protocol: 1,
+            binary: platforms
+                .iter()
+                .map(|platform| (platform.as_str().to_string(), "bin/b".to_string()))
+                .collect(),
+            reasoning: Some("r".into()),
+        };
+        let expected = match TabPlatform::current() {
+            Some(_) => PluginTabBackendAvailability::Available,
+            None => PluginTabBackendAvailability::UnavailableOnPlatform,
+        };
+        assert_eq!(
+            PluginTabBackendAvailability::of(&backend(&TabPlatform::ALL)),
+            expected
+        );
+        let elsewhere: Vec<TabPlatform> = TabPlatform::ALL
+            .into_iter()
+            .filter(|platform| Some(*platform) != TabPlatform::current())
+            .collect();
+        assert_eq!(
+            PluginTabBackendAvailability::of(&backend(&elsewhere)),
+            PluginTabBackendAvailability::UnavailableOnPlatform
+        );
+    }
 
     #[tokio::test]
     async fn summarizes_valid_and_unreadable_tabs() {
@@ -146,8 +228,61 @@ mod tests {
         assert_eq!(graph.permissions, ["features:read", "git:read"]);
         assert_eq!(graph.access_level, models::TabAccessLevel::Ui);
         assert!(graph.commands.is_empty() && graph.backend.is_none());
+        assert_eq!(graph.backend_availability, None);
         assert!(graph.enablement.consent_required && !graph.enablement.effective);
         assert_eq!(graph.authoring_project_id, None);
         assert_eq!(get(&pool, "graph", Some(1)).await.unwrap().id, "graph");
+    }
+
+    #[tokio::test]
+    async fn a_marketplace_backend_tab_shows_its_platform_and_staged_update() {
+        use crate::domain::plugin_tabs::managed::storage::{
+            self, fixtures::backend_fixture, Activation,
+        };
+        let pool = pool().await;
+        let root = storage::root();
+        let temp = tempfile::tempdir().unwrap();
+        for (number, activation) in [(0, Activation::Activate), (1, Activation::Stage)] {
+            let mut executable = cadencr_plugin_core::tab::test_support::native_executable(
+                TabPlatform::current().unwrap(),
+            );
+            executable.push(number as u8);
+            let tab = backend_fixture()
+                .root(&temp.path().join(format!("v{number}")))
+                .revision(number)
+                .executable(executable)
+                .call();
+            storage::commit_revision()
+                .root(&root)
+                .receipt(&tab.receipt)
+                .archive(&tab.archive)
+                .files(&tab.files)
+                .backend(tab.payload())
+                .activation(activation)
+                .call()
+                .unwrap();
+        }
+        let summary = get(&pool, "graph", None).await.unwrap();
+        assert_eq!(summary.managed, Some(true));
+        assert_eq!(summary.version.as_deref(), Some("1.0.0"));
+        assert_eq!(
+            summary.backend_availability,
+            Some(PluginTabBackendAvailability::Available)
+        );
+        assert_eq!(summary.access_level, models::TabAccessLevel::Backend);
+        let update = summary.pending_update.unwrap();
+        assert_eq!(update.version, "1.0.1");
+        assert_ne!(Some(update.permissions_hash), summary.permissions_hash);
+        assert!(update.backend.is_some());
+        let installed = summary.backend_binary.unwrap();
+        let staged = update.backend_binary.unwrap();
+        assert_eq!(Some(installed.platform), TabPlatform::current());
+        assert_eq!((installed.protocol, staged.protocol), (1, 1));
+        assert_eq!(installed.executable_sha256.len(), 64);
+        assert_ne!(installed.executable_sha256, staged.executable_sha256);
+        // A local tab has neither.
+        write_tab("local", serde_json::json!({}));
+        let local = get(&pool, "local", None).await.unwrap();
+        assert!(local.pending_update.is_none() && local.backend_binary.is_none());
     }
 }

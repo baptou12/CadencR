@@ -1,5 +1,5 @@
 import { AxiosError, AxiosHeaders, type AxiosResponse } from "axios";
-import type { PluginTabSummary, Project } from "@/api/generated";
+import type { PluginTabPendingUpdate, PluginTabSummary, Project } from "@/api/generated";
 import { pluginTabSummary } from "@/components/plugin-tabs/plugin-tab-fixtures";
 
 /**
@@ -12,6 +12,36 @@ export function tabFixture(overrides: Partial<PluginTabSummary> = {}): PluginTab
     permissions_hash: "hash-1",
     authoring_project_id: null,
     enablement: { global: null, project: null, effective: false, consent_required: true },
+    ...overrides,
+  });
+}
+
+/** A staged marketplace update that adds a native backend. */
+export function pendingUpdateFixture(
+  overrides: Partial<PluginTabPendingUpdate> = {},
+): PluginTabPendingUpdate {
+  return {
+    version: "0.2.0",
+    permissions_hash: "hash-update",
+    access_level: "backend",
+    permissions: ["git:read", "workspace:read"],
+    network: { allowed_origins: [], reasoning: null },
+    commands: [],
+    backend: {
+      protocol: 1,
+      binary: { "darwin-aarch64": "bin/darwin-aarch64/ports" },
+      reasoning: "Lists the processes listening on local ports.",
+    },
+    ...overrides,
+  };
+}
+
+/** An installed marketplace tab, allowed and on, with an update waiting for review. */
+export function stagedUpdateTab(overrides: Partial<PluginTabSummary> = {}): PluginTabSummary {
+  return tabFixture({
+    managed: true,
+    enablement: { global: true, project: null, effective: true, consent_required: false },
+    pending_update: pendingUpdateFixture(),
     ...overrides,
   });
 }

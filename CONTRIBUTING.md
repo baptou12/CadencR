@@ -275,6 +275,26 @@ The branch and release tag intentionally use the same name, so the branch must b
 tagging; otherwise Git commands can become ambiguous between `refs/heads/vX.Y.Z` and
 `refs/tags/vX.Y.Z`.
 
+### Releasing the SDKs and the CLI
+
+The SDKs and the `cadencr` CLI have their own semver, independent of the app: an app release never bumps
+them, and they ship without one. To release one, bump its version by hand in a normal PR, let it land on
+`main` with green CI, then dispatch its workflow from `main` (each is a dry run unless you untick
+`dry_run`, publishes from a protected environment with required reviewers, and refuses a version that
+already exists).
+
+| Artifact                                                 | Version lives in                                                        | Workflow                                       | Tag                    |
+| -------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------- | ---------------------- |
+| Desktop app                                              | the app manifests (bumped by the release skill)                         | `desktop-release.yml`, on pushing a `v*` tag   | `vX.Y.Z`               |
+| crates.io: `cadencr-tab-backend`, `cadencr-provider-sdk` | the crate's `Cargo.toml`                                                | `crates-release.yml` (environment `crates-io`) | `<crate>-v<version>`   |
+| npm: `@cadencr/tab-sdk`, `@cadencr/tab-kit`              | the package's `package.json` (tab-sdk: also `SDK_VERSION`)              | `npm-release.yml` (environment `npm`)          | `<package>-v<version>` |
+| CLI `cadencr` (Linux x86_64 binary + `SHA256SUMS`)       | `packages/cli/Cargo.toml`, `packages/cli/package.json` and `Cargo.lock` | `cli-release.yml` (environment `cli-release`)  | `cli/v<version>`       |
+
+`cli-release.yml` takes the reviewed `main`-tip SHA as input, like the development CLI workflow
+(`cli-dev-release.yml`, tags `cli/vX.Y.Z-dev.<run>.<attempt>`). Its GitHub release is never marked
+"Latest", so the desktop auto-updater and the landing download page keep resolving the app's release. App
+releases up to `v0.14.0` also carried the CLI; their assets stay where they are.
+
 ## Commit Convention
 
 Commits follow **[Conventional Commits](https://www.conventionalcommits.org/)**:

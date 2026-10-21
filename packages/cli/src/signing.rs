@@ -63,32 +63,60 @@ pub(crate) fn catalog(args: &crate::args::SignCatalogArgs) -> Result<Option<Stri
     )))
 }
 
-pub(crate) fn sign_theme_blocklist(
+/// The revocation feed a blocklist command signs or verifies.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum BlocklistKind {
+    Theme,
+    Tab,
+}
+
+impl BlocklistKind {
+    fn name(self) -> &'static str {
+        match self {
+            BlocklistKind::Theme => "theme",
+            BlocklistKind::Tab => "tab",
+        }
+    }
+}
+
+pub(crate) fn sign_blocklist(
+    kind: BlocklistKind,
     payload: &Path,
     private_key: &Path,
     key_id: &str,
     destination: &Path,
 ) -> Result<Option<String>, Diagnostic> {
     output::validate_new_output(destination)?;
-    let bytes = cadencr_registry_core::sign_theme_blocklist(payload, private_key, key_id)
+    let sign = match kind {
+        BlocklistKind::Theme => cadencr_registry_core::sign_theme_blocklist,
+        BlocklistKind::Tab => cadencr_registry_core::sign_tab_blocklist,
+    };
+    let bytes = sign(payload, private_key, key_id)
         .map_err(|error| operation_error("REGISTRY_SIGNING_FAILED", error))?;
     output::write_bytes(&bytes, Some(destination))?;
     Ok(Some(format!(
-        "wrote signed theme blocklist: {}",
+        "wrote signed {} blocklist: {}",
+        kind.name(),
         destination.display()
     )))
 }
 
-pub(crate) fn verify_theme_blocklist(
+pub(crate) fn verify_blocklist(
+    kind: BlocklistKind,
     index: &Path,
     public_key: &Path,
     key_id: &str,
     allow_expired: bool,
 ) -> Result<Option<String>, Diagnostic> {
-    cadencr_registry_core::verify_signed_theme_blocklist(index, public_key, key_id, allow_expired)
+    let verify = match kind {
+        BlocklistKind::Theme => cadencr_registry_core::verify_signed_theme_blocklist,
+        BlocklistKind::Tab => cadencr_registry_core::verify_signed_tab_blocklist,
+    };
+    verify(index, public_key, key_id, allow_expired)
         .map_err(|error| operation_error("REGISTRY_VERIFICATION_FAILED", error))?;
     Ok(Some(format!(
-        "verified signed theme blocklist: {}",
+        "verified signed {} blocklist: {}",
+        kind.name(),
         index.display()
     )))
 }

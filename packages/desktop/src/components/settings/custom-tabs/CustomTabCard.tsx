@@ -1,8 +1,13 @@
 import { useId } from "react";
-import { ChevronRight, ShieldAlert } from "lucide-react";
+import { ArrowUpCircle, Ban, ChevronRight, ShieldAlert } from "lucide-react";
 import type { PluginTabSummary, Project } from "@/api/generated";
 import { PluginTabAccessBadge } from "@/components/plugin-tabs/PluginTabAccess";
 import { PluginTabIcon } from "@/components/plugin-tabs/PluginTabIcon";
+import {
+  backendPlatforms,
+  BLOCKED_COPY,
+  UNAVAILABLE_HERE,
+} from "@/components/plugin-tabs/plugin-tab-access";
 import { cn } from "@/lib/utils";
 import {
   customTabStatus,
@@ -35,7 +40,9 @@ export function CustomTabCard(props: CustomTabCardProps): React.JSX.Element {
   const { tab, projects, overrides, expanded, onExpandedChange } = props;
   const detailsId = useId();
   const projectIds = projects.map((project) => project.id);
-  const summary = enablementSummary(tab, overrides, projectIds);
+  const status = customTabStatus(tab);
+  // A blocked tab runs nowhere, whatever its switches still say.
+  const summary = status === "blocked" ? "Off" : enablementSummary(tab, overrides, projectIds);
   // An invalid tab can't be consented to; its issues say why it is off.
   const paused =
     tab.status === "valid" &&
@@ -62,12 +69,39 @@ export function CustomTabCard(props: CustomTabCardProps): React.JSX.Element {
                 v{tab.version}
               </span>
             ) : null}
-            <CustomTabStatusBadge status={customTabStatus(tab)} />
+            <CustomTabStatusBadge status={status} />
             <PluginTabAccessBadge level={tab.access_level} />
           </span>
           <span className="mt-0.5 block truncate text-xs text-muted-foreground">
             {tab.description || tab.id}
           </span>
+          {status === "unavailable" && tab.backend ? (
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              {UNAVAILABLE_HERE}: its backend runs on {backendPlatforms(tab.backend)} only.
+            </span>
+          ) : null}
+          {/* Open, the details lead with the same notices and their actions. */}
+          {status === "blocked" && !expanded ? (
+            <span className="mt-0.5 flex items-center gap-1 text-xs font-medium text-[var(--acc-red)]">
+              <Ban className="size-3.5 shrink-0" aria-hidden />
+              <span className="truncate">
+                {tab.blocked_reason
+                  ? `${BLOCKED_COPY.title}: ${tab.blocked_reason}`
+                  : BLOCKED_COPY.title}
+              </span>
+            </span>
+          ) : null}
+          {tab.pending_update && !expanded ? (
+            <span className="mt-0.5 flex items-center gap-1 text-xs font-medium text-[var(--acc-orange)]">
+              <ArrowUpCircle className="size-3.5 shrink-0" aria-hidden />
+              <span className="truncate">
+                Update <span className="font-mono">{tab.pending_update.version}</span>{" "}
+                {tab.pending_update.blocked_reason
+                  ? "blocked by Cadencr"
+                  : "ready — review permissions"}
+              </span>
+            </span>
+          ) : null}
         </span>
         <span className="flex shrink-0 items-center gap-2 self-center">
           {paused ? (

@@ -31,6 +31,23 @@ export function pluginTabSummary(overrides: Partial<PluginTabSummary> = {}): Plu
   };
 }
 
+/**
+ * A native-code tab whose backend ships only for Linux, as the service lists
+ * it on another platform.
+ */
+export function linuxOnlyBackendTab(overrides: Partial<PluginTabSummary> = {}): PluginTabSummary {
+  return pluginTabSummary({
+    backend: {
+      binary: { "linux-x86_64": "bin/linux-x86_64/ports" },
+      protocol: 1,
+      reasoning: "Lists listening ports.",
+    },
+    backend_availability: "unavailable_on_platform",
+    access_level: "backend",
+    ...overrides,
+  });
+}
+
 /** `desktopBridge.pluginTabs` with spies, plus a way to fire host events. */
 export function createPluginTabsBridgeMock() {
   const listeners = new Set<(event: PluginTabEvent) => void>();

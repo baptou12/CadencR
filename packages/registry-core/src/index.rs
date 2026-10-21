@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use crate::diagnostics::Diagnostics;
 use crate::error::RegistryError;
 use crate::json::canonical_json;
+use crate::marketplace::Rules;
 use crate::package::{compare_versions, identity, validate_package};
 use crate::tree::load_packages;
 
@@ -60,6 +61,17 @@ pub(crate) fn validate_index(
     now: DateTime<Utc>,
     allow_expired: bool,
 ) -> Result<(), RegistryError> {
+    validate_index_with(index, now, allow_expired, Rules::Publish)
+}
+
+/// [`validate_index`] under `rules`: [`Rules::Consume`] for a signed catalog
+/// the app reads, which a newer registry may have signed.
+pub(crate) fn validate_index_with(
+    index: &Value,
+    now: DateTime<Utc>,
+    allow_expired: bool,
+    rules: Rules,
+) -> Result<(), RegistryError> {
     let Some(object) = index.as_object() else {
         return Err(RegistryError::single("index must be an object"));
     };
@@ -87,9 +99,10 @@ pub(crate) fn validate_index(
             break;
         }
         if schema == Some(2) {
-            crate::marketplace::validate(
+            crate::marketplace::validate_with(
                 package,
                 &format!("index.packages[{position}]"),
+                rules,
                 &mut errors,
             );
         } else {

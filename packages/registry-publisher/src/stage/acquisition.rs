@@ -53,21 +53,21 @@ fn stage_locked(
             stage_managed_targets(directory, &targets, downloader, max_total_bytes)?
         }
     };
-    for artifact in &artifacts {
+    let package = &plan["mirrored_package"]["package"];
+    let kind = plan
+        .pointer("/mirrored_package/kind")
+        .and_then(Value::as_str);
+    let backend = match kind {
+        Some("tab") => cadencr_registry_core::signed_tab_backend(package)
+            .map_err(cadencr_registry_core::RegistryError::from)?,
+        _ => None,
+    };
+    for (target, artifact) in targets.iter().zip(&artifacts) {
         let archive = directory.join(&artifact.asset);
-        match plan
-            .pointer("/mirrored_package/kind")
-            .and_then(Value::as_str)
-        {
+        match kind {
             Some("theme") => cadencr_registry_core::verify_theme_archive(&archive)?,
             Some("tab") => {
-                let bytes =
-                    crate::fs::read_bounded(&archive, 32 * 1024 * 1024, "staged tab archive")?;
-                let files = cadencr_registry_core::read_tab_archive_bytes(&bytes)?;
-                cadencr_registry_core::validate_tab_package_files(
-                    &plan["mirrored_package"]["package"],
-                    &files,
-                )?;
+                verify_tab_artifact(package, backend.as_ref(), &target.target, &archive)?
             }
             _ => {}
         }
@@ -79,6 +79,41 @@ fn stage_locked(
     };
     publish_receipt(directory, &receipt)?;
     Ok(receipt)
+}
+
+/// A tab publication stages its web archive (`tab`) and one archive per
+/// backend platform (`backend-<platform>`); each is verified against the
+/// mirrored package (and its signed `backend`) without being executed.
+fn verify_tab_artifact(
+    package: &Value,
+    backend: Option<&cadencr_registry_core::SignedTabBackend>,
+    target: &str,
+    archive: &Path,
+) -> Result<(), PublisherError> {
+    if target == "tab" {
+        let bytes = crate::fs::read_bounded(
+            archive,
+            cadencr_registry_core::MAX_TAB_BYTES,
+            "staged tab archive",
+        )?;
+        let files = cadencr_registry_core::read_tab_archive_bytes(&bytes)?;
+        cadencr_registry_core::validate_tab_package_files(package, &files)?;
+        return Ok(());
+    }
+    let platform = cadencr_registry_core::plan_target_platform(target)
+        .ok_or_else(|| PublisherError::new(format!("unknown tab publication target {target}")))?;
+    let signed = backend
+        .and_then(|backend| backend.target(platform))
+        .ok_or_else(|| {
+            PublisherError::new(format!("tab package declares no backend for {platform}"))
+        })?;
+    let bytes = crate::fs::read_bounded(
+        archive,
+        cadencr_registry_core::MAX_TAB_BACKEND_ARCHIVE_BYTES,
+        "staged tab backend archive",
+    )?;
+    cadencr_registry_core::read_tab_backend_archive(&bytes, platform, signed)?;
+    Ok(())
 }
 
 fn validate_policy_targets(

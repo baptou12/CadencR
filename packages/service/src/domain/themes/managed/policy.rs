@@ -1,25 +1,31 @@
 //! Host-owned, signed declarative-theme revocations. Never projects ACP policy.
+//! The feed itself (envelope, high-water cache, poll cadence) is the shared
+//! [`policy_feed`]; this module decides what a theme policy allows.
+use super::policy_feed::{self, per_root, Feed, PerRoot, PollState};
 use super::{download, storage};
 use crate::domain::agents::providers::installed::managed::trust::{
     pinned_index_trust_store, ManagedTrustStore,
 };
-use crate::domain::agents::providers::installed::managed::ManagedIndexSignature;
 use crate::error::AppError;
+use cadencr_registry_core::ThemeBlocklistEntry;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-const MAX_POLICY_BYTES: usize = cadencr_registry_core::MAX_SIGNED_THEME_BLOCKLIST_BYTES;
+/// The cache is `<managed-themes>/theme-blocklist.json`.
+static FEED: Feed<ThemeBlocklistEntry> = Feed {
+    label: "theme revocation policy",
+    max_bytes: cadencr_registry_core::MAX_SIGNED_THEME_BLOCKLIST_BYTES,
+    cache_file: "theme-blocklist.json",
+    prepare: cadencr_registry_core::prepare_theme_blocklist,
+    baseline: ManagedTrustStore::authenticate_theme_policy_baseline,
+    error: feed_error,
+    secure: storage::secure,
+    poll_cadence: std::time::Duration::from_secs(15 * 60),
+};
+type Envelope = policy_feed::Envelope;
+type Verified = policy_feed::Verified<ThemeBlocklistEntry>;
 
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Envelope {
-    signed: Value,
-    signature: ManagedIndexSignature,
-}
-struct Verified {
-    generated_at: DateTime<Utc>,
-    policy: cadencr_registry_core::ThemeBlocklist,
+fn feed_error(message: String) -> AppError {
+    unavailable(message)
 }
 fn unavailable(message: impl std::fmt::Display) -> AppError {
     AppError::coded(
@@ -46,18 +52,12 @@ fn require_source(url: Option<&str>) -> Result<&str, AppError> {
     url.ok_or_else(|| unavailable("managed theme revocation policy source is not configured"))
 }
 fn cache() -> std::path::PathBuf {
-    storage::root().join("theme-blocklist.json")
+    FEED.cache(&storage::root())
 }
-fn parse(bytes: &[u8]) -> Result<Envelope, AppError> {
-    if bytes.len() > MAX_POLICY_BYTES {
-        return Err(unavailable("theme revocation policy exceeds byte budget"));
-    }
-    let value = cadencr_registry_core::parse_json_bytes(bytes).map_err(unavailable)?;
-    serde_json::from_value(value).map_err(unavailable)
-}
+/// The cached high-water policy; themes need one, so none is an error.
 fn cached() -> Result<Envelope, AppError> {
-    storage::secure(&storage::root()).map_err(unavailable)?;
-    parse(&storage::regular(&cache(), MAX_POLICY_BYTES).map_err(unavailable)?)
+    FEED.cached(&storage::root())?
+        .ok_or_else(|| unavailable("no verified theme revocation policy has been fetched yet"))
 }
 fn verify(
     envelope: &Envelope,
@@ -65,120 +65,32 @@ fn verify(
     current: bool,
     now: DateTime<Utc>,
 ) -> Result<Verified, AppError> {
-    let prepared = cadencr_registry_core::prepare_theme_blocklist(&envelope.signed, !current, now)
-        .map_err(unavailable)?;
-    if current {
-        trust
-            .verify_bytes(prepared.signing.canonical_payload(), &envelope.signature)
-            .map_err(unavailable)?;
-    } else {
-        trust
-            .authenticate_theme_policy_baseline(
-                &serde_json::to_value(envelope).map_err(unavailable)?,
-                now,
-            )
-            .map_err(unavailable)?;
-    }
-    let generated_at = DateTime::parse_from_rfc3339(&prepared.policy.generated_at)
-        .map_err(unavailable)?
-        .with_timezone(&Utc);
-    Ok(Verified {
-        generated_at,
-        policy: prepared.policy,
-    })
+    FEED.verify(envelope, trust, current, now)
 }
-
 fn ingest(
     envelope: &Envelope,
     trust: &ManagedTrustStore,
     now: DateTime<Utc>,
 ) -> Result<Verified, AppError> {
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = LOCK.lock().map_err(unavailable)?;
-    let incoming = verify(envelope, trust, true, now)?;
-    match cached() {
-        Ok(previous) => {
-            // The incoming envelope is already current/authenticated. Exact
-            // canonical replay also authenticates the identical cached envelope.
-            if envelope.signed == previous.signed
-                && envelope.signature.key_id == previous.signature.key_id
-                && envelope.signature.value == previous.signature.value
-            {
-                return Ok(incoming);
-            }
-            let prior = verify(&previous, trust, false, now)?;
-            if incoming.generated_at < prior.generated_at
-                || (incoming.generated_at == prior.generated_at
-                    && envelope.signed != previous.signed)
-            {
-                return Err(unavailable(
-                    "theme revocation policy rollback or equivocation rejected",
-                ));
-            }
-        }
-        Err(error) => match cache().symlink_metadata() {
-            Err(missing) if missing.kind() == std::io::ErrorKind::NotFound => {}
-            Ok(_) => return Err(error),
-            Err(inspect) => {
-                return Err(unavailable(format!(
-                    "cannot inspect theme policy high-water cache: {inspect}"
-                )))
-            }
-        },
-    }
-    storage::secure(&storage::root()).map_err(unavailable)?;
-    crate::shared::atomic_file::write_atomic_private(
-        &cache(),
-        &serde_json::to_string(envelope).map_err(unavailable)?,
-    )
-    .map_err(unavailable)?;
-    Ok(incoming)
+    FEED.ingest(&storage::root(), envelope, trust, now)
 }
-// Cryptographic validity is independent of the online revocation poll interval.
-const POLL_CADENCE: std::time::Duration = std::time::Duration::from_secs(15 * 60);
-const FORCE_CADENCE: std::time::Duration = std::time::Duration::from_secs(5);
-const RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_secs(60);
 #[derive(Default)]
 struct RefreshState {
-    completed: Option<std::time::Instant>,
-    failure: Option<String>,
+    poll: PollState,
     verified_until: Option<(u64, DateTime<Utc>)>,
 }
 impl RefreshState {
-    fn remember(&mut self, verified: &Verified, generation: Option<u64>) -> Result<(), AppError> {
-        self.verified_until = generation
-            .map(|generation| expiry(verified).map(|expiry| (generation, expiry)))
-            .transpose()?;
-        Ok(())
+    fn remember(&mut self, verified: &Verified, generation: Option<u64>) {
+        self.verified_until = generation.map(|generation| (generation, verified.expires_at));
     }
     fn needs_poll(&self, force: bool, requested: std::time::Instant) -> bool {
-        match self.completed {
-            None => true,                         // Always check remotely after process startup.
-            Some(at) if at >= requested => false, // Coalesce even forced callers.
-            Some(at) => {
-                requested.duration_since(at)
-                    >= if self.failure.is_some() {
-                        RETRY_BACKOFF
-                    } else if force {
-                        FORCE_CADENCE
-                    } else {
-                        POLL_CADENCE
-                    }
-            }
-        }
+        self.poll.needs_poll(FEED.poll_cadence, force, requested)
     }
 }
 type RefreshHandle = std::sync::Arc<tokio::sync::Mutex<RefreshState>>;
-type RefreshRoots = std::collections::HashMap<std::path::PathBuf, RefreshHandle>;
 fn refresh_state(root: std::path::PathBuf) -> Result<RefreshHandle, AppError> {
-    static ROOTS: std::sync::OnceLock<std::sync::Mutex<RefreshRoots>> = std::sync::OnceLock::new();
-    Ok(ROOTS
-        .get_or_init(Default::default)
-        .lock()
-        .map_err(unavailable)?
-        .entry(root)
-        .or_default()
-        .clone())
+    static ROOTS: PerRoot<tokio::sync::Mutex<RefreshState>> = std::sync::OnceLock::new();
+    per_root(&ROOTS, &root, Default::default).map_err(unavailable)
 }
 pub(super) async fn refresh(force: bool) -> Result<Option<String>, AppError> {
     let url = require_source(source())?;
@@ -193,7 +105,7 @@ pub(super) async fn refresh(force: bool) -> Result<Option<String>, AppError> {
             if let Some(result) = tests::configured_fetch() {
                 return result;
             }
-            download::download(url, MAX_POLICY_BYTES)
+            download::download(url, FEED.max_bytes)
                 .await
                 .map_err(unavailable)
         },
@@ -217,39 +129,39 @@ where
     let mut state = state.lock().await;
     let checked_at = elapsed_time(now, requested)?;
     if !state.needs_poll(force, requested) {
-        let coalesced = state.completed.is_some_and(|at| at >= requested);
+        let coalesced = state.poll.completed.is_some_and(|at| at >= requested);
         if coalesced
             && state.verified_until.is_some_and(|(generation, expiry)| {
                 Some(generation) == trust.generation() && expiry > checked_at
             })
         {
-            return Ok(state.failure.clone());
+            return Ok(state.poll.failure.clone());
         }
         let generation = trust.generation();
         state.verified_until = None;
         let trust = trust.clone();
         let verified = offload(root, move || cached_current(&trust, now, requested)).await?;
-        state.remember(&verified, generation)?;
-        return Ok(state.failure.clone());
+        state.remember(&verified, generation);
+        return Ok(state.poll.failure.clone());
     }
     let generation = trust.generation();
     let result = async {
         let bytes = fetch().await?;
         let trust = trust.clone();
         offload(root.clone(), move || {
-            let verified = ingest(&parse(&bytes)?, &trust, elapsed_time(now, requested)?)?;
+            let verified = ingest(&FEED.parse(&bytes)?, &trust, elapsed_time(now, requested)?)?;
             ensure_current(&verified, elapsed_time(now, requested)?)?;
             Ok(verified)
         })
         .await
     }
     .await;
-    state.completed = Some(std::time::Instant::now().max(requested));
-    state.failure = result.as_ref().err().map(ToString::to_string);
+    state.poll.completed = Some(std::time::Instant::now().max(requested));
+    state.poll.failure = result.as_ref().err().map(ToString::to_string);
     state.verified_until = None;
     match result {
         Ok(verified) => {
-            state.remember(&verified, generation)?;
+            state.remember(&verified, generation);
             Ok(None)
         }
         Err(error) => {
@@ -261,9 +173,9 @@ where
                         "{error}; verified theme policy unavailable: {cache_error}"
                     ))
                 })?;
-            state.remember(&verified, generation)?;
+            state.remember(&verified, generation);
             let warning = format!("{error}; using current verified offline theme policy");
-            state.failure = Some(warning.clone());
+            state.poll.failure = Some(warning.clone());
             Ok(Some(warning))
         }
     }
@@ -274,13 +186,8 @@ fn elapsed_time(
 ) -> Result<DateTime<Utc>, AppError> {
     Ok(now + chrono::Duration::from_std(requested.elapsed()).map_err(unavailable)?)
 }
-fn expiry(verified: &Verified) -> Result<DateTime<Utc>, AppError> {
-    DateTime::parse_from_rfc3339(&verified.policy.expires_at)
-        .map(|at| at.with_timezone(&Utc))
-        .map_err(unavailable)
-}
 fn ensure_current(verified: &Verified, now: DateTime<Utc>) -> Result<(), AppError> {
-    if expiry(verified)? <= now {
+    if verified.expires_at <= now {
         return Err(unavailable("theme revocation policy expired"));
     }
     Ok(())
@@ -299,9 +206,8 @@ async fn offload<T: Send + 'static>(
     root: std::path::PathBuf,
     operation: impl FnOnce() -> Result<T, AppError> + Send + 'static,
 ) -> Result<T, AppError> {
-    tokio::task::spawn_blocking(move || storage::with_root(root, operation))
+    FEED.offload(move || storage::with_root(root, operation))
         .await
-        .map_err(unavailable)?
 }
 pub(super) struct Snapshot(Verified);
 pub(super) fn snapshot() -> Result<Snapshot, AppError> {
@@ -355,10 +261,9 @@ fn enforce_verified(
 
 #[cfg(test)]
 pub(super) mod tests {
+    use super::policy_feed::tests::{resign_b, signed_with};
     use super::*;
-    use crate::domain::agents::providers::installed::managed::trust::TrustedIndexKey;
-    use base64::Engine as _;
-    use ed25519_dalek::{Signer as _, SigningKey};
+    use serde_json::Value;
     struct Fixture {
         trust: ManagedTrustStore,
         response: Result<Vec<u8>, String>,
@@ -394,16 +299,8 @@ pub(super) mod tests {
     }
     pub(in crate::domain::themes::managed) fn expire_cache() {
         let (mut envelope, _) = signed(-2, serde_json::json!([]));
-        envelope.signed["expires_at"] = (Utc::now() - chrono::Duration::minutes(1))
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-            .into();
-        envelope.signature.value = base64::engine::general_purpose::STANDARD.encode(
-            SigningKey::from_bytes(&[19; 32])
-                .sign(&cadencr_registry_core::canonical_json_bytes(
-                    &envelope.signed,
-                ))
-                .to_bytes(),
-        );
+        envelope.signed["expires_at"] = policy_feed::tests::at(-1).into();
+        let envelope = signed_with(envelope.signed, 19, "test");
         crate::shared::atomic_file::write_atomic_private(
             &cache(),
             &serde_json::to_string(&envelope).unwrap(),
@@ -434,23 +331,7 @@ pub(super) mod tests {
         ConfiguredPolicy(root)
     }
     fn signed(offset_minutes: i64, entries: Value) -> (Envelope, ManagedTrustStore) {
-        let now = Utc::now();
-        let signed = serde_json::json!({"schema_version":1,"kind":"theme-blocklist","generated_at":(now+chrono::Duration::minutes(offset_minutes)).to_rfc3339_opts(chrono::SecondsFormat::Secs,true),"expires_at":(now+chrono::Duration::hours(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs,true),"entries":entries});
-        let key = SigningKey::from_bytes(&[19; 32]);
-        let signature = ManagedIndexSignature {
-            algorithm: crate::domain::agents::providers::installed::managed::ManagedSignatureAlgorithm::Ed25519,
-            key_id: "test".into(),
-            value: base64::engine::general_purpose::STANDARD.encode(
-                key.sign(&cadencr_registry_core::canonical_json_bytes(&signed))
-                    .to_bytes(),
-            ),
-        };
-        (
-            Envelope { signed, signature },
-            ManagedTrustStore::new([
-                TrustedIndexKey::new("test", key.verifying_key().to_bytes()).unwrap()
-            ]),
-        )
+        policy_feed::tests::signed("theme-blocklist", offset_minutes, entries)
     }
     #[test]
     fn unconfigured_policy_fails_closed_even_with_valid_cached_policy() {
@@ -558,17 +439,6 @@ pub(super) mod tests {
         .await
         .is_err());
     }
-    fn resign_b(mut envelope: Envelope) -> Envelope {
-        envelope.signature.key_id = "current-b".into();
-        envelope.signature.value = base64::engine::general_purpose::STANDARD.encode(
-            SigningKey::from_bytes(&[23; 32])
-                .sign(&cadencr_registry_core::canonical_json_bytes(
-                    &envelope.signed,
-                ))
-                .to_bytes(),
-        );
-        envelope
-    }
     #[test]
     fn retired_policy_highwater_migrates_without_granting_old_current_authority() {
         let (old, original) = signed(-3, serde_json::json!([]));
@@ -610,11 +480,7 @@ pub(super) mod tests {
         old.signed["expires_at"] = (now - chrono::Duration::minutes(2))
             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
             .into();
-        old.signature.value = base64::engine::general_purpose::STANDARD.encode(
-            SigningKey::from_bytes(&[19; 32])
-                .sign(&cadencr_registry_core::canonical_json_bytes(&old.signed))
-                .to_bytes(),
-        );
+        old = signed_with(old.signed, 19, "test");
         ingest(&old, &original, now - chrono::Duration::seconds(150)).unwrap();
         let trust = super::super::catalog::tests::rotation_trust(
             now - chrono::Duration::minutes(1),
@@ -689,7 +555,7 @@ pub(super) mod tests {
         assert_eq!(calls.get(), 1);
         assert!(enforce_cached("midnight", "1.0.0", &"a".repeat(64), true, &trust).is_err());
         // A bounded cadence discovers subsequent policy while the old signature remains current.
-        let due = requested + POLL_CADENCE + std::time::Duration::from_secs(1);
+        let due = requested + FEED.poll_cadence + std::time::Duration::from_secs(1);
         let offline = || {
             calls.set(calls.get() + 1);
             std::future::ready(Err(unavailable("offline")))
@@ -740,22 +606,20 @@ pub(super) mod tests {
         ));
     }
     #[test]
-    fn cadence_and_backoff_are_independent_from_signature_expiry() {
+    fn themes_poll_every_fifteen_minutes_and_back_off_after_failure() {
         let at = std::time::Instant::now();
-        let state = RefreshState {
-            completed: Some(at),
-            failure: None,
-            ..Default::default()
-        };
-        assert!(!state.needs_poll(false, at + POLL_CADENCE - std::time::Duration::from_secs(1)));
-        assert!(state.needs_poll(false, at + POLL_CADENCE));
-        let failed = RefreshState {
-            completed: Some(at),
-            failure: Some("offline".into()),
-            ..Default::default()
-        };
-        assert!(!failed.needs_poll(true, at + RETRY_BACKOFF - std::time::Duration::from_secs(1)));
-        assert!(failed.needs_poll(false, at + RETRY_BACKOFF));
+        assert_eq!(FEED.poll_cadence, std::time::Duration::from_secs(15 * 60));
+        let mut state = RefreshState::default();
+        state.poll.completed = Some(at);
+        assert!(!state.needs_poll(
+            false,
+            at + FEED.poll_cadence - std::time::Duration::from_secs(1)
+        ));
+        assert!(state.needs_poll(false, at + FEED.poll_cadence));
+        state.poll.failure = Some("offline".into());
+        let backoff = policy_feed::RETRY_BACKOFF;
+        assert!(!state.needs_poll(true, at + backoff - std::time::Duration::from_secs(1)));
+        assert!(state.needs_poll(false, at + backoff));
     }
     #[test]
     fn near_limit_payload_accepts_separate_signed_envelope_overhead() {
@@ -776,18 +640,12 @@ pub(super) mod tests {
             remaining -= amount;
         }
         assert_eq!(remaining, 0);
-        let key = SigningKey::from_bytes(&[19; 32]);
-        envelope.signature.value = base64::engine::general_purpose::STANDARD.encode(
-            key.sign(&cadencr_registry_core::canonical_json_bytes(
-                &envelope.signed,
-            ))
-            .to_bytes(),
-        );
+        envelope = signed_with(envelope.signed, 19, "test");
         let bytes = serde_json::to_vec(&envelope).unwrap();
         assert!(bytes.len() > cadencr_registry_core::MAX_THEME_BLOCKLIST_BYTES);
-        assert!(bytes.len() <= MAX_POLICY_BYTES);
-        verify(&parse(&bytes).unwrap(), &trust, true, Utc::now()).unwrap();
-        assert!(parse(&vec![b' '; MAX_POLICY_BYTES + 1]).is_err());
+        assert!(bytes.len() <= FEED.max_bytes);
+        verify(&FEED.parse(&bytes).unwrap(), &trust, true, Utc::now()).unwrap();
+        assert!(FEED.parse(&vec![b' '; FEED.max_bytes + 1]).is_err());
     }
     #[test]
     fn signature_scope_matching_expiry_and_original_bytes_are_enforced() {
@@ -840,13 +698,7 @@ pub(super) mod tests {
         assert!(ingest(&older, &trust, Utc::now()).is_err());
         let (mut equivocation, _) = signed(-1, serde_json::json!([]));
         equivocation.signed["generated_at"] = envelope.signed["generated_at"].clone();
-        let key = SigningKey::from_bytes(&[19; 32]);
-        equivocation.signature.value = base64::engine::general_purpose::STANDARD.encode(
-            key.sign(&cadencr_registry_core::canonical_json_bytes(
-                &equivocation.signed,
-            ))
-            .to_bytes(),
-        );
+        equivocation = signed_with(equivocation.signed, 19, "test");
         assert!(ingest(&equivocation, &trust, Utc::now()).is_err());
         super::super::service::tests::commit_fixture("midnight", "1.0.0");
         crate::domain::settings_store::global_set("theme_current", "managed:midnight")

@@ -56,6 +56,20 @@ test("three-kind hosted offline guard binds repository, workflow, reviewed commi
     pins + "CADENCR_RELEASE_TAG=cli/v0.13.1-dev.1.1\n",
   );
   assert.notEqual(run().status, 0);
+  // A stable cli-release.yml pin is accepted under the same cli/v binding.
+  for (const [version, valid] of [
+    ["0.14.0", true],
+    ["0.14.0-rc.1", false],
+  ]) {
+    const stable = `CADENCR_RELEASE_VERSION=${version}\nCADENCR_RELEASE_SHA256=${"a".repeat(64)}\n`;
+    writeFileSync(join(root, "offline-cli-pin.env"), stable);
+    writeFileSync(
+      join(root, "offline-fetch-pin.env"),
+      stable + `CADENCR_RELEASE_TAG=cli/v${version}\n`,
+    );
+    const pinned = { PINS_SHA256: createHash("sha256").update(stable).digest("hex") };
+    assert.equal(run(pinned).status === 0, valid, version);
+  }
 });
 
 test("three-kind offline job has no write authority and exports evidence only", () => {

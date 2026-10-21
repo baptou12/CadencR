@@ -13,6 +13,19 @@ pub(crate) fn write_bytes(bytes: &[u8], output: Option<&Path>) -> Result<(), Dia
     }
 }
 
+/// Print a packaging receipt as one compact JSON line on stdout; `code`
+/// names a failure to serialize it.
+pub(crate) fn write_receipt(
+    receipt: &serde_json::Value,
+    code: &'static str,
+) -> Result<Option<String>, Diagnostic> {
+    let mut bytes =
+        serde_json::to_vec(receipt).map_err(|error| crate::operation_error(code, error))?;
+    bytes.push(b'\n');
+    write_stdout(&bytes, &mut io::stdout().lock())?;
+    Ok(None)
+}
+
 pub(crate) fn write_stdout(bytes: &[u8], output: &mut impl Write) -> Result<(), Diagnostic> {
     output
         .write_all(bytes)

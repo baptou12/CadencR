@@ -10,7 +10,12 @@ import {
   remove,
   type SignedProviderCatalog,
 } from "@/api/generated";
-import { catalogSchema, entrySchema, inventorySchema } from "@/lib/marketplace";
+import {
+  catalogSchema,
+  entrySchema,
+  inventorySchema,
+  type MarketplaceNotice,
+} from "@/lib/marketplace";
 import { useStableMutation, useStableQuery } from "./stable-query";
 
 type MarketplaceAction =
@@ -40,7 +45,7 @@ export const providerInventoryQuery = queryOptions({
 });
 export function useMarketplace() {
   const client = useQueryClient();
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<MarketplaceNotice | null>(null);
   const catalogQuery = useStableQuery(useQuery(providerCatalogQuery));
   const inventoryQuery = useStableQuery(useQuery(providerInventoryQuery));
   const refresh = useStableMutation(
@@ -89,9 +94,10 @@ export function useMarketplace() {
         }
       },
       onSuccess: async (entry) => {
-        setNotice(
-          `${entry.id}: changes saved.${entry.restart_required ? " Restart Cadencr to apply them." : ""}`,
-        );
+        setNotice({
+          tone: "done",
+          text: `${entry.id}: changes saved.${entry.restart_required ? " Restart Cadencr to apply them." : ""}`,
+        });
         await client.invalidateQueries({ queryKey: inventoryKey });
       },
       onError: async () => {

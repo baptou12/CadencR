@@ -1,8 +1,17 @@
 [package]
 name = "cadencr-provider-sdk"
-version = "0.14.0"
+# Own semver, independent of the Cadencr app version. Released by hand with
+# .github/workflows/crates-release.yml.
+version = "0.1.0"
 edition = "2021"
 license.workspace = true
+description = "Command harness for code-backed Cadencr agent provider packages (ACP v1)"
+repository = "https://github.com/merkr-software/CadencR"
+homepage = "https://github.com/merkr-software/CadencR/blob/main/docs/PROVIDER_SPEC/PROVIDER_PACKAGE.md"
+documentation = "https://docs.rs/cadencr-provider-sdk"
+readme = "README.md"
+keywords = ["cadencr", "acp", "agent", "plugin", "provider"]
+categories = ["development-tools", "command-line-interface"]
 
 [dependencies]
 agent-client-protocol = "1.2.0"

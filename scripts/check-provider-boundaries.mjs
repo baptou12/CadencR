@@ -198,9 +198,19 @@ function packageName(source, manifest) {
   return name;
 }
 
+/// `*-sdk-rs` folders that are not a provider's transport: the custom-tab
+/// backend SDK carries the tab backend protocol, which the service speaks
+/// for every tab regardless of provider.
+const NON_PROVIDER_SDK_DIRS = new Set(["tab-backend-sdk-rs"]);
+
 function providerSdkMetadata(root) {
   return readdirSync(join(root, "packages"), { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name.endsWith("-sdk-rs"))
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        entry.name.endsWith("-sdk-rs") &&
+        !NON_PROVIDER_SDK_DIRS.has(entry.name),
+    )
     .map((entry) => {
       const manifest = `packages/${entry.name}/Cargo.toml`;
       const source = readFileSync(join(root, manifest), "utf8");

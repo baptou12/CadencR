@@ -6,6 +6,7 @@ import {
   catalog,
   getManagedThemeCatalog,
   getManagedTabCatalog,
+  getManagedTabPolicy,
   getManagedTabs,
   pluginTabList,
   installManagedTab,
@@ -19,12 +20,17 @@ import {
   updateManagedTheme,
   type ManagedProviderInventoryEntry,
   type SignedMixedCatalog,
+  type TabVersionUnavailable,
 } from "@/api/generated";
-import { tabFixture } from "@/components/settings/custom-tabs/custom-tabs-fixtures";
+import {
+  serviceError,
+  stagedUpdateTab,
+  tabFixture,
+} from "@/components/settings/custom-tabs/custom-tabs-fixtures";
 import { MarketplaceProvider } from "./MarketplaceContext";
 import { MarketplaceHome } from "./MarketplaceHome";
 import { PluginDetail } from "./PluginDetail";
-const tabMutations = vi.hoisted(() => ({ consent: vi.fn(), enable: vi.fn() }));
+const tabMutations = vi.hoisted(() => ({ consent: vi.fn(), enable: vi.fn(), discard: vi.fn() }));
 
 vi.mock("@/lib/marketplace-gate", () => ({ MARKETPLACE_ENABLED: true }));
 vi.mock("@/hooks/useTheme", () => ({
@@ -73,33 +79,45 @@ vi.mock("react-virtuoso", () => ({
     </div>
   ),
 }));
-vi.mock("@/api/generated", () => ({
-  getManagedTabCatalog: vi.fn(),
-  getManagedTabs: vi.fn(),
-  pluginTabList: vi.fn(),
-  refreshManagedTabCatalog: vi.fn(),
-  installManagedTab: vi.fn(),
-  updateManagedTab: vi.fn(),
-  removeManagedTab: vi.fn(),
-  usePluginTabSetEnablement: () => ({ mutateAsync: tabMutations.enable }),
-  usePluginTabConsent: () => ({ mutateAsync: tabMutations.consent }),
-  catalog: vi.fn(),
-  inventory: vi.fn(),
-  refreshCatalog: vi.fn(),
-  install: vi.fn(),
-  update: vi.fn(),
-  enabled: vi.fn(),
-  remove: vi.fn(),
-  getManagedThemes: vi.fn(),
-  getManagedThemeCatalog: vi.fn(),
-  refreshManagedThemeCatalog: vi.fn(),
-  installManagedTheme: vi.fn(),
-  updateManagedTheme: vi.fn(),
-  applyManagedTheme: vi.fn(),
-  removeManagedTheme: vi.fn(),
-  duplicateManagedTheme: vi.fn(),
-  previewManagedThemePackage: vi.fn(),
-}));
+vi.mock("@/api/generated", async () => {
+  const { useQuery } = await import("@tanstack/react-query");
+  const getManagedTabPolicy = vi.fn();
+  return {
+    getManagedTabCatalog: vi.fn(),
+    getManagedTabs: vi.fn(),
+    getManagedTabPolicy,
+    useGetManagedTabPolicy: (options?: { query?: { staleTime?: number } }) =>
+      useQuery({
+        queryKey: ["/api/marketplace/tabs/policy"],
+        queryFn: () => getManagedTabPolicy(),
+        ...options?.query,
+      }),
+    pluginTabList: vi.fn(),
+    refreshManagedTabCatalog: vi.fn(),
+    installManagedTab: vi.fn(),
+    updateManagedTab: vi.fn(),
+    removeManagedTab: vi.fn(),
+    usePluginTabSetEnablement: () => ({ mutateAsync: tabMutations.enable }),
+    usePluginTabConsent: () => ({ mutateAsync: tabMutations.consent }),
+    useDiscardManagedTabUpdate: () => ({ mutateAsync: tabMutations.discard, isPending: false }),
+    catalog: vi.fn(),
+    inventory: vi.fn(),
+    refreshCatalog: vi.fn(),
+    install: vi.fn(),
+    update: vi.fn(),
+    enabled: vi.fn(),
+    remove: vi.fn(),
+    getManagedThemes: vi.fn(),
+    getManagedThemeCatalog: vi.fn(),
+    refreshManagedThemeCatalog: vi.fn(),
+    installManagedTheme: vi.fn(),
+    updateManagedTheme: vi.fn(),
+    applyManagedTheme: vi.fn(),
+    removeManagedTheme: vi.fn(),
+    duplicateManagedTheme: vi.fn(),
+    previewManagedThemePackage: vi.fn(),
+  };
+});
 
 const sha = "a".repeat(64);
 const index: SignedMixedCatalog = {
@@ -246,6 +264,11 @@ beforeEach(() => {
   vi.mocked(pluginTabList).mockResolvedValue([]);
   tabMutations.consent.mockResolvedValue({});
   tabMutations.enable.mockResolvedValue({});
+  tabMutations.discard.mockResolvedValue(true);
+  vi.mocked(getManagedTabPolicy).mockResolvedValue({
+    source_configured: false,
+    cache_status: "not_configured",
+  });
 });
 
 describe("plugin detail", () => {
@@ -455,7 +478,15 @@ describe("marketplace home", () => {
   });
 });
 
-const tabEntry = (version: string) => ({
+const binaryTarget = (version: string, platform: string) => ({
+  archive: `https://github.com/acme/tabs/releases/download/v${version}/backend-${platform}.tar.gz`,
+  sha256: sha,
+  size: 10,
+  cmd: `bin/${platform}/graph`,
+  executable_sha256: sha,
+  executable_size: 20,
+});
+const tabEntry = (version: string, platforms?: string[], protocol = 1) => ({
   kind: "tab",
   package: {
     tab: {
@@ -466,9 +497,15 @@ const tabEntry = (version: string) => ({
       repository: "https://github.com/acme/tabs",
       license: "MIT",
       api_version: 1,
+      ...(platforms
+        ? { backend: { protocol, reasoning: "Reads which processes hold files open." } }
+        : {}),
       distribution: {
         archive: `https://github.com/acme/tabs/releases/download/v${version}/tab.tar.gz`,
         sha256: sha,
+        ...(platforms
+          ? { binary: Object.fromEntries(platforms.map((p) => [p, binaryTarget(version, p)])) }
+          : {}),
       },
     },
     host: { publisher: "acme", compatibility: { min_app_version: "0.13.0" } },
@@ -604,5 +641,297 @@ describe("custom tabs in the marketplace", () => {
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(removeManagedTab).toHaveBeenCalledWith("graph"));
+  });
+});
+
+function stubBackendTabs(
+  platforms: string[],
+  recommended: Record<string, string>,
+  packages = [tabEntry("1.0.0", platforms), tabEntry("1.1.0", platforms)],
+  /** The service's verdict on what does not install here, by version. */
+  unavailable: Record<string, TabVersionUnavailable> = {},
+) {
+  stubBackend([]);
+  const tabIndex = { ...index, signed: { ...index.signed, packages } };
+  vi.mocked(getManagedTabCatalog).mockResolvedValue({
+    index: tabIndex,
+    verified: true,
+    host_platform: "darwin-aarch64",
+    recommended_versions: recommended,
+    unavailable_versions: { graph: unavailable },
+  });
+  return tabIndex;
+}
+
+describe("custom tabs with a native backend in the marketplace", () => {
+  it("says before install that the tab runs native code, why, and where", async () => {
+    stubBackendTabs(["darwin-aarch64", "linux-x86_64"], { graph: "1.1.0" });
+    inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    expect(await screen.findByText("Runs native code with your rights")).toBeInTheDocument();
+    expect(screen.getByText("Reads which processes hold files open.")).toBeInTheDocument();
+    expect(
+      screen.getByText(/ships for macOS \(Apple silicon\) and Linux \(x86-64\)/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/existing sandbox/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Install 1.1.0" })).toBeEnabled();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+
+  it("warns about the native code of the version it would install, not another one", async () => {
+    stubBackendTabs(["darwin-aarch64"], { graph: "1.0.0" }, [
+      tabEntry("1.0.0"),
+      tabEntry("1.1.0", ["darwin-aarch64"]),
+    ]);
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    expect(await screen.findByRole("button", { name: "Install 1.0.0" })).toBeEnabled();
+    expect(screen.queryByText("Runs native code with your rights")).toBeNull();
+    const versions = screen.getByRole("heading", { name: /Versions/ }).closest("section");
+    if (!(versions instanceof HTMLElement)) throw new Error("no versions section");
+    await user.click(within(versions).getByRole("button", { name: /1\.1\.0/ }));
+    expect(await screen.findByText("Runs native code with your rights")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Install 1.1.0" })).toBeEnabled();
+  });
+
+  it("says a version whose backend protocol is newer needs a newer Cadencr", async () => {
+    stubBackendTabs(
+      ["darwin-aarch64"],
+      {},
+      [tabEntry("1.0.0", ["darwin-aarch64"], 1), tabEntry("2.0.0", ["darwin-aarch64"], 7)],
+      { "2.0.0": "protocol" },
+    );
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    const versions = (await screen.findByRole("heading", { name: /Versions/ })).closest("section");
+    if (!(versions instanceof HTMLElement)) throw new Error("no versions section");
+    await user.click(within(versions).getByRole("button", { name: /2\.0\.0/ }));
+    expect(await screen.findByRole("button", { name: "Needs a newer Cadencr" })).toBeDisabled();
+    expect(screen.getByText(/speaks protocol 7, which this Cadencr doesn/)).toBeInTheDocument();
+    await user.click(within(versions).getByRole("button", { name: /1\.0\.0/ }));
+    expect(await screen.findByRole("button", { name: "Install 1.0.0" })).toBeEnabled();
+  });
+
+  it("refuses to offer a tab whose backend has no build for this platform", async () => {
+    stubBackendTabs(["linux-x86_64"], {}, undefined, { "1.0.0": "platform", "1.1.0": "platform" });
+    inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    const button = await screen.findByRole("button", { name: "Not available on this platform" });
+    expect(button).toBeDisabled();
+    expect(
+      screen.getByText(/its native backend ships for Linux \(x86-64\) only/),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Not available on this platform").length).toBeGreaterThan(1);
+    expect(installManagedTab).not.toHaveBeenCalled();
+  });
+
+  it("explains a platform refusal from Cadencr and reloads the catalog", async () => {
+    stubBackendTabs(["darwin-aarch64"], { graph: "1.1.0" });
+    vi.mocked(installManagedTab).mockRejectedValue(
+      serviceError(409, "MANAGED_TAB_PLATFORM_UNSUPPORTED", "no backend for this platform"),
+    );
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    await user.click(await screen.findByRole("button", { name: "Install 1.1.0" }));
+    expect(
+      await screen.findByText(/Not available on this platform: its native backend ships/),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(getManagedTabCatalog).toHaveBeenCalledTimes(2));
+    // A refusal is a known outcome: one error line with its code, never a green
+    // check, and no extra "not confirmed" notice beside it.
+    const banner = await screen.findByText(/Custom tabs: MANAGED_TAB_PLATFORM_UNSUPPORTED/);
+    expect(banner.closest("p")).toHaveAttribute("role", "alert");
+    expect(screen.queryByText(/the change was not confirmed/)).toBeNull();
+  });
+
+  it("says the change was not confirmed when the outcome is unknown", async () => {
+    stubBackendTabs(["darwin-aarch64"], { graph: "1.1.0" });
+    vi.mocked(installManagedTab).mockRejectedValue(new Error("socket hang up"));
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    await user.click(await screen.findByRole("button", { name: "Install 1.1.0" }));
+    const notice = await screen.findByText(/graph: the change was not confirmed/);
+    expect(notice.closest("p")).toHaveAttribute("role", "alert");
+    expect(notice.closest("p")).toHaveClass("text-destructive");
+  });
+
+  it("never offers a version Cadencr's revocation list blocks here", async () => {
+    stubBackendTabs(["darwin-aarch64"], {});
+    vi.mocked(getManagedTabCatalog).mockResolvedValue({
+      index: {
+        ...index,
+        signed: { ...index.signed, packages: [tabEntry("1.0.0"), tabEntry("1.1.0")] },
+      },
+      verified: true,
+      recommended_versions: {},
+      blocked_versions: { graph: { "1.0.0": "Uploads repository contents", "1.1.0": "Same." } },
+    });
+    vi.mocked(getManagedTabs).mockResolvedValue([
+      {
+        id: "graph",
+        name: "Files graph",
+        version: "1.0.0",
+        blocked: "Uploads repository contents",
+      },
+    ]);
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    const versions = (await screen.findByRole("heading", { name: /Versions/ })).closest("section");
+    if (!(versions instanceof HTMLElement)) throw new Error("no versions section");
+    expect(within(versions).getAllByText("Blocked")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /Update to/ })).toBeNull();
+    await user.click(within(versions).getByRole("button", { name: /1\.1\.0/ }));
+    expect(await screen.findByRole("button", { name: "Blocked by Cadencr" })).toBeDisabled();
+    expect(
+      screen.getByText(
+        "Version 1.1.0 is on Cadencr's revocation list: Same. Choose another version.",
+      ),
+    ).toBeInTheDocument();
+    expect(updateManagedTab).not.toHaveBeenCalled();
+  });
+
+  it("asks for a review of a staged update instead of downloading it again", async () => {
+    stubBackendTabs(["darwin-aarch64"], { graph: "1.1.0" });
+    vi.mocked(getManagedTabs).mockResolvedValue([
+      { id: "graph", name: "Files graph", version: "1.0.0", pending_version: "1.1.0" },
+    ]);
+    vi.mocked(pluginTabList).mockResolvedValue([
+      stagedUpdateTab({
+        id: "graph",
+        name: "Files graph",
+        version: "1.0.0",
+        pending_update: {
+          version: "1.1.0",
+          permissions_hash: "hash-staged",
+          access_level: "ui",
+          permissions: ["git:read"],
+          network: { allowed_origins: [], reasoning: null },
+          commands: [],
+          backend: null,
+        },
+      }),
+    ]);
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    expect(await screen.findByRole("button", { name: "Update 1.1.0 staged" })).toBeDisabled();
+    expect(screen.getByText("Review update 1.1.0")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Review permissions" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Allow and update" }));
+    expect(tabMutations.consent).toHaveBeenCalledWith({
+      id: "graph",
+      data: { permissions_hash: "hash-staged" },
+    });
+    expect(updateManagedTab).not.toHaveBeenCalled();
+  });
+
+  it("keeps the current version by discarding the staged update", async () => {
+    stubBackendTabs(["darwin-aarch64"], { graph: "1.1.0" });
+    vi.mocked(getManagedTabs).mockResolvedValue([
+      { id: "graph", name: "Files graph", version: "1.0.0", pending_version: "1.1.0" },
+    ]);
+    vi.mocked(pluginTabList).mockResolvedValue([
+      stagedUpdateTab({ id: "graph", name: "Files graph", version: "1.0.0" }),
+    ]);
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    await user.click(await screen.findByRole("button", { name: "Keep current version" }));
+    await waitFor(() => expect(tabMutations.discard).toHaveBeenCalledWith({ id: "graph" }));
+    expect(tabMutations.consent).not.toHaveBeenCalled();
+  });
+});
+
+describe("blocked custom tabs in the marketplace", () => {
+  const blockedSummary = () =>
+    tabFixture({
+      id: "graph",
+      name: "Files graph",
+      managed: true,
+      status: "blocked",
+      blocked_reason: "Uploads repository contents",
+      enablement: { global: null, project: null, effective: false, consent_required: true },
+    });
+
+  it("says why an installed tab is blocked, keeps Enable off and Remove available", async () => {
+    stubBackendTabs(["darwin-aarch64"], { graph: "1.1.0" });
+    vi.mocked(getManagedTabs).mockResolvedValue([
+      {
+        id: "graph",
+        name: "Files graph",
+        version: "1.0.0",
+        blocked: "Uploads repository contents",
+      },
+    ]);
+    vi.mocked(pluginTabList).mockResolvedValue([blockedSummary()]);
+    inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    expect(await screen.findByText("Blocked")).toBeInTheDocument();
+    expect(screen.getByRole("alert", { name: "" })).toHaveTextContent(
+      "Blocked by Cadencr: Uploads repository contents. This version is on Cadencr's revocation list, so it can't be turned on, opened or run its backend.",
+    );
+    expect(screen.getByRole("button", { name: "Enable" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove Files graph…" })).toBeEnabled();
+  });
+
+  it("still lets a blocked tab that is on be switched off", async () => {
+    stubBackendTabs(["darwin-aarch64"], { graph: "1.0.0" });
+    vi.mocked(getManagedTabs).mockResolvedValue([
+      { id: "graph", name: "Files graph", version: "1.0.0", blocked: "Revoked" },
+    ]);
+    vi.mocked(pluginTabList).mockResolvedValue([
+      tabFixture({
+        ...blockedSummary(),
+        enablement: { global: true, project: null, effective: false, consent_required: false },
+      }),
+    ]);
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    await user.click(await screen.findByRole("button", { name: "Disable" }));
+    await waitFor(() =>
+      expect(tabMutations.enable).toHaveBeenCalledWith({
+        id: "graph",
+        data: { project_id: null, enabled: false },
+      }),
+    );
+  });
+
+  it("lists a blocked tab as blocked in Installed", async () => {
+    stubBackendTabs(["darwin-aarch64"], { graph: "1.0.0" });
+    vi.mocked(getManagedTabs).mockResolvedValue([
+      {
+        id: "graph",
+        name: "Files graph",
+        version: "1.0.0",
+        blocked: "Uploads repository contents",
+      },
+    ]);
+    vi.mocked(pluginTabList).mockResolvedValue([blockedSummary()]);
+    inMarketplace(<MarketplaceHome view="installed" kind="all" query="" onChange={vi.fn()} />);
+    expect(
+      await screen.findByText("Blocked by Cadencr: Uploads repository contents"),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      "MANAGED_TAB_BLOCKED",
+      "graph 1.1.0 is revoked",
+      /Not installed: graph 1.1.0 is revoked. This version is on Cadencr's revocation list/,
+    ],
+    [
+      "MANAGED_TAB_POLICY_UNAVAILABLE",
+      "stale",
+      /couldn't check its revocation list, so nothing was installed/,
+    ],
+  ])("explains an install refused with %s in place", async (code, message, copy) => {
+    stubBackendTabs(["darwin-aarch64"], { graph: "1.1.0" });
+    vi.mocked(installManagedTab).mockRejectedValue(serviceError(409, code, message));
+    const { user } = inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    await user.click(await screen.findByRole("button", { name: "Install 1.1.0" }));
+    expect(await screen.findByText(copy)).toBeInTheDocument();
+  });
+
+  it("says whether the revocation list that gates native code is current", async () => {
+    stubBackendTabs(["darwin-aarch64"], { graph: "1.1.0" });
+    vi.mocked(getManagedTabPolicy).mockResolvedValue({
+      source_configured: true,
+      cache_status: "stale",
+      detail: "the feed could not be reached",
+    });
+    inMarketplace(<PluginDetail kind="tab" id="graph" />);
+    expect(
+      await screen.findByText(
+        /Revocation list not reachable — native code won't start until it is/,
+      ),
+    ).toBeInTheDocument();
   });
 });
