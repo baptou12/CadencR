@@ -277,11 +277,17 @@ tagging; otherwise Git commands can become ambiguous between `refs/heads/vX.Y.Z`
 
 ### Releasing the SDKs and the CLI
 
-The SDKs and the `cadencr` CLI have their own semver, independent of the app: an app release never bumps
-them, and they ship without one. To release one, bump its version by hand in a normal PR, let it land on
-`main` with green CI, then dispatch its workflow from `main` (each is a dry run unless you untick
-`dry_run`, publishes from a protected environment with required reviewers, and refuses a version that
-already exists).
+The SDKs and the `cadencr` CLI have their own semver, independent of the app: an app release never sets
+them to the app version, and they need not ship with one. To release one, bump its version in a normal
+PR, let it land on `main` with green CI, then dispatch its workflow from `main`. Each workflow:
+
+- is a dry run unless you untick `dry_run`;
+- publishes from a protected environment with required reviewers;
+- refuses a version that already exists.
+
+The release skill does all of it. `release --tools [tool …]` releases only the tools. `release vX.Y.Z` also
+detects which tools changed since their last release, and offers to release them after the app.
+`node scripts/release-tools.mjs` shows that state on its own.
 
 | Artifact                                                 | Version lives in                                                        | Workflow                                       | Tag                    |
 | -------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------- | ---------------------- |
