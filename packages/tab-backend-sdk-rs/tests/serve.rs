@@ -63,23 +63,6 @@ fn a_slow_request_does_not_hold_up_others() {
 }
 
 #[test]
-fn a_full_queue_answers_busy_instead_of_blocking_stdin() {
-    let waiting = 4 * cadencr_tab_backend::protocol::MAX_IN_FLIGHT + 8;
-    let lines = std::iter::once(TestHost::request("slow", "sleep", json!({"ms": 300})))
-        .chain((0..waiting).map(|n| TestHost::request(&n.to_string(), "echo", json!(n))));
-    let transcript = host()
-        .with_config(Config::builder().workers(1).build())
-        .session(lines);
-    let responses = transcript.responses();
-    assert_eq!(responses.len(), waiting + 1, "every request is answered");
-    let busy = responses
-        .iter()
-        .filter(|r| r.error.as_ref().is_some_and(|e| e.code == codes::BUSY))
-        .count();
-    assert!((8..=9).contains(&busy), "{busy} answered BUSY");
-}
-
-#[test]
 fn errors_and_panics_become_error_responses() {
     let transcript = host().session([
         TestHost::request("1", "nope", Value::Null),

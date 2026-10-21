@@ -312,3 +312,79 @@ pub(crate) fn log(message: impl fmt::Display) {
     // is nobody to tell.
     let _ = writeln!(io::stderr(), "[cadencr-tab-backend] {message}");
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc::channel;
+
+    use super::*;
+    use crate::protocol::RequestId;
+    use crate::testing::sample_hello;
+
+    /// Output captured in memory.
+    #[derive(Clone, Default)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            lock(&self.0).extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn request(id: usize) -> Request {
+        Request {
+            id: id.to_string().as_str().into(),
+            method: "m".into(),
+            params: Value::Null,
+        }
+    }
+
+    #[test]
+    fn a_full_queue_answers_busy_without_waiting_for_a_worker() {
+        let (entered_tx, entered) = channel::<()>();
+        let (release, released) = channel::<()>();
+        let (entered_tx, released) = (Mutex::new(entered_tx), Mutex::new(released));
+        // The first request holds the only worker until released.
+        let handler = move |cx: &Context| {
+            if cx.id() == &RequestId::from("0") {
+                let _ = lock(&entered_tx).send(());
+                let _ = lock(&released).recv();
+            }
+            Ok(Value::Null)
+        };
+        let capture = Capture::default();
+        let output = Output(Arc::new(Mutex::new(Box::new(capture.clone()))));
+        let session = Arc::new(Session::new(sample_hello()));
+        let pool = Pool::start(1, session, Arc::new(handler), output.clone()).unwrap();
+        pool.submit(request(0), &output);
+        entered.recv().unwrap();
+        for id in 1..=QUEUE + 3 {
+            pool.submit(request(id), &output);
+        }
+        // Answered by `submit` itself, while the worker is still held.
+        let busy: Vec<Value> = String::from_utf8(lock(&capture.0).clone())
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let ids: Vec<&str> = busy
+            .iter()
+            .map(|line| line["id"].as_str().unwrap())
+            .collect();
+        let last = [QUEUE + 1, QUEUE + 2, QUEUE + 3].map(|id| id.to_string());
+        assert_eq!(ids, last.iter().map(String::as_str).collect::<Vec<_>>());
+        assert!(busy.iter().all(|line| line["error"]["code"] == codes::BUSY));
+        release.send(()).unwrap();
+        pool.join();
+        let answered = String::from_utf8(lock(&capture.0).clone())
+            .unwrap()
+            .lines()
+            .count();
+        assert_eq!(answered, QUEUE + 4, "every request is answered once");
+    }
+}
