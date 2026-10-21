@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { format, isToday } from "date-fns";
 import { AgentBlock, type AgentBlockData } from "../AgentBlock";
-import { parseUTCDateTime } from "@/lib/date-utils";
+import { hasSenderTab } from "@/lib/agent-message-origin";
+import { formatStreamTimestamp } from "@/lib/date-utils";
 import AgentStreamContextMenu from "./AgentStreamContextMenu";
 import { parseGeneratedSessionReply } from "@/lib/session-reply";
 import {
@@ -19,10 +19,16 @@ interface AgentStreamItemProps {
   verbosityMode?: AgentVerbosityMode;
 }
 
-function formatTimestamp(iso: string): string {
-  const date = parseUTCDateTime(iso);
-  if (isToday(date)) return format(date, "HH:mm");
-  return format(date, "yyyy/MM/dd HH:mm");
+function BlockHeader({ block, createdAt }: { block: AgentBlockData; createdAt: string }) {
+  const isUserMessage = block.type === "user_message";
+  return (
+    <div
+      className={`text-xs text-muted-foreground/60 mt-2 mb-0.5 ${isUserMessage ? "text-right" : ""}`}
+    >
+      <span className="font-medium">{isUserMessage ? "User" : (block.model ?? "unknown")}</span>
+      {` · ${formatStreamTimestamp(createdAt)}`}
+    </div>
+  );
 }
 
 /**
@@ -111,20 +117,11 @@ export const AgentStreamItem = memo(function AgentStreamItem({
   const showHeader =
     !isSessionReply &&
     (block.type === "text" || block.type === "user_message") &&
-    !!block.createdAt;
-  const isUserMessage = block.type === "user_message";
+    !hasSenderTab(block);
 
   const item = (
     <div className="py-0.5" data-block-id={block.id}>
-      {showHeader && block.createdAt && (
-        <div
-          className={`text-xs text-muted-foreground/60 mt-2 mb-0.5 ${isUserMessage ? "text-right" : ""}`}
-        >
-          <span className="font-medium">{isUserMessage ? "User" : (block.model ?? "unknown")}</span>
-          {" · "}
-          {formatTimestamp(block.createdAt)}
-        </div>
-      )}
+      {showHeader && block.createdAt && <BlockHeader block={block} createdAt={block.createdAt} />}
       <AgentBlock
         block={block}
         isStreaming={isStreaming}

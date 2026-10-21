@@ -15,6 +15,8 @@ import { Markdown } from "@/components/Markdown";
 import { useStreamingMarkdownThrottle } from "@/hooks/useStreamingMarkdownThrottle";
 import { renderFileChangeBlocks } from "@/components/file-change-block";
 import { UserMessageBlock } from "@/components/UserMessageBlock";
+import { AgentMessageSender } from "@/components/AgentMessageSender";
+import { isAgentSentMessage } from "@/lib/agent-message-origin";
 import { renderGeneratedSessionMessage } from "@/components/session-generated-message";
 import { UserMessageActions } from "@/components/agent-session/UserMessageActions";
 import { CopyAsMenu } from "@/components/agent-session/CopyAsMenu";
@@ -267,7 +269,11 @@ function UserMessageContent({
   return (
     <UserMessageBlock
       content={block.content}
-      origin={block.origin}
+      senderTab={
+        isAgentSentMessage(block) ? (
+          <AgentMessageSender origin={block.origin} sentAt={block.createdAt} />
+        ) : undefined
+      }
       deliveryState={block.promptDeliveryState}
       renderActions={(bubbleRef) => <UserMessageActions block={block} bubbleRef={bubbleRef} />}
     />
