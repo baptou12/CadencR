@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.14.1 - 2026-10-22
+
+Previous release: v0.14.0 - 2026-10-20
+
+### ✨ Added
+
+- [**Desktop**] Added a documented stdio protocol and Rust SDK for custom-tab native backends, with conformance checks and executable packaging for Apple Silicon and Intel Macs and Linux x86_64. Activity explains refused starts and repeated crashes and offers an Allow restart action. Existing backend manifests must replace `command`/`args` with `protocol` and per-platform `binary` entries; scripts and programs launched from PATH are no longer supported as backends — [@rle-mino](https://github.com/rle-mino).
+- [**Backend**] Added the `project_archive_session` MCP tool so agents can archive completed conversations in their current project, optionally include their spawn parent or descendants, and clean up terminals, browser tabs, worktrees, and branches. Conversation history is retained, cleanup results are reported per step, and working agents, pending requests, and the caller's own conversation are protected — [@rle-mino](https://github.com/rle-mino).
+
+### 🔧 Changed
+
+- [**Desktop**] Made messages sent by another conversation's agent easier to identify with a sender tab showing its provider, conversation title, and time; hovering or focusing the sender highlights that conversation in the sidebar, and clicking opens it — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added project and conversation context to background Git results, Git status errors, and fallback notifications, so their source stays clear while you work elsewhere; repeated Git status errors now share one notification — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Updated the built-in terminal engine to CeleriTTY 1.2.5 — [@rle-mino](https://github.com/rle-mino).
+- [**Backend**] Separated CLI and SDK versioning and publishing from application releases so developer tools can be updated independently. Application releases no longer include the CLI binary — [@rle-mino](https://github.com/rle-mino).
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed uncommitted local changes disabling Push and Open pull request even when committed changes were ready to push or compare; both actions remain available from the Git menu and keyboard shortcuts — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed absolute file links outside the project failing to open in Neovim, including reports in shared or temporary folders; failed opens now show the backend's explanation — [@edjubert](https://github.com/edjubert).
+- [**Desktop**] Fixed provider update notifications disappearing after clicking Update or retaining outdated Update and Details buttons after the update finished — [@rle-mino](https://github.com/rle-mino).
+
+### 🔒 Security
+
+- [**dependencies**] Updated Electron to fix HID/USB permission checks being attributed to the wrong origin, and updated Markdown, HTTP redirect, development-server, and test dependencies to address security advisories — [@rle-mino](https://github.com/rle-mino).
+
 ## v0.14.0 - 2026-10-20
 
 Previous release: v0.13.1 - 2026-10-15
