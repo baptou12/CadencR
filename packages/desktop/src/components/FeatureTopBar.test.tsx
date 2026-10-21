@@ -54,6 +54,9 @@ let mockFeatureData: Record<string, unknown> = {
   created_at: "2024-01-01",
 };
 
+vi.mock("@/components/ToastScope", () => ({
+  scopedToastDescription: (scope: unknown, description?: unknown) => ({ scope, description }),
+}));
 vi.mock("@/api/generated", () => ({
   useGetFeature: vi.fn(() => ({ data: mockFeatureData })),
   useGetFeatureSettings: vi.fn(() => ({

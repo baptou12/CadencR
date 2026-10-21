@@ -44,6 +44,9 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+vi.mock("@/components/ToastScope", () => ({
+  scopedToastDescription: (scope: unknown, description?: unknown) => ({ scope, description }),
+}));
 vi.mock("@/api/generated", async (importOriginal) => {
   // `PushForceMode` is a plain const object in the generated client; the
   // dialog indexes it, so keep the real value and stub only the hooks.

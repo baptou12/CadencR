@@ -4,6 +4,9 @@ import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
 const mockToastError = vi.hoisted(() => vi.fn());
 const mockToastMessage = vi.hoisted(() => vi.fn());
 vi.mock("sonner", () => ({ toast: { error: mockToastError, message: mockToastMessage } }));
+vi.mock("@/components/ToastScope", () => ({
+  scopedToastDescription: (scope: unknown, description?: unknown) => ({ scope, description }),
+}));
 
 // `notifyAgentDone` fetches the agent's latest-reply preview for the body.
 // Partial-mock the generated client so the real query-key helpers stay intact.
@@ -390,7 +393,7 @@ describe("listenForNotificationFallbacks", () => {
     expect(mockToastMessage).toHaveBeenCalledWith(
       "🟢 | My Feature",
       expect.objectContaining({
-        description: "Refactored the auth module.",
+        description: { scope: { projectId: 2 }, description: "Refactored the auth module." },
         action: expect.objectContaining({ label: "Open" }),
       }),
     );
@@ -426,7 +429,7 @@ describe("listenForNotificationFallbacks", () => {
 
     expect(mockToastMessage).toHaveBeenCalledWith(
       "Test",
-      expect.objectContaining({ description: "Hi", action: undefined }),
+      expect.objectContaining({ description: { scope: {}, description: "Hi" }, action: undefined }),
     );
     expect(navigate).not.toHaveBeenCalled();
   });

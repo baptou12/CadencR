@@ -9,6 +9,7 @@ import {
 } from "@/api/generated";
 import { desktopBridge, type NotificationFallbackPayload } from "@/lib/desktop-bridge";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { scopedToastDescription } from "@/components/ToastScope";
 import { NOTIFICATION_MODE_KEY, parseNotificationMode } from "@/lib/notification-mode";
 import { plainPreview } from "@/lib/notch/notch-action";
 import { notchSupportedHere } from "@/lib/notch/notch-capabilities";
@@ -230,7 +231,8 @@ export function listenForNotificationFallbacks(
   return desktopBridge.onNotificationFallback((payload: NotificationFallbackPayload) => {
     const click = payload.click;
     toast.message(payload.title, {
-      description: payload.body,
+      // The title already names the conversation; the scope adds its project.
+      description: scopedToastDescription({ projectId: click?.project_id }, payload.body),
       action: click
         ? {
             label: "Open",
