@@ -59,9 +59,9 @@ test("released CLI pin is the qualified atomic three-field pin", async () => {
   const config = await readFile(new URL("../ci/released-cli.env", import.meta.url), "utf8");
   const version = config.match(/^CADENCR_RELEASE_VERSION=(\S+)$/m)?.[1];
   const digest = config.match(/^CADENCR_RELEASE_SHA256=(\S+)$/m)?.[1];
-  assert.equal(version, "0.13.1-dev.39108033875.1");
-  assert.equal(digest, "d11bfade6297fa30e1e10e82605f5a221da8e07edeeee372e2c2f6185c6ff725");
-  assert.match(config, /^CADENCR_RELEASE_TAG=cli\/v0\.13\.1-dev\.39108033875\.1$/m);
+  assert.equal(version, "0.13.1-dev.39306959010.1");
+  assert.equal(digest, "251c5d0cc7120ccc44dc2d8ad473bd5bb31e3577542098feb72f31372ed7b88a");
+  assert.match(config, /^CADENCR_RELEASE_TAG=cli\/v0\.13\.1-dev\.39306959010\.1$/m);
   assert.doesNotMatch(config, /URL|latest/);
 });
 
@@ -341,11 +341,17 @@ test("all trusted workflow business operations use released Rust commands withou
     "utf8",
   );
   assert.match(selector, /refusing legacy fallback/);
-  // The contribution/publisher pin must not claim newly added commands exist in
-  // already-distributed bytes. Full metadata/expiry cutover needs a new release.
+  // Bind the selected bytes to the separately qualified release and source;
+  // selecting this binary does not authorize deployment or publication.
   const pin = await readFile(new URL("../ci/released-cli.env", import.meta.url), "utf8");
-  assert.match(
-    pin,
-    /newly added metadata and\n# expiry commands require a separately qualified release/,
+  assert.deepEqual(
+    pin.split("\n").filter((line) => line && !line.startsWith("#")),
+    [
+      "CADENCR_RELEASE_VERSION=0.13.1-dev.39306959010.1",
+      "CADENCR_RELEASE_SHA256=251c5d0cc7120ccc44dc2d8ad473bd5bb31e3577542098feb72f31372ed7b88a",
+      "CADENCR_RELEASE_TAG=cli/v0.13.1-dev.39306959010.1",
+    ],
   );
+  assert.match(pin, /^# Qualified source 646864caeca2896170baa65d5389b475099b2ce1\.$/m);
+  assert.match(pin, /no deployment or publication authorization/);
 });

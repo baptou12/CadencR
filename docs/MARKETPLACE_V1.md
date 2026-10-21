@@ -8,13 +8,15 @@ source template, including the expiry tool and executable legacy test helpers.
 Only thin orchestration/tests and frozen historical data remain. Production registry
 state, author authority and desktop visibility are unchanged.
 
-The candidate CI pin still references `0.13.1-dev.39108033875.1` for its existing
-commands. The replacement `0.13.1-dev.39306959010.1` is released and has exact-ELF
+The three local registry, author and qualification pins now select the released
+`0.13.1-dev.39306959010.1` with its exact reviewed checksum. It has exact-ELF
 65-check, first-pass 8-entry renewal and all-three-kind original-author evidence.
 The new 11-entry mixed incremental publication and its first-pass renewal are
 verified, including unchanged replays and separate fresh-runner reconstruction. See the [current qualification record](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-21.md).
-Production pin promotion and regenerated bootstrap/cutover payload approvals are
-still required; source tests are not distributed-binary qualification.
+This is local selection/review preparation, not production adoption or authority.
+See the [pin review](MARKETPLACE_CLI_PIN_REVIEW_2026-10-21.md). Fresh bootstrap/cutover
+approvals and actual delivery remain required; source tests are not
+distributed-binary qualification.
 See [template runtime gates](../tooling/marketplace-registry/README.md#status-and-runtime).
 
 ## Remaining delivery waves — 2026-10-21
@@ -82,9 +84,11 @@ Neither examples nor passing tests constitute publication approval.
       qualify provider/theme/tab validation, packaging, contribution checks,
       author publication/retry and mixed-catalog publication, interruption/resume,
       fresh-runner recovery and renewal on the approved isolated public QA target.
-- [ ] Review/promote the exact registry and author executable pins with their
-      qualification evidence. Regenerate bootstrap/cutover hashes and manifests;
-      do not reuse old payload approvals after changing their bytes.
+- [x] Locally select the exact qualified registry, author and qualification
+      executable pins with their released artifact/source bindings.
+- [ ] Approve fresh bootstrap/cutover payloads and production pin adoption;
+      local regeneration/selection does not deliver them or grant publication
+      authority. Do not reuse old approvals after changing payload bytes.
 
 #### Wave 3 qualification checkpoint — 2026-10-18
 
@@ -170,9 +174,10 @@ Neither examples nor passing tests constitute publication approval.
 - [x] Verify that new catalog's first-pass renewal with unchanged replays and
       clean-runner reconstruction: four exact-binary proofs, 11 entries and
       14 archives. No failed-job retry or replacement dates supplied the success.
-- [ ] Review the replacement registry/author pins and regenerate bootstrap/cutover
-      payload hashes and approvals before deployment. The source candidate still
-      pins the older CLI; neither QA pins nor a manual CLI release deploy it.
+- [x] Select the qualified replacement in all three local pin files; retain
+      exact source/checksum bindings in the current pin review record.
+- [ ] Obtain fresh bootstrap/cutover approvals and production adoption authority
+      before delivery. Neither local preparation nor a manual CLI release deploys it.
 - [ ] Update final operational evidence: populated verified feeds, reproducible
       official releases, renewal/revocation controls and exact platform limits.
       Source documentation is migrated; live delivery/owner/alert proof is not.
