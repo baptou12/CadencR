@@ -484,8 +484,8 @@ the service resolves, starts, relays to and stops it.
 - **Answers.** 200 `{result}` or `{error: {code, message}}` — the backend's
   own error, passed through. Relay failures: 429 `PLUGIN_BACKEND_BUSY` (≤ 16
   in flight), 504 `PLUGIN_BACKEND_TIMEOUT` (`timeout_ms` 1–120 000, default
-  30 000, counted from the request, the handshake of a backend just started
-  included), 502 `PLUGIN_BACKEND_EXITED` (it exited before answering). 400
+  30 000, counted from the request, the whole start of a backend not yet
+  running included), 502 `PLUGIN_BACKEND_EXITED` (it exited before answering). 400
   for a `method` outside 1–128 chars or `params` over 1 MiB of JSON.
 - **Lifecycle.** An open instance of a tab with a backend holds a presence
   lease (`PUT /api/plugin-tabs/{id}/presence/{lease_id}` `{feature_id}`, main

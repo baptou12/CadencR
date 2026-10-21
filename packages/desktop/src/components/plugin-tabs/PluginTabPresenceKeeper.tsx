@@ -84,8 +84,10 @@ export function wantedLeases(
  * follows the tab strip instead (`useFeatureLayoutStore`): taken when the tab
  * is placed (or its conversation's saved layout is first loaded after a
  * restart — the first visit, which comes before any backend use), released
- * when it is closed, or once it may not run (turned off, blocked, removed,
- * invalid, no build for this platform). Renders nothing; mount it once.
+ * when it is closed or its conversation deleted (`forgetFeatureProject`: the
+ * deleted conversation's layout stays in the store), or once it may not run
+ * (turned off, blocked, removed, invalid, no build for this platform).
+ * Renders nothing; mount it once.
  */
 export const PluginTabPresenceKeeper = memo(function PluginTabPresenceKeeper(): null {
   const desktop = pluginTabsAvailable();

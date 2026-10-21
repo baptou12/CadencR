@@ -15,6 +15,7 @@ import {
   removeFeatureFromCachedLists,
 } from "@/components/project-feature-navigation";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { forgetFeatureProject } from "@/lib/plugin-tabs/feature-projects";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 
 interface UseFeatureRowMutationsOptions {
@@ -59,6 +60,7 @@ export function useFeatureRowMutations({
       onSuccess: (_data, variables) => {
         removeFeatureFromCachedLists(queryClient, variables.id);
         closeFeatureSession(variables.id);
+        forgetFeatureProject(variables.id);
         invalidateFeatures();
       },
       onError: (error) => toast.error(apiErrorMessage(error, "Failed to delete conversation")),

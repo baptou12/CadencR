@@ -7,6 +7,7 @@ import {
   setDesktopBridgeOverrideForTests,
 } from "@/lib/desktop-bridge";
 import {
+  forgetFeatureProject,
   rememberFeatureProject,
   usePluginTabFeatureProjects,
 } from "@/lib/plugin-tabs/feature-projects";
@@ -114,6 +115,17 @@ describe("PluginTabPresenceKeeper", () => {
     mocks.tabs.set(1, [backendTab({ status: "blocked", blocked_reason: "Malware." })]);
     await act(() => queryClient.invalidateQueries({ queryKey: ["/api/plugin-tabs"] }));
     await waitFor(() => expect(mocks.release).toHaveBeenCalledTimes(1));
+  });
+
+  it("releases the leases of a deleted conversation, whose layout stays behind", async () => {
+    place(7, "graph");
+    place(9, "graph");
+    render(<PluginTabPresenceKeeper />);
+    await waitFor(() => expect(mocks.renew).toHaveBeenCalledTimes(2));
+    act(() => forgetFeatureProject(7));
+    await waitFor(() => expect(mocks.release).toHaveBeenCalledTimes(1));
+    expect(mocks.release.mock.calls[0]).toEqual(["graph", mocks.renew.mock.calls[0]?.[1]]);
+    expect(useFeatureLayoutStore.getState().features[7]).toBeDefined();
   });
 
   it("leases no tab whose backend can't run here", () => {

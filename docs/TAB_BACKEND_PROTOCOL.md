@@ -299,9 +299,11 @@ The tab's UI receives `{result}` or `{error: {code, message}}` as is.
   queue is bounded, and a backend that stops reading makes later requests
   time out.
 - **Per-request timeout:** the caller's `timeout_ms`, 1 ms – 120 000 ms,
-  default **30 000 ms**. On timeout the caller gets `PLUGIN_BACKEND_TIMEOUT`;
-  the backend is not told (there is no cancel message in v1) and a late
-  response is discarded.
+  default **30 000 ms**, counted from the request: starting the backend
+  (another start in progress, the binary check, the handshake) counts
+  against it. On timeout the caller gets `PLUGIN_BACKEND_TIMEOUT`; a start
+  under way carries on for the next request, and the backend is not told
+  (there is no cancel message in v1) and a late response is discarded.
 
 ## 6. Lifecycle
 

@@ -134,12 +134,13 @@ impl BackendSupervisor {
         launch: BackendLaunch,
         request: PluginBackendRequest,
     ) -> Result<PluginBackendResponse, AppError> {
-        let timeout = check_request(&request)?;
-        let running = self.ensure_running(grants, &launch).await?;
-        // The process holds its own lease; this one must not keep the
-        // revision of a backend that exits mid-request.
-        drop(launch);
-        running.call(&request.method, request.params, timeout).await
+        let budget = check_request(&request)?;
+        // The start counts against the request's budget. The process holds
+        // its own revision lease; `launch` goes with the start task.
+        let (this, grants) = (self.clone(), grants.clone());
+        let start = async move { this.ensure_running(&grants, &launch).await };
+        let running = budget.wait_detached(&request.method, start).await?;
+        running.call(&request.method, request.params, budget).await
     }
 
     /// The usable backend of `plugin_id` in `feature_id` when it runs under
@@ -772,7 +773,11 @@ mod tests {
         drop(launch);
         // Its working directory is the sealed revision: it cannot write there.
         let wrote = running
-            .call("write_cwd", Value::Null, Duration::from_secs(10))
+            .call(
+                "write_cwd",
+                Value::Null,
+                request::Budget::starting_now(Duration::from_secs(10)),
+            )
             .await
             .unwrap()
             .result;
@@ -861,6 +866,44 @@ mod tests {
         assert_eq!((status.starts, status.start_error), (0, None));
         // Not held: the next request starts it.
         supervisor.ensure_running(&grants, &launch).await.unwrap();
+        supervisor.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_request_waiting_on_a_start_times_out_on_its_own_budget() {
+        let (_root, _dir, launch) = fixture_tab("backend");
+        let (supervisor, grants) = (BackendSupervisor::default(), GrantStore::default());
+        let Reuse::Start { starting, .. } = supervisor.reuse(&launch).await.unwrap() else {
+            panic!("nothing runs yet");
+        };
+        // Another start holds the slot past the request's budget.
+        let held = starting.lock().await;
+        let began = Instant::now();
+        let error = supervisor
+            .request(
+                &grants,
+                launch.clone(),
+                request("echo", json!(1), Some(200)),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error_code(&error), "PLUGIN_BACKEND_TIMEOUT", "{error}");
+        assert!(
+            began.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            began.elapsed()
+        );
+        // The start it was waiting on goes on, for the next request.
+        drop(held);
+        let mut status = supervisor.status("tab", 2).await;
+        for _ in 0..100 {
+            if status.as_ref().is_some_and(|status| status.starts == 1) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            status = supervisor.status("tab", 2).await;
+        }
+        assert_eq!(status.map(|status| status.starts), Some(1));
         supervisor.shutdown().await;
     }
 

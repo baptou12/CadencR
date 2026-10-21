@@ -21,6 +21,7 @@ use super::history::{ExitRecord, History};
 use super::launch::unavailable;
 use super::models::PluginBackendResponse;
 use super::protocol::{lock, read_stderr, read_stdout, write_stdin, Pending, Reply, Stdout};
+use super::request::Budget;
 use super::{BackendLaunch, StopReason};
 use crate::domain::agents::acp::process_tree::ProcessTreeControl;
 use crate::domain::agents::providers::installed::managed::process_policy::{
@@ -104,7 +105,7 @@ impl Running {
         &self,
         method: &str,
         params: Value,
-        timeout: Duration,
+        budget: Budget,
     ) -> Result<PluginBackendResponse, AppError> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed).to_string();
         let (tx, rx) = oneshot::channel();
@@ -145,17 +146,9 @@ impl Running {
                 Err(_) => Err(exited_error("the backend stopped")),
             }
         };
-        match tokio::time::timeout(timeout, exchange).await {
-            Ok(result) => result,
-            Err(_) => Err(AppError::coded(
-                StatusCode::GATEWAY_TIMEOUT,
-                "PLUGIN_BACKEND_TIMEOUT",
-                format!(
-                    "the backend did not answer `{method}` within {} ms",
-                    timeout.as_millis()
-                ),
-            )),
-        }
+        tokio::time::timeout_at(budget.deadline, exchange)
+            .await
+            .unwrap_or_else(|_| Err(budget.exceeded(method)))
     }
 }
 
