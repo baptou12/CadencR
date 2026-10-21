@@ -1,6 +1,6 @@
 # Marketplace V1 — GitHub-only distribution
 
-## Current source migration checkpoint — 2026-10-18
+## Current source migration checkpoint — 2026-10-21
 
 The requested full Rust cutover supersedes earlier instructions to retain legacy
 JavaScript business implementations until deployment. They are removed from this
@@ -9,14 +9,15 @@ Only thin orchestration/tests and frozen historical data remain. Production regi
 state, author authority and desktop visibility are unchanged.
 
 The candidate CI pin still references `0.13.1-dev.39108033875.1` for its existing
-commands. The replacement `0.13.1-dev.39144478778.1`, including standalone
-metadata/submission/expiry commands, is now released. Its isolated qualification
-is recorded [separately](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-18.md).
-Production pin review and rebuilt delivery payload approvals remain required;
-source tests are not distributed-binary qualification.
+commands. The replacement `0.13.1-dev.39306959010.1` is released and has exact-ELF
+65-check, first-pass 8-entry renewal and all-three-kind original-author evidence.
+The new 11-entry mixed incremental publication and its first-pass renewal are
+verified, including unchanged replays and separate fresh-runner reconstruction. See the [current qualification record](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-21.md).
+Production pin promotion and regenerated bootstrap/cutover payload approvals are
+still required; source tests are not distributed-binary qualification.
 See [template runtime gates](../tooling/marketplace-registry/README.md#status-and-runtime).
 
-## Remaining delivery waves — 2026-10-18
+## Remaining delivery waves — 2026-10-21
 
 This is the current ordered checklist. It supersedes older next-step lists and
 source-only completion claims below; dated evidence remains valid only for the
@@ -71,10 +72,12 @@ Neither examples nor passing tests constitute publication approval.
 ### Wave 3 — Deliver and qualify a new distributed CLI
 
 - [x] Merge the required source changes to `main`, pass canonical CI, then use
-      the existing manual **CLI-only** development release workflow. Released
-      `0.13.1-dev.39108033875.1` from `88ead507983371e5c3df468c6d9bf7c6c12e5fbb`;
-      its four downloaded assets, checksum, provenance and tag binding were
-      independently verified. This delivery does not qualify its lifecycle.
+      the existing manual **CLI-only** development release workflow. The current
+      qualified executable is `0.13.1-dev.39306959010.1`, source
+      `646864caeca2896170baa65d5389b475099b2ce1`, released by
+      [run 39306959010](https://github.com/merkr-software/CadencR/actions/runs/39306959010).
+      Its downloaded checksum/provenance/tag bindings and scenario-specific proof
+      are recorded in the [current qualification](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-21.md).
 - [x] Verify the downloaded executable's checksum and source provenance, then
       qualify provider/theme/tab validation, packaging, contribution checks,
       author publication/retry and mixed-catalog publication, interruption/resume,
@@ -155,10 +158,18 @@ Neither examples nor passing tests constitute publication approval.
       authenticated identity, freshness and cleanup remain mandatory. Source
       regression is not proof of the historical hosted error's exact cause; see
       [the source-only contract](../tooling/marketplace-registry/OPERATIONS.md#source-only-discovery-convergence-correction).
-- [ ] Merge the correction, pass canonical CI, release a new CLI and demonstrate
-      first-pass renewal plus unchanged replays/clean-runner recovery using that
-      actual distributed binary. The original failed run remains failed. Do not
-      promote production pins from source tests or successful recovery alone.
+- [x] Merge the correction, pass canonical CI and release the exact new CLI
+      `0.13.1-dev.39306959010.1`. Its distributed ELF passes 65 networkless checks,
+      first-pass renewal of the 8-entry/10-archive catalog with unchanged replays
+      and fresh-runner recovery, plus provider/theme/tab author lifecycles.
+      See [October 21 evidence](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-21.md).
+      The original failed renewal remains failed; its cause is not established.
+- [x] Verify the new three-kind `1.0.2` mixed incremental publication: 11 entries /
+      14 archives, controlled interruption/resume, unchanged replay and separate
+      fresh-runner reconstruction with the exact distributed CLI.
+- [x] Verify that new catalog's first-pass renewal with unchanged replays and
+      clean-runner reconstruction: four exact-binary proofs, 11 entries and
+      14 archives. No failed-job retry or replacement dates supplied the success.
 - [ ] Review the replacement registry/author pins and regenerate bootstrap/cutover
       payload hashes and approvals before deployment. The source candidate still
       pins the older CLI; neither QA pins nor a manual CLI release deploy it.
@@ -177,8 +188,10 @@ Neither examples nor passing tests constitute publication approval.
 - Wave 3 needs its required source on green `main`; waves 4–6 then consume that
   actual qualified binary. Source cleanup is now prepared ahead of deployment; the expanded runtime
   contract requires a newly qualified CLI and reviewed delivery before adoption.
-- A new **CLI release is required**; no public **desktop release** is required
-  to reach the populated-but-hidden milestone. Local packaged QA is not a release.
+- The required exact **CLI release is available**. Another CLI behavior change
+  requires a new artifact and requalification; no public **desktop release** is
+  required to reach the populated-but-hidden milestone. Local packaged QA is not
+  a release.
 - Implementation follows `parallel-advisor` with GPT-6.1-Sol workers; each finished
   step receives `finish-job` review before its proposed commit. Leave changes
   uncommitted pending approval; merge, push, release and production policy changes
