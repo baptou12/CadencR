@@ -138,6 +138,51 @@ describe("provider update notifications", () => {
     );
   });
 
+  it("clears the announcement's buttons once the update starts and finishes", async () => {
+    // Sonner merges options into the toast already shown under the same id,
+    // so each later stage must explicitly clear "Update" / "Details".
+    const cleared = { action: undefined, cancel: undefined, duration: undefined };
+    vi.mocked(updateProvider).mockResolvedValueOnce(status({ activity: "updating" }));
+    await startProviderUpdate(status());
+    expect(toast.loading).toHaveBeenCalledWith(
+      "Updating Claude Code…",
+      expect.objectContaining({ ...cleared, id: "provider-update-claude_code" }),
+    );
+
+    applyProviderUpdatesEvent({
+      providers: [status({ state: "up_to_date", current_version: "2.1.300" })],
+      outcome: {
+        provider_id: "claude_code",
+        label: "Claude Code",
+        success: true,
+        previous_version: "2.1.299",
+        current_version: "2.1.300",
+      },
+    });
+    expect(toast.success).toHaveBeenCalledWith(
+      "Claude Code updated",
+      expect.objectContaining({ ...cleared, id: "provider-update-claude_code" }),
+    );
+  });
+
+  it("keeps the toast open when its Update button starts the update", () => {
+    vi.mocked(updateProvider).mockResolvedValueOnce(status({ activity: "updating" }));
+    applyProviderUpdatesEvent({ providers: [status()], checked_at: null, outcome: null });
+    const options = vi.mocked(toast).mock.calls[0][1] as unknown as {
+      action: { onClick: (event: { preventDefault: () => void }) => void };
+    };
+    const preventDefault = vi.fn();
+
+    options.action.onClick({ preventDefault });
+
+    // Unprevented, sonner would close the toast that turns into "Updating…".
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(toast.loading).toHaveBeenCalledWith(
+      "Updating Claude Code…",
+      expect.objectContaining({ id: "provider-update-claude_code" }),
+    );
+  });
+
   it("rejects malformed events without touching the cache", () => {
     applyProviderUpdatesEvent({ providers: [{ provider_id: 4 }] });
     expect(queryClient.getQueryData(getGetProviderUpdatesQueryKey())).toBeUndefined();
@@ -159,7 +204,10 @@ describe("provider update notifications", () => {
     vi.mocked(updateProvider).mockResolvedValueOnce(status({ activity: "updating" }));
     await startProviderUpdate(status(), "2.1.300");
     expect(updateProvider).toHaveBeenCalledWith("claude_code", { version: "2.1.300" });
-    expect(toast.loading).toHaveBeenCalledWith("Updating Claude Code…", expect.anything());
+    expect(toast.loading).toHaveBeenCalledWith(
+      "Updating Claude Code…",
+      expect.objectContaining({ id: "provider-update-claude_code" }),
+    );
 
     vi.mocked(updateProvider).mockRejectedValueOnce(new Error("in progress"));
     await startProviderUpdate(status());
