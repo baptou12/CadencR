@@ -10,6 +10,17 @@ minimumReleaseAge: 20160
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
 minimumReleaseAgeExclude:
+  # GHSA-qxg6-89mg-rqv8, GHSA-xp26-3454-mjgp: keep the fixed Vitest suite aligned.
+  # Remove after 2026-10-29T15:00:00Z (14 days after publication).
+  - "vitest@4.1.12"
+  - "@vitest/coverage-v8@4.1.12"
+  - "@vitest/expect@4.1.12"
+  - "@vitest/mocker@4.1.12"
+  - "@vitest/pretty-format@4.1.12"
+  - "@vitest/runner@4.1.12"
+  - "@vitest/snapshot@4.1.12"
+  - "@vitest/spy@4.1.12"
+  - "@vitest/utils@4.1.12"
   # GHSA-r7fv-28h4-cvq7, GHSA-gfr2-rv44-r23c, GHSA-vfgh-jcmw-g37q.
   # Remove after 2026-10-30T01:47:54.675Z (14 days after publication).
   - "markdown-it@14.3.3"
