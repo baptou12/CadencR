@@ -1,23 +1,31 @@
 # Marketplace V1 — GitHub-only distribution
 
-## Current source migration checkpoint — 2026-10-21
+## Current registry delivery checkpoint — 2026-10-21
 
-The requested full Rust cutover supersedes earlier instructions to retain legacy
-JavaScript business implementations until deployment. They are removed from this
-source template, including the expiry tool and executable legacy test helpers.
-Only thin orchestration/tests and frozen historical data remain. Production registry
-state, author authority and desktop visibility are unchanged.
+- Registry bootstrap [PR #1](https://github.com/merkr-software/cadencr-registry/pull/1)
+  is merged at `efe2dc72f08a50bd30921e0fa7d1c4c959071f16`.
+- Trusted-base Rust contribution CI [PR #2](https://github.com/merkr-software/cadencr-registry/pull/2)
+  is merged at `bb19ac8be430672fce167541e5830f33c70968bc`.
+  [Run 39676576520](https://github.com/merkr-software/cadencr-registry/actions/runs/39676576520)
+  passed both jobs against the empty registry; populated-index validation was
+  skipped. Subsequent four-case hosted QA qualified populated three-kind
+  validation/index construction, rejection and trusted-base isolation; all eight
+  jobs returned their expected results. QA PRs #3–#6 closed without merge.
+  Legacy JavaScript cleanup is prepared for review, not delivered.
+- Explicit current governance: only `rle-mino` may push `main`; no teams/apps,
+  `enforce_admins: true`, no mandatory reviews or CI checks. CI remains advisory.
+  This supersedes earlier policy requirements, not package-integrity gates.
+- The CLI remains `0.13.1-dev.39306959010.1` with the exact reviewed checksum.
+  No new CLI or desktop release is needed for these orchestration changes.
+  No official Graphite, Ember, Fjord or Pi release, production signing/feed
+  publication or desktop activation is claimed.
 
-The three local registry, author and qualification pins now select the released
-`0.13.1-dev.39306959010.1` with its exact reviewed checksum. It has exact-ELF
-65-check, first-pass 8-entry renewal and all-three-kind original-author evidence.
-The new 11-entry mixed incremental publication and its first-pass renewal are
-verified, including unchanged replays and separate fresh-runner reconstruction. See the [current qualification record](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-21.md).
-This is local selection/review preparation, not production adoption or authority.
-See the [pin review](MARKETPLACE_CLI_PIN_REVIEW_2026-10-21.md). Fresh bootstrap/cutover
-approvals and actual delivery remain required; source tests are not
-distributed-binary qualification.
-See [template runtime gates](../tooling/marketplace-registry/README.md#status-and-runtime).
+See the [registry delivery record](MARKETPLACE_REGISTRY_DELIVERY_2026-10-21.md),
+[frozen qualification](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-21.md),
+[frozen pin review](MARKETPLACE_CLI_PIN_REVIEW_2026-10-21.md) and
+[template runtime gates](../tooling/marketplace-registry/README.md#status-and-runtime).
+The new delivery record is maintained after delivery; it was not part of CLI
+source commit `646864caeca2896170baa65d5389b475099b2ce1`.
 
 ## Remaining delivery waves — 2026-10-21
 
@@ -86,9 +94,9 @@ Neither examples nor passing tests constitute publication approval.
       fresh-runner recovery and renewal on the approved isolated public QA target.
 - [x] Locally select the exact qualified registry, author and qualification
       executable pins with their released artifact/source bindings.
-- [ ] Approve fresh bootstrap/cutover payloads and production pin adoption;
-      local regeneration/selection does not deliver them or grant publication
-      authority. Do not reuse old approvals after changing payload bytes.
+- [x] Deliver approved bootstrap and contribution-CI payloads with the exact
+      qualified pin; see the current registry delivery record. This does not
+      grant production signing or official-package publication authority.
 
 #### Wave 3 qualification checkpoint — 2026-10-18
 
@@ -111,11 +119,15 @@ Neither examples nor passing tests constitute publication approval.
 
 ### Wave 4 — Deploy the real registry and publication authority
 
-- [ ] Recheck public registry `main` and resolve its maintainer/approval policy
-      explicitly. A signed local merge is not a delivered bootstrap; do not
-      bypass protections or infer a governance change from implementation approval.
-- [ ] Deliver bootstrap first, then the trusted-base Rust contribution workflow;
-      observe actual hosted checks for providers, themes and tabs.
+- [x] Resolve and apply explicit registry governance: only `rle-mino` may push
+      `main`, no teams/apps, admins enforced, no mandatory reviews/checks.
+- [x] Deliver bootstrap, then trusted-base Rust contribution CI; both hosted jobs
+      passed on the empty registry in run `39676576520`.
+- [x] Qualify the deployed workflow with populated provider/theme/tab entries,
+      unsigned index construction, malformed/immutable rejection and trusted-base
+      tampering checks. All eight hosted jobs returned expected results; QA PRs
+      closed unmerged. No hosted index artifact was inspected; exact output-kind
+      counts were inspected in a local native test only.
 - [ ] Separately provision reviewed production author/signing environments,
       credentials, trust profile and renewal/revocation owners/alerts; deploy and
       verify the protected Rust publisher. QA keys/tokens never become production
@@ -176,8 +188,10 @@ Neither examples nor passing tests constitute publication approval.
       14 archives. No failed-job retry or replacement dates supplied the success.
 - [x] Select the qualified replacement in all three local pin files; retain
       exact source/checksum bindings in the current pin review record.
-- [ ] Obtain fresh bootstrap/cutover approvals and production adoption authority
-      before delivery. Neither local preparation nor a manual CLI release deploys it.
+- [x] Deliver approved bootstrap and contribution-CI cutover with the qualified
+      pin. Production author/signing authority remains a separate gate.
+- [ ] Deliver the prepared legacy JavaScript cleanup after review. Populated
+      hosted Rust proof is complete; cleanup remains uncommitted and undelivered.
 - [ ] Update final operational evidence: populated verified feeds, reproducible
       official releases, renewal/revocation controls and exact platform limits.
       Source documentation is migrated; live delivery/owner/alert proof is not.
@@ -221,7 +235,10 @@ Neither examples nor passing tests constitute publication approval.
 - Detailed verification and the debug-startup isolation incident are recorded in
   [wave qualification](./qa/MARKETPLACE_WAVES_1_2_2026_10_18.md).
 
-## Current milestone — publish plugins before public activation (2026-10-13)
+## Historical milestone — publish plugins before public activation (2026-10-13)
+
+Current delivery status and policy are above; the following dated checkpoint is
+historical and does not reinstate superseded approval or retention requirements.
 
 This section supersedes the preparation-only stop below. v0.13.0 is released
 with the marketplace hidden. The next milestone is to publish reviewed original

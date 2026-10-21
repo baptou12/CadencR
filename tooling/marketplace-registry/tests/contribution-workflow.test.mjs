@@ -51,6 +51,7 @@ test("PR validation stays read-only and does not acquire credentials or privileg
   assert.equal((workflow.match(/persist-credentials: false/g) ?? []).length, 4);
   assert.doesNotMatch(workflow, /pull_request_target|workflow_run|workflow_dispatch/);
   assert.doesNotMatch(workflow, /secrets\.|contents:\s*write|id-token:\s*write/);
+  assert.doesNotMatch(workflow, /setup-node|node-version|npm|pnpm|yarn/);
   const { inert } = jobSections(workflow);
   assert.doesNotMatch(inert, /download-artifact|curl|wget|npm\s+(?:ci|install)|pnpm|yarn/);
 });
