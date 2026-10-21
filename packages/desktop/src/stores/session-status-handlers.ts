@@ -24,6 +24,7 @@ import { openingClearsForMe } from "@/stores/for-me-ack";
 import { useUnreadStore } from "@/stores/unread-store";
 import { handleGitEnvelope } from "@/stores/ws-git-status-handler";
 import { showRemoteConnectedToast } from "@/lib/remote/connection-toast";
+import { handleAgentArchived } from "@/lib/agent-archived";
 import { applyStorageMaintenanceEvent } from "@/stores/storage-maintenance-store";
 import { applyProviderUpdatesEvent } from "@/stores/provider-updates";
 import type { LiveAgentStatus, PendingKind } from "@/types/agent";
@@ -345,6 +346,10 @@ export function handleAppEnvelope(
   }
   if (domain === "git") {
     handleGitEnvelope(action, payload);
+    return true;
+  }
+  if (domain === "app" && action === "agent_archived") {
+    handleAgentArchived(payload);
     return true;
   }
   if (domain === "app" && action === "remote_connected") {

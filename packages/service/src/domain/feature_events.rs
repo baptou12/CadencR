@@ -14,6 +14,8 @@
 use serde::Serialize;
 use tokio::sync::broadcast;
 
+use crate::domain::mcp::control::archive_cleanup::CleanupReport;
+
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FeatureEventAction {
@@ -35,15 +37,43 @@ pub struct FeatureEvent {
     pub action: FeatureEventAction,
 }
 
-/// Cloneable handle around the broadcast sender. Stored on `AppState`.
+/// An agent archived a conversation with `project_archive_session`. Every
+/// client turns it into what the Archive dialog does locally: a toast with the
+/// cleanup outcome, closing the conversation's session and terminal panes, and
+/// leaving it when it is the one on screen.
+///
+/// A channel of its own rather than a `FeatureEvent` field: custom tabs receive
+/// `FeatureEvent`s, and this payload (titles, branch names, git errors) is not
+/// part of their contract.
+#[derive(Clone, Debug, Serialize)]
+pub struct AgentArchivedEvent {
+    pub project_id: i64,
+    pub feature_id: i64,
+    pub title: String,
+    /// Title of the conversation whose agent archived it.
+    pub archived_by: String,
+    pub archived_feature_ids: Vec<i64>,
+    /// The tool's per-step cleanup report, as the agent received it.
+    pub cleanup: CleanupReport,
+}
+
+/// One toast per agent archive: a lagging client only misses toasts.
+const AGENT_ARCHIVED_CAPACITY: usize = 16;
+
+/// Cloneable handle around the broadcast senders. Stored on `AppState`.
 #[derive(Clone, Debug)]
 pub struct FeatureEventBroadcaster {
     tx: broadcast::Sender<FeatureEvent>,
+    agent_archived_tx: broadcast::Sender<AgentArchivedEvent>,
 }
 
 impl FeatureEventBroadcaster {
     pub fn new(tx: broadcast::Sender<FeatureEvent>) -> Self {
-        Self { tx }
+        let (agent_archived_tx, _) = broadcast::channel(AGENT_ARCHIVED_CAPACITY);
+        Self {
+            tx,
+            agent_archived_tx,
+        }
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<FeatureEvent> {
@@ -59,5 +89,14 @@ impl FeatureEventBroadcaster {
             project_id,
             action,
         });
+    }
+
+    pub fn subscribe_agent_archived(&self) -> broadcast::Receiver<AgentArchivedEvent> {
+        self.agent_archived_tx.subscribe()
+    }
+
+    /// Same swallowed send error as [`Self::emit`]: no client, no toast.
+    pub fn emit_agent_archived(&self, event: AgentArchivedEvent) {
+        let _ = self.agent_archived_tx.send(event);
     }
 }

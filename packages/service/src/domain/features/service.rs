@@ -161,6 +161,15 @@ pub async fn archive(
     super::archive::archive(pool, id, request).await
 }
 
+pub async fn archive_idle(
+    pool: &SqlitePool,
+    id: i64,
+    request: ArchiveRequest,
+    caller_id: i64,
+) -> Result<ArchiveResponse, AppError> {
+    super::archive::archive_idle(pool, id, request, caller_id).await
+}
+
 pub async fn archive_project_sessions(
     pool: &SqlitePool,
     project_id: i64,

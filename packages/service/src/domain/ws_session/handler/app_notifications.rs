@@ -29,6 +29,17 @@ pub(super) fn subscribe_remote_events(sender: &WsSender, app_state: &AppState) {
     );
 }
 
+/// Conversations an agent archived (`project_archive_session`): one-shot
+/// notifications every client turns into the Archive dialog's local effects.
+pub(super) fn subscribe_agent_archived_events(sender: &WsSender, app_state: &AppState) {
+    forward_app_events(
+        sender,
+        app_state.feature_events_tx.subscribe_agent_archived(),
+        "agent_archived",
+        OnLag::Skip,
+    );
+}
+
 /// Settings-file changes are cues for the desktop to refetch settings.
 pub(super) fn subscribe_settings_events(sender: &WsSender, app_state: &AppState) {
     forward_app_events(

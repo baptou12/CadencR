@@ -6,6 +6,12 @@ use reqwest::Url;
 /// permission flow (see `is_auto_trusted_browser_tool`).
 pub const BROWSER_OPEN_EXTERNAL_URL: &str = "browser_open_external_url";
 
+/// Service → desktop bridge command closing every browser tab of one feature
+/// scope (`project_archive_session`'s browser cleanup). Deliberately absent
+/// from [`BROWSER_TOOL_NAMES`]: the browser MCP server refuses it, so agents
+/// can only reach it through the archive tool's own checks.
+pub const BROWSER_CLOSE_SCOPE_TABS: &str = "browser_close_scope_tabs";
+
 pub const BROWSER_TOOL_NAMES: [&str; 15] = [
     "browser_list_tabs",
     "browser_open_url",
