@@ -100,10 +100,12 @@ jobs:
       - name: Install the tab packages' dependencies
         run: pnpm install --frozen-lockfile --filter @cadencr/tab-sdk --filter @cadencr/tab-kit
 
+      # Build first, as turbo does in CI: tab-kit's example and tests import
+      # the built package (`exports` → dist/), never its sources.
       - name: Check
         run: |
           set -euo pipefail
-          for script in ts-check lint format:check test; do
+          for script in build ts-check lint format:check test; do
             pnpm --filter "$PACKAGE_NAME" run "$script"
           done
 
