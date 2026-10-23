@@ -201,12 +201,27 @@ that work; an optional official tab must not hold up the initial four plugins.
       native tab archives and tamper rejection. Run `40029236838` passed; the
       downloaded evidence artifact was independently verified. See the
       [stable CLI qualification](qa/MARKETPLACE_STABLE_CLI_2026_10_23.md).
-- [ ] Complete GitHub publication/retry/recovery/renewal
-      gates on that exact distributed ELF. Add UI-plus-native-tab archives,
-      multi-platform metadata, executable-byte tampering, unknown protocol/target
-      rejection and a metadata-only contribution path that never runs a backend.
-      Run native conformance on each supported executable host separately; the
-      Linux runner does not qualify macOS binaries or Electron behavior.
+- [x] Exercise stable `0.14.1` GitHub author publication/retry for all three kinds,
+      including multi-platform provider and UI-plus-native-tab archives, followed
+      by incremental signed-catalog publication/replays (14 entries, 21 archive
+      URLs). Renewal run `40032302758` failed after remote publication: its
+      four-read convergence ceiling was reached before the deadline. Separate
+      original-intent recovery runs `40033620593` and `40033732972` pass, preserving
+      request bytes, dates and complete remote inventory. The failed initial run
+      remains failed; this is not approval to promote the affected binary.
+- [x] Correct the source convergence ceiling while preserving the 30-second
+      deadline and per-retry authority/freshness checks (`1d998241b`). All 169
+      publisher tests, strict Clippy and 339 scripts tests pass; see the
+      [current evidence](qa/MARKETPLACE_STABLE_CLI_2026_10_23.md).
+- [ ] Integrate that correction onto canonical `main`, preserving its independent
+      tool versions; confirm the next CLI version, pass exact-tip CI and a CLI-only
+      dry run, then obtain explicit post-dry-run publishing approval. Qualify the
+      newly distributed executable before pin promotion. Delayed recovery of the
+      old `0.14.1` executable does not deliver the correction. No SDK or desktop
+      release is required solely to ship this CLI fix.
+- [ ] Run native conformance on each supported executable host separately;
+      inert fixture distribution and Linux runner checks do not qualify macOS
+      binaries, managed archive installation or Electron behavior.
 - [ ] Review/promote the three monorepo pins atomically, then deliver the
       reviewed matching public registry pin and workflow contract. Re-run
       trusted-base populated CI, including a native-backend tab and unchanged
