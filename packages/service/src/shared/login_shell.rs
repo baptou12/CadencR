@@ -138,7 +138,8 @@ mod tests {
     #[test]
     fn passwd_lookup_returns_an_absolute_shell() {
         let shell = passwd_login_shell().expect("current user has a passwd entry");
-        assert!(shell.starts_with('/'), "{shell}");
+        // No value in the message: CodeQL reads passwd-derived strings as secrets.
+        assert!(shell.starts_with('/'));
     }
 
     #[test]
