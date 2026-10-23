@@ -80,19 +80,11 @@ async fn main() -> anyhow::Result<()> {
                 .await
                 .with_context(|| format!("failed to bind Cadencr service listener on {addr}"))?;
 
-            // Hydrate process env from the user's login shell BEFORE any
-            // subprocesses (git, gpg, ssh, agent CLIs, PTY shells) get
-            // spawned. Without this, a Electron/launchd-launched binary
-            // inherits a stripped-down env (`PATH=/usr/bin:/bin:...`, no
-            // `GPG_TTY`, no `SSH_AUTH_SOCK`) and `git commit -S` fails for
-            // anyone who configured signing or agent sockets in their
-            // `.zshrc` / `.zprofile`. Best-effort: warns on failure,
-            // never blocks startup.
-            if let Err(error) = shared::app_paths::pin_roots() {
-                tracing::warn!(
-                    "could not resolve Cadencr data roots before env hydration: {error}"
-                );
-            }
+            // Freeze the data roots from Electron's launch env, then hydrate the
+            // login-shell env before any git, agent or PTY subprocess spawns.
+            shared::app_paths::pin_roots()
+                .map_err(anyhow::Error::msg)
+                .context("could not resolve Cadencr's data directories")?;
             shared::login_env::hydrate_from_login_shell().await;
 
             let db_path = config
