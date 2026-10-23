@@ -11,7 +11,7 @@ use crate::shared::security::constant_time_str_eq;
 const WS_TOKEN_PREFIX: &str = "cadencr-token.";
 
 /// Authenticate a WebSocket upgrade for whichever listener it arrived on.
-/// Returns the subprotocol to echo back (the browser rejects the handshake
+/// Returns the optional subprotocol to echo back (the browser rejects the handshake
 /// unless the server reflects it) plus, on the remote listener, the
 /// authenticated device id (used for revoke force-close + audit) — `None` on
 /// loopback, which trusts the launch token.
@@ -27,18 +27,30 @@ pub async fn authenticate_ws(
     headers: &HeaderMap,
     state: &AppState,
     remote: Option<&RemoteContext>,
-) -> Result<(String, Option<i64>), Response> {
+) -> Result<(Option<String>, Option<i64>), Response> {
     match remote {
         None => {
             validate_ws_origin(headers, state.frontend_port)?;
+            // Electron main and the development proxy add this header outside
+            // renderer JavaScript. Never echo it as a subprotocol: JS can read
+            // WebSocket.protocol after the upgrade.
+            if let Some(token) = headers.get(super::auth::AUTH_HEADER) {
+                if token
+                    .to_str()
+                    .is_ok_and(|token| constant_time_str_eq(token, &state.auth_token))
+                {
+                    return Ok((None, None));
+                }
+                return Err(unauthorized());
+            }
             let proto = validate_ws_token(headers, &state.auth_token)?;
-            Ok((proto.to_string(), None))
+            Ok((Some(proto.to_string()), None))
         }
         Some(ctx) => {
             validate_ws_origin_remote(headers, &ctx.allowed_origins)?;
             let (proto, device_id) =
                 validate_ws_token_remote(headers, &state.read_pool, &ctx.pepper).await?;
-            Ok((proto, Some(device_id)))
+            Ok((Some(proto), Some(device_id)))
         }
     }
 }
@@ -286,8 +298,47 @@ mod tests {
             ("sec-websocket-protocol", "cadencr-token.launch-token"),
         ]);
         let (proto, device_id) = authenticate_ws(&headers, &state, None).await.unwrap();
-        assert_eq!(proto, "cadencr-token.launch-token");
+        assert_eq!(proto.as_deref(), Some("cadencr-token.launch-token"));
         assert!(device_id.is_none(), "loopback carries no device id");
+    }
+
+    #[tokio::test]
+    async fn loopback_header_auth_never_echoes_the_launch_credential() {
+        let state = test_state("launch-token").await;
+        let headers = make_headers(&[("origin", "file://"), ("x-cadencr-token", "launch-token")]);
+        let (protocol, device_id) = authenticate_ws(&headers, &state, None).await.unwrap();
+        assert!(
+            protocol.is_none(),
+            "the bearer must not become WebSocket.protocol"
+        );
+        assert!(device_id.is_none());
+        let wrong = make_headers(&[
+            ("x-cadencr-token", "wrong"),
+            ("sec-websocket-protocol", "cadencr-token.launch-token"),
+        ]);
+        assert_eq!(
+            authenticate_ws(&wrong, &state, None)
+                .await
+                .unwrap_err()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn remote_ws_never_accepts_a_launch_header() {
+        let state = test_state("launch-token").await;
+        let headers = make_headers(&[
+            ("origin", "https://192.168.1.5:5006"),
+            ("x-cadencr-token", "launch-token"),
+        ]);
+        assert_eq!(
+            authenticate_ws(&headers, &state, Some(&remote_ctx()))
+                .await
+                .unwrap_err()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
     }
 
     #[tokio::test]

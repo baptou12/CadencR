@@ -92,7 +92,7 @@ pub async fn ws_handler(
             Ok(resolved) => resolved,
             Err(resp) => return resp,
         };
-    let ws = ws.protocols([selected_proto]);
+    let ws = ws.protocols(selected_proto);
     match device_id {
         Some(device_id) => {
             record_remote_connect(&state, device_id);

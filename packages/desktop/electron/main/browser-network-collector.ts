@@ -3,6 +3,8 @@ import type { Session } from "electron";
 import { redactBrowserHeaders } from "./browser-policy";
 import { BrowserNetworkHeadersCache, networkFailureReason } from "./browser-network-headers";
 import type { BrowserNetworkEntry } from "./browser-types";
+import { isCadencrBrowserUrl } from "./browser-self-origin-policy";
+import { isBrowserOriginPolicyReady } from "./runtime-config";
 
 type NetworkDetails = Electron.OnCompletedListenerDetails | Electron.OnErrorOccurredListenerDetails;
 
@@ -18,11 +20,23 @@ export class BrowserNetworkCollector {
       webContentsId: number,
       entry: Omit<BrowserNetworkEntry, "tabId">,
     ) => void,
+    private readonly isAutomationRequest: (webContentsId: number | undefined) => boolean = () =>
+      true,
   ) {}
 
   ensure(session: Session): void {
     if (this.instrumented.has(session)) return;
     this.instrumented.add(session);
+    // Apply to subframes, fetches and redirects as well as top-level loads.
+    // Human-only tabs retain ordinary browsing; shared/agent tabs cannot reach
+    // the privileged app or API, including via fetches from an approved site.
+    session.webRequest.onBeforeRequest((details, callback) => {
+      callback({
+        cancel:
+          this.isAutomationRequest(details.webContentsId) &&
+          (!isBrowserOriginPolicyReady() || isCadencrBrowserUrl(details.url)),
+      });
+    });
     session.webRequest.onBeforeSendHeaders((details, callback) => {
       this.headers.remember(details.id, details.requestHeaders);
       callback({ requestHeaders: details.requestHeaders });

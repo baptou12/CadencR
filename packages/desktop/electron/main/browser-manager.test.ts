@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setBrowserRemoteOrigins } from "./runtime-config";
 
 const buildContextMenu = vi.hoisted(() =>
   vi.fn((_items: Electron.MenuItemConstructorOptions[]) => ({ popup: vi.fn() })),
@@ -102,9 +103,11 @@ vi.mock("electron", () => {
       let findRequestId = 0;
       const contents = Object.assign(new EventEmitter(), {
         id: nextWebContentsId,
+        mainFrame: { detached: false, framesInSubtree: [] },
         session: {
           on: vi.fn(),
           webRequest: {
+            onBeforeRequest: vi.fn(),
             onBeforeSendHeaders: vi.fn(() => {
               if (failNetworkRegistration) throw new Error("network registration failed");
             }),
@@ -303,6 +306,7 @@ describe("BrowserManager", () => {
   });
 
   beforeEach(() => {
+    setBrowserRemoteOrigins([]);
     webContentsById.clear();
     createdViews.length = 0;
     sessionsByPartition.clear();

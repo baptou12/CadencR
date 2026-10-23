@@ -5,6 +5,7 @@ import Axios, {
   type InternalAxiosRequestConfig,
 } from "axios";
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { developmentApiBaseUrl } from "./runtime-origin";
 import { clearDeviceToken, isBrowserRemote, readDeviceToken } from "@/lib/remote/device-token";
 import {
   managedProviderOperationTimeout,
@@ -16,24 +17,13 @@ export { managedProviderOperationTimeout, publicationOperationTimeout } from "./
 
 export interface RuntimeConfig {
   baseUrl: string;
-  authToken: string | null;
 }
-
-const DEFAULT_DEV_BASE_URL = "http://127.0.0.1:5005";
 
 let runtimeConfig: RuntimeConfig | null = null;
 let runtimeConfigPromise: Promise<RuntimeConfig> | null = null;
 
 function envFallback(): RuntimeConfig {
-  const baseUrl = import.meta.env.VITE_API_URL;
-  const authToken = import.meta.env.VITE_API_TOKEN;
-  return {
-    baseUrl:
-      typeof baseUrl === "string" && baseUrl.length > 0
-        ? baseUrl.replace(/\/$/, "")
-        : DEFAULT_DEV_BASE_URL,
-    authToken: typeof authToken === "string" && authToken.length > 0 ? authToken : null,
-  };
+  return { baseUrl: developmentApiBaseUrl() };
 }
 
 async function loadRuntimeConfig(): Promise<RuntimeConfig> {
@@ -43,17 +33,14 @@ async function loadRuntimeConfig(): Promise<RuntimeConfig> {
   // at the local dev port (`127.0.0.1:5005`), which a remote device can't reach
   // and which would leak the wrong base URL into every request.
   if (isBrowserRemote()) {
-    return { baseUrl: location.origin, authToken: readDeviceToken() };
+    return { baseUrl: location.origin };
   }
 
   const fallback = envFallback();
   try {
     const result = await desktopBridge.runtimeConfig();
     if (result && typeof result.baseUrl === "string") {
-      return {
-        baseUrl: result.baseUrl,
-        authToken: result.authToken ?? fallback.authToken,
-      };
+      return { baseUrl: result.baseUrl };
     }
   } catch (err) {
     console.warn("[runtime-config] desktop runtime config unavailable:", err);
@@ -84,10 +71,10 @@ export function resolveApiBaseUrlSync(): string {
 export function getAuthTokenSync(): string | null {
   // In a remote browser the device token can change mid-session — revoked on
   // the host (→ 401 → cleared) or re-paired — so read it live instead of the
-  // value frozen into the runtime config at boot. The loopback launch token
-  // never changes, so there the cached value is correct.
+  // value frozen into the runtime config at boot. Desktop launch credentials
+  // are supplied by the main process and are never readable here.
   if (isBrowserRemote()) return readDeviceToken();
-  return getRuntimeConfigSync().authToken;
+  return null;
 }
 
 /** Reset cached runtime config. Tests only. */
