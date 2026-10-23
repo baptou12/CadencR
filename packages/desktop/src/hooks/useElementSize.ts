@@ -1,19 +1,20 @@
 import { useEffect, useState, type RefObject } from "react";
 
-/** Wait for a pane resize to settle before re-laying out (and re-rendering) pages. */
+/** Wait for a resize to settle before re-laying out (and re-rendering) what it sizes. */
 const RESIZE_SETTLE_MS = 120;
 
-interface ElementSize {
+export interface ElementSize {
   width: number;
   height: number;
 }
 
 /**
  * Content size of `ref`, updated once a resize settles — dragging a split
- * handle fires dozens of observations, and each change re-renders every
- * visible page at a new scale.
+ * handle fires dozens of observations, and each change re-renders everything
+ * laid out from the size (every visible page, every agent card). `null` while
+ * the element has no width.
  */
-function useElementSize(ref: RefObject<HTMLElement | null>): ElementSize | null {
+export function useElementSize(ref: RefObject<HTMLElement | null>): ElementSize | null {
   const [size, setSize] = useState<ElementSize | null>(null);
   useEffect(() => {
     const node = ref.current;

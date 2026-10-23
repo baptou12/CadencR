@@ -22,7 +22,7 @@ import {
 } from "./DocumentChrome";
 import { loadPdf } from "./pdfjs";
 import type { DocumentRendererProps } from "./types";
-import { useElementWidth } from "./useElementSize";
+import { useElementWidth } from "@/hooks/useElementSize";
 import "./pdf-document.css";
 
 interface PageSize {
