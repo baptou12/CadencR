@@ -78,8 +78,10 @@ fn verify_raw_with(
     use crate::download::DiscoveryObservation;
     let url = cadencr_registry_core::discovery_url(snapshot.repository(), branch)?;
     let deadline = std::time::Instant::now() + budget;
-    for attempt in 0..4 {
-        if attempt > 0 {
+    // Only an exact authenticated previous body may retry until the deadline.
+    let mut retry = false;
+    loop {
+        if retry {
             wait(pause.min(deadline.saturating_duration_since(std::time::Instant::now())));
             if std::time::Instant::now() >= deadline {
                 return Err(exhausted());
@@ -113,7 +115,7 @@ fn verify_raw_with(
             {
                 return Ok(())
             }
-            DiscoveryObservation::Previous if snapshot.previous_sha256().is_some() => {}
+            DiscoveryObservation::Previous if snapshot.previous_sha256().is_some() => retry = true,
             _ => {
                 return Err(PublisherError::new(
                     "public discovery: candidate size or digest does not match",
@@ -121,13 +123,10 @@ fn verify_raw_with(
             }
         }
     }
-    Err(exhausted())
 }
-
 fn exhausted() -> PublisherError {
     PublisherError::new("public discovery: convergence read budget exhausted")
 }
-
 fn verify_download(
     url: &str,
     sha256: &str,
@@ -158,7 +157,6 @@ fn verify_download(
         });
     combine_cleanup(result, temporary.remove())
 }
-
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
@@ -207,7 +205,7 @@ mod tests {
     fn deadline_covers_backoff_guard_and_body_and_cleanup_failure_is_terminal() {
         let (value, _) = super::super::fixture::setup_baseline();
         let previous = std::fs::read(value.directory.join("previous.json")).unwrap();
-        for mode in ["zero", "body", "guard", "backoff", "cleanup"] {
+        for mode in ["zero", "body", "guard", "backoff", "persistent", "cleanup"] {
             let reader = Reader {
                 bytes: if mode == "body" {
                     value.snapshot.canonical_envelope()
@@ -231,7 +229,7 @@ mod tests {
                 Ok(())
             };
             let wait = |duration| {
-                if mode == "backoff" {
+                if mode == "backoff" || mode == "persistent" {
                     std::thread::sleep(duration);
                 }
             };
@@ -251,7 +249,12 @@ mod tests {
                 .wait(&wait)
                 .call();
             assert!(result.is_err(), "{mode}");
-            if mode == "cleanup" {
+            if mode == "persistent" {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    "public discovery: convergence read budget exhausted"
+                );
+            } else if mode == "cleanup" {
                 assert!(result.unwrap_err().to_string().contains("identity changed"));
             }
             assert_eq!(reader.calls.get(), usize::from(mode != "zero"), "{mode}");
@@ -275,7 +278,11 @@ mod tests {
         let previous = std::fs::read(value.directory.join("previous.json")).unwrap();
         value.client.set_discovery_head(previous.clone());
         let raw = Sequence {
-            bodies: vec![previous.clone(), value.snapshot.canonical_envelope().into()],
+            bodies: [
+                vec![previous.clone(); 6],
+                vec![value.snapshot.canonical_envelope().into()],
+            ]
+            .concat(),
             calls: Cell::new(0),
         };
         let first = super::super::lifecycle::advance_with(
@@ -288,7 +295,7 @@ mod tests {
             &raw,
         )
         .unwrap();
-        assert_eq!(raw.calls.get(), 2);
+        assert_eq!(raw.calls.get(), 7);
         assert_eq!(value.client.discovery_counts().1, 1);
         let receipt_bytes =
             std::fs::read(value.directory.join(super::super::receipt::RECEIPT)).unwrap();
@@ -304,7 +311,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(first, replay);
-        assert_eq!(raw.calls.get(), 2);
+        assert_eq!(raw.calls.get(), 7);
         assert_eq!(value.client.discovery_counts().1, 1);
         assert_eq!(
             std::fs::read(value.directory.join(super::super::receipt::RECEIPT)).unwrap(),
@@ -315,7 +322,7 @@ mod tests {
     #[test]
     fn only_previous_bytes_can_delay_verification_and_never_skip_guards() {
         use super::super::fixture::Sequence;
-        for mode in "persistent tamper bootstrap drift expiry expiry_after".split_whitespace() {
+        for mode in "tamper bootstrap drift late_drift expiry expiry_after".split_whitespace() {
             let (value, _) = if mode == "bootstrap" {
                 super::super::fixture::setup()
             } else {
@@ -329,19 +336,18 @@ mod tests {
             if mode != "bootstrap" {
                 value.client.set_discovery_head(previous.clone());
             }
-            if mode == "drift" {
-                value.client.drift_discovery_at(4);
+            if mode == "drift" || mode == "late_drift" {
+                value
+                    .client
+                    .drift_discovery_at(if mode == "late_drift" { 8 } else { 4 });
             }
             let first = if mode == "tamper" {
                 b"tampered".to_vec()
             } else {
                 previous
             };
-            let bodies = if mode == "persistent" {
-                vec![first]
-            } else {
-                vec![first, value.snapshot.canonical_envelope().into()]
-            };
+            let mut bodies = vec![first; if mode == "late_drift" { 6 } else { 1 }];
+            bodies.push(value.snapshot.canonical_envelope().into());
             let raw = Sequence {
                 bodies,
                 calls: Cell::new(0),
@@ -373,7 +379,7 @@ mod tests {
             );
             assert_eq!(
                 raw.calls.get(),
-                if mode == "persistent" { 4 } else { 1 },
+                if mode == "late_drift" { 5 } else { 1 },
                 "{mode}"
             );
             assert_eq!(value.client.discovery_counts().1, 1);
