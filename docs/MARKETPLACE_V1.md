@@ -155,6 +155,8 @@ that work; an optional official tab must not hold up the initial four plugins.
       Repacked working-tree bytes pass actual Pi `0.85.1` isolated arm64 loopback
       text/usage/resume/cancellation checks; exact committed-candidate and managed
       installation qualification remain separate gates.
+      The [exact committed candidate](qa/MARKETPLACE_PI_COMMITTED_2026_10_23.md)
+      also passes extracted native loopback QA; managed admission remains pending.
 - [ ] Approve the initial supported native target matrix from actual runtime and
       managed-installation evidence. The x86_64 preparation path remains
       unqualified; preparation/readiness facts do not constitute that approval.
@@ -195,7 +197,11 @@ that work; an optional official tab must not hold up the initial four plugins.
 - [x] Publish stable `0.14.1` through the independent CLI workflow and verify its
       downloaded checksum/source binding as recorded above. Availability is
       complete; marketplace acceptance and pin promotion are not.
-- [ ] Run the existing networkless and GitHub publication/retry/recovery/renewal
+- [x] Execute the exact stable ELF's 91 networkless checks, including separate
+      native tab archives and tamper rejection. Run `40029236838` passed; the
+      downloaded evidence artifact was independently verified. See the
+      [stable CLI qualification](qa/MARKETPLACE_STABLE_CLI_2026_10_23.md).
+- [ ] Complete GitHub publication/retry/recovery/renewal
       gates on that exact distributed ELF. Add UI-plus-native-tab archives,
       multi-platform metadata, executable-byte tampering, unknown protocol/target
       rejection and a metadata-only contribution path that never runs a backend.
