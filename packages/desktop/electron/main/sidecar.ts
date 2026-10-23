@@ -5,6 +5,7 @@ import net from "node:net";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import { resolveConfigDir, resolveDatabasePath } from "./app-paths";
+import { childProcessEnv } from "./child-env";
 import { ensureLinuxSidecarExecutable } from "./sidecar-executable";
 import { createStartupWatchdog, recordStartupProgress, waitForHealthy } from "./sidecar-health";
 import { NEWER_DATABASE_RECOVERY_DETAIL, isNewerDatabaseStartupFailure } from "./startup-recovery";
@@ -236,7 +237,7 @@ export function serviceEnv(
   browserBridge?: BrowserBridgeSidecarEnv,
 ): NodeJS.ProcessEnv {
   return {
-    ...process.env,
+    ...childProcessEnv(process.env),
     CADENCR_AUTH_TOKEN: authToken,
     ...(browserBridge
       ? {

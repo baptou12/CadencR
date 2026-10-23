@@ -29,6 +29,8 @@ import {
 import { CommandPaletteWorktreeStep } from "@/components/command-palette/CommandPaletteWorktreeStep";
 import { CommandPaletteCommands } from "@/components/command-palette/CommandPaletteCommands";
 import { apiErrorMessage } from "@/lib/api-errors";
+import type { ShortcutId } from "@/lib/shortcuts/registry";
+import { keyboardEventInitForShortcut } from "@/lib/shortcuts/synthetic-event";
 import {
   DEFAULT_WORKTREE_MODE_KEY,
   defaultWorktreeModeFromSettings,
@@ -174,7 +176,12 @@ function useWorktreePaletteActions(
 
 type WorktreePaletteActions = ReturnType<typeof useWorktreePaletteActions>;
 
-function dispatchPaletteShortcut(init: KeyboardEventInit): void {
+function dispatchPaletteShortcut(id: ShortcutId): void {
+  const init = keyboardEventInitForShortcut(id);
+  if (!init) {
+    toast.error("This action needs a letter shortcut; reset it in Settings → Shortcuts.");
+    return;
+  }
   window.dispatchEvent(new KeyboardEvent("keydown", { ...init, bubbles: true }));
 }
 
@@ -239,7 +246,7 @@ function useCommandPaletteActions(
       handleNewProject,
       handleNewSession,
       handleOpenDiff: () => {
-        dispatchPaletteShortcut({ key: "D", code: "KeyD", metaKey: true, shiftKey: true });
+        dispatchPaletteShortcut("pane-git");
         close();
       },
       handleOpenSettings: () => {
@@ -248,7 +255,7 @@ function useCommandPaletteActions(
       },
       handleProjectPick,
       handleToggleTerminal: () => {
-        dispatchPaletteShortcut({ key: "`", code: "Backquote", ctrlKey: true });
+        dispatchPaletteShortcut("pane-terminal");
         close();
       },
     }),

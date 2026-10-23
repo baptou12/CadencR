@@ -76,7 +76,7 @@ export const SESSION_HINT_BEHAVIORS: readonly string[] = [
   "If browser MCP is enabled, agents can open local pages, inspect snapshots, and interact with the Browser tab under permission control.",
   "Browser reload and page-zoom shortcuts work inside Cadencr, so web QA does not require jumping to an external browser.",
   "Open Settings with one shortcut, edit what you need, and press Esc to drop straight back into the workspace.",
-  "Remote access lets a paired browser or PWA watch and steer the same local sessions when you are away from the Mac.",
+  "Remote access lets a paired browser or PWA watch and steer the same local sessions when you are away from this computer.",
   "Remote notifications can alert a paired device when a session finishes or needs attention.",
   "Status colors are reserved across the whole app: green means ready, orange means in-progress, red means retry — they never mean anything else.",
   "The keyboard-shortcuts reference is always one chord away, so you can look up a binding mid-stream without losing your place.",
