@@ -40,6 +40,7 @@ use crate::domain::neovim::ws::ws_routes as neovim_ws_routes;
 use crate::domain::ports::routes::ports_router;
 use crate::domain::projects::routes::projects_router;
 use crate::domain::schedules::routes::schedules_router;
+use crate::domain::search::routes::search_routes;
 use crate::domain::sessions::routes::sessions_router;
 use crate::domain::terminal::routes::terminal_router;
 use crate::domain::themes::themes_router;
@@ -226,6 +227,7 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(projects_router())
         .merge(features_router())
         .merge(recent_routes())
+        .merge(search_routes())
         .merge(ports_router())
         .merge(feature_layouts_router())
         .merge(diff_comments_router())
