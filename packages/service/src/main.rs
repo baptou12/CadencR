@@ -44,6 +44,7 @@ async fn main() -> anyhow::Result<()> {
                 config.settings_dir.as_deref(),
                 &db_path,
             );
+            domain::settings_store::dir::secure(&settings_dir)?;
             domain::settings_store::init(settings_dir);
             domain::agents::providers::installed::managed::trust::initialize_pinned_registry_trust(
             )
@@ -149,9 +150,7 @@ async fn main() -> anyhow::Result<()> {
                 config.settings_dir.as_deref(),
                 &db_path,
             );
-            if let Err(e) = std::fs::create_dir_all(&settings_dir) {
-                tracing::warn!(dir = %settings_dir.display(), "failed to create settings dir: {e}");
-            }
+            domain::settings_store::dir::secure(&settings_dir)?;
             // Resolve to an absolute path so the "Edit JSON" / "Copy path" UI
             // shows a usable location. In dev the dir derives from a relative
             // `--db-path`, which would otherwise surface as a confusing

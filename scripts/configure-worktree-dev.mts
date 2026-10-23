@@ -1,13 +1,5 @@
 import { spawnSync } from "node:child_process";
-import {
-  constants as fsConstants,
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -16,10 +8,14 @@ import {
   portMismatches,
   readEnvFile,
   updateEnvFile,
+  writePrivateEnv,
   urlPort,
   validPort,
 } from "./dev-env.mjs";
 import { gitCheckout, listGitWorktrees } from "./git-worktrees.mts";
+
+import { cloneOrCopy } from "./private-database-copy.mts";
+export { cloneOrCopy };
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repoRoot = dirname(dirname(scriptPath));
@@ -135,24 +131,6 @@ function nextPort(start: number, reserved: Set<number>, listening: ReadonlySet<n
   throw new Error(`No free TCP port available from ${start}`);
 }
 
-/**
- * Copy `source` to `target` as a copy-on-write clone when the filesystem
- * supports it, so a multi-GB dev database shares its blocks with the main
- * checkout until either side writes. Node's FICLONE flag is a no-op on macOS
- * (libuv never calls clonefile), so APFS goes through `cp -c`; elsewhere
- * FICLONE reflinks on btrfs/XFS and silently falls back to a plain copy.
- */
-export function cloneOrCopy(source: string, target: string, platform = process.platform): void {
-  if (platform === "darwin") {
-    const result = spawnSync("cp", ["-c", source, target], { encoding: "utf8" });
-    if (result.status === 0) return;
-    console.warn(
-      `copy-on-write clone failed (${result.stderr?.trim() || result.error?.message}); copying ${source} instead`,
-    );
-  }
-  copyFileSync(source, target, fsConstants.COPYFILE_FICLONE);
-}
-
 /** Copy the main checkout's `.env` files; returns whether it cloned the database. */
 function copyBaseFiles(mainRoot: string, currentRoot: string): boolean {
   for (const envPath of [DESKTOP_ENV, SERVICE_ENV]) {
@@ -161,11 +139,11 @@ function copyBaseFiles(mainRoot: string, currentRoot: string): boolean {
         `Missing main-checkout file: ${join(mainRoot, envPath)} (run \`pnpm setup:dev\` in the main checkout)`,
       );
     }
-    copyFileSync(join(mainRoot, envPath), join(currentRoot, envPath));
+    writePrivateEnv(join(currentRoot, envPath), readFileSync(join(mainRoot, envPath)));
   }
   // The repo-root .env is a legacy token file; nothing requires it anymore.
   if (existsSync(join(mainRoot, ".env"))) {
-    copyFileSync(join(mainRoot, ".env"), join(currentRoot, ".env"));
+    writePrivateEnv(join(currentRoot, ".env"), readFileSync(join(mainRoot, ".env")));
   }
   // Seed the worktree with the main checkout's dev data when there is any. A
   // main checkout that never ran the service has none; the worktree's service
