@@ -118,7 +118,7 @@ jobs:
           pnpm rust -- build -p cadencr-cli
           CADENCR_OFFICIAL_PLUGIN_TEST_CLI="$GITHUB_WORKSPACE/target/debug/cadencr" \
           CADENCR_DEVELOPMENT_FIXTURE_CLI="$GITHUB_WORKSPACE/target/debug/cadencr" \
-            node --test scripts/official-plugin-release.test.mjs scripts/qualify-author-cli.test.mjs
+            node --test scripts/official-plugin-release.test.mjs scripts/official-plugin-native-tab.test.mjs scripts/qualify-author-cli.test.mjs
 
   web:
     name: Web (format, lint, types, knip)

@@ -282,7 +282,11 @@ for (const kind of ["theme", "provider", "tab"]) {
       join(f.root, "plugins/release-policy.json"),
       c.files["plugins/release-policy.json"],
     );
-    for (const name of ["official-plugin-release.sh", "official-plugin-prepare.py"])
+    for (const name of [
+      "official-plugin-release.sh",
+      "official-plugin-prepare.py",
+      "official_plugin_pack.py",
+    ])
       cpSync(resolve("scripts", name), join(f.root, "scripts", name));
     cpSync(join(c.root, "mock/git"), join(f.root, "mock/git"));
     const fetch = join(f.root, "tooling/marketplace-registry/scripts/ci");

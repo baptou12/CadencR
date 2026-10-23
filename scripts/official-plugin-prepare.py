@@ -4,9 +4,6 @@ Never import, build, or execute candidate content. Prepared payloads must alread
 be reviewed tracked blobs with an exact policy allowlist, including file modes.
 """
 import contextlib
-import hashlib
-import json
-import math
 import os
 import pathlib
 import re
@@ -14,56 +11,11 @@ import subprocess
 import sys
 import tempfile
 import threading
-import urllib.parse
 
-REPOSITORY = "merkr-software/CadencR"
+from official_plugin_pack import REPOSITORY, digest, fail, json_bytes, pack, parse_json, relative
+
 MAX_FILE = 32 * 1024 * 1024
 MAX_TREE = 64 * 1024 * 1024
-
-
-def fail(message):
-    raise SystemExit(message)
-
-
-def digest(data):
-    return hashlib.sha256(data).hexdigest()
-
-
-def unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate JSON object key")
-        result[key] = value
-    return result
-
-
-def reject_constant(_value):
-    raise ValueError("non-finite JSON number")
-
-
-def finite_float(value):
-    number = float(value)
-    if not math.isfinite(number):
-        raise ValueError("non-finite JSON number")
-    return number
-
-
-def parse_json(data):
-    return json.loads(data, object_pairs_hook=unique_object,
-                      parse_constant=reject_constant, parse_float=finite_float)
-
-
-def json_bytes(value):
-    return (json.dumps(value, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()
-
-
-def relative(value):
-    if (not isinstance(value, str) or not value or "\\" in value
-            or any(part in ("", ".", "..") or part.startswith(".")
-                   for part in value.split("/"))):
-        fail("invalid reviewed source path")
-    return value
 
 
 def git(repo, *args):
@@ -186,7 +138,8 @@ def stage_payload(repo, commit, entry, target, specification, stage):
         if (file_mode not in ("100644", "100755") or source_mode not in ("100644", "100755")
                 or actual.get(sources[name], ())[:2] != (source_mode, "blob")):
             fail("unreviewed payload mode or non-regular file")
-        if entry["kind"] != "provider" and file_mode != "100644":
+        if (entry["kind"] != "provider" and not (entry["kind"] == "tab" and target.startswith("backend-"))
+                and file_mode != "100644"):
             fail("web/declarative payload must be non-executable")
         if not re.fullmatch("[0-9a-f]{64}", declaration["sha256"]):
             fail("payload digest review is PENDING")
@@ -200,6 +153,7 @@ def stage_payload(repo, commit, entry, target, specification, stage):
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(data)
             destination.chmod(0o755 if declaration["mode"] == "100755" else 0o644)
+
 
 def metadata(repo, commit, entry, version):
     path = relative(entry.get("package"))
@@ -228,62 +182,6 @@ def metadata(repo, commit, entry, version):
     if identity.get("repository") != "https://github.com/" + REPOSITORY:
         fail("package template source repository mismatch")
     return package, identity
-
-
-def pack(run, work, entry, package, stages, tag, version):
-    kind = entry["kind"]
-    body = package["package"]
-    identity = body["agent" if kind == "provider" else kind]
-    distribution = identity.get("distribution", {})
-    targets = distribution.get("binary") if kind == "provider" else {kind: distribution}
-    if not isinstance(targets, dict) or set(targets) != set(stages):
-        fail("package targets differ from reviewed payload targets")
-    names = {}
-    for target in sorted(stages):
-        name = kind + "-" + entry["id"] + "-" + version
-        if kind == "provider":
-            if not re.fullmatch("[a-z0-9]+-[a-z0-9_]+", target):
-                fail("invalid reviewed target")
-            name += "-" + target
-        name += ".tar.gz"
-        selected = targets[target]
-        selected["archive"] = ("https://github.com/" + REPOSITORY + "/releases/download/"
-                               + urllib.parse.quote(tag, safe="-_.!~*\'()") + "/" + name)
-        selected["sha256"] = "0" * 64
-        names[target] = name
-    archives = []
-    for target, stage in sorted(stages.items()):
-        name = names[target]
-        selected = targets[target]
-        archive = work / name
-        first = None
-        for index in range(2):
-            destination = archive if index == 0 else work / ("repeat-" + name)
-            if kind == "provider":
-                input_path = work / "package-input.json"
-                input_path.write_bytes(json_bytes(body))
-                args = ("registry", "pack-provider", "--package", str(input_path), "--target", target)
-                receipt_key = {"target": target}
-            else:
-                run("plugin", "validate", str(stage), "--kind", kind)
-                args = ("registry", "pack-" + kind)
-                if kind == "tab":
-                    input_path = work / "tab-package-input.json"
-                    input_path.write_bytes(json_bytes(package))
-                    args += ("--package", str(input_path))
-                receipt_key = {"kind": kind}
-            receipt = parse_json(run(*args, "--directory", str(stage), "--output", str(destination)))
-            data = destination.read_bytes()
-            expected = dict(receipt_key, archive=str(destination), sha256=digest(data), size=len(data))
-            if receipt != expected:
-                fail("packaging receipt mismatch")
-            if index == 0:
-                first = data
-                selected["sha256"] = digest(data)
-            elif first != data:
-                fail("nondeterministic canonical packaging")
-        archives.append({"target": target, "name": name, "sha256": digest(first), "size": len(first)})
-    return archives
 
 
 def prepare(mode, repo, commit, tag, output):
@@ -323,7 +221,9 @@ def prepare(mode, repo, commit, tag, output):
     if not isinstance(payloads, dict) or not payloads:
         fail("reviewed payload targets are PENDING")
     for index, (target, specification) in enumerate(sorted(payloads.items())):
-        stage = work / (entry["id"] if entry["kind"] == "tab" else "stage-" + str(index))
+        parent = work / ("payload-" + str(index))
+        parent.mkdir()
+        stage = parent / (entry["id"] if entry["kind"] == "tab" else "stage")
         stage_payload(repo, commit, entry, target, specification, stage)
         stages[target] = stage
     root = pathlib.Path(os.environ["ROOT"])
