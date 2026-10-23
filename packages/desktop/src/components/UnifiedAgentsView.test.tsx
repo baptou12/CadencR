@@ -136,8 +136,8 @@ describe("UnifiedAgentsView filter prompt", () => {
     const { user } = render(<UnifiedAgentsView />);
 
     const filter = screen.getByTestId("filter-value");
-    const stepper = screen.getByLabelText("Agents per row");
-    const refresh = screen.getByRole("button", { name: "Refresh" });
+    const stepper = screen.getByLabelText("Maximum agents per row");
+    const refresh = screen.getByRole("button", { name: "Reload agents" });
 
     expect(filter.compareDocumentPosition(stepper) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(

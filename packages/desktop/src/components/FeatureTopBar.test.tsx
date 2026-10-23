@@ -82,6 +82,16 @@ vi.mock("@/api/generated", () => ({
   getCompareUrl: vi.fn(),
 }));
 
+// The embedded (unified-grid) header reads live attention; the full store
+// graph would need the whole generated API client.
+vi.mock("@/hooks/useFeatureAttention", () => ({
+  useFeatureAttention: () => ({ state: "idle", sourceFeatureId: 0 }),
+}));
+
+vi.mock("@/stores/session-status-selectors", () => ({
+  useFeatureStatus: () => ({ status: "idle", kind: null }),
+}));
+
 // CustomActionsBar pulls in network hooks we don't care about for these tests.
 vi.mock("./CustomActionsBar", () => ({
   CustomActionsBar: () => {

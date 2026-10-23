@@ -60,8 +60,9 @@ export function FilterEditorShell({
           />
         }
         placeholder={
-          <div className="pointer-events-none absolute top-1/2 left-7 -translate-y-1/2 select-none font-mono text-[12.5px] leading-5 text-muted-foreground">
-            Filter by agent name… type / for last, project, sort, exclude, pin
+          <div className="pointer-events-none absolute top-1/2 right-16 left-8 -translate-y-1/2 truncate select-none text-[12.5px] leading-5 text-muted-foreground">
+            Filter agents by name · type <kbd className="font-mono text-foreground/70">/</kbd> for
+            project, time, sort…
           </div>
         }
         ErrorBoundary={LexicalErrorBoundary}

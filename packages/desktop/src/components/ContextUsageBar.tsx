@@ -186,7 +186,10 @@ function ContextUsageDetails({
 
 function PromptKeyboardHint(): ReactElement {
   return (
-    <span className="hidden shrink-0 items-center gap-1.5 text-[10px] font-medium text-muted-foreground md:inline-flex">
+    <span
+      data-prompt-keyboard-hint
+      className="hidden shrink-0 items-center gap-1.5 text-[10px] font-medium text-muted-foreground md:inline-flex"
+    >
       <KbdShortcut keys={["enter"]} variant="hint" />
       <span>send</span>
       <span className="text-muted-foreground">·</span>
