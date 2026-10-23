@@ -53,7 +53,11 @@ export function installApplicationMenu(onQuit: () => void): void {
     ...(devViewSubmenu.length > 0 ? [{ label: "View", submenu: devViewSubmenu }] : []),
     {
       label: "Window",
-      submenu: [{ role: "minimize" }, { role: "zoom" }, { role: "togglefullscreen" }],
+      // `zoom` is the macOS title-bar zoom; it does nothing elsewhere.
+      submenu:
+        process.platform === "darwin"
+          ? [{ role: "minimize" }, { role: "zoom" }, { role: "togglefullscreen" }]
+          : [{ role: "minimize" }, { role: "togglefullscreen" }],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

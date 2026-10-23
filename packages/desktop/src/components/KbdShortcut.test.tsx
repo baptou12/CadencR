@@ -29,12 +29,12 @@ describe("KbdShortcut", () => {
   it("renders the ArrowUp shift icon for both the shift token and the ⇧ glyph", () => {
     const { container, rerender } = render(<KbdShortcut keys={["shift"]} />);
     expect(container.querySelector(".lucide-arrow-up")).toBeInTheDocument();
-    expect(container.querySelector("svg")?.className.baseVal).toContain("-translate-y-px");
+    expect(container.querySelector("svg")?.getAttribute("class")).toContain("-translate-y-px");
     expect(screen.queryByText("⇧")).toBeNull();
 
     rerender(<KbdShortcut keys={["⇧"]} />);
     expect(container.querySelector(".lucide-arrow-up")).toBeInTheDocument();
-    expect(container.querySelector("svg")?.className.baseVal).toContain("-translate-y-px");
+    expect(container.querySelector("svg")?.getAttribute("class")).toContain("-translate-y-px");
     expect(screen.queryByText("⇧")).toBeNull();
   });
 
