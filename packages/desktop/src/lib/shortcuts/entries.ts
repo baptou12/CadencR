@@ -23,6 +23,7 @@ import { BROWSER_SHORTCUTS } from "./entries-browser";
 import { EDITOR_SHORTCUTS } from "./entries-editor";
 import { GIT_SHORTCUTS } from "./entries-git";
 import { MODEL_PICKER_SHORTCUTS } from "./entries-model-picker";
+import { PALETTE_SHORTCUTS } from "./entries-palette";
 import { SIDEBAR_SHORTCUTS } from "./entries-sidebar";
 import { TERMINAL_SHORTCUTS } from "./entries-terminal";
 
@@ -387,6 +388,7 @@ export const SHORTCUTS = [
   ...EDITOR_SHORTCUTS,
   ...BROWSER_SHORTCUTS,
   ...MODEL_PICKER_SHORTCUTS,
+  ...PALETTE_SHORTCUTS,
 ] as const;
 
 export type ShortcutId = (typeof SHORTCUTS)[number]["id"];

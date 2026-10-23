@@ -37,7 +37,7 @@ export function useAgentPromptShortcuts({
       onOpenModelPicker();
     },
     "agent",
-    hotkeyOpts,
+    { enabled: agentTabActive && onOpenModelPicker !== undefined },
   );
   useScopedShortcut(
     "agent-maximize",
@@ -57,7 +57,7 @@ export function useAgentPromptShortcuts({
       onPermissionModeToggle();
     },
     "agent",
-    hotkeyOpts,
+    { enabled: agentTabActive && onPermissionModeToggle !== undefined },
   );
   useScopedShortcut(
     "agent-collapse",

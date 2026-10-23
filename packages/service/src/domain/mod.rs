@@ -48,6 +48,7 @@ pub mod push;
 pub mod remote;
 pub mod runtime_stream;
 pub mod schedules;
+pub mod search;
 pub mod session_status;
 pub mod sessions;
 pub mod settings;
