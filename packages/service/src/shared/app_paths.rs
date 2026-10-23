@@ -27,14 +27,54 @@
 //! passes it to the spawned Rust sidecar.
 
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 const APP_DIRNAME: &str = "cadencr";
 const MACOS_LEGACY_DIRNAME: &str = ".cadencr";
 
+#[derive(Clone, Copy)]
 enum Kind {
     Data,
     Config,
     Cache,
+}
+
+#[derive(Debug, PartialEq)]
+struct Roots {
+    data: PathBuf,
+    config: PathBuf,
+    cache: PathBuf,
+}
+
+impl Roots {
+    fn resolve() -> Result<Self, String> {
+        Ok(Self {
+            data: resolve_from_env(Kind::Data)?,
+            config: resolve_from_env(Kind::Config)?,
+            cache: resolve_from_env(Kind::Cache)?,
+        })
+    }
+
+    fn get(&self, kind: Kind) -> PathBuf {
+        match kind {
+            Kind::Data => self.data.clone(),
+            Kind::Config => self.config.clone(),
+            Kind::Cache => self.cache.clone(),
+        }
+    }
+}
+
+static PINNED_ROOTS: OnceLock<Roots> = OnceLock::new();
+
+/// Freeze the roots from the environment the desktop app launched us with.
+/// `main` calls this before login-shell hydration, which may import `XDG_*`
+/// values the desktop session lacks: Electron picked the database from the
+/// launch env, so worktrees, credentials and plugins must resolve from it too.
+/// Spawned agents still get the shell's `XDG_*` for their own config.
+pub fn pin_roots() -> Result<(), String> {
+    let roots = Roots::resolve()?;
+    let _ = PINNED_ROOTS.set(roots);
+    Ok(())
 }
 
 /// Root directory for Cadencr's persistent user data (database, worktrees).
@@ -83,6 +123,17 @@ pub fn logs_dir() -> Result<PathBuf, String> {
 }
 
 fn resolve(kind: Kind) -> Result<PathBuf, String> {
+    resolve_pinned(PINNED_ROOTS.get(), kind)
+}
+
+fn resolve_pinned(pinned: Option<&Roots>, kind: Kind) -> Result<PathBuf, String> {
+    match pinned {
+        Some(roots) => Ok(roots.get(kind)),
+        None => resolve_from_env(kind),
+    }
+}
+
+fn resolve_from_env(kind: Kind) -> Result<PathBuf, String> {
     if cfg!(target_os = "macos") {
         let home =
             dirs::home_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
@@ -147,6 +198,53 @@ mod tests {
             Some(v) => std::env::set_var("XDG_DATA_HOME", v),
             None => std::env::remove_var("XDG_DATA_HOME"),
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pinned_roots_ignore_xdg_changes_made_after_pinning() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let launch = tempfile::tempdir().unwrap();
+        let shell = tempfile::tempdir().unwrap();
+        let prev = std::env::var_os("XDG_DATA_HOME");
+        std::env::set_var("XDG_DATA_HOME", launch.path());
+        let pinned = Roots::resolve().unwrap();
+        // Login-shell hydration exports a different root afterwards.
+        std::env::set_var("XDG_DATA_HOME", shell.path());
+
+        assert_eq!(
+            resolve_pinned(Some(&pinned), Kind::Data).unwrap(),
+            launch.path().join("cadencr")
+        );
+        assert_eq!(
+            resolve_pinned(None, Kind::Data).unwrap(),
+            shell.path().join("cadencr")
+        );
+        match prev {
+            Some(v) => std::env::set_var("XDG_DATA_HOME", v),
+            None => std::env::remove_var("XDG_DATA_HOME"),
+        }
+    }
+
+    #[test]
+    fn pinned_roots_answer_every_kind() {
+        let roots = Roots {
+            data: PathBuf::from("/d"),
+            config: PathBuf::from("/c"),
+            cache: PathBuf::from("/k"),
+        };
+        assert_eq!(
+            resolve_pinned(Some(&roots), Kind::Data).unwrap(),
+            PathBuf::from("/d")
+        );
+        assert_eq!(
+            resolve_pinned(Some(&roots), Kind::Config).unwrap(),
+            PathBuf::from("/c")
+        );
+        assert_eq!(
+            resolve_pinned(Some(&roots), Kind::Cache).unwrap(),
+            PathBuf::from("/k")
+        );
     }
 
     #[cfg(target_os = "linux")]

@@ -88,6 +88,11 @@ async fn main() -> anyhow::Result<()> {
             // anyone who configured signing or agent sockets in their
             // `.zshrc` / `.zprofile`. Best-effort: warns on failure,
             // never blocks startup.
+            if let Err(error) = shared::app_paths::pin_roots() {
+                tracing::warn!(
+                    "could not resolve Cadencr data roots before env hydration: {error}"
+                );
+            }
             shared::login_env::hydrate_from_login_shell().await;
 
             let db_path = config
