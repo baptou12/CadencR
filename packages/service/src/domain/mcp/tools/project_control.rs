@@ -201,6 +201,25 @@ fn require_source_session(ctx: &McpContext, tool: &str) -> Result<i64, String> {
         .ok_or_else(|| format!("{tool} requires a source session id"))
 }
 
+/// The caller's identity every control request starts from.
+fn source_request(ctx: &McpContext, tool: &str) -> Result<serde_json::Value, String> {
+    let source_session_id = require_source_session(ctx, tool)?;
+    Ok(json!({
+        "source_feature_id": ctx.feature_id,
+        "source_session_id": source_session_id,
+    }))
+}
+
+/// Copy the optional `fields` the agent passed, as it sent them: the service's
+/// typed request rejects a wrong type instead of reading it as absent.
+fn relay_fields(args: &serde_json::Value, request: &mut serde_json::Value, fields: &[&str]) {
+    for field in fields {
+        if let Some(value) = args.get(*field) {
+            request[*field] = value.clone();
+        }
+    }
+}
+
 pub async fn spawn_session_with_client(
     args: &serde_json::Value,
     ctx: &McpContext,

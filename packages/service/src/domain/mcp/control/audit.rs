@@ -52,3 +52,13 @@ pub(super) fn result_size_bytes<T: serde::Serialize>(value: &T) -> i64 {
         .map(|bytes| i64::try_from(bytes.len()).unwrap_or(i64::MAX))
         .unwrap_or(0)
 }
+
+/// The audit row's status, error, and result size for a handler's outcome.
+pub(super) fn audit_outcome<T: serde::Serialize>(
+    result: &Result<T, AppError>,
+) -> (&'static str, Option<String>, i64) {
+    match result {
+        Ok(value) => ("ok", None, result_size_bytes(value)),
+        Err(error) => ("error", Some(error.to_string()), 0),
+    }
+}
