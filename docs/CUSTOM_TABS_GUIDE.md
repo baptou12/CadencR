@@ -367,6 +367,11 @@ as long as it implements [TAB_BACKEND_PROTOCOL.md](./TAB_BACKEND_PROTOCOL.md).
 is a complete one: a Rust backend that lists listening ports and stops
 servers started in the conversation's folder, with `npm run build:backend`
 building it into `bin/<platform>/`.
+[`examples/custom-tabs/native-starter`](../examples/custom-tabs/native-starter)
+is the one to start from in your own repository: it builds against the
+published crate and npm packages, and its GitHub Actions workflow builds the
+three platforms, validates the tab and packs the archives below into a
+release.
 
 ### Network access and secrets
 

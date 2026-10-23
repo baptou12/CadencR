@@ -101,6 +101,17 @@ jobs:
           pnpm rust -- clippy --locked --manifest-path "$MANIFEST" --all-targets -- -D warnings
           pnpm rust -- test --locked --manifest-path "$MANIFEST" -- --nocapture
 
+      # Same, but built against the crates.io release of cadencr-tab-backend
+      # its Cargo.lock pins, as in an author's repository.
+      - name: Native starter template backend
+        timeout-minutes: 10
+        env:
+          MANIFEST: examples/custom-tabs/native-starter/backend/Cargo.toml
+        run: |
+          pnpm rust -- fmt --manifest-path "$MANIFEST" -- --check
+          pnpm rust -- clippy --locked --manifest-path "$MANIFEST" --all-targets -- -D warnings
+          pnpm rust -- test --locked --manifest-path "$MANIFEST" -- --nocapture
+
       - name: Official release orchestration against the current Rust CLI
         timeout-minutes: 5
         run: |
