@@ -47,11 +47,6 @@ pub fn inspect_signed_tab_folder(directory: &Path) -> TabFolderReport {
 }
 
 fn inspect(directory: &Path, probe_backend: bool) -> TabFolderReport {
-    let folder_name = directory
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default()
-        .to_string();
     let mut report = TabFolderReport {
         directory: directory.to_path_buf(),
         manifest: None,
@@ -65,6 +60,14 @@ fn inspect(directory: &Path, probe_backend: bool) -> TabFolderReport {
         Err(error) => return unreadable(report, format!("cannot open the tab folder: {error}")),
     };
     report.directory = root.clone();
+    // The name as given (a symlinked folder keeps its link's name); `.` and
+    // `..` have none, so theirs is the resolved folder's.
+    let folder_name = directory
+        .file_name()
+        .or_else(|| root.file_name())
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_string();
     let bytes = match read_bounded(&root, MANIFEST_FILE_NAME, MAX_MANIFEST_BYTES) {
         Ok(Some(bytes)) => bytes,
         Ok(None) => return unreadable(report, format!("{MANIFEST_FILE_NAME} is missing")),
@@ -291,6 +294,19 @@ mod tests {
         assert!(codes(&report.findings.errors).contains(&"ID_MISMATCH"));
         assert!(report.manifest.is_some());
         assert!(report.valid_manifest().is_none());
+    }
+
+    #[test]
+    fn a_dot_path_is_named_by_the_folder_it_resolves_to() {
+        let (_root, dir) = folder("changed-files-graph", json!({}));
+        std::fs::create_dir(dir.join("src")).unwrap();
+        // A path with no final name, like the `.` of `cadencr plugin validate .`.
+        let report = inspect_tab_folder(&dir.join("src").join(".."));
+        assert!(
+            !codes(&report.findings.errors).contains(&"ID_MISMATCH"),
+            "{:?}",
+            report.findings.errors
+        );
     }
 
     #[test]
