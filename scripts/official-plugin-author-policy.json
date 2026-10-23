@@ -9,5 +9,6 @@
   "author_cli_qualification_sha256": "PENDING",
   "author_cli_pin_sha256": "PENDING",
   "environment_id": "PENDING",
-  "admin_bypass_reviewed_disabled": "PENDING"
+  "admin_bypass_reviewed_disabled": "PENDING",
+  "environment_review_policy": "PENDING"
 }

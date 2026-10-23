@@ -242,6 +242,11 @@ that work; an optional official tab must not hold up the initial four plugins.
       verify the protected Rust publisher. QA keys/tokens never become production
       authority, and author publication does not grant catalog signing authority.
       SDK/CLI release credentials/environments must not be reused implicitly.
+      The author stage now checks an explicit reviewer policy: exact numeric
+      reviewer identities/types and `prevent_self_review`, bound to the pinned
+      environment ID. A sole reviewed owner may approve their own dispatch when
+      that policy explicitly selects `false`; no second reviewer is inferred.
+      Production policy remains `PENDING` until the real environment is reviewed.
 
 ### Wave 5 — Publish the initial plugins and populate signed feeds
 

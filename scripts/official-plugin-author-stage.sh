@@ -17,6 +17,8 @@ def tracked(path):
     return git('show', commit + ':' + path)
 repo, commit, tag, expected_digest, output = sys.argv[1:]
 root = pathlib.Path(os.environ['ROOT'])
+sys.path.insert(0, str(root/'scripts'))
+from official_plugin_author_review import validate_review_policy, validate_remote_reviewers
 if not re.fullmatch('[0-9a-f]{40}', commit) or not re.fullmatch('[0-9a-f]{64}', expected_digest): fail('AUTHOR_INPUT_INVALID')
 try:
     policy = json.loads((root/'scripts/official-plugin-author-policy.json').read_bytes())
@@ -55,6 +57,7 @@ try:
         return json.loads(body)
     remote = api('')
     if remote.get('id') != policy['repository_id'] or remote.get('full_name') != policy['repository']: fail('AUTHOR_REPOSITORY_INVALID')
+    reviewed = validate_review_policy(policy.get('environment_review_policy'), policy.get('environment_id'))
     protected = api('/environments/official-plugin-publication')
     rules = protected.get('protection_rules',[])
     reviewers = [r for r in rules if r.get('type') == 'required_reviewers']
@@ -66,7 +69,7 @@ try:
         if protected['can_admins_bypass'] is not False: fail('AUTHOR_ENVIRONMENT_UNPROTECTED')
     elif policy.get('admin_bypass_reviewed_disabled') is not True:
         fail('AUTHOR_ENVIRONMENT_REVIEW_REQUIRED')
-    if len(reviewers) != 1 or reviewers[0].get('prevent_self_review') is not True or not reviewers[0].get('reviewers'): fail('AUTHOR_ENVIRONMENT_UNPROTECTED')
+    validate_remote_reviewers(reviewers, reviewed)
     branches = protected.get('deployment_branch_policy',{})
     if branches != {'protected_branches':False,'custom_branch_policies':True}: fail('AUTHOR_ENVIRONMENT_UNPROTECTED')
     branch_rules = api('/environments/official-plugin-publication/deployment-branch-policies?per_page=100')
