@@ -1152,6 +1152,38 @@ export const FeatureStatus = {
   archived: "archived",
 } as const;
 
+/**
+ * One conversation as the command palette searches it: active and archived
+ * alike, with just what a result row and its preview name.
+ */
+export interface ConversationIndexEntry {
+  /**
+   * When it was archived; `None` for an active conversation.
+   * @nullable
+   */
+  archived_at?: string | null;
+  created_at: string;
+  id: number;
+  is_pinned: boolean;
+  /** @nullable */
+  label?: string | null;
+  /** Latest user message across the conversation's sessions, else its creation time. */
+  last_activity_at: string;
+  project_id: number;
+  /**
+   * Provider of the latest agent session, else the conversation's setting.
+   * @nullable
+   */
+  runtime_provider?: string | null;
+  status: FeatureStatus;
+  title: string;
+  /**
+   * Branch recorded for the conversation's worktree, when it has one.
+   * @nullable
+   */
+  worktree_branch?: string | null;
+}
+
 export interface ConversationReferenceCandidate {
   feature_id: number;
   feature_status: FeatureStatus;
@@ -3305,6 +3337,22 @@ export interface MessageFullContentResponse {
 export interface MessagePreviewResponse {
   /** @nullable */
   preview?: string | null;
+}
+
+/**
+ * The most recent message of one conversation that matches the query.
+ */
+export interface MessageSearchHit {
+  created_at: string;
+  feature_id: number;
+  feature_status: FeatureStatus;
+  feature_title: string;
+  message_id: number;
+  project_id: number;
+  /** `user` or `assistant`. */
+  role: string;
+  /** Text around the match; each matched word is wrapped in U+0002 … U+0003. */
+  snippet: string;
 }
 
 export interface ModeChangedPayload {
@@ -6488,6 +6536,27 @@ export type ListSchedulesParams = {
    * @nullable
    */
   project_id?: number | null;
+};
+
+export type SearchMessagesParams = {
+  /**
+   * Words to find; each one matches as a prefix, all of them must appear.
+   */
+  q: string;
+  /**
+   * How many conversations to return (1–30, default 8).
+   * @nullable
+   */
+  limit?: number | null;
+  /**
+   * Restrict the search to one project.
+   * @nullable
+   */
+  project_id?: number | null;
+  /**
+   * Leave archived conversations out (default: included).
+   */
+  active_only?: boolean;
 };
 
 export type ListConversationReferencesParams = {
@@ -27843,6 +27912,236 @@ export const useRunSchedule = <TError = ErrorType<unknown>, TContext = unknown>(
 > => {
   return useMutation(getRunScheduleMutationOptions(options), queryClient);
 };
+
+/**
+ * @summary Every conversation, active and archived, most recently touched first: the
+command palette ranks them client-side as the user types.
+ */
+export const listConversationIndex = (signal?: AbortSignal) => {
+  return customInstance<ConversationIndexEntry[]>({
+    url: `/api/search/conversations`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getListConversationIndexQueryKey = () => {
+  return [`/api/search/conversations`] as const;
+};
+
+export const getListConversationIndexQueryOptions = <
+  TData = Awaited<ReturnType<typeof listConversationIndex>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof listConversationIndex>>, TError, TData>
+  >;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListConversationIndexQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listConversationIndex>>> = ({ signal }) =>
+    listConversationIndex(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listConversationIndex>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListConversationIndexQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listConversationIndex>>
+>;
+export type ListConversationIndexQueryError = ErrorType<unknown>;
+
+export function useListConversationIndex<
+  TData = Awaited<ReturnType<typeof listConversationIndex>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listConversationIndex>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listConversationIndex>>,
+          TError,
+          Awaited<ReturnType<typeof listConversationIndex>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListConversationIndex<
+  TData = Awaited<ReturnType<typeof listConversationIndex>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listConversationIndex>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listConversationIndex>>,
+          TError,
+          Awaited<ReturnType<typeof listConversationIndex>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListConversationIndex<
+  TData = Awaited<ReturnType<typeof listConversationIndex>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listConversationIndex>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Every conversation, active and archived, most recently touched first: the
+command palette ranks them client-side as the user types.
+ */
+
+export function useListConversationIndex<
+  TData = Awaited<ReturnType<typeof listConversationIndex>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listConversationIndex>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListConversationIndexQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Conversations whose prompts or replies contain every word of `q`, one hit
+(the newest matching message) per conversation, newest first.
+ */
+export const searchMessages = (params: SearchMessagesParams, signal?: AbortSignal) => {
+  return customInstance<MessageSearchHit[]>({
+    url: `/api/search/messages`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getSearchMessagesQueryKey = (params?: SearchMessagesParams) => {
+  return [`/api/search/messages`, ...(params ? [params] : [])] as const;
+};
+
+export const getSearchMessagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchMessagesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMessages>>, TError, TData>>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getSearchMessagesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof searchMessages>>> = ({ signal }) =>
+    searchMessages(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchMessages>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type SearchMessagesQueryResult = NonNullable<Awaited<ReturnType<typeof searchMessages>>>;
+export type SearchMessagesQueryError = ErrorType<unknown>;
+
+export function useSearchMessages<
+  TData = Awaited<ReturnType<typeof searchMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchMessagesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMessages>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchMessages>>,
+          TError,
+          Awaited<ReturnType<typeof searchMessages>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useSearchMessages<
+  TData = Awaited<ReturnType<typeof searchMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchMessagesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMessages>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchMessages>>,
+          TError,
+          Awaited<ReturnType<typeof searchMessages>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useSearchMessages<
+  TData = Awaited<ReturnType<typeof searchMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchMessagesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMessages>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Conversations whose prompts or replies contain every word of `q`, one hit
+(the newest matching message) per conversation, newest first.
+ */
+
+export function useSearchMessages<
+  TData = Awaited<ReturnType<typeof searchMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchMessagesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMessages>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getSearchMessagesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 export const listConversationReferences = (
   params: ListConversationReferencesParams,
