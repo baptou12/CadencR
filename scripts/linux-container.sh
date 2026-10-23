@@ -50,12 +50,30 @@ ensure_image() {
   fi
 }
 
+# Each sync records the files it wrote and deletes those the previous sync
+# wrote that the host no longer has, so a deleted or renamed source file cannot
+# linger. Build outputs (node_modules, target, out) were never synced, so they
+# are never in a manifest and survive.
 sync_tree() {
   (
     cd "$repo_root"
     git ls-files -co --exclude-standard -z \
       | COPYFILE_DISABLE=1 tar --no-xattrs --null -T - -cf -
-  ) | docker run --rm -i --platform "$platform" -v "$src_volume:/src" "$image" tar -xf - -C /src
+  ) | docker run --rm -i --platform "$platform" -v "$src_volume:/src" "$image" bash -euo pipefail -c '
+      cd /src
+      tar -xvf - > /tmp/synced
+      if [ -f .linux-container-manifest ]; then
+        sort -u /tmp/synced > /tmp/new
+        sort -u .linux-container-manifest | comm -23 - /tmp/new | while IFS= read -r stale; do
+          rm -f -- "$stale"
+        done
+      fi
+      mv /tmp/synced .linux-container-manifest'
+}
+
+# The device lives in Docker's VM on a Mac, not on the host, so ask Docker.
+host_has_fuse() {
+  docker run --rm --platform "$platform" --device /dev/fuse "$image" true > /dev/null 2>&1
 }
 
 # Runs $2 in the container as `dev` (uid 1000), or as root when $1 is "root".
@@ -66,8 +84,16 @@ container_run() {
   [ -t 0 ] && [ -t 1 ] && interactive=(-it)
   # `${a[@]+…}` keeps an empty array safe under `set -u` on macOS bash 3.2.
   local privileges=()
-  # e2e mounts the AppImage through FUSE, like a desktop session does.
-  [ "$user" = root ] && privileges=(--device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined)
+  # e2e mounts the AppImage through FUSE, like a desktop session does. Docker
+  # refuses to start a container asking for a device the host lacks, so only
+  # ask when it has one; e2e_script then falls back to extract-and-run.
+  if [ "$user" = root ]; then
+    if host_has_fuse; then
+      privileges=(--device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined)
+    else
+      echo "linux-container: no /dev/fuse on the Docker host; the AppImage runs extracted" >&2
+    fi
+  fi
   docker run --rm --init ${interactive[@]+"${interactive[@]}"} ${privileges[@]+"${privileges[@]}"} --platform "$platform" \
     -v "$src_volume:/src" \
     -v "$cache_volume:/cache" \

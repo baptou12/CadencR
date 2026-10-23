@@ -66,10 +66,11 @@ Four layers; each catches what the previous cannot.
    - `rust-test`, `clippy`, `vitest` — the same suites as CI, on Linux;
    - `package` — release sidecar + AppImage/DEB/RPM;
    - `smoke` — `scripts/smoke-linux-packages.sh`: AppImage payload, real DEB installs
-     on Debian 12 / Ubuntu 22.04 / 24.04, RPM installs on Fedora, Rocky 9 and openSUSE, updater
-     package identity, `latest-linux.yml` entries;
+     on Debian 12 / Ubuntu 22.04 / 24.04, RPM installs on Fedora, Rocky 9 and openSUSE, every
+     library the Electron binary links resolving (`ldd`), updater package identity,
+     `latest-linux.yml` entries;
    - `e2e` — `scripts/linux-container/e2e-launch.mjs` boots the installed DEB and the
-     AppImage under Xvfb with an empty `HOME` and checks over CDP that the window loads,
+     AppImage (FUSE-mounted when the Docker host has `/dev/fuse`, extracted otherwise) under Xvfb with an empty `HOME` and checks over CDP that the window loads,
      the sidecar answers authenticated `/api/health`, data lands under XDG (never
      `~/.cadencr`), app-owned window controls are on, and no AppImage variable reaches
      the sidecar.

@@ -39,12 +39,22 @@ function check(condition, message) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function withDeadline(promise, deadline, label) {
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out`)), Math.max(deadline - Date.now(), 0));
+  });
+  return Promise.race([promise, expired]).finally(() => clearTimeout(timer));
+}
+
+// The deadline also bounds each probe: a CDP call to a crashed renderer would
+// otherwise keep the check (and the cleanup after it) waiting forever.
 async function waitFor(label, probe) {
   const deadline = Date.now() + TIMEOUT_MS;
   let lastError;
   while (Date.now() < deadline) {
     try {
-      const value = await probe();
+      const value = await withDeadline(probe(), deadline, label);
       if (value) return value;
     } catch (error) {
       lastError = error;
@@ -66,13 +76,28 @@ function cdpSession(webSocketUrl) {
     if (message.error) waiter.reject(new Error(message.error.message));
     else waiter.resolve(message.result);
   });
+  let closed = null;
   const opened = new Promise((resolve, reject) => {
     socket.addEventListener("open", resolve, { once: true });
     socket.addEventListener("error", () => reject(new Error("CDP socket error")), { once: true });
+    socket.addEventListener(
+      "close",
+      () => {
+        closed = new Error("CDP socket closed");
+        reject(closed);
+        for (const waiter of pending.values()) waiter.reject(closed);
+        pending.clear();
+      },
+      { once: true },
+    );
   });
+  // A close before the first evaluate() must not crash node as an unhandled
+  // rejection; evaluate() awaits `opened` again and reports it.
+  opened.catch(() => undefined);
   return {
     async evaluate(expression) {
       await opened;
+      if (closed) throw closed;
       const id = nextId++;
       const result = new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
       socket.send(
