@@ -61,7 +61,7 @@ sudo apt install libfuse2t64
 
 Current Linux release workflow is configured to build:
 
-- `Cadencr-<version>.AppImage`
+- `Cadencr-<version>-x86_64.AppImage`
 - `Cadencr-<version>-amd64.deb`
 - `Cadencr-<version>-x86_64.rpm`
 
