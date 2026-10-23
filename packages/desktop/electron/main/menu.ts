@@ -6,6 +6,7 @@ import {
   type WebContents,
   type MenuItem,
   type MenuItemConstructorOptions,
+  webContents as allWebContents,
 } from "electron";
 
 interface EditCommand {
@@ -94,10 +95,17 @@ function editMenuItem(command: EditCommand): MenuItemConstructorOptions {
   return {
     label: command.label,
     click: (_item: MenuItem, focusedWindow: BaseWindow | undefined): void => {
-      const webContents = focusedWindow
-        ? BrowserWindow.fromId(focusedWindow.id)?.webContents
-        : null;
-      if (webContents) command.run(webContents);
+      const target = editTarget(focusedWindow);
+      if (target) command.run(target);
     },
   };
+}
+
+// Embedded browser and custom tabs are their own WebContentsViews, so the
+// window's main webContents is the wrong target when one of them has focus.
+// The native macOS roles already follow focus this way.
+function editTarget(focusedWindow: BaseWindow | undefined): WebContents | null {
+  const focused = allWebContents.getFocusedWebContents();
+  if (focused) return focused;
+  return focusedWindow ? (BrowserWindow.fromId(focusedWindow.id)?.webContents ?? null) : null;
 }

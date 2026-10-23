@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 const setApplicationMenu = vi.fn();
 const buildFromTemplate = vi.fn((template: unknown) => template);
+const getFocusedWebContents = vi.fn();
+const fromId = vi.fn();
 
 vi.mock("electron", () => ({
   app: {
@@ -9,11 +11,14 @@ vi.mock("electron", () => ({
     name: "Cadencr",
   },
   BrowserWindow: {
-    fromId: vi.fn(),
+    fromId,
   },
   Menu: {
     buildFromTemplate,
     setApplicationMenu,
+  },
+  webContents: {
+    getFocusedWebContents,
   },
 }));
 
@@ -48,6 +53,29 @@ describe("installApplicationMenu", () => {
     expect(editMenu).toContain('"label":"Paste"');
   });
 
+  it("runs non-mac edit commands on the focused webContents, such as an embedded browser page", async () => {
+    const guest = { paste: vi.fn() };
+    const host = { paste: vi.fn() };
+    getFocusedWebContents.mockReturnValue(guest);
+    fromId.mockReturnValue({ webContents: host });
+
+    clickEditItem(await editMenuTemplateFor("linux"), "Paste", { id: 1 });
+
+    expect(guest.paste).toHaveBeenCalledOnce();
+    expect(host.paste).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the focused window's webContents when no webContents has focus", async () => {
+    const host = { copy: vi.fn() };
+    getFocusedWebContents.mockReturnValue(null);
+    fromId.mockReturnValue({ webContents: host });
+
+    clickEditItem(await editMenuTemplateFor("linux"), "Copy", { id: 1 });
+
+    expect(fromId).toHaveBeenCalledWith(1);
+    expect(host.copy).toHaveBeenCalledOnce();
+  });
+
   it("offers the macOS-only window zoom role only on macOS", async () => {
     expect(await menuFor("darwin", "Window")).toContain('"role":"zoom"');
     expect(await menuFor("linux", "Window")).not.toContain('"role":"zoom"');
@@ -64,6 +92,26 @@ describe("installApplicationMenu", () => {
 
 async function editMenuFor(platform: NodeJS.Platform): Promise<string> {
   return menuFor(platform, "Edit");
+}
+
+interface MenuEntry {
+  label?: string;
+  submenu?: MenuEntry[];
+  click?: (item: unknown, window: unknown) => void;
+}
+
+async function editMenuTemplateFor(platform: NodeJS.Platform): Promise<MenuEntry> {
+  await menuFor(platform, "Edit");
+  const template = buildFromTemplate.mock.calls.at(-1)?.[0] as MenuEntry[];
+  const editMenu = template.find((item) => item.label === "Edit");
+  if (!editMenu) throw new Error("no Edit menu");
+  return editMenu;
+}
+
+function clickEditItem(editMenu: MenuEntry, label: string, window: { id: number }): void {
+  const item = editMenu.submenu?.find((entry) => entry.label === label);
+  if (!item?.click) throw new Error(`no clickable ${label} item`);
+  item.click({}, window);
 }
 
 async function menuFor(platform: NodeJS.Platform, label: string): Promise<string> {
