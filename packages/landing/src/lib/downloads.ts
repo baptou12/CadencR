@@ -23,7 +23,8 @@ interface DownloadDetection {
 
 const appVersion: string = landingPackage.version;
 const releaseTag: string = `v${appVersion}`;
-const releaseBaseUrl: string = `https://github.com/merkr-software/CadencR/releases/download/${releaseTag}`;
+const RELEASES_DOWNLOAD_URL = "https://github.com/merkr-software/CadencR/releases/download";
+const releaseBaseUrl: string = `${RELEASES_DOWNLOAD_URL}/${releaseTag}`;
 
 function releaseAssetUrl(assetName: string): string {
   return `${releaseBaseUrl}/${assetName}`;
@@ -48,6 +49,60 @@ function macAsset(
   const assetName = macReleaseAssetName(appVersion, arch, kind);
   return { ...display, assetName, arch, kind, os: "macos", url: releaseAssetUrl(assetName) };
 }
+
+/** The first desktop release that ships Linux packages. */
+const FIRST_LINUX_RELEASE = "0.15.0";
+
+function versionAtLeast(version: string, minimum: string): boolean {
+  const parse = (value: string) => value.split(".").map((part) => Number.parseInt(part, 10));
+  const [actual, wanted] = [parse(version), parse(minimum)];
+  for (let index = 0; index < wanted.length; index += 1) {
+    const difference = (actual[index] ?? 0) - (wanted[index] ?? 0);
+    if (difference !== 0) return difference > 0;
+  }
+  return true;
+}
+
+/** Whether `version` has Linux packages, so the site never links missing assets. */
+export function hasLinuxRelease(version: string): boolean {
+  return versionAtLeast(version, FIRST_LINUX_RELEASE);
+}
+
+/** `version` is a parameter only so tests can cover releases before and after Linux. */
+export function linuxReleaseAssets(version: string): DownloadAsset[] {
+  if (!hasLinuxRelease(version)) return [];
+  const linuxAsset = (
+    assetName: string,
+    kind: DownloadKind,
+    display: Pick<DownloadAsset, "href" | "label" | "size">,
+  ): DownloadAsset => ({
+    ...display,
+    assetName,
+    arch: "x64",
+    kind,
+    os: "linux",
+    url: `${RELEASES_DOWNLOAD_URL}/v${version}/${assetName}`,
+  });
+  return [
+    linuxAsset(`Cadencr-${version}-x86_64.AppImage`, "portable", {
+      href: "#linux-appimage",
+      label: "Linux x86-64 AppImage",
+      size: "152 MB",
+    }),
+    linuxAsset(`Cadencr-${version}-amd64.deb`, "installer", {
+      href: "#linux-deb",
+      label: "Linux x86-64 DEB",
+      size: "122 MB",
+    }),
+    linuxAsset(`Cadencr-${version}-x86_64.rpm`, "installer", {
+      href: "#linux-rpm",
+      label: "Linux x86-64 RPM",
+      size: "122 MB",
+    }),
+  ];
+}
+
+export const LINUX_AVAILABLE: boolean = hasLinuxRelease(appVersion);
 
 export const LATEST_RELEASE_URL: string =
   "https://github.com/merkr-software/CadencR/releases/latest";
@@ -74,36 +129,7 @@ export const DOWNLOAD_ASSETS: DownloadAsset[] = [
     label: "macOS Intel ZIP",
     size: "147 MB",
   }),
-  {
-    assetName: `Cadencr-${appVersion}.AppImage`,
-    arch: "x64",
-    href: "#linux-appimage",
-    kind: "portable",
-    label: "Linux x86-64 AppImage",
-    os: "linux",
-    size: "152 MB",
-    url: releaseAssetUrl(`Cadencr-${appVersion}.AppImage`),
-  },
-  {
-    assetName: `Cadencr-${appVersion}-amd64.deb`,
-    arch: "x64",
-    href: "#linux-deb",
-    kind: "installer",
-    label: "Linux x86-64 DEB",
-    os: "linux",
-    size: "122 MB",
-    url: releaseAssetUrl(`Cadencr-${appVersion}-amd64.deb`),
-  },
-  {
-    assetName: `Cadencr-${appVersion}-x86_64.rpm`,
-    arch: "x64",
-    href: "#linux-rpm",
-    kind: "installer",
-    label: "Linux x86-64 RPM",
-    os: "linux",
-    size: "122 MB",
-    url: releaseAssetUrl(`Cadencr-${appVersion}-x86_64.rpm`),
-  },
+  ...linuxReleaseAssets(appVersion),
 ];
 
 /**

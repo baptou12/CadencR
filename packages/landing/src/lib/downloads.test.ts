@@ -3,6 +3,9 @@ import landingPackage from "../../package.json";
 import {
   archFromRenderer,
   DOWNLOAD_ASSETS,
+  hasLinuxRelease,
+  LINUX_AVAILABLE,
+  linuxReleaseAssets,
   macReleaseAssetName,
   normalizeArch,
   resolveMacArch,
@@ -30,16 +33,11 @@ describe("selectRecommendedDownload", () => {
     expect(result?.assetName).toBe(`Cadencr-${appVersion}-arm64.dmg`);
   });
 
-  it("recommends the portable AppImage for Linux x64 browsers", () => {
-    const result = selectRecommendedDownload({ os: "linux", arch: "x64" });
+  it("recommends the x64 AppImage to Linux browsers once Linux has shipped", () => {
+    const expected = LINUX_AVAILABLE ? `Cadencr-${appVersion}-x86_64.AppImage` : undefined;
 
-    expect(result?.assetName).toBe(`Cadencr-${appVersion}.AppImage`);
-  });
-
-  it("defaults Linux browsers with an unknown architecture to the x64 AppImage", () => {
-    const result = selectRecommendedDownload({ os: "linux", arch: "unknown" });
-
-    expect(result?.assetName).toBe(`Cadencr-${appVersion}.AppImage`);
+    expect(selectRecommendedDownload({ os: "linux", arch: "x64" })?.assetName).toBe(expected);
+    expect(selectRecommendedDownload({ os: "linux", arch: "unknown" })?.assetName).toBe(expected);
   });
 
   it("does not recommend the x64 Linux build to ARM browsers", () => {
@@ -54,16 +52,10 @@ describe("selectRecommendedDownload", () => {
     expect(DOWNLOAD_ASSETS.every((asset) => asset.url.includes(`/v${appVersion}/`))).toBe(true);
   });
 
-  it("publishes AppImage, DEB, and RPM Linux targets", () => {
-    const linuxNames = DOWNLOAD_ASSETS.filter((asset) => asset.os === "linux").map(
-      (asset) => asset.assetName,
+  it("lists exactly the Linux targets the current version ships", () => {
+    expect(DOWNLOAD_ASSETS.filter((asset) => asset.os === "linux")).toEqual(
+      linuxReleaseAssets(appVersion),
     );
-
-    expect(linuxNames).toEqual([
-      `Cadencr-${appVersion}.AppImage`,
-      `Cadencr-${appVersion}-amd64.deb`,
-      `Cadencr-${appVersion}-x86_64.rpm`,
-    ]);
   });
 });
 
@@ -134,5 +126,26 @@ describe("resolveMacArch", () => {
 
   it("stays unknown when no signal is definitive (caller defaults to arm64)", () => {
     expect(resolveMacArch({ renderer: "unknown", userAgentData: "unknown" })).toBe("unknown");
+  });
+});
+
+describe("linuxReleaseAssets", () => {
+  it("links no Linux assets for releases before the first Linux build", () => {
+    expect(hasLinuxRelease("0.14.1")).toBe(false);
+    expect(linuxReleaseAssets("0.14.1")).toEqual([]);
+  });
+
+  it("names the arch of every Linux target from the first Linux release on", () => {
+    for (const version of ["0.15.0", "0.15.2", "1.0.0"]) {
+      expect(hasLinuxRelease(version)).toBe(true);
+      expect(linuxReleaseAssets(version).map((asset) => asset.assetName)).toEqual([
+        `Cadencr-${version}-x86_64.AppImage`,
+        `Cadencr-${version}-amd64.deb`,
+        `Cadencr-${version}-x86_64.rpm`,
+      ]);
+      expect(
+        linuxReleaseAssets(version).every((asset) => asset.url.includes(`/v${version}/`)),
+      ).toBe(true);
+    }
   });
 });

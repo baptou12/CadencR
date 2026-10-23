@@ -3,7 +3,7 @@ import DownloadIcon from "@/components/icons/DownloadIcon.astro";
 import CodeIcon from "@/components/icons/CodeIcon.astro";
 import Button from "@/components/ui/Button.astro";
 import Wrap from "@/components/ui/Wrap.astro";
-import { DISPLAY_VERSION } from "@/lib/downloads";
+import { DISPLAY_VERSION, LINUX_AVAILABLE } from "@/lib/downloads";
 import { getCollection, type CollectionEntry } from "astro:content";
 import HeroCapture from "@/components/HeroCapture.astro";
 
@@ -36,7 +36,7 @@ const [latestNews] = (await getCollection("news")).sort(
       <p class="hero-rise fig-label">
         <span class="fig-no">Desktop IDE</span>
         <span aria-hidden="true">·</span>
-        <span>macOS + Linux</span>
+        <span>{LINUX_AVAILABLE ? "macOS + Linux" : "macOS"}</span>
         <span aria-hidden="true">·</span>
         <span>{DISPLAY_VERSION}</span>
       </p>

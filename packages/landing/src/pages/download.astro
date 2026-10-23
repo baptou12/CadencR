@@ -6,6 +6,7 @@ import {
   DISPLAY_VERSION,
   DOWNLOAD_ASSETS,
   LATEST_RELEASE_URL,
+  LINUX_AVAILABLE,
   selectRecommendedDownload,
 } from "@/lib/downloads";
 import { SITE_URL, ORG_REF } from "@/lib/seo";
@@ -16,10 +17,13 @@ const linuxAssets = DOWNLOAD_ASSETS.filter((asset) => asset.os === "linux");
 const downloadGroups = [
   { title: "macOS", note: "Apple Silicon and Intel", assets: macAssets },
   { title: "Linux", note: "x86-64 · AppImage, DEB, RPM", assets: linuxAssets },
-];
-const pageTitle = "Download CadencR for macOS and Linux — agent IDE";
-const pageDescription =
-  "Download CadencR for macOS or Linux. Choose Apple Silicon or Intel on macOS, or AppImage, DEB, or RPM on Linux x86-64.";
+].filter((group) => group.assets.length > 0);
+const pageTitle = LINUX_AVAILABLE
+  ? "Download CadencR for macOS and Linux — agent IDE"
+  : "Download CadencR for macOS — agent IDE";
+const pageDescription = LINUX_AVAILABLE
+  ? "Download CadencR for macOS or Linux. Choose Apple Silicon or Intel on macOS, or AppImage, DEB, or RPM on Linux x86-64."
+  : "Download CadencR for macOS on Apple Silicon or Intel.";
 
 const softwareApplication = {
   "@type": "SoftwareApplication",
@@ -28,7 +32,7 @@ const softwareApplication = {
   alternateName: ["Cadencr", "Cadencr IDE"],
   applicationCategory: "DeveloperApplication",
   applicationSubCategory: "IDE",
-  operatingSystem: ["macOS", "Linux"],
+  operatingSystem: LINUX_AVAILABLE ? ["macOS", "Linux"] : ["macOS"],
   softwareVersion: DISPLAY_VERSION,
   description: pageDescription,
   downloadUrl: defaultDownload?.url ?? LATEST_RELEASE_URL,
@@ -60,7 +64,7 @@ const structuredData = [softwareApplication, breadcrumbs];
           Get CadencR for your machine.
         </h1>
         <p class="mt-4 max-w-[620px] text-sm leading-[1.65] text-muted-foreground [text-wrap:pretty]">
-          CadencR ships for macOS and Linux. We detect a recommended build in your browser,
+          CadencR ships for {LINUX_AVAILABLE ? "macOS and Linux" : "macOS"}. We detect a recommended build in your browser,
           and every available target remains listed below.
         </p>
       </div>
@@ -166,29 +170,34 @@ const structuredData = [softwareApplication, breadcrumbs];
             <p class="mt-1">Open the DMG and drag CadencR to Applications, or install with Homebrew:</p>
             <code class="mt-2 block overflow-x-auto rounded-lg bg-background p-3 font-mono text-[11px] text-foreground">brew install --cask merkr-software/cadencr/cadencr</code>
           </section>
-          <section>
-            <h3 class="font-semibold text-foreground">Linux AppImage</h3>
-            <code class="mt-2 block overflow-x-auto rounded-lg bg-background p-3 font-mono text-[11px] text-foreground">
-              <span class="block">chmod +x Cadencr-*.AppImage</span>
-              <span class="block">./Cadencr-*.AppImage</span>
-            </code>
-          </section>
-          <section>
-            <h3 class="font-semibold text-foreground">Ubuntu, Debian, Mint, Pop!_OS</h3>
-            <code class="mt-2 block overflow-x-auto rounded-lg bg-background p-3 font-mono text-[11px] text-foreground">sudo apt install ./Cadencr-*-amd64.deb</code>
-          </section>
-          <section>
-            <h3 class="font-semibold text-foreground">Fedora, RHEL, Rocky, AlmaLinux</h3>
-            <code class="mt-2 block overflow-x-auto rounded-lg bg-background p-3 font-mono text-[11px] text-foreground">sudo dnf install ./Cadencr-*.rpm</code>
-          </section>
-          <section>
-            <h3 class="font-semibold text-foreground">openSUSE and SLES</h3>
-            <code class="mt-2 block overflow-x-auto rounded-lg bg-background p-3 font-mono text-[11px] text-foreground">sudo zypper install ./Cadencr-*.rpm</code>
-          </section>
+          {LINUX_AVAILABLE && (
+            <Fragment>
+              <section>
+                <h3 class="font-semibold text-foreground">Linux AppImage</h3>
+                <code class="mt-2 block overflow-x-auto rounded-lg bg-background p-3 font-mono text-[11px] text-foreground">
+                  <span class="block">chmod +x Cadencr-*.AppImage</span>
+                  <span class="block">./Cadencr-*.AppImage</span>
+                </code>
+              </section>
+              <section>
+                <h3 class="font-semibold text-foreground">Ubuntu, Debian, Mint, Pop!_OS</h3>
+                <code class="mt-2 block overflow-x-auto rounded-lg bg-background p-3 font-mono text-[11px] text-foreground">sudo apt install ./Cadencr-*-amd64.deb</code>
+              </section>
+              <section>
+                <h3 class="font-semibold text-foreground">Fedora, RHEL, Rocky, AlmaLinux</h3>
+                <code class="mt-2 block overflow-x-auto rounded-lg bg-background p-3 font-mono text-[11px] text-foreground">sudo dnf install ./Cadencr-*.rpm</code>
+              </section>
+              <section>
+                <h3 class="font-semibold text-foreground">openSUSE and SLES</h3>
+                <code class="mt-2 block overflow-x-auto rounded-lg bg-background p-3 font-mono text-[11px] text-foreground">sudo zypper install ./Cadencr-*.rpm</code>
+              </section>
+            </Fragment>
+          )}
         </div>
         <p class="mt-5 text-[12.5px] leading-[1.6] text-muted-foreground">
-          Official Linux packages update through CadencR. DEB and RPM installs may request
-          administrator authentication. Linux builds currently require x86-64; Windows is coming next.
+          {LINUX_AVAILABLE
+            ? "Official Linux packages update through CadencR. DEB and RPM installs may request administrator authentication. Linux builds currently require x86-64; Windows is coming next."
+            : "Linux packages ship with the next release; until then you can build CadencR from source. Windows is planned."}
         </p>
         <a href={`${import.meta.env.BASE_URL}docs/installation/`} class="mt-4 inline-flex text-[13px] font-medium text-primary hover:underline">
           Read the complete installation guide →
@@ -227,6 +236,7 @@ const structuredData = [softwareApplication, breadcrumbs];
 
   const downloadsText = document.querySelector<HTMLScriptElement>("#download-assets-json")?.textContent ?? "[]";
   const downloads = JSON.parse(downloadsText) as BrowserDownloadAsset[];
+  const linuxAvailable = downloads.some((asset) => asset.os === "linux");
 
   function detectOs(platform: string, userAgent: string): DetectedOs {
     const value = `${platform} ${userAgent}`.toLowerCase();
@@ -294,6 +304,7 @@ const structuredData = [softwareApplication, breadcrumbs];
   function describeDetection(os: DetectedOs, arch: DetectedArch): string {
     if (os === "macos") return `Detected macOS${arch === "unknown" ? "" : ` (${arch})`}.`;
     if (os === "linux") {
+      if (!linuxAvailable) return "Detected Linux. Linux packages ship with the next release.";
       return arch === "arm64"
         ? "Detected Linux (ARM64). Linux downloads currently require x86-64."
         : `Detected Linux${arch === "unknown" ? "" : " (x86-64)"}.`;
@@ -315,12 +326,24 @@ const structuredData = [softwareApplication, breadcrumbs];
     if (detection) detection.textContent = describeDetection(os, arch);
     if (!recommendation) {
       if (title) {
-        title.textContent = os === "linux" ? "Linux ARM64 is not available yet" : os === "unknown" ? "Choose your build" : "Coming soon for your OS";
+        title.textContent =
+          os === "linux"
+            ? linuxAvailable
+              ? "Linux ARM64 is not available yet"
+              : "Linux packages are coming soon"
+            : os === "unknown"
+              ? "Choose your build"
+              : "Coming soon for your OS";
       }
       if (copy) {
-        copy.textContent = os === "linux"
-          ? "Current Linux packages target x86-64. ARM64 users can build from source while native artifacts are planned."
-          : "CadencR currently ships for macOS and Linux. Windows builds are planned next.";
+        copy.textContent =
+          os === "linux"
+            ? linuxAvailable
+              ? "Current Linux packages target x86-64. ARM64 users can build from source while native artifacts are planned."
+              : "Linux packages ship with the next release. Until then you can build CadencR from source."
+            : linuxAvailable
+              ? "CadencR currently ships for macOS and Linux. Windows builds are planned next."
+              : "CadencR currently ships for macOS. Linux and Windows builds are planned.";
       }
       if (label) label.textContent = "View available downloads";
       if (primary) {

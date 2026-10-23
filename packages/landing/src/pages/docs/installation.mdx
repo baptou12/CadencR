@@ -4,6 +4,17 @@ title: "Install CadencR on macOS and Linux"
 description: "Download, install, update, and uninstall CadencR on supported macOS and Linux systems."
 ---
 
+import DocCallout from "@/components/docs/DocCallout.astro";
+import { LINUX_AVAILABLE } from "@/lib/downloads";
+
+{!LINUX_AVAILABLE && (
+
+  <DocCallout title="Linux packages are coming" variant="note">
+    The Linux AppImage, DEB, and RPM packages described below ship with the next CadencR release.
+    Until then, build CadencR from source on Linux.
+  </DocCallout>
+)}
+
 CadencR ships native desktop builds for macOS and Linux. Start on the [download page](/download/), which recommends a build for the browser you are using.
 
 ## Supported systems
