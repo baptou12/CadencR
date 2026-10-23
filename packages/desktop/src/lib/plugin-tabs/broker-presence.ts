@@ -1,7 +1,9 @@
 import { toast } from "sonner";
 
 import { pluginTabReleasePresence, pluginTabRenewPresence } from "@/api/generated";
-import { apiErrorMessage } from "@/lib/api-errors";
+import { apiErrorCode, apiErrorMessage } from "@/lib/api-errors";
+
+import { PLUGIN_TAB_ERROR } from "./error-codes";
 
 /** How often the lease is renewed; the service lets it lapse after 3 minutes. */
 export const PRESENCE_RENEW_MS = 60_000;
@@ -61,6 +63,9 @@ class RenewalStalled extends Error {
  * (it succeeds anyway, or the service got it first), the lease is released
  * again — right then, and once more after `PRESENCE_RERELEASE_MS`. Those
  * repeats name the same lease, and releasing a released lease is a no-op.
+ *
+ * A conversation deleted elsewhere ends the lease for good: renewals stop,
+ * silently — the tab is gone, not failing.
  */
 export class PresenceLease {
   private readonly leaseId: string;
@@ -69,7 +74,10 @@ export class PresenceLease {
   /** The renewal in flight, if any. */
   private pending: AbortController | null = null;
   private failing = false;
+  /** Closed by its owner. */
   private disposed = false;
+  /** Taken back by the service (its conversation was deleted): nothing to release. */
+  private ended = false;
 
   constructor(
     private readonly pluginId: string,
@@ -88,14 +96,23 @@ export class PresenceLease {
     if (this.disposed) return;
     this.disposed = true;
     clearTimeout(this.start);
-    // Never taken: nothing to release.
-    if (this.timer === null) return;
+    // Never taken, or already taken back: nothing to release.
+    if (this.timer === null || this.ended) return;
     clearInterval(this.timer);
     const inflight = this.pending;
     this.pending = null;
     inflight?.abort();
     this.release();
     if (inflight) setTimeout(() => this.release(), PRESENCE_RERELEASE_MS);
+  }
+
+  /**
+   * Renew no more. The registry keeps the ended lease while the stale layout
+   * still places the tab, so it is not taken again.
+   */
+  private end(): void {
+    this.ended = true;
+    if (this.timer !== null) clearInterval(this.timer);
   }
 
   private release(): void {
@@ -123,7 +140,12 @@ export class PresenceLease {
       },
       (error: unknown) => {
         if (this.pending === controller) this.pending = null;
-        if (this.disposed || this.failing) return;
+        if (this.disposed || this.ended) return;
+        if (apiErrorCode(error) === PLUGIN_TAB_ERROR.conversationNotFound) {
+          this.end();
+          return;
+        }
+        if (this.failing) return;
         this.failing = true;
         const reason: unknown = controller.signal.aborted ? controller.signal.reason : error;
         this.deps.report(

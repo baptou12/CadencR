@@ -70,6 +70,13 @@ impl PresenceStore {
         }
     }
 
+    /// Release every lease held in `feature_id` (the conversation is gone),
+    /// whichever tab and client took it.
+    pub fn release_feature(&self, feature_id: i64) {
+        self.lock()
+            .retain(|_, lease| lease.feature_id != feature_id);
+    }
+
     /// Whether some instance of `plugin_id` holds a live lease in `feature_id`.
     pub fn is_open(&self, plugin_id: &str, feature_id: i64) -> bool {
         let now = Instant::now();
@@ -87,7 +94,7 @@ impl PresenceStore {
     }
 }
 
-fn check_lease_id(id: &str) -> Result<(), AppError> {
+pub(crate) fn check_lease_id(id: &str) -> Result<(), AppError> {
     let valid = (1..=MAX_LEASE_ID_CHARS).contains(&id.len())
         && id
             .bytes()
@@ -118,6 +125,19 @@ mod tests {
         assert!(store.is_open("ports", 2), "another tab cannot release it");
         store.release(LEASE, "ports");
         assert!(!store.is_open("ports", 2));
+    }
+
+    #[test]
+    fn releasing_a_conversation_drops_every_lease_held_in_it() {
+        let store = PresenceStore::default();
+        store.renew(LEASE, "ports", 2).unwrap();
+        store.renew("other-client", "ports", 2).unwrap();
+        store.renew("other-tab", "graph", 2).unwrap();
+        store.renew("elsewhere", "ports", 3).unwrap();
+        store.release_feature(2);
+        assert!(!store.is_open("ports", 2));
+        assert!(!store.is_open("graph", 2));
+        assert!(store.is_open("ports", 3), "other conversations keep theirs");
     }
 
     #[test]

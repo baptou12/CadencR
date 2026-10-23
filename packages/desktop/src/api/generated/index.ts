@@ -24286,7 +24286,10 @@ export const usePluginTabCreateGrant = <TError = ErrorType<unknown>, TContext = 
  * @summary Take or renew a presence lease: an instance of the tab is open in the
 conversation, so its backend keeps running, idle or not. The desktop
 renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
-malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases.
+malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases, 404
+`PLUGIN_TAB_CONVERSATION_NOT_FOUND` once the conversation is deleted —
+possibly from another client, whose tabs still renew: every lease held
+in it goes too, so its backends stop.
  */
 export const pluginTabRenewPresence = (
   id: string,
@@ -24353,7 +24356,10 @@ export type PluginTabRenewPresenceMutationVariables = {
  * @summary Take or renew a presence lease: an instance of the tab is open in the
 conversation, so its backend keeps running, idle or not. The desktop
 renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
-malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases.
+malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases, 404
+`PLUGIN_TAB_CONVERSATION_NOT_FOUND` once the conversation is deleted —
+possibly from another client, whose tabs still renew: every lease held
+in it goes too, so its backends stop.
  */
 export const usePluginTabRenewPresence = <TError = ErrorType<unknown>, TContext = unknown>(
   options?: {
