@@ -5,6 +5,7 @@ mod project_gate_schema;
 mod project_schedule_schema;
 mod project_schema;
 mod send_message_schema;
+mod settings_schema;
 pub mod workspace;
 
 use std::borrow::Cow;

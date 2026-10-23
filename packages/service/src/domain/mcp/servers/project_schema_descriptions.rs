@@ -1,4 +1,5 @@
 use crate::domain::agents::providers::{provider_alias_metadata, valid_provider_ids};
+use crate::domain::mcp::settings_tool::SettingsTool;
 
 pub(super) fn tool_description(name: &str) -> &'static str {
     match name {
@@ -20,6 +21,12 @@ pub(super) fn tool_description(name: &str) -> &'static str {
         | "project_update_schedule"
         | "project_delete_schedule" => super::super::project_schedule_schema::description(name),
         "project_archive_session" => super::super::project_archive_schema::DESCRIPTION,
+        "project_get_settings" => {
+            super::super::settings_schema::get_description(SettingsTool::Project)
+        }
+        "project_update_settings" => {
+            super::super::settings_schema::update_description(SettingsTool::Project)
+        }
         _ => "Coordinate CadencR sessions in the current project.",
     }
 }

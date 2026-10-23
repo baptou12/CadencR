@@ -136,6 +136,8 @@ fn assert_tool_catalog(agent: AgentType, result: &Value) {
             "project_update_schedule",
             "project_delete_schedule",
             "project_archive_session",
+            "project_get_settings",
+            "project_update_settings",
         ],
         AgentType::Workspace => &[
             "workspace_list_projects",
@@ -144,6 +146,8 @@ fn assert_tool_catalog(agent: AgentType, result: &Value) {
             "workspace_session_graph",
             "workspace_recent_activity",
             "workspace_send_session_message",
+            "workspace_get_settings",
+            "workspace_update_settings",
         ],
     };
     let mut actual: Vec<&str> = tools

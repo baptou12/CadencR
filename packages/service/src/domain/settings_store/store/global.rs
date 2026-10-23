@@ -55,11 +55,21 @@ pub async fn global_set(key: &str, value: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Set or remove (`None`) several global keys in one atomic write.
-pub async fn global_set_many(entries: &BTreeMap<String, Option<String>>) -> Result<(), AppError> {
-    set_values(&global_path(), entries).await?;
+/// The global document's path and validated scalar values (plus warnings).
+pub fn global_map() -> (PathBuf, BTreeMap<String, String>, Vec<SettingWarning>) {
+    let path = global_path();
+    let (map, warnings) = load(&path, Scope::Workspace);
+    (path, map, warnings)
+}
+
+/// Set or remove (`None`) several global keys in one atomic write, returning
+/// each key's previous stored value.
+pub async fn global_set_many(
+    entries: &BTreeMap<String, Option<String>>,
+) -> Result<BTreeMap<String, Option<String>>, AppError> {
+    let previous = set_values(&global_path(), entries).await?;
     super::super::generation::bump_global();
-    Ok(())
+    Ok(previous)
 }
 
 pub async fn global_write_content(content: &str) -> Result<Vec<SettingWarning>, AppError> {

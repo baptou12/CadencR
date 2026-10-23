@@ -121,7 +121,7 @@ pub(super) async fn resolve_target_project(
     Ok(target)
 }
 
-async fn fetch_project_by_id(
+pub(super) async fn fetch_project_by_id(
     pool: &sqlx::SqlitePool,
     id: i64,
 ) -> Result<Option<TargetProject>, AppError> {

@@ -9,11 +9,13 @@ mod archive_session;
 mod create_schedule;
 mod manage_schedule;
 mod send_message;
+mod settings;
 
 pub(crate) use archive_session::archive_session;
 pub(crate) use create_schedule::create_schedule;
 pub(crate) use manage_schedule::{delete_schedule, update_schedule};
 pub(crate) use send_message::{send_session_message, send_workspace_session_message};
+pub(crate) use settings::{get_settings, update_settings};
 
 const SERVICE_URL_ENV: &str = "CADENCR_SERVICE_URL";
 const CONTROL_TOKEN_ENV: &str = "CADENCR_MCP_CONTROL_TOKEN";
