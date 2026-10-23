@@ -80,16 +80,19 @@ deb:
     - lsof
   priority: optional
 rpm:
+  # Library sonames, not package names: RPM generates these provides on every
+  # RPM distro, while package names differ (Fedora `nss` is openSUSE
+  # `mozilla-nss`, `at-spi2-atk` does not exist there…).
   depends:
-    - gtk3
-    - libXScrnSaver
-    - libXtst
-    - libnotify
-    - nss
+    - libgtk-3.so.0()(64bit)
+    - libnotify.so.4()(64bit)
+    - libnss3.so()(64bit)
+    - libXss.so.1()(64bit)
+    - libXtst.so.6()(64bit)
+    - libatk-bridge-2.0.so.0()(64bit)
+    - libdrm.so.2()(64bit)
+    - libgbm.so.1()(64bit)
+    - libxkbcommon.so.0()(64bit)
     - xdg-utils
-    - at-spi2-atk
-    - libdrm
-    - mesa-libgbm
-    - libxkbcommon
     - git
     - lsof

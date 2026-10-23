@@ -329,9 +329,9 @@ jobs:
           name: desktop-linux
           if-no-files-found: error
           retention-days: 7
+          # The AppImage embeds its block map: no separate block map file exists.
           path: |
             packages/desktop/dist-electron/*.AppImage
-            packages/desktop/dist-electron/*.AppImage.blockmap
             packages/desktop/dist-electron/*.deb
             packages/desktop/dist-electron/*.rpm
             packages/desktop/dist-electron/latest-linux.yml
@@ -369,7 +369,6 @@ jobs:
           dist_dir="packages/desktop/dist-electron"
           for asset in \
             "Cadencr-${version}-x86_64.AppImage" \
-            "Cadencr-${version}-x86_64.AppImage.blockmap" \
             "Cadencr-${version}-amd64.deb" \
             "Cadencr-${version}-x86_64.rpm" \
             "latest-linux.yml"; do
@@ -404,7 +403,6 @@ jobs:
             "$dist_dir/Cadencr-${version}-arm64-mac.zip.blockmap" \
             "$dist_dir/latest-mac.yml" \
             "$dist_dir/Cadencr-${version}-x86_64.AppImage" \
-            "$dist_dir/Cadencr-${version}-x86_64.AppImage.blockmap" \
             "$dist_dir/Cadencr-${version}-amd64.deb" \
             "$dist_dir/Cadencr-${version}-x86_64.rpm" \
             "$dist_dir/latest-linux.yml"
@@ -423,7 +421,6 @@ jobs:
             "Cadencr-${version}-arm64-mac.zip.blockmap"
             "latest-mac.yml"
             "Cadencr-${version}-x86_64.AppImage"
-            "Cadencr-${version}-x86_64.AppImage.blockmap"
             "Cadencr-${version}-amd64.deb"
             "Cadencr-${version}-x86_64.rpm"
             "latest-linux.yml"

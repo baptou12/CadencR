@@ -79,3 +79,9 @@ case "$workflow_text" in
   *"Upload GitHub release assets"*'Cadencr-${version}-x86_64.AppImage'*'latest-linux.yml'*"Verify uploaded GitHub release assets"*'"Cadencr-${version}-x86_64.AppImage"'*'"Cadencr-${version}-amd64.deb"'*'"Cadencr-${version}-x86_64.rpm"'*'"latest-linux.yml"'*"Publish GitHub release"*) ;;
   *) fail "workflow must upload and verify every Linux updater target and latest-linux.yml" ;;
 esac
+
+case "$workflow_text" in
+  *"AppImage.blockmap"*)
+    fail "electron-builder embeds the AppImage block map; never expect a separate AppImage block map file"
+    ;;
+esac
