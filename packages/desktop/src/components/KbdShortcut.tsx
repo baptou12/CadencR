@@ -127,13 +127,18 @@ interface ScopedProps {
 }
 
 // Split into its own component so unscoped badges don't subscribe to the
-// feature-layout store on every render.
+// feature-layout store on every render. Out of focus, the keys stay visible
+// but faded: a bare `-` on every unfocused card read as a rendering bug,
+// while faded keys still say "these work once you're in this pane".
 function ScopedKbdShortcut({ keys, map, className, scope }: ScopedProps) {
   const isActive = useIsTabFocused(scope);
-  if (!isActive) {
-    return <KbdPlaceholder className={className} />;
-  }
-  return <KbdContent keys={keys} map={map} className={className} />;
+  return (
+    <KbdContent
+      keys={keys}
+      map={map}
+      className={isActive ? className : cn(className, "opacity-35")}
+    />
+  );
 }
 
 interface KbdContentProps {

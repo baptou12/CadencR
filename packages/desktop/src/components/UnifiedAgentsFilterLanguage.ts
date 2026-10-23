@@ -17,7 +17,7 @@ export { quoteFilterValue } from "@/components/unified-agents-filter-values";
 const UNIFIED_AGENTS_FILTER_KEYS = ["last", "project", "sort", "exclude", "pin"] as const;
 export type UnifiedAgentsFilterKey = (typeof UNIFIED_AGENTS_FILTER_KEYS)[number];
 const LAST_PRESETS = ["2", "5", "20", "60", "all"] as const;
-const SORT_VALUES = ["created", "-created", "message", "-message"] as const;
+const SORT_VALUES = ["attention", "created", "-created", "message", "-message"] as const;
 
 export interface UnifiedAgentsParsedFilter {
   mode: UnifiedAgentsFilterMode;
@@ -50,14 +50,16 @@ export interface UnifiedAgentsFilterPair {
   value: string;
 }
 
+/** An empty filter shows every agent, the ones that need you first. Anything
+ *  narrower is written out as a visible `/key:value` token. */
 export const DEFAULT_UNIFIED_AGENTS_PARSED_FILTER: UnifiedAgentsParsedFilter = {
-  mode: "recent",
+  mode: "all",
   freshMinutes: 5,
   projectIds: [],
   excludedTitles: [],
   pinnedOnly: false,
   query: "",
-  sortOrder: "created_desc",
+  sortOrder: "attention",
 };
 
 export function parseUnifiedAgentsFilterText(
@@ -223,17 +225,16 @@ function parseLastValue(
   return { mode: "recent", freshMinutes: amount * multiplier };
 }
 
+/** Every agent is the default; the minutes only mean something in a window. */
 function isDefaultLastFilter(filter: UnifiedAgentsParsedFilter): boolean {
-  return (
-    filter.mode === DEFAULT_UNIFIED_AGENTS_PARSED_FILTER.mode &&
-    filter.freshMinutes === DEFAULT_UNIFIED_AGENTS_PARSED_FILTER.freshMinutes
-  );
+  return filter.mode === DEFAULT_UNIFIED_AGENTS_PARSED_FILTER.mode;
 }
 
 function parseSortValue(value: string): UnifiedAgentsSortOrder | null {
   const normalized = normalizeFilterValue(value).toLowerCase();
   const ascending = normalized.startsWith("-");
   const sortName = ascending ? normalized.slice(1) : normalized;
+  if (["attention", "status", "urgent"].includes(sortName)) return "attention";
   if (["created", "creation", "date"].includes(sortName)) {
     return ascending ? "created_asc" : "created_desc";
   }
@@ -271,6 +272,7 @@ function serializeLastFilter(filter: UnifiedAgentsParsedFilter): string {
 }
 
 function serializeSortValue(sortOrder: UnifiedAgentsSortOrder): string {
+  if (sortOrder === "attention") return "attention";
   if (sortOrder === "created_asc") return "-created";
   if (sortOrder === "activity_desc") return "message";
   if (sortOrder === "activity_asc") return "-message";
@@ -315,7 +317,7 @@ function getLastSuggestions(value: string): UnifiedAgentsFilterSuggestion[] {
   ).map(
     (preset: string): UnifiedAgentsFilterSuggestion => ({
       label: `/last:${preset}`,
-      detail: preset === "all" ? "All agents" : `Last ${preset} minutes`,
+      detail: preset === "all" ? "Every agent (default)" : `Active in the last ${preset} minutes`,
       replacement: `/last:${preset}`,
       key: "last",
     }),
@@ -327,11 +329,16 @@ function getSortSuggestions(value: string): UnifiedAgentsFilterSuggestion[] {
   return SORT_VALUES.filter((sortValue: string): boolean => sortValue.startsWith(normalized)).map(
     (sortValue: string): UnifiedAgentsFilterSuggestion => ({
       label: `/sort:${sortValue}`,
-      detail: sortValue.startsWith("-") ? "Ascending order" : "Descending order",
+      detail: sortDetail(sortValue),
       replacement: `/sort:${sortValue}`,
       key: "sort",
     }),
   );
+}
+
+function sortDetail(sortValue: string): string {
+  if (sortValue === "attention") return "Needs you first, then working, then unread";
+  return sortValue.startsWith("-") ? "Ascending order" : "Descending order";
 }
 
 function getPinSuggestions(value: string): UnifiedAgentsFilterSuggestion[] {

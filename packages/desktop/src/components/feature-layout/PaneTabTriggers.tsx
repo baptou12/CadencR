@@ -27,7 +27,7 @@ function TabTriggerBody({ def }: { def: FeatureTabDef }): ReactNode {
   return (
     <>
       <FeatureTabIcon def={def} />
-      <span>{def.label}</span>
+      <span data-tab-label>{def.label}</span>
       {def.badge}
     </>
   );

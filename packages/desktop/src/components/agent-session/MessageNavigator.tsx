@@ -249,7 +249,9 @@ export const MessageNavigator = memo(function MessageNavigator({
     controls,
     shortcutsEnabled,
   });
-  if (marks.length === 0) return null;
+  // A rail with a single tick has nowhere to jump: it only reads as a stray
+  // mark beside the transcript.
+  if (marks.length < 2) return null;
   return (
     <MessageNavigatorRail
       marks={marks}

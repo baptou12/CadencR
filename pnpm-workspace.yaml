@@ -24,9 +24,9 @@ minimumReleaseAgeExclude:
   # GHSA-r7fv-28h4-cvq7, GHSA-gfr2-rv44-r23c, GHSA-vfgh-jcmw-g37q.
   # Remove after 2026-10-30T01:47:54.675Z (14 days after publication).
   - "markdown-it@14.3.3"
-  # GHSA-p98j-92pf-mc4p: use the fixed sanitizer release.
-  # Remove after 2026-10-07T15:29:57Z (14 days after publication).
-  - "dompurify@3.4.16"
+  # GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr, GHSA-c6gr-qvv4-5v3f.
+  # Remove after 2026-10-26T12:41:28.880Z (14 days after publication).
+  - "dompurify@3.4.17"
   # GHSA-ch52-4w7c-c8xp: 4.3.0 is outside the published affected range,
   # but still needs the local max-stale patch declared below.
   # Remove after 2026-10-18T02:56:05.593Z (14 days after publication).
@@ -85,7 +85,7 @@ overrides:
   "brace-expansion@>=5.0.0 <5.0.12": 5.0.12
   "browserslist@>=4.0.0 <4.28.7": 4.28.7
   "devalue@>=5.0.0 <5.9.3": 5.9.3
-  "dompurify@>=3.0.0 <3.4.16": 3.4.16
+  "dompurify@>=3.0.0 <3.4.17": 3.4.17
   "fast-uri@>=3.0.0 <3.1.8": 3.1.8
   "follow-redirects@>=1.16.0 <1.16.1": 1.16.1
   # global-agent v4 preserves bootstrap() and removes roarr/sprintf-js,

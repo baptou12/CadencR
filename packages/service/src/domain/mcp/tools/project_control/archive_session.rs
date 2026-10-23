@@ -1,10 +1,8 @@
 use serde_json::json;
 
-use super::{require_i64, require_source_session, McpContext, McpControlClient};
+use super::{relay_fields, require_i64, source_request, McpContext, McpControlClient};
 
-/// The archive scope and cleanup options, relayed as the agent sent them: the
-/// service's typed request rejects a wrong type instead of reading it as
-/// "not requested".
+/// The archive scope and cleanup options.
 const OPTION_FIELDS: [&str; 8] = [
     "include_parent",
     "include_descendants",
@@ -31,18 +29,9 @@ async fn archive_session_with_client(
     ctx: &McpContext,
     client: McpControlClient,
 ) -> Result<serde_json::Value, String> {
-    let source_session_id = require_source_session(ctx, "project_archive_session")?;
-    let session_id = require_i64(args, "session_id")?;
-    let mut request = json!({
-        "source_feature_id": ctx.feature_id,
-        "source_session_id": source_session_id,
-        "session_id": session_id,
-    });
-    for field in OPTION_FIELDS {
-        if let Some(value) = args.get(field) {
-            request[field] = value.clone();
-        }
-    }
+    let mut request = source_request(ctx, "project_archive_session")?;
+    request["session_id"] = json!(require_i64(args, "session_id")?);
+    relay_fields(args, &mut request, &OPTION_FIELDS);
     client
         .post_json("/internal/mcp/project/archive-session", request)
         .await

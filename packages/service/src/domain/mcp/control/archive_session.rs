@@ -13,7 +13,7 @@ use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 
 use super::archive_cleanup::{run_cleanup, CleanupReport, CleanupSelection};
-use super::audit::{elapsed_ms, record_tool_audit, result_size_bytes, ToolAudit};
+use super::audit::{audit_outcome, elapsed_ms, record_tool_audit, ToolAudit};
 use super::schedule_scope::require_conversation;
 use super::scope::{resolve_session_scope, SessionScope};
 use crate::app_state::AppState;
@@ -127,10 +127,7 @@ async fn audit(
     result: &Result<ArchiveSessionResponse, AppError>,
     started_at: std::time::Instant,
 ) -> Result<(), AppError> {
-    let (status, error, size) = match result {
-        Ok(value) => ("ok", None, result_size_bytes(value)),
-        Err(error) => ("error", Some(error.to_string()), 0),
-    };
+    let (status, error, size) = audit_outcome(result);
     record_tool_audit(
         &state.write_pool,
         ToolAudit {

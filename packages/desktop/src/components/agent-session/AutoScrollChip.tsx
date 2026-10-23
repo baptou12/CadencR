@@ -35,6 +35,7 @@ export const AutoScrollChip = memo(function AutoScrollChip({
         type="button"
         aria-label="Auto-scroll"
         aria-pressed={enabled}
+        data-auto-scroll-chip
         onClick={onToggle}
         className={cn(
           META_BAR_CHIP,
