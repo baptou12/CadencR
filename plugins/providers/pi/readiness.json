@@ -13,9 +13,12 @@
   },
   "artwork": {
     "file": "icon.svg",
-    "sha256": "a5624bc3b8cac94de75f6f13701eca2ad3ef67bbeba286c4af3f398806f0858a",
-    "observed_content": "local-svg-rect-and-two-paths-no-external-references",
-    "authorship": "not-established-by-retained-source"
+    "sha256": "d63a4105ad46a62af1ed10a649d431dfe58ffcd529bc1e9a151b9f99cf3a265c",
+    "observed_content": "original-local-svg-rect-path-and-three-circles-no-external-references",
+    "authorship": "created-during-cadencr-source-maintenance-2026-10-23",
+    "declared_spdx": "Apache-2.0",
+    "creation_record": "README.md#connector-artwork",
+    "review": "source-creation-record-not-legal-attestation"
   },
   "runtime": {
     "kind": "external-node-pi",
@@ -48,5 +51,21 @@
     "record": "plugins/providers/pi/README.md",
     "authority": "historical-local-source-record-not-verified-upstream"
   },
-  "not_prepared_targets": ["linux-aarch64", "linux-x86_64", "windows-aarch64", "windows-x86_64"]
+  "not_prepared_targets": ["linux-aarch64", "linux-x86_64", "windows-aarch64", "windows-x86_64"],
+  "working_tree_protocol_evidence": {
+    "date": "2026-10-23",
+    "target": "darwin-aarch64",
+    "source_identity": "uncommitted-working-tree-not-release-qualified",
+    "archive_sha256": "be0d067a22c4c341bd6348af84c8c3df1df74df63148441a86f6e7000457da48",
+    "archive_bytes": 25627,
+    "runtime": {
+      "node": "22.19.0",
+      "pi": "0.85.1"
+    },
+    "method": "source-payload-canonical-cli-pack-extract-native-loopback",
+    "result": "discovery-initialize-text-usage-durable-resume-cancellation-passed-three-loopback-requests",
+    "uses_personal_credentials": false,
+    "managed_installation": "not-qualified",
+    "exact_committed_candidate": "pending"
+  }
 }
