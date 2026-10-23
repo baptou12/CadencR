@@ -68,6 +68,14 @@ check "AppImage payload ($appimage)" docker run --rm --platform "$platform" -v "
   test ! -e squashfs-root/resources/package-type
 "
 
+# Every library the Electron binary links must resolve on a stock install:
+# a missing one (ALSA, GBM…) installs fine but the app never opens.
+libs_check='
+  app="$(dirname "$(dirname "$sidecar")")/cadencr"
+  test -x "$app"
+  missing=$(ldd "$app" | grep "not found" || true)
+  if [ -n "$missing" ]; then echo "$missing" >&2; exit 1; fi
+'
 deb_check='
   sidecar=$(dpkg -L cadencr | grep -E "/resources/cadencr-service$" | head -n1)
   package_type=$(dpkg -L cadencr | grep -E "/resources/package-type$" | head -n1)
@@ -75,7 +83,7 @@ deb_check='
   test "$(cat "$package_type")" = deb
   "$sidecar" --help > /dev/null
   command -v git > /dev/null && command -v lsof > /dev/null
-'
+'"$libs_check"
 for image in debian:12 ubuntu:22.04 ubuntu:24.04; do
   check "DEB install on $image" docker run --rm --platform "$platform" -v "$dist_dir:/pkg:ro" "$image" bash -eu -c "
     export DEBIAN_FRONTEND=noninteractive
@@ -92,7 +100,7 @@ rpm_check='
   test "$(cat "$package_type")" = rpm
   "$sidecar" --help > /dev/null
   command -v git > /dev/null && command -v lsof > /dev/null
-'
+'"$libs_check"
 check "RPM install on fedora:41" docker run --rm --platform "$platform" -v "$dist_dir:/pkg:ro" fedora:41 bash -eu -c "
   dnf install -y -q /pkg/$rpm > /dev/null
   $rpm_check

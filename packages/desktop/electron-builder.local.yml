@@ -76,6 +76,8 @@ deb:
     - libdrm2
     - libgbm1
     - libxkbcommon0
+    # Ubuntu 24.04 renamed it for the 64-bit time_t transition.
+    - libasound2t64 | libasound2
     - git
     - lsof
   priority: optional
@@ -93,6 +95,7 @@ rpm:
     - libdrm.so.2()(64bit)
     - libgbm.so.1()(64bit)
     - libxkbcommon.so.0()(64bit)
+    - libasound.so.2()(64bit)
     - xdg-utils
     - git
     - lsof
