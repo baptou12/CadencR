@@ -27,3 +27,16 @@ export function keyboardEventInitForShortcut(
     shiftKey,
   };
 }
+
+/**
+ * Fire `id`'s shortcut as if the user pressed it. Dispatched on `document`:
+ * the form-aware hotkey engine listens there, and the capture phase still runs
+ * window listeners (a window-targeted event would never reach `document`).
+ * Returns `false` when the binding cannot be synthesized.
+ */
+export function dispatchShortcut(id: ShortcutId, isMac = PLATFORM_IS_MAC): boolean {
+  const init = keyboardEventInitForShortcut(id, isMac);
+  if (!init) return false;
+  document.dispatchEvent(new KeyboardEvent("keydown", { ...init, bubbles: true }));
+  return true;
+}

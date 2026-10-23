@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it } from "vitest";
+// @vitest-environment happy-dom
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useShortcutOverridesStore } from "./overrides";
-import { keyboardEventInitForShortcut } from "./synthetic-event";
+import { dispatchShortcut, keyboardEventInitForShortcut } from "./synthetic-event";
 
 afterEach(() => useShortcutOverridesStore.getState().resetAll());
 
@@ -39,5 +40,36 @@ describe("keyboardEventInitForShortcut", () => {
       .getState()
       .setOverride("pane-terminal", { keys: ["mod", "backtick"] });
     expect(keyboardEventInitForShortcut("pane-terminal", false)).toBeNull();
+  });
+});
+
+describe("dispatchShortcut", () => {
+  it("reaches document listeners (the form-aware engine) and window capture listeners", () => {
+    const onDocument = vi.fn();
+    const onWindowCapture = vi.fn();
+    document.addEventListener("keydown", onDocument);
+    window.addEventListener("keydown", onWindowCapture, true);
+    try {
+      expect(dispatchShortcut("pane-git", false)).toBe(true);
+    } finally {
+      document.removeEventListener("keydown", onDocument);
+      window.removeEventListener("keydown", onWindowCapture, true);
+    }
+    expect(onDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "G", ctrlKey: true, shiftKey: true }),
+    );
+    expect(onWindowCapture).toHaveBeenCalledOnce();
+  });
+
+  it("dispatches nothing for a binding it cannot synthesize", () => {
+    useShortcutOverridesStore.getState().setOverride("pane-git", { keys: ["mod", "backtick"] });
+    const onDocument = vi.fn();
+    document.addEventListener("keydown", onDocument);
+    try {
+      expect(dispatchShortcut("pane-git", false)).toBe(false);
+    } finally {
+      document.removeEventListener("keydown", onDocument);
+    }
+    expect(onDocument).not.toHaveBeenCalled();
   });
 });

@@ -30,7 +30,7 @@ import { CommandPaletteWorktreeStep } from "@/components/command-palette/Command
 import { CommandPaletteCommands } from "@/components/command-palette/CommandPaletteCommands";
 import { apiErrorMessage } from "@/lib/api-errors";
 import type { ShortcutId } from "@/lib/shortcuts/registry";
-import { keyboardEventInitForShortcut } from "@/lib/shortcuts/synthetic-event";
+import { dispatchShortcut } from "@/lib/shortcuts/synthetic-event";
 import {
   DEFAULT_WORKTREE_MODE_KEY,
   defaultWorktreeModeFromSettings,
@@ -177,12 +177,9 @@ function useWorktreePaletteActions(
 type WorktreePaletteActions = ReturnType<typeof useWorktreePaletteActions>;
 
 function dispatchPaletteShortcut(id: ShortcutId): void {
-  const init = keyboardEventInitForShortcut(id);
-  if (!init) {
+  if (!dispatchShortcut(id)) {
     toast.error("This action needs a letter shortcut; reset it in Settings → Shortcuts.");
-    return;
   }
-  window.dispatchEvent(new KeyboardEvent("keydown", { ...init, bubbles: true }));
 }
 
 function useCommandPaletteActions(
