@@ -9,6 +9,7 @@ import {
 import { useFeaturePendingGate } from "@/hooks/useFeaturePendingGate";
 import { prAction, type NextActionKind } from "@/lib/next-actions";
 import { cn } from "@/lib/utils";
+import type { PendingKind } from "@/types/agent";
 import { useFeatureStatus } from "@/stores/session-status-selectors";
 
 type VerbTone = "permission" | "question" | "failed" | "quiet";
@@ -58,6 +59,18 @@ const TONE_CLASS: Record<VerbTone, string> = {
   failed: "font-semibold text-(--acc-red)",
   quiet: "font-medium text-foreground/75",
 };
+
+/**
+ * The verb for `kind` and its classes, without the request details: for
+ * surfaces that name the action but don't fetch the pending request.
+ */
+export function nextActionVerb(
+  kind: NextActionKind,
+  pendingKind: PendingKind,
+): { label: string; className: string } {
+  const verb = kind === "waiting" ? WAITING_VERBS[pendingKind] : VERBS[kind];
+  return { label: verb.label, className: TONE_CLASS[verb.tone] };
+}
 
 /**
  * What the "For me" block asks the user to do about a row, on its own line
