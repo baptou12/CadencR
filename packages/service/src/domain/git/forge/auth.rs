@@ -23,22 +23,33 @@ struct TokenDocument {
 }
 
 pub struct ForgeAuthStore {
-    path: PathBuf,
+    /// `Err` when no per-user data dir resolves: every token operation then
+    /// fails closed instead of writing secrets relative to the working dir.
+    path: Result<PathBuf, String>,
     document: RwLock<Option<TokenDocument>>,
 }
 
 impl Default for ForgeAuthStore {
     fn default() -> Self {
-        Self::new(forge_data_dir().join("tokens.json"))
+        Self {
+            path: forge_data_dir().map(|dir| dir.join("tokens.json")),
+            document: RwLock::new(None),
+        }
     }
 }
 
 impl ForgeAuthStore {
     pub fn new(path: PathBuf) -> Self {
         Self {
-            path,
+            path: Ok(path),
             document: RwLock::new(None),
         }
+    }
+
+    fn path(&self) -> Result<&Path, ForgeError> {
+        self.path.as_deref().map_err(|error| {
+            ForgeError::Configuration(format!("resolve forge token directory: {error}"))
+        })
     }
 
     pub async fn stored_credentials(
@@ -71,8 +82,9 @@ impl ForgeAuthStore {
                 "Forge token cannot be empty".into(),
             ));
         }
+        let path = self.path()?;
         let mut cached = self.document.write().await;
-        let document = load_document(&self.path, &mut cached)?;
+        let document = load_document(path, &mut cached)?;
         document.tokens.insert(
             hostname,
             StoredCredential {
@@ -80,16 +92,17 @@ impl ForgeAuthStore {
                 username: normalized_optional(username),
             },
         );
-        write_document(&self.path, document)
+        write_document(path, document)
     }
 
     pub async fn delete(&self, hostname: &str) -> Result<bool, ForgeError> {
         let hostname = normalize_hostname(hostname)?;
+        let path = self.path()?;
         let mut cached = self.document.write().await;
-        let document = load_document(&self.path, &mut cached)?;
+        let document = load_document(path, &mut cached)?;
         let removed = document.tokens.remove(&hostname).is_some();
         if removed {
-            write_document(&self.path, document)?;
+            write_document(path, document)?;
         }
         Ok(removed)
     }
@@ -98,8 +111,9 @@ impl ForgeAuthStore {
         if let Some(document) = self.document.read().await.as_ref() {
             return Ok(document.clone());
         }
+        let path = self.path()?;
         let mut cached = self.document.write().await;
-        Ok(load_document(&self.path, &mut cached)?.clone())
+        Ok(load_document(path, &mut cached)?.clone())
     }
 }
 
@@ -334,11 +348,9 @@ fn write_document(path: &Path, document: &TokenDocument) -> Result<(), ForgeErro
         .map_err(|error| ForgeError::Configuration(format!("write forge token file: {error}")))
 }
 
-fn forge_data_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".cadencr")
-        .join("forge")
+/// `~/.cadencr/forge` on macOS, `$XDG_DATA_HOME/cadencr/forge` on Linux.
+fn forge_data_dir() -> Result<PathBuf, String> {
+    crate::shared::app_paths::data_dir().map(|dir| dir.join("forge"))
 }
 
 pub(super) fn normalized_optional(value: Option<String>) -> Option<String> {
@@ -351,6 +363,29 @@ pub(super) fn normalized_optional(value: Option<String>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_keeps_tokens_under_the_legacy_root() {
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(
+            forge_data_dir().unwrap(),
+            home.join(".cadencr").join("forge")
+        );
+    }
+
+    #[tokio::test]
+    async fn unresolvable_data_dir_fails_closed() {
+        let store = ForgeAuthStore {
+            path: Err("no home".into()),
+            document: RwLock::new(None),
+        };
+        assert!(matches!(
+            store.save("github.com", "secret", None).await,
+            Err(ForgeError::Configuration(_))
+        ));
+        assert!(store.stored_credentials("github.com").await.is_err());
+    }
 
     #[tokio::test]
     async fn token_store_round_trips_and_deletes() {

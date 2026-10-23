@@ -35,7 +35,7 @@ pub fn root() -> PathBuf {
     ROOT_OVERRIDE
         .with(|slot| slot.borrow().clone())
         .unwrap_or_else(|| {
-            crate::domain::settings_store::dir::sibling_dir("plugins").join("managed-themes")
+            crate::domain::settings_store::dir::data_sibling_dir("plugins").join("managed-themes")
         })
 }
 pub fn valid_id(id: &str) -> bool {

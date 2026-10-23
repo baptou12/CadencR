@@ -12,6 +12,7 @@ use tracing::{debug, warn};
 use crate::domain::editor::service::{
     build_gitignore, clear_gitignore_cache, is_gitignored_or_ancestor,
 };
+use crate::shared::watch_limits::describe_watch_error;
 
 mod changed_documents;
 use changed_documents::ChangedDocuments;
@@ -166,12 +167,12 @@ fn build_debouncer(
             }
         },
     )
-    .map_err(|e| format!("Failed to create watcher: {e}"))?;
+    .map_err(|e| describe_watch_error("Failed to create watcher", &e))?;
 
     debouncer
         .watcher()
         .watch(&canonical, RecursiveMode::Recursive)
-        .map_err(|e| format!("Failed to watch directory: {e}"))?;
+        .map_err(|e| describe_watch_error("Failed to watch directory", &e))?;
 
     Ok(debouncer)
 }

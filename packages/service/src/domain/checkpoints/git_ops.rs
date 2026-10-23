@@ -24,12 +24,15 @@ const IDENTITY_ENV: [(&str, &str); 4] = [
 ];
 
 /// Unique scratch path for the isolated index. Git creates the file (and its
-/// `.lock` sibling) here; we remove it afterwards.
-fn temp_index_path() -> PathBuf {
+/// `.lock` sibling) here; we remove it afterwards. The parent is private to the
+/// current user so the predictable name can't be planted ahead of time.
+fn temp_index_path() -> Result<PathBuf, AppError> {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    std::env::temp_dir().join(format!("cadencr-checkpoint-index-{pid}-{n}"))
+    let parent = crate::shared::private_temp::private_temp_dir()
+        .map_err(|e| AppError::Internal(format!("checkpoint scratch dir: {e}")))?;
+    Ok(parent.join(format!("cadencr-checkpoint-index-{pid}-{n}")))
 }
 
 /// Snapshot tracked worktree paths into a fresh orphan commit and return its sha,
@@ -44,7 +47,7 @@ pub(super) async fn snapshot_commit(
     ref_name: &str,
     label: &str,
 ) -> Result<String, AppError> {
-    let index_path = temp_index_path();
+    let index_path = temp_index_path()?;
     let index_str = index_path.to_string_lossy().to_string();
 
     let mut env: Vec<(&str, &str)> = IDENTITY_ENV.to_vec();

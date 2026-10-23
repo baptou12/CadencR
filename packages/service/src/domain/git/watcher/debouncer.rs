@@ -22,6 +22,7 @@ use super::handle::{RecomputePing, RegistryInner};
 use crate::app_state::AppState;
 use crate::domain::git::git_status;
 use crate::domain::ws_session::protocol::WsEnvelope;
+use crate::shared::watch_limits::describe_watch_error;
 
 /// Debounce window for raw fs events before triggering a recompute.
 pub(super) const GIT_WATCHER_DEBOUNCE_MS: u64 = 250;
@@ -79,12 +80,14 @@ pub(super) fn build_debouncer(
             }
         },
     )
-    .map_err(|e| crate::error::AppError::Internal(format!("git watcher: {e}")))?;
+    .map_err(|e| crate::error::AppError::Internal(describe_watch_error("git watcher", &e)))?;
 
     debouncer
         .watcher()
         .watch(&worktree_path, RecursiveMode::Recursive)
-        .map_err(|e| crate::error::AppError::Internal(format!("git watcher watch: {e}")))?;
+        .map_err(|e| {
+            crate::error::AppError::Internal(describe_watch_error("git watcher watch", &e))
+        })?;
 
     // Linked-worktree support: the worktree's own gitdir
     // (`<main>/.git/worktrees/<name>/`) and the shared common dir

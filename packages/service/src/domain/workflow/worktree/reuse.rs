@@ -223,12 +223,8 @@ mod tests {
         );
 
         // Defensive sweep of the fallback path in case anything leaked.
-        if let Ok(home) = std::env::var("HOME") {
-            let _ = std::fs::remove_dir_all(
-                std::path::Path::new(&home)
-                    .join(".cadencr/worktrees")
-                    .join(&project_name),
-            );
+        if let Ok(root) = crate::shared::app_paths::worktrees_dir() {
+            let _ = std::fs::remove_dir_all(root.join(&project_name));
         }
     }
 }

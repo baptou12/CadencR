@@ -99,23 +99,15 @@ pub async fn hydrate_from_login_shell() -> usize {
         return 0;
     }
 
-    let shell = match dscl_login_shell().await {
-        Some(s) => s,
-        None => match std::env::var("SHELL") {
-            Ok(s) if !s.is_empty() => s,
-            _ => {
-                let fallback = default_login_shell();
-                tracing::warn!("$SHELL not set and dscl lookup failed; falling back to {fallback} for env hydration");
-                fallback.to_string()
-            }
-        },
-    };
+    let shell = crate::shared::login_shell::resolve_login_shell().await;
 
     let raw = match capture_login_shell_env(&shell).await {
         Ok(s) => s,
         Err(e) => {
-            tracing::warn!("login-shell env hydration failed: {e}; continuing with launchd env");
-            return crate::shared::ssh_env::hydrate_macos_ssh_auth_sock().await;
+            tracing::warn!(
+                "login-shell env hydration failed: {e}; continuing with the inherited env"
+            );
+            return crate::shared::ssh_env::hydrate_ssh_auth_sock().await;
         }
     };
 
@@ -129,43 +121,7 @@ pub async fn hydrate_from_login_shell() -> usize {
     parsed.push(("SHELL".to_string(), shell));
 
     let written = apply_env(parsed);
-    written + crate::shared::ssh_env::hydrate_macos_ssh_auth_sock().await
-}
-
-/// Resolve the user's configured login shell from Directory Services — the
-/// source of truth macOS itself uses for Terminal.app. Independent of
-/// whatever `$SHELL` launchd happened to hand this process, which is why
-/// `capture_login_shell_env` alone can't fix a wrong value: it launches
-/// `$SHELL -ilc '...'`, which just re-runs the same wrong shell.
-async fn dscl_login_shell() -> Option<String> {
-    let user = std::env::var("USER").ok().filter(|s| !s.is_empty())?;
-    let output = tokio::process::Command::new("dscl")
-        .args([".", "-read", &format!("/Users/{user}"), "UserShell"])
-        .output()
-        .await
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    parse_dscl_usershell_output(&String::from_utf8_lossy(&output.stdout))
-}
-
-/// Parses `dscl`'s `UserShell: /opt/homebrew/bin/fish\n` output.
-fn parse_dscl_usershell_output(text: &str) -> Option<String> {
-    let shell = text.strip_prefix("UserShell:")?.trim().to_string();
-    if shell.is_empty() {
-        None
-    } else {
-        Some(shell)
-    }
-}
-
-fn default_login_shell() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "/bin/zsh"
-    } else {
-        "/bin/bash"
-    }
+    written + crate::shared::ssh_env::hydrate_ssh_auth_sock().await
 }
 
 /// Spawn `$SHELL -ilc '<sentinel>; env -0'`: `-0` preserves multiline values,
@@ -321,21 +277,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_dscl_usershell_output() {
-        assert_eq!(
-            parse_dscl_usershell_output("UserShell: /opt/homebrew/bin/fish\n"),
-            Some("/opt/homebrew/bin/fish".to_string())
-        );
-    }
-
-    #[test]
-    fn rejects_malformed_or_empty_dscl_output() {
-        assert_eq!(parse_dscl_usershell_output(""), None);
-        assert_eq!(parse_dscl_usershell_output("no such record"), None);
-        assert_eq!(parse_dscl_usershell_output("UserShell: \n"), None);
-    }
-
-    #[test]
     fn blocks_dyld_and_ldso_injection_vectors() {
         // Defense-in-depth: hardened-runtime macOS strips these at exec,
         // but dev / unsigned builds would otherwise inherit a user's shell
@@ -391,15 +332,6 @@ mod tests {
         let script = login_env_capture_script();
         assert!(script.contains(LOGIN_ENV_SENTINEL));
         assert!(script.ends_with("; env -0"));
-    }
-
-    #[test]
-    fn default_login_shell_exists_for_supported_platforms() {
-        if cfg!(target_os = "macos") {
-            assert_eq!(default_login_shell(), "/bin/zsh");
-        } else {
-            assert_eq!(default_login_shell(), "/bin/bash");
-        }
     }
 
     /// Run real environment mutations in a child so parallel Git/process tests

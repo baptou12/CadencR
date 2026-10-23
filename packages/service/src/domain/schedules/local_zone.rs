@@ -8,7 +8,8 @@
 use chrono_tz::Tz;
 
 /// `$TZ` when it names a zone, else the `/etc/localtime` symlink target, else
-/// `UTC`.
+/// Debian's `/etc/timezone` (distros and containers that ship `/etc/localtime`
+/// as a plain copy rather than a symlink), else `UTC`.
 pub fn local_timezone() -> String {
     std::env::var("TZ")
         .ok()
@@ -18,7 +19,22 @@ pub fn local_timezone() -> String {
                 .ok()
                 .and_then(|target| zone_from_path(&target.to_string_lossy()))
         })
+        .or_else(|| {
+            std::fs::read_to_string("/etc/timezone")
+                .ok()
+                .and_then(|content| zone_from_timezone_file(&content))
+        })
         .unwrap_or_else(|| "UTC".to_string())
+}
+
+/// `/etc/timezone` holds a bare zone name (`Europe/Paris\n`); comments and
+/// blank lines are tolerated.
+fn zone_from_timezone_file(content: &str) -> Option<String> {
+    content
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with('#'))
+        .and_then(valid_zone)
 }
 
 /// `/var/db/timezone/zoneinfo/Europe/Paris` (macOS) or
@@ -48,6 +64,20 @@ mod tests {
         );
         assert_eq!(zone_from_path("/usr/share/zoneinfo/Not/AZone"), None);
         assert_eq!(zone_from_path("/etc/localtime"), None);
+    }
+
+    #[test]
+    fn zone_is_read_from_a_debian_timezone_file() {
+        assert_eq!(
+            zone_from_timezone_file("Europe/Paris\n").as_deref(),
+            Some("Europe/Paris")
+        );
+        assert_eq!(
+            zone_from_timezone_file("# set by installer\n\nAsia/Tokyo\n").as_deref(),
+            Some("Asia/Tokyo")
+        );
+        assert_eq!(zone_from_timezone_file("Not/AZone\n"), None);
+        assert_eq!(zone_from_timezone_file(""), None);
     }
 
     #[test]
