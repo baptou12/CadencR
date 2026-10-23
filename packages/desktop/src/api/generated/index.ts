@@ -3505,7 +3505,7 @@ export interface PairingCodeResponse {
   /** @minimum 0 */
   expires_in_secs: number;
   fingerprint: string;
-  /** `https://<lan-ip>:<port>/?code=<code>` for each interface. */
+  /** `https://<lan-ip>:<port>/#code=<code>` for each interface. */
   urls: string[];
 }
 
@@ -4931,6 +4931,21 @@ export interface RemoteAuditEntry {
   /** @nullable */
   device_id?: number | null;
   event: string;
+}
+
+/**
+ * Listener metadata needed by the desktop browser's origin policy.
+ */
+export interface RemoteBrowserOrigins {
+  enabled: boolean;
+  lan_urls: string[];
+  /**
+   * @minimum 0
+   * @nullable
+   */
+  port?: number | null;
+  /** @nullable */
+  tunnel_host?: string | null;
 }
 
 /**
@@ -26897,6 +26912,109 @@ export function useVapidKey<
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getVapidKeyQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Keep per-action browser authorization independent of device/audit database reads.
+ */
+export const browserOrigins = (signal?: AbortSignal) => {
+  return customInstance<RemoteBrowserOrigins>({
+    url: `/api/remote/browser-origins`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getBrowserOriginsQueryKey = () => {
+  return [`/api/remote/browser-origins`] as const;
+};
+
+export const getBrowserOriginsQueryOptions = <
+  TData = Awaited<ReturnType<typeof browserOrigins>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof browserOrigins>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getBrowserOriginsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof browserOrigins>>> = ({ signal }) =>
+    browserOrigins(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof browserOrigins>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type BrowserOriginsQueryResult = NonNullable<Awaited<ReturnType<typeof browserOrigins>>>;
+export type BrowserOriginsQueryError = ErrorType<unknown>;
+
+export function useBrowserOrigins<
+  TData = Awaited<ReturnType<typeof browserOrigins>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof browserOrigins>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof browserOrigins>>,
+          TError,
+          Awaited<ReturnType<typeof browserOrigins>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useBrowserOrigins<
+  TData = Awaited<ReturnType<typeof browserOrigins>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof browserOrigins>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof browserOrigins>>,
+          TError,
+          Awaited<ReturnType<typeof browserOrigins>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useBrowserOrigins<
+  TData = Awaited<ReturnType<typeof browserOrigins>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof browserOrigins>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Keep per-action browser authorization independent of device/audit database reads.
+ */
+
+export function useBrowserOrigins<
+  TData = Awaited<ReturnType<typeof browserOrigins>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof browserOrigins>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getBrowserOriginsQueryOptions(options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;
