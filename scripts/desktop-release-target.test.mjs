@@ -35,13 +35,15 @@ test("manual release builds require an explicit existing version tag", () => {
 
 test("the release builds the tag rather than the workflow dispatch branch", () => {
   assert.equal(workflow.env.RELEASE_TAG, "${{ inputs.release_tag || github.ref_name }}");
-  // The CLI ships through cli-release.yml; the app release is one job.
-  assert.deepEqual(Object.keys(workflow.jobs), ["release"]);
-  const checkout = workflow.jobs.release.steps.find((step) =>
-    step.uses?.startsWith("actions/checkout@"),
-  );
-  assert.equal(checkout.with.ref, "refs/tags/${{ env.RELEASE_TAG }}");
-  const create = workflow.jobs.release.steps.find(
+  // The CLI ships through cli-release.yml. The app builds macOS and Linux in
+  // parallel; one publish job releases both once they succeed.
+  assert.deepEqual(Object.keys(workflow.jobs), ["release", "linux", "publish"]);
+  assert.deepEqual(workflow.jobs.publish.needs, ["release", "linux"]);
+  for (const job of Object.values(workflow.jobs)) {
+    const checkout = job.steps.find((step) => step.uses?.startsWith("actions/checkout@"));
+    assert.equal(checkout.with.ref, "refs/tags/${{ env.RELEASE_TAG }}");
+  }
+  const create = workflow.jobs.publish.steps.find(
     (step) => step.name === "Create draft GitHub release",
   );
   assert.match(create.run, /--verify-tag/);

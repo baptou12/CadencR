@@ -64,3 +64,18 @@ case "$workflow_text" in
   *'CADENCR_MANAGED_THEME_INDEX_URL: ${{ vars.CADENCR_MANAGED_THEME_INDEX_URL }}'*'Validate marketplace build configuration'*'node scripts/validate-marketplace-build-env.mjs -- pnpm --filter @cadencr/service build:macos-sidecars'*) ;;
   *) fail "desktop sidecar must validate and forward optional mixed theme feed configuration" ;;
 esac
+
+case "$workflow_text" in
+  *"  linux:"*"runs-on: ubuntu-22.04"*"pnpm --filter @cadencr/service build:sidecars"*"resources/bin/x64/cadencr-service"*"--linux"*"--publish never"*"scripts/smoke-linux-packages.sh"*) ;;
+  *) fail "workflow must build, sidecar-smoke and package-smoke Linux on the oldest-glibc runner" ;;
+esac
+
+case "$workflow_text" in
+  *"needs: [release, linux]"*"Create draft GitHub release"*) ;;
+  *) fail "the draft release must be created only after both macOS and Linux builds succeed" ;;
+esac
+
+case "$workflow_text" in
+  *"Upload GitHub release assets"*'Cadencr-${version}-x86_64.AppImage'*'latest-linux.yml'*"Verify uploaded GitHub release assets"*'"Cadencr-${version}-x86_64.AppImage"'*'"Cadencr-${version}-amd64.deb"'*'"Cadencr-${version}-x86_64.rpm"'*'"latest-linux.yml"'*"Publish GitHub release"*) ;;
+  *) fail "workflow must upload and verify every Linux updater target and latest-linux.yml" ;;
+esac

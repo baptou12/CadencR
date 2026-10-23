@@ -1,14 +1,15 @@
-const { chmodSync, existsSync } = require("node:fs");
+const { existsSync } = require("node:fs");
 const { join } = require("node:path");
 const { execFileSync } = require("node:child_process");
 const { Arch } = require("electron-builder");
+const { prepareLinuxSidecar } = require("./linux-sidecar.cjs");
 
 // electron-builder arch → what `lipo -archs` reports for a matching binary.
 const LIPO_ARCH = { arm64: "arm64", x64: "x86_64" };
 
 exports.default = async function afterPack(context) {
   if (context.electronPlatformName === "linux") {
-    makeLinuxSidecarExecutable(context);
+    prepareLinuxSidecar(join(context.appOutDir, "resources", "cadencr-service"), Arch[context.arch]);
     return;
   }
 
@@ -38,20 +39,6 @@ function assertBinaryArch(binary, arch, { universal }) {
   const matches = universal ? actual.split(" ").includes(expected) : actual === expected;
   if (!matches) {
     throw new Error(`${binary} is ${actual}, but the ${arch} package needs ${expected}`);
-  }
-}
-
-function makeLinuxSidecarExecutable(context) {
-  // afterPack runs once per Electron pack, before any target packager
-  // (AppImage, deb, rpm) consumes `appOutDir`. The mode bits we set here
-  // are preserved through all three Linux targets, so this single chmod
-  // covers .AppImage, .deb, and .rpm builds.
-  const sidecar = join(context.appOutDir, "resources", "cadencr-service");
-  try {
-    chmodSync(sidecar, 0o755);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to mark cadencr-service executable at ${sidecar}: ${message}`);
   }
 }
 

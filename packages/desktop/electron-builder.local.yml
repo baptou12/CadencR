@@ -11,9 +11,8 @@ files:
   - "!out/renderer/**"
   - package.json
 extraResources:
-  - from: icons/512x512.png
-    to: icons/512x512.png
-  - from: resources/bin/cadencr-service
+  # Per-arch sidecar (see `@cadencr/service build:sidecars`).
+  - from: resources/bin/${arch}/cadencr-service
     to: cadencr-service
   # The built SPA on the real filesystem — loaded directly by the packaged
   # window and served over the remote listener.
@@ -23,6 +22,9 @@ extraResources:
   - from: resources/native
     to: native
     filter: ["*.node"]
+  # Linux window icon: BrowserWindow needs a real file path (see `app-icon.ts`).
+  - from: icons/512x512.png
+    to: icons/512x512.png
 mac:
   # Intentionally NOT setting `identity: null` — that disables codesign
   # entirely, and macOS UNUserNotificationCenter then refuses to register
@@ -74,6 +76,8 @@ deb:
     - libdrm2
     - libgbm1
     - libxkbcommon0
+    - git
+    - lsof
   priority: optional
 rpm:
   depends:
@@ -87,3 +91,5 @@ rpm:
     - libdrm
     - mesa-libgbm
     - libxkbcommon
+    - git
+    - lsof

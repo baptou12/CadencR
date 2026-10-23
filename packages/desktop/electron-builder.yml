@@ -20,8 +20,6 @@ files:
   - "!out/renderer/**"
   - package.json
 extraResources:
-  - from: icons/512x512.png
-    to: icons/512x512.png
   # Per-arch sidecar from `@cadencr/service build:macos-sidecars`; arch-checked
   # in `build/after-pack.cjs`.
   - from: resources/bin/${arch}/cadencr-service
@@ -35,6 +33,9 @@ extraResources:
   - from: resources/native
     to: native
     filter: ["*.node"]
+  # Linux window icon: BrowserWindow needs a real file path (see `app-icon.ts`).
+  - from: icons/512x512.png
+    to: icons/512x512.png
 mac:
   # Spell out the arch: electron-builder's default drops it for x64. The zip
   # uses this name; the dmg has its own below.
@@ -67,6 +68,10 @@ linux:
   synopsis: Desktop shell for driving local AI coding agents
   executableName: cadencr
 
+# `${arch}` expands per target: x86_64 (AppImage, rpm), amd64 (deb).
+appImage:
+  artifactName: Cadencr-${version}-${arch}.${ext}
+
 # Distro packages. electron-updater uses the package identity emitted by
 # electron-builder to download and install the matching DEB or RPM release.
 # Dependency lists are pinned explicitly (rather than relying on
@@ -86,6 +91,9 @@ deb:
     - libdrm2
     - libgbm1
     - libxkbcommon0
+    # Runtime tools the service shells out to: worktrees/diffs and the ports scan.
+    - git
+    - lsof
   priority: optional
 rpm:
   packageName: cadencr
@@ -101,6 +109,8 @@ rpm:
     - libdrm
     - mesa-libgbm
     - libxkbcommon
+    - git
+    - lsof
 
 dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
