@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@/test-utils";
 import { MermaidDiagramView } from "./MermaidDiagramView";
@@ -58,4 +59,15 @@ describe("MermaidDiagramView", () => {
     fireEvent.keyDown(content, { key: "0" });
     expect(width()).toBe(fitted);
   });
+});
+
+it.each(["inline", "fullscreen"] as const)("sanitizes the final SVG in %s view", (variant) => {
+  const svg =
+    '<svg data-testid="safe-svg" onload="alert(1)"><script>alert(1)</script><foreignObject><div>hostile HTML</div></foreignObject><text onclick="alert(1)">Label</text><image href="https://evil.test/image" /></svg>';
+  const props = variant === "fullscreen" ? { variant, onClose: vi.fn() } : { variant };
+  const { container } = render(<MermaidDiagramView svg={svg} {...props} />);
+  const diagram = screen.getByTestId("safe-svg");
+  expect(diagram.querySelector("script, foreignObject")).toBeNull();
+  expect(diagram.innerHTML).not.toMatch(/onload|onclick|https:\/\/evil/);
+  expect(container.textContent).toContain("Label");
 });
