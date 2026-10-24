@@ -31,8 +31,8 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 | 10 | Aperçus de contenu | 3 | Markdown diffusé, code coloré, PDF et workers. | Fusionné : #325 |
 | 11a | Moteur CodeMirror | 4 | Saisie, historique, sélection, recherche et gros fichiers. | Fusionné : #328 |
 | 11b | Langages CodeMirror | 5 | Parsers uniques, Astro/YAML, Markdown et HTML. | PR #330, CI finale sur main |
-| 11c | Vim et thèmes | 2 | Commandes Vim et stabilité du thème. | Validé localement |
-| 11d | LSP | 2 | Connexion, complétion, diagnostics et navigation. | À traiter |
+| 11c | Vim et thèmes | 2 | Commandes Vim et stabilité du thème. | PR #332, empilée sur #330 |
+| 11d | LSP | 2 | Connexion, complétion, diagnostics et navigation. | Validé localement |
 | 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | À traiter |
 | 13 | Orchestration | 1 | Graphe de tâches, cache et scripts CI. | À traiter |
 | 14 | Analyse et formatage | 3 | Changelogs des règles, formatage reproductible, lint et exports inutilisés. | À traiter |
@@ -318,3 +318,13 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - QA réelle macOS : activation du mode Vim via Settings, gcc puis undo, insertion Unicode puis sauvegarde vérifiée sur disque, tri `2,3sort r/[a-z]+ =/`, G puis gj répétés à la dernière ligne, recherche visuelle f/point puis répétition inverse avec virgule. La sélection revient bien de `// ab.cd.ef.` à `// ab.cd.`.
 - Aller-retour clair/sombre via le sélecteur de thèmes : même instance DOM de l'éditeur, même texte et huit balises style avant/après ; fond calculé modifié puis restauré. Mode Vim désactivé en fin de QA. Aucun nouveau diagnostic applicatif ; les trois diagnostics navigateur connus restent présents. Pas de QA native Linux ; CI Ubuntu pour les contrôles automatisés.
 - Preuves : `/tmp/cadencr-309/vim-themes-{install,web-checks,security,renderer-build,dev}.log`. Processus de QA arrêtés, base conservée.
+
+## Lot 11d — LSP
+
+- `@codemirror/lsp-client 6.3.0` ajoute uniquement la configuration initializationOptions ([changelog](https://github.com/codemirror/lsp-client/blob/6.3.0/CHANGELOG.md)). `vscode-languageserver-protocol 3.18.4` : runtime publié identique à 3.18.1, corrections de types DocumentUri/ColorRegistration et résultats partiels. Comparaison des tarballs exacts dans `/tmp/cadencr-309/lsp-release-diffs/` ; types 3.18.4 stabilise des déclarations, jsonrpc 9.0.3 corrige les rejets d'écriture, traces d'erreur et chemins de sockets macOS. Le transport applicatif reste notre WebSocket ; les anciennes copies transitives de protocol restent résolues pour leurs consommateurs.
+- Défaut préexistant observé avec Astro : buildSession retournait avant initialize, affichait prêt puis rejetait didOpen sans gestion. La session attend maintenant la réponse avant de monter les plugins ; refus et timeout libèrent le transport et transmettent un Error à l'interface. Retry relance aussi les acquisitions initialement échouées, même si un autre serveur est connecté.
+- Cinq nouveaux tests avec le vrai client LSP / le hook d'acquisition : attente de la réponse, rejet explicite, timeout, reprise sans autre serveur et reprise avec un linter connecté. 62 tests LSP ciblés, typage, lint, knip, 36 contrôles de dépendances et build renderer réussis. Les 28 tâches web passent avec 6 709 tests avant les deux derniers cas de reprise ; le hook complet valide l'état final.
+- QA macOS dans pnpm dev : diagnostic TypeScript réel puis disparition après correction/sauvegarde ; complétion greet acceptée ; F12 ouvre la définition dans un second fichier. Reconnexion via le vrai gestionnaire de l'app : statut reconnecting puis ready, nouveau client initialisé, texte conservé. Astro affiche le message typescript.tsdk dans le popover et Retry émet une nouvelle requête de session, sans rejet de promesse non traité.
+- La configuration Astro reste une limitation préexistante : aucun chemin TypeScript n'est fourni au serveur. Le nouvel initializationOptions rend son intégration possible mais la résolution backend de ce chemin est une évolution distincte. Ce lot corrige l'état trompeur et la gestion de l'échec ; il ne prétend pas rendre Astro LSP fonctionnel.
+- Deux autres anomalies reproduites dans l'app témoin sous les anciennes dépendances : modifications non sauvegardées perdues au changement de fichier, et 400 du gutter Git sur le chemin absolu ouvert par F12 (l'éditeur et la définition fonctionnent). Les fichiers de gestion des buffers/navigation concernés sont identiques à la base. Pas de nouvelle régression attribuée à ce lot.
+- Preuves : `/tmp/cadencr-309/lsp-{handshake-tests,retry-tests,focused-tests,web-checks,build-2,dev}.log`, `lsp-baseline-{service,desktop}.log`. QA native effectuée sur macOS ; automatisation Linux en CI. Processus arrêtés, bases conservées.
