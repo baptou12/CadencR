@@ -176,4 +176,24 @@ describe("PresenceLease", () => {
     await vi.advanceTimersByTimeAsync(PRESENCE_RERELEASE_MS);
     expect(presence.release).not.toHaveBeenCalled();
   });
+
+  it("keeps renewing, silently, while its conversation is archived", async () => {
+    const archived = serviceError(
+      409,
+      PLUGIN_TAB_ERROR.conversationArchived,
+      "conversation 7 is archived",
+    );
+    let unarchived = false;
+    const presence = deps({
+      renew: vi.fn(() => (unarchived ? Promise.resolve() : Promise.reject(archived))),
+    });
+    new PresenceLease("ports", 7, "Ports", presence);
+    await vi.advanceTimersByTimeAsync(PRESENCE_RENEW_MS * 2);
+    expect(presence.renew).toHaveBeenCalledTimes(3);
+    unarchived = true;
+    await vi.advanceTimersByTimeAsync(PRESENCE_RENEW_MS);
+    expect(presence.renew).toHaveBeenCalledTimes(4);
+    await expect(vi.mocked(presence.renew).mock.results[3]?.value).resolves.toBeUndefined();
+    expect(presence.report).not.toHaveBeenCalled();
+  });
 });

@@ -495,11 +495,13 @@ the service resolves, starts, relays to and stops it.
   conversation's tab strip — shown or hidden, its conversation on screen or
   not (another conversation, Settings), idle or not — and released (`DELETE`)
   when the tab is closed, or once it may not run (turned off, blocked,
-  removed, invalid, no build for this platform). Once its conversation is
-  deleted — from any client, including one whose window still shows it — a
-  renewal answers 404 `PLUGIN_TAB_CONVERSATION_NOT_FOUND` and drops every
-  lease held in that conversation; the desktop then stops renewing, without
-  an error. After a restart, a
+  removed, invalid, no build for this platform). Deleting a conversation
+  (or its project) or archiving it releases every lease held in it, from
+  every client. A window that still shows it gets no error: once it is
+  deleted, a renewal answers 404 `PLUGIN_TAB_CONVERSATION_NOT_FOUND` and the
+  desktop stops renewing; while it is archived, renewals answer 409
+  `PLUGIN_TAB_CONVERSATION_ARCHIVED` and go on, so unarchiving it takes the
+  lease back within a minute. After a restart, a
   conversation's tabs take theirs when its saved layout is first loaded (its
   first visit, which precedes any backend use); unrenewed, a lease lapses
   after 3 minutes, so a window that quits leaves none behind. The

@@ -65,7 +65,9 @@ class RenewalStalled extends Error {
  * repeats name the same lease, and releasing a released lease is a no-op.
  *
  * A conversation deleted elsewhere ends the lease for good: renewals stop,
- * silently — the tab is gone, not failing.
+ * silently — the tab is gone, not failing. An archived one refuses them, as
+ * silently, and its backend stops; renewals go on, so unarchiving it takes
+ * the lease again within a minute.
  */
 export class PresenceLease {
   private readonly leaseId: string;
@@ -141,10 +143,12 @@ export class PresenceLease {
       (error: unknown) => {
         if (this.pending === controller) this.pending = null;
         if (this.disposed || this.ended) return;
-        if (apiErrorCode(error) === PLUGIN_TAB_ERROR.conversationNotFound) {
+        const code = apiErrorCode(error);
+        if (code === PLUGIN_TAB_ERROR.conversationNotFound) {
           this.end();
           return;
         }
+        if (code === PLUGIN_TAB_ERROR.conversationArchived) return;
         if (this.failing) return;
         this.failing = true;
         const reason: unknown = controller.signal.aborted ? controller.signal.reason : error;

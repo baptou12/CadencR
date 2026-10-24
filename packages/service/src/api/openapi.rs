@@ -24,6 +24,7 @@ use crate::domain::features::auto_name_route as features_auto_name_route;
 use crate::domain::features::models as features_models;
 use crate::domain::features::recent_routes as features_recent_routes;
 use crate::domain::features::routes as features_routes;
+use crate::domain::features::settings_routes as features_settings_routes;
 use crate::domain::imports::models as imports_models;
 use crate::domain::imports::routes as imports_routes;
 use crate::domain::lsp::routes as lsp_routes;
@@ -129,12 +130,12 @@ use crate::domain::ws_session::routes as ws_routes;
         features_routes::update_feature_label_handler,
         features_routes::update_feature_pinned_handler,
         features_routes::is_empty_handler,
-        features_routes::get_feature_settings_handler,
-        features_routes::set_feature_setting_handler,
-        features_routes::get_feature_model_settings_handler,
-        features_routes::set_feature_model_setting_handler,
-        features_routes::get_feature_provider_settings_handler,
-        features_routes::set_feature_provider_setting_handler,
+        features_settings_routes::get_feature_settings_handler,
+        features_settings_routes::set_feature_setting_handler,
+        features_settings_routes::get_feature_model_settings_handler,
+        features_settings_routes::set_feature_model_setting_handler,
+        features_settings_routes::get_feature_provider_settings_handler,
+        features_settings_routes::set_feature_provider_setting_handler,
         features_routes::get_working_dir_handler,
         crate::domain::features::pending_gate::get_pending_gate_handler,
         crate::domain::features::pending_gate::respond_gate_handler,
