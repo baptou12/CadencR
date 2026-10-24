@@ -47,13 +47,8 @@ grep -q '^## Install$' "$tmp_dir/release-notes.md" \
   || fail "expected platform installation instructions"
 grep -q 'brew install --cask merkr-software/cadencr/cadencr' "$tmp_dir/release-notes.md" \
   || fail "expected Homebrew installation instructions"
-grep -q 'chmod +x Cadencr-1.2.3-x86_64.AppImage' "$tmp_dir/release-notes.md" \
-  || fail "expected arch-suffixed AppImage instructions"
-grep -q 'sudo apt install ./Cadencr-1.2.3-amd64.deb' "$tmp_dir/release-notes.md" \
-  || fail "expected versioned Debian installation instructions"
-grep -q 'sudo dnf install ./Cadencr-1.2.3-x86_64.rpm' "$tmp_dir/release-notes.md" \
-  || fail "expected RPM installation instructions"
-grep -q 'sudo zypper install ./Cadencr-1.2.3-x86_64.rpm' "$tmp_dir/release-notes.md" \
-  || fail "expected openSUSE installation instructions"
+if grep -Eq 'Linux|AppImage|\.deb|\.rpm' "$tmp_dir/release-notes.md"; then
+  fail "the macOS release must not advertise Linux packages it does not ship"
+fi
 
 echo "release-notes tests passed"

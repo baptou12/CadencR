@@ -150,6 +150,15 @@ test("the release notes gain one alpha section, even when attach is re-run", () 
   assert.match(first.editedNotes, /^## Added\n\n- Something\.\n\n## Linux \(alpha\)\n/);
   assert.equal(first.editedNotes.match(/## Linux \(alpha\)/g).length, 1);
   assert.match(first.editedNotes, /\*\*alpha\*\*/);
+  for (const command of [
+    "chmod +x Cadencr-0.15.0-x86_64.AppImage",
+    "sudo apt install ./Cadencr-0.15.0-amd64.deb",
+    "sudo dnf install ./Cadencr-0.15.0-x86_64.rpm",
+    "sudo zypper install ./Cadencr-0.15.0-x86_64.rpm",
+  ]) {
+    assert.ok(first.editedNotes.includes(command), command);
+  }
+  assert.match(first.editedNotes, /\n```bash\n[^`]+\n```\n/);
 
   const again = runWithFakeGh(run, { notes: first.editedNotes });
   assert.equal(again.result.status, 0, again.result.stderr);

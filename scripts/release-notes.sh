@@ -61,11 +61,11 @@ extract_release_notes() {
 }
 
 append_install_instructions() {
-  local tag="$1"
-  local output="$2"
-  local version="${tag#v}"
+  local output="$1"
 
-  cat >> "$output" <<EOF
+  # Linux is an alpha attached later by desktop-linux-release.yml, which adds its
+  # own install section once the packages exist.
+  cat >> "$output" <<'EOF'
 
 ## Install
 
@@ -73,32 +73,11 @@ append_install_instructions() {
 
 Install with Homebrew:
 
-\`\`\`bash
+```bash
 brew install --cask merkr-software/cadencr/cadencr
-\`\`\`
+```
 
 Or download the DMG matching Apple Silicon or Intel from the assets below.
-
-### Linux (x86-64)
-
-Download one of the Linux assets below, then install it with the matching command:
-
-\`\`\`bash
-# Portable AppImage — works across most glibc-based distributions
-chmod +x Cadencr-${version}-x86_64.AppImage
-./Cadencr-${version}-x86_64.AppImage
-
-# Ubuntu, Debian, Mint, Pop!_OS, and other Debian-based distributions
-sudo apt install ./Cadencr-${version}-amd64.deb
-
-# Fedora, RHEL, Rocky, AlmaLinux, and other RPM distributions
-sudo dnf install ./Cadencr-${version}-x86_64.rpm
-
-# openSUSE and SUSE Linux Enterprise
-sudo zypper install ./Cadencr-${version}-x86_64.rpm
-\`\`\`
-
-Official AppImage, DEB, and RPM installs receive updates through CadencR. DEB and RPM updates may request administrator authentication when the new package is installed.
 EOF
 }
 
@@ -111,12 +90,12 @@ main() {
   if [ "$#" -eq 2 ]; then
     validate_output "$2"
     extract_release_notes "$tag" "$2"
-    append_install_instructions "$tag" "$2"
+    append_install_instructions "$2"
   else
     local tmp
     tmp="$(mktemp)"
     extract_release_notes "$tag" "$tmp"
-    append_install_instructions "$tag" "$tmp"
+    append_install_instructions "$tmp"
     cat "$tmp"
     rm -f "$tmp"
   fi
