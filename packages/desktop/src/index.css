@@ -107,7 +107,10 @@
   --app-window-controls-safe-area: 148px;
 }
 
-:root[data-window-controls="linux"] [data-window-control-safe] {
+/* Every draggable page header runs under the app-owned window controls, so it
+ * reserves their width; other top-right rows opt in with the data attribute. */
+:root[data-window-controls="linux"] [data-window-control-safe],
+:root[data-window-controls="linux"] header.titlebar-drag {
   padding-right: calc(var(--app-window-controls-safe-area) + 12px);
 }
 
