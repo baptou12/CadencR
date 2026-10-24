@@ -32,7 +32,7 @@
     "notarize:mac:staple": "node scripts/notarize-staple.mjs"
   },
   "dependencies": {
-    "@fontsource-variable/figtree": "^5.2.10",
+    "@fontsource-variable/figtree": "^5.3.0",
     "dotenv": "^17.4.2",
     "electron-updater": "^6.8.9"
   },
@@ -62,7 +62,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/utilities": "^3.2.2",
     "@excalidraw/excalidraw": "0.18.1",
-    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/inter": "^5.3.0",
     "@fontsource/caladea": "^5.3.0",
     "@fontsource/carlito": "^5.3.0",
     "@lexical/react": "^0.46.0",
