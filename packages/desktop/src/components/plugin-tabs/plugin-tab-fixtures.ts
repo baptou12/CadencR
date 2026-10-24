@@ -1,5 +1,11 @@
 import type { PluginTabSummary } from "@/api/generated";
-import type { PluginTabEvent, PluginTabsBridge } from "@/shared/plugin-tab-host";
+import type {
+  PluginTabEvent,
+  PluginTabKeyInput,
+  PluginTabOwnShortcut,
+  PluginTabShortcutBinding,
+  PluginTabsBridge,
+} from "@/shared/plugin-tab-host";
 import { vi } from "vitest";
 
 /** A valid, enabled, built custom tab; override what a test is about. */
@@ -20,6 +26,7 @@ export function pluginTabSummary(overrides: Partial<PluginTabSummary> = {}): Plu
     network: { allowed_origins: [], reasoning: null },
     configuration: [],
     commands: [],
+    shortcuts: [],
     backend: null,
     access_level: "ui",
     permissions_hash: "abc",
@@ -51,6 +58,7 @@ export function linuxOnlyBackendTab(overrides: Partial<PluginTabSummary> = {}): 
 /** `desktopBridge.pluginTabs` with spies, plus a way to fire host events. */
 export function createPluginTabsBridgeMock() {
   const listeners = new Set<(event: PluginTabEvent) => void>();
+  const keyListeners = new Set<(input: PluginTabKeyInput) => void>();
   const bridge = {
     open: vi.fn(() => Promise.resolve()),
     setBounds: vi.fn(() => Promise.resolve()),
@@ -60,13 +68,24 @@ export function createPluginTabsBridgeMock() {
     openDevTools: vi.fn(() => Promise.resolve()),
     focus: vi.fn(() => Promise.resolve()),
     setTheme: vi.fn(() => Promise.resolve()),
+    setAppShortcuts: vi.fn((_bindings: readonly PluginTabShortcutBinding[]) => Promise.resolve()),
+    setTabShortcuts: vi.fn((_instanceId: string, _shortcuts: readonly PluginTabOwnShortcut[]) =>
+      Promise.resolve(),
+    ),
     onEvent: vi.fn((listener: (event: PluginTabEvent) => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    }),
+    onAppShortcut: vi.fn((listener: (input: PluginTabKeyInput) => void) => {
+      keyListeners.add(listener);
+      return () => keyListeners.delete(listener);
     }),
   } satisfies PluginTabsBridge;
   const emit = (event: PluginTabEvent): void => {
     for (const listener of listeners) listener(event);
   };
-  return { bridge, emit };
+  const pressAppShortcut = (input: PluginTabKeyInput): void => {
+    for (const listener of keyListeners) listener(input);
+  };
+  return { bridge, emit, pressAppShortcut };
 }

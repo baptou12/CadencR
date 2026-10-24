@@ -25,4 +25,6 @@ export const PLUGIN_TAB_ERROR = {
    * client: the service took back every lease held in it.
    */
   conversationNotFound: "PLUGIN_TAB_CONVERSATION_NOT_FOUND",
+  /** A presence renewal for an archived conversation: refused until it is unarchived. */
+  conversationArchived: "PLUGIN_TAB_CONVERSATION_ARCHIVED",
 } as const;

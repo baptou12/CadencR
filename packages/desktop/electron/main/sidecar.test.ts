@@ -1,7 +1,11 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   describeStartupFailure,
   parsePhaseLine,
+  productionDbPath,
   rethrowAfterCleanup,
   serviceArgs,
   serviceEnv,
@@ -11,6 +15,24 @@ import {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
+
+describe("production database path", () => {
+  it("uses the standard production path even when a development path is inherited", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "cadencr-production-path-"));
+    vi.spyOn(os, "homedir").mockReturnValue(home);
+    vi.stubEnv("CADENCR_DB_PATH", path.join(home, "development.db"));
+
+    const dbPath = productionDbPath();
+
+    expect(dbPath).toBe(path.join(home, ".cadencr", "database", "cadencr.db"));
+    expect(fs.existsSync(dbPath)).toBe(false);
+    if (process.platform !== "win32") {
+      expect(fs.statSync(path.dirname(dbPath)).mode & 0o777).toBe(0o700);
+    }
+  });
 });
 
 describe("development sidecar startup", () => {

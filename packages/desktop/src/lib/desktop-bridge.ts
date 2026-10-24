@@ -74,7 +74,10 @@ export const noopPluginTabs: PluginTabsBridge = {
   openDevTools: () => Promise.resolve(),
   focus: () => Promise.resolve(),
   setTheme: () => Promise.resolve(),
+  setAppShortcuts: () => Promise.resolve(),
+  setTabShortcuts: () => Promise.resolve(),
   onEvent: () => () => undefined,
+  onAppShortcut: () => () => undefined,
 };
 
 const browserBridge: CadencrBrowserBridge = {

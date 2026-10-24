@@ -45,6 +45,8 @@ export interface TestHostOptions {
   capabilities?: string[];
   /** Whether the tab starts shown. Default: true. */
   visible?: boolean;
+  /** The active manifest shortcut ids `hello` reports. Default: none. */
+  shortcuts?: string[];
   instanceId?: string;
   plugin?: { id: string; version: string };
   /** API versions the fake host accepts. Default: the SDK's own range. */
@@ -76,6 +78,8 @@ export interface TestHost {
   setContext(context: TabContext): void;
   setTheme(theme: ThemeSnapshot): void;
   setVisible(visible: boolean): void;
+  /** Sends `shortcut`, as when the user presses the manifest shortcut `id`. */
+  pressShortcut(id: string): void;
   emit<E extends EventName>(event: E, payload: EventMap[E]): void;
   /** Sends `stream.event` to one subscription id, or to every subscription of
    *  a topic. `seq` auto-increments per subscription unless given. */
@@ -108,6 +112,7 @@ class FakeHost implements TestHost {
       theme: options.theme ?? DEFAULT_TEST_THEME,
       capabilities: options.capabilities ?? [],
       visible: options.visible ?? true,
+      shortcuts: options.shortcuts ?? [],
       instanceId: options.instanceId ?? "test-instance",
       plugin: options.plugin ?? { id: "test-tab", version: "0.0.0" },
       apiVersions: options.apiVersions ?? SUPPORTED_API_VERSIONS,
@@ -179,6 +184,10 @@ class FakeHost implements TestHost {
   setVisible(visible: boolean): void {
     this.host.visible = visible;
     this.emit("visibility.changed", { visible });
+  }
+
+  pressShortcut(id: string): void {
+    this.emit("shortcut", { id });
   }
 
   emit<E extends EventName>(event: E, payload: EventMap[E]): void {

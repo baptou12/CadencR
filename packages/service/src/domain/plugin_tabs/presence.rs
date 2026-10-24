@@ -70,11 +70,11 @@ impl PresenceStore {
         }
     }
 
-    /// Release every lease held in `feature_id` (the conversation is gone),
-    /// whichever tab and client took it.
-    pub fn release_feature(&self, feature_id: i64) {
+    /// Release every lease held in these conversations (deleted or
+    /// archived), whichever tab and client took them.
+    pub fn release_features(&self, feature_ids: &[i64]) {
         self.lock()
-            .retain(|_, lease| lease.feature_id != feature_id);
+            .retain(|_, lease| !feature_ids.contains(&lease.feature_id));
     }
 
     /// Whether some instance of `plugin_id` holds a live lease in `feature_id`.
@@ -134,7 +134,7 @@ mod tests {
         store.renew("other-client", "ports", 2).unwrap();
         store.renew("other-tab", "graph", 2).unwrap();
         store.renew("elsewhere", "ports", 3).unwrap();
-        store.release_feature(2);
+        store.release_features(&[2]);
         assert!(!store.is_open("ports", 2));
         assert!(!store.is_open("graph", 2));
         assert!(store.is_open("ports", 3), "other conversations keep theirs");

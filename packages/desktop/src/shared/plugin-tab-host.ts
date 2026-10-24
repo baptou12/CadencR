@@ -7,7 +7,7 @@
  * sandboxed preload cannot import a shared chunk.
  */
 
-import type { BrowserBounds } from "./browser-types";
+import type { BrowserBounds, BrowserShortcutBinding } from "./browser-types";
 
 /** Manifest id rule (§3): a URL host label, `cadencr-tab://<id>/`. */
 export const PLUGIN_TAB_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
@@ -22,6 +22,8 @@ export const MAX_PLUGIN_TAB_THEME_CSS_LENGTH = 256 * 1024;
 export const PLUGIN_TAB_RENDERER_PORT_CHANNEL = "plugin-tab:port";
 /** Main → renderer lifecycle events (`PluginTabEvent`). */
 export const PLUGIN_TAB_EVENT_CHANNEL = "plugin-tab:event";
+/** Main → renderer: a Cadencr shortcut pressed in a focused guest (`PluginTabKeyInput`). */
+export const PLUGIN_TAB_APP_SHORTCUT_CHANNEL = "plugin-tab:app-shortcut";
 
 /**
  * `window.postMessage` type the main-window preload uses to hand the renderer
@@ -45,8 +47,10 @@ export interface PluginTabPortMessage {
  * - `crashed`: the guest process died; the view is gone until `reload`.
  * - `recycled`: destroyed to stay under the live-guest cap; it is recreated
  *   transparently on the next `open` / `setVisible(true)`.
+ * - `shortcut`: one of the tab's own shortcuts was pressed while it had
+ *   focus; `detail` is its id. The page is unaffected.
  */
-export type PluginTabEventType = "loaded" | "load-failed" | "crashed" | "recycled";
+export type PluginTabEventType = "loaded" | "load-failed" | "crashed" | "recycled" | "shortcut";
 
 export interface PluginTabEvent {
   instanceId: string;
@@ -64,6 +68,25 @@ export interface PluginTabTheme {
   background: string;
 }
 
+/** A chord in shortcut tokens (`["mod", "shift", "k"]`), with an optional alternate. */
+export type PluginTabShortcutBinding = BrowserShortcutBinding;
+
+/** One of a tab's own `tab.json` shortcuts, delivered to its page as a `shortcut` event. */
+export interface PluginTabOwnShortcut {
+  id: string;
+  keys: string[];
+}
+
+/** A key pressed in a guest, as Electron reports it (`Input`). */
+export interface PluginTabKeyInput {
+  key: string;
+  code: string;
+  meta: boolean;
+  control: boolean;
+  alt: boolean;
+  shift: boolean;
+}
+
 /** `desktopBridge.pluginTabs` — native guest views for custom tabs (desktop only). */
 export interface PluginTabsBridge {
   /** Create (or recreate) the guest for `instanceId`; idempotent for the same plugin. */
@@ -78,5 +101,17 @@ export interface PluginTabsBridge {
   /** Give the guest OS keyboard focus (e.g. when its tab is activated by click). */
   focus: (instanceId: string) => Promise<void>;
   setTheme: (theme: PluginTabTheme) => Promise<void>;
+  /**
+   * Cadencr's shortcuts as currently bound (`lib/plugin-tabs/tab-shortcuts.ts`):
+   * taken from any focused guest and replayed in the renderer.
+   */
+  setAppShortcuts: (bindings: readonly PluginTabShortcutBinding[]) => Promise<void>;
+  /** The instance's own active shortcuts (none collides with Cadencr's). */
+  setTabShortcuts: (
+    instanceId: string,
+    shortcuts: readonly PluginTabOwnShortcut[],
+  ) => Promise<void>;
   onEvent: (cb: (event: PluginTabEvent) => void) => () => void;
+  /** A Cadencr shortcut pressed in a focused guest, for the renderer to run. */
+  onAppShortcut: (cb: (input: PluginTabKeyInput) => void) => () => void;
 }

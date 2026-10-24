@@ -527,6 +527,33 @@ async fn presence(fixture: &Fixture) {
         .await;
     assert_eq!(deleted.status, StatusCode::NOT_FOUND);
     assert_eq!(deleted.code(), "PLUGIN_TAB_CONVERSATION_NOT_FOUND");
+    // Archived, renewals are refused; unarchived, they take the lease again.
+    let other = "/api/plugin-tabs/native/presence/5c1d0e7a-0b9e-4d2c";
+    let other_body = || Some(json!({ "feature_id": OTHER_FEATURE }));
+    let status = format!("/api/features/{OTHER_FEATURE}/status");
+    for (status_body, expected, code) in [
+        (
+            "archived",
+            StatusCode::CONFLICT,
+            Some("PLUGIN_TAB_CONVERSATION_ARCHIVED"),
+        ),
+        ("active", StatusCode::NO_CONTENT, None),
+    ] {
+        let updated = fixture
+            .send(
+                Method::PUT,
+                &status,
+                None,
+                Some(json!({ "status": status_body })),
+            )
+            .await;
+        assert_eq!(updated.status, StatusCode::OK);
+        let renewed = fixture.send(Method::PUT, other, None, other_body()).await;
+        assert_eq!(renewed.status, expected);
+        if let Some(code) = code {
+            assert_eq!(renewed.code(), code);
+        }
+    }
     fixture.enable("runner").await;
     let token = fixture.token("runner").await;
     let by_a_tab = fixture.send(Method::PUT, lease, Some(&token), body()).await;
