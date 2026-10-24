@@ -23,9 +23,9 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 | 3 | Distribution Electron | 2 | Build/package local, configuration des mises à jour et artefacts CI. | Fusionné : #313 |
 | 4 | CSS | 5 | Build desktop/site/tab-kit, rendu clair/sombre et composants. | Fusionné : #315 |
 | 5a | Radix | 1 | Dialogs imbriqués, focus, menus, défilement et consommateur tab-kit. | Fusionné : #316 |
-| 5b | Composants UI | 4 | Calendrier, redimensionnement, listes longues et notifications. | PR #318, CI finale |
-| 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | Validé localement |
-| 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | À traiter |
+| 5b | Composants UI | 4 | Calendrier, redimensionnement, listes longues et notifications. | Fusionné : #318 |
+| 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | PR #319, CI finale |
+| 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | Validé localement |
 | 8 | React | 4 | Typage, tests complets, StrictMode et interactions dans l'app. | À traiter |
 | 9 | Éditeur riche | 2 | Saisie, sélection, copier/coller, mentions et envoi du prompt. | À traiter |
 | 10 | Aperçus de contenu | 3 | Markdown diffusé, code coloré, PDF et workers. | À traiter |
@@ -224,3 +224,18 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - Correction idb-keyval vérifiée dans une base IndexedDB de QA distincte : injection d'un échec natif VersionError sur la première ouverture ; le même store réussit ensuite set/get, sans recréation du store ni suppression de base.
 - Après retour en ligne et rechargement, uniquement les trois diagnostics navigateur déjà connus ; l'erreur réseau pendant la coupure était attendue. Preuves : `/tmp/cadencr-309/state-{web-checks,security,build,landing-build,dev}.log` et `state-qa.json`.
 - Suivi : #316 fusionnée sur `03e351bac` après CI, CodeQL et audit verts ; #318 est synchronisée sur main à `5ce725ccc` et attend ses checks finaux.
+
+
+## Lot 7 : routage
+
+- Versions exactes : React Router 1.170.42 et router-vite-plugin 1.167.43 ; core 1.171.35, generator 1.167.41, plugin 1.168.43, history 1.162.5.
+- Revue des changelogs [React Router](https://github.com/TanStack/router/blob/main/packages/react-router/CHANGELOG.md), [core](https://github.com/TanStack/router/blob/main/packages/router-core/CHANGELOG.md), generator, plugin, history et utils dans les intervalles du lockfile. Point principal : nouvel ordonnanceur par lanes, isolation des navigations annulées, cache et préchargement ; corrections des liens, paramètres, historique hash et limites d'erreur. Les API internes retirées ne sont pas utilisées par l'app.
+- [Store 0.9.3–0.11.2](https://github.com/TanStack/store/blob/main/packages/react-store/CHANGELOG.md) : nouveaux hooks et correction des dépendances d'abonnement. [Seroval 1.6.3–1.6.9](https://github.com/lxsmnsyc/seroval/blob/main/packages/seroval/CHANGELOG.md) et plugins 1.5.4–1.6.9 : validation de désérialisation, flux, sérialisation des constructeurs, Temporal. L'app n'utilise pas de SSR Router.
+- Transitifs de build revus : Babel 7.29.8/9 (parenthèses et parsing), Unplugin 3.1–3.4 (adaptateurs, filtres, peers), Prettier 3.9.10 (parsers et corrections de formatage). Prettier 3.8.4 reste résolu pour les consommateurs existants ; la nouvelle version appartient au générateur Router.
+- Fichier routeTree.gen.ts régénéré par le build : uniquement l'ordre déterministe des routes change, conformément au changelog. Comparaison des lignes et revue du diff : aucun chemin, parent ou mapping modifié. Aucun changement applicatif manuel.
+- 25 tâches web réussies, 6 625 tests desktop, 33 tests de sécurité et build desktop réussi.
+- QA réelle : lien Settings avec section editor et défilement ciblé ; clic Schedules, précédent/suivant ; ancienne route feature redirigée vers ws-session avec cwd, IDs et focusTab=editor conservés ; rechargement fonctionnel.
+- Rafale de 21 navigations réelles via le routeur de l'app entre Settings, Schedules et deux conversations : dernière destination, titre et panneau éditeur cohérents, sans état résiduel d'une autre conversation. Aucun prompt envoyé.
+- Feature inexistante : message explicite et lien Back to home fonctionnel ; URL inconnue : Not Found, puis récupération via navigation. Marketplace reste désactivé par son flag de build ; son ancien lien reste dans Settings conformément au garde existant.
+- Console : trois diagnostics navigateur connus ; les requêtes 404 et le warning de composant NotFound par défaut sont attendus pour les cas d'erreur exercés. Preuves : `/tmp/cadencr-309/router-{web-checks,security,build,dev}.log`.
+- #318 fusionnée à `6af18b06e` après CI, audit et CodeQL verts. #319 synchronisée sur main à `c5743ad48`, sans changement de contenu, puis passée prête ; checks finaux en cours.
