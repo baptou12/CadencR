@@ -1046,16 +1046,17 @@ describe("BrowserManager", () => {
 
   it("does not treat synthetic input or stale input debt as a native popup gesture", async () => {
     const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
-    const tab = manager.createTab("http://localhost:1420/", "default", 1);
+    // Exercise a guest app, outside Cadencr's protected renderer origin.
+    const tab = manager.createTab("http://localhost:3000/", "default", 1);
     const parent = [...webContentsById.values()][0];
-    parent.getURL.mockReturnValue("http://localhost:1420/");
+    parent.getURL.mockReturnValue("http://localhost:3000/");
     const handler = parent.setWindowOpenHandler.mock.calls[0][0] as (
       value: Electron.HandlerDetails,
     ) => Electron.WindowOpenHandlerResponse;
 
     await manager.click(tab.id, 1, 1);
     parent.emit("before-mouse-event", {}, { type: "mouseDown", button: "left", x: 1, y: 1 });
-    expect(handler(popupDetails({ url: "http://localhost:1420/synthetic" })).action).toBe("deny");
+    expect(handler(popupDetails({ url: "http://localhost:3000/synthetic" })).action).toBe("deny");
 
     await manager.inspection.keypress(tab.id, "Space");
     parent.emit(
@@ -1069,7 +1070,7 @@ describe("BrowserManager", () => {
         alt: false,
       },
     );
-    expect(handler(popupDetails({ url: "http://localhost:1420/synthetic-space" })).action).toBe(
+    expect(handler(popupDetails({ url: "http://localhost:3000/synthetic-space" })).action).toBe(
       "deny",
     );
 
@@ -1086,7 +1087,7 @@ describe("BrowserManager", () => {
       },
     );
     parent.emit("before-mouse-event", {}, { type: "mouseDown", button: "left", x: 1, y: 1 });
-    expect(handler(popupDetails({ url: "http://localhost:1420/human" })).action).toBe("allow");
+    expect(handler(popupDetails({ url: "http://localhost:3000/human" })).action).toBe("allow");
   });
 
   it("clears a shared private partition only when its last tab closes", async () => {

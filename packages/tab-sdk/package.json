@@ -85,7 +85,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "happy-dom": "20.14.5",
+    "happy-dom": "21.0.4",
     "knip": "^6.22.0",
     "orval": "8.26.0",
     "oxfmt": "^0.56.0",
