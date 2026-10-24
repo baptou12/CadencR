@@ -15,19 +15,21 @@ locally (Docker on Apple Silicon) for testing. Windows is out of scope.
 | Paths | XDG data/config/cache through `shared::app_paths` (Rust) and `electron/main/app-paths.ts`; LSP installs, forge tokens and remote-access credentials no longer bypass it. |
 | Agent discovery | Login-shell env hydration on Linux (shell from the passwd database), Linux install dirs (`/usr/bin`, `/snap/bin`, `~/.cargo/bin`, `~/.local/share/pnpm`). |
 | Packaging | Per-arch sidecar staging (`@cadencr/service build:sidecars`), ELF-arch guard in `after-pack`, AppImage/DEB/RPM with arch-suffixed names, `git` + `lsof` package dependencies, soname-based RPM dependencies (install on Fedora, RHEL/Rocky and openSUSE alike), Linux window icon. |
-| Release | `desktop-release.yml` builds Linux on `ubuntu-22.04` (glibc 2.35) in parallel with macOS; `publish` releases both once both pass; `latest-linux.yml` drives AppImage/DEB/RPM auto-updates. |
+| Release | Linux ships as a manual alpha: after `desktop-release.yml` publishes macOS, `desktop-linux-release.yml` (run by hand) builds the tag on `ubuntu-22.04` (glibc 2.35), smoke tests it, attaches the packages and flags the notes "Linux (alpha)". `latest-linux.yml` drives AppImage/DEB/RPM auto-updates; a release without it reads as "no update" on Linux. |
 | Window chrome | Frameless window with app-owned controls; X11 forced by default (Wayland `WebContentsView` scroll drift). |
 | Keyboard | Bare Ctrl chords belong to the shell while the terminal has focus; terminal actions use Ctrl+Shift/Ctrl+Alt off macOS; platform-aware hint labels. |
 | Runtime | AppImage/Electron variables stripped from the sidecar env; sleep prevention while hosting; compatibility-terminal notice once per session; non-mac Edit menu without accelerators that steal Ctrl keys. |
-| Landing | Linux downloads and claims gated until the first release carrying Linux packages (`FIRST_LINUX_RELEASE`). |
+| Landing | Linux downloads and claims hidden until `LINUX_ALPHA_RELEASE` names the release carrying the alpha; shown with an "Alpha" badge. |
 
 ## Remaining work
 
 Ordered by what blocks a first public Linux release.
 
-- [ ] **Publish the first Linux release.** Bump `FIRST_LINUX_RELEASE` in
-      `packages/landing/src/lib/downloads.ts` if it is not `0.15.0`, then run the
-      release workflow and the manual checklist.
+- [ ] **Publish the first Linux alpha.** Once a desktop release is published, run
+      `gh workflow run desktop-linux-release.yml -f release_tag=vX.Y.Z`, then the manual
+      checklist, then set `LINUX_ALPHA_RELEASE` in `packages/landing/src/lib/downloads.ts`.
+- [ ] **Leave alpha.** Fold the Linux build back into `desktop-release.yml` once Linux
+      should ship with every release.
 - [ ] **WebGPU terminal on real GPUs.** Xvfb has no adapter, so CI cannot tell whether
       celeritty renders on Mesa/NVIDIA under X11. Measure on real machines; decide on
       an Electron GPU switch or keep the xterm fallback.
@@ -74,9 +76,9 @@ Four layers; each catches what the previous cannot.
      the sidecar answers authenticated `/api/health`, data lands under XDG (never
      `~/.cadencr`), app-owned window controls are on, and no AppImage variable reaches
      the sidecar.
-3. **Release workflow — every tag.** The `linux` job builds x64 on `ubuntu-22.04`, smoke
-   tests the sidecar, then runs `smoke-linux-packages.sh`; `publish` refuses to release
-   unless every macOS and Linux asset is uploaded.
+3. **Linux alpha workflow — every Linux release, by hand.** `desktop-linux-release.yml`
+   refuses a draft or already-Linux release, builds x64 on `ubuntu-22.04`, smoke tests the
+   sidecar, runs `smoke-linux-packages.sh`, then uploads and verifies every Linux asset.
 4. **Manual pass on real machines — every release candidate.** What containers cannot
    show: GPU rendering, Wayland/X11 sessions, desktop integration (menu entry, icon,
    notifications, file drops), AppArmor, the update chain across two real versions.
@@ -100,5 +102,5 @@ Four layers; each catches what the previous cannot.
   - `e2e`: DEB and FUSE-mounted AppImage launch, sidecar healthy, XDG paths, no
     `~/.cadencr`, app-owned window controls, clean sidecar environment. No WebGPU adapter
     under Xvfb (xterm fallback).
-- Not yet run: the x64 `linux` release job (first run happens on a tag), and every item of
+- Not yet run: `desktop-linux-release.yml` (first run happens on a published release), and every item of
   the [manual checklist](./qa/LINUX_RELEASE_CHECKLIST.md).

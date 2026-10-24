@@ -170,6 +170,12 @@ done
     - The tool workflows publish what `main` holds. Continue only once the release preparation commit is on `origin/main` (`git fetch origin main && git merge-base --is-ancestor <release commit> origin/main`). If it is not there yet, ask the developer to land it; never push to `main` yourself without their go.
     - Then follow [Tools release flow](#tools-release-flow) from step T4, with the tools and versions confirmed at step 5.
 
+14. **Offer the Linux alpha**
+    - Linux is not part of the tag release: it ships as an alpha, attached by hand to the published release. Ask the developer whether this release gets it; never run it without their explicit go.
+    - On a go: `gh workflow run desktop-linux-release.yml -f release_tag="$TAG"`, then watch the run (`gh run list --workflow desktop-linux-release.yml --limit 1`, `gh run watch <id>`). It refuses a draft release or one that already carries Linux packages.
+    - Report the attached Linux assets and the "Linux (alpha)" section added to the release notes.
+    - The landing site keeps Linux hidden until `LINUX_ALPHA_RELEASE` in `packages/landing/src/lib/downloads.ts` names this version. Remind the developer to run `docs/qa/LINUX_RELEASE_CHECKLIST.md` on the attached packages before setting it.
+
 ## Tools release flow
 
 Used on its own by `--tools`, and by step 13 of an app release (from step T4).

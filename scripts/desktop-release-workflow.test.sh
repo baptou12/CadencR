@@ -65,22 +65,35 @@ case "$workflow_text" in
   *) fail "desktop sidecar must validate and forward optional mixed theme feed configuration" ;;
 esac
 
+# Linux ships as a manual alpha (desktop-linux-release.yml) attached to the
+# published release, so a Linux failure can never hold up macOS.
 case "$workflow_text" in
-  *"  linux:"*"runs-on: ubuntu-22.04"*"pnpm --filter @cadencr/service build:sidecars"*"resources/bin/x64/cadencr-service"*"--linux"*"--publish never"*"scripts/smoke-linux-packages.sh"*) ;;
-  *) fail "workflow must build, sidecar-smoke and package-smoke Linux on the oldest-glibc runner" ;;
+  *"--linux"*|*"latest-linux.yml"*|*"smoke-linux-packages.sh"*)
+    fail "the tag-triggered release must not build or publish Linux packages"
+    ;;
 esac
 
-case "$workflow_text" in
-  *"needs: [release, linux]"*"Create draft GitHub release"*) ;;
-  *) fail "the draft release must be created only after both macOS and Linux builds succeed" ;;
+linux_workflow="$repo_root/.github/workflows/desktop-linux-release.yml"
+[ -f "$linux_workflow" ] || fail "missing workflow: $linux_workflow"
+linux_text="$(cat "$linux_workflow")"
+
+case "$linux_text" in
+  *"  push:"*|*"--publish always"*)
+    fail "the Linux alpha must only run by hand and never let electron-builder publish"
+    ;;
 esac
 
-case "$workflow_text" in
-  *"Upload GitHub release assets"*'Cadencr-${version}-x86_64.AppImage'*'latest-linux.yml'*"Verify uploaded GitHub release assets"*'"Cadencr-${version}-x86_64.AppImage"'*'"Cadencr-${version}-amd64.deb"'*'"Cadencr-${version}-x86_64.rpm"'*'"latest-linux.yml"'*"Publish GitHub release"*) ;;
-  *) fail "workflow must upload and verify every Linux updater target and latest-linux.yml" ;;
+case "$linux_text" in
+  *"runs-on: ubuntu-22.04"*"pnpm --filter @cadencr/service build:sidecars"*"resources/bin/x64/cadencr-service"*"--linux"*"--publish never"*"scripts/smoke-linux-packages.sh"*) ;;
+  *) fail "the Linux alpha must build, sidecar-smoke and package-smoke on the oldest-glibc runner" ;;
 esac
 
-case "$workflow_text" in
+case "$linux_text" in
+  *"Upload Linux alpha assets"*'Cadencr-${version}-x86_64.AppImage'*'Cadencr-${version}-amd64.deb'*'Cadencr-${version}-x86_64.rpm'*'latest-linux.yml'*"Verify uploaded Linux alpha assets"*"## Linux (alpha)"*) ;;
+  *) fail "the Linux alpha must upload and verify every updater target, then flag the release notes" ;;
+esac
+
+case "$workflow_text$linux_text" in
   *"AppImage.blockmap"*)
     fail "electron-builder embeds the AppImage block map; never expect a separate AppImage block map file"
     ;;

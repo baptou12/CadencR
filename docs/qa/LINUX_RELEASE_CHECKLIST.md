@@ -1,7 +1,8 @@
 # Linux release checklist
 
-Manual pass on real Linux machines before publishing a release that ships Linux
-packages. Automated layers (unit tests, `scripts/linux-container.sh`, the release
+Manual pass on real Linux machines before announcing a Linux alpha: run it on the
+packages `desktop-linux-release.yml` attached, before setting `LINUX_ALPHA_RELEASE` on
+the landing site. Automated layers (unit tests, `scripts/linux-container.sh`, the
 workflow's package smoke tests) run first; see [../LINUX_PORTING_PLAN.md](../LINUX_PORTING_PLAN.md).
 
 ## Matrix

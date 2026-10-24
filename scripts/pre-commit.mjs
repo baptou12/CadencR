@@ -44,7 +44,7 @@ const FULL_ROOT_FILES = new Set([
 const FULL_PREFIXES = [".husky/", "patches/"];
 const RELEASE_INPUTS = [
   /^scripts\/(release|update-homebrew-cask|desktop-release-workflow)[^/]*$/,
-  /^\.github\/workflows\/desktop-release\.yml$/,
+  /^\.github\/workflows\/desktop-(linux-)?release\.yml$/,
   /^homebrew\//,
 ];
 // Desktop files outside any test's import graph that still change every test:

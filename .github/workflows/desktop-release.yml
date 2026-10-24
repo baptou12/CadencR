@@ -13,27 +13,15 @@ on:
 
 env:
   RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
-  # Shared by the macOS and Linux sidecar builds.
-  # Public host-owned trust only; empty repository variables keep acquisition
-  # disabled. The build wrapper removes empty values before Rust option_env!.
-  CADENCR_REGISTRY_TRUST_MANIFEST_JSON: ${{ vars.CADENCR_REGISTRY_TRUST_MANIFEST_JSON }}
-  CADENCR_REGISTRY_ROOT_KEY_ID: ${{ vars.CADENCR_REGISTRY_ROOT_KEY_ID }}
-  CADENCR_REGISTRY_ROOT_PUBLIC_KEY_BASE64: ${{ vars.CADENCR_REGISTRY_ROOT_PUBLIC_KEY_BASE64 }}
-  CADENCR_REGISTRY_TRUST_MIN_GENERATION: ${{ vars.CADENCR_REGISTRY_TRUST_MIN_GENERATION }}
-  CADENCR_MANAGED_PROVIDER_KEY_ID: ${{ vars.CADENCR_MANAGED_PROVIDER_KEY_ID }}
-  CADENCR_MANAGED_PROVIDER_PUBLIC_KEY_BASE64: ${{ vars.CADENCR_MANAGED_PROVIDER_PUBLIC_KEY_BASE64 }}
-  CADENCR_MANAGED_PROVIDER_INDEX_URL: ${{ vars.CADENCR_MANAGED_PROVIDER_INDEX_URL }}
-  CADENCR_MANAGED_PROVIDER_BLOCKLIST_URL: ${{ vars.CADENCR_MANAGED_PROVIDER_BLOCKLIST_URL }}
-  CADENCR_MANAGED_THEME_INDEX_URL: ${{ vars.CADENCR_MANAGED_THEME_INDEX_URL }}
-  CADENCR_MANAGED_THEME_BLOCKLIST_URL: ${{ vars.CADENCR_MANAGED_THEME_BLOCKLIST_URL }}
-  CADENCR_MANAGED_TAB_BLOCKLIST_URL: ${{ vars.CADENCR_MANAGED_TAB_BLOCKLIST_URL }}
 
 permissions:
   contents: write
 
-# Desktop app only. The `cadencr` CLI and the SDKs have their own versions and
-# workflows (cli-release.yml, npm-release.yml, crates-release.yml); app
-# releases up to v0.14.0 also carried a Linux CLI asset.
+# Desktop app on macOS only. The Linux alpha packages are attached to the
+# published release by hand (desktop-linux-release.yml), so Linux can never
+# hold up a macOS release. The `cadencr` CLI and the SDKs have their own
+# versions and workflows (cli-release.yml, npm-release.yml,
+# crates-release.yml); app releases up to v0.14.0 also carried a Linux CLI asset.
 jobs:
   release:
     # arm64 runner (build:macos-sidecars cross-compiles x64). macos-14 is
@@ -41,6 +29,19 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     env:
+      # Public host-owned trust only; empty repository variables keep acquisition
+      # disabled. The build wrapper removes empty values before Rust option_env!.
+      CADENCR_REGISTRY_TRUST_MANIFEST_JSON: ${{ vars.CADENCR_REGISTRY_TRUST_MANIFEST_JSON }}
+      CADENCR_REGISTRY_ROOT_KEY_ID: ${{ vars.CADENCR_REGISTRY_ROOT_KEY_ID }}
+      CADENCR_REGISTRY_ROOT_PUBLIC_KEY_BASE64: ${{ vars.CADENCR_REGISTRY_ROOT_PUBLIC_KEY_BASE64 }}
+      CADENCR_REGISTRY_TRUST_MIN_GENERATION: ${{ vars.CADENCR_REGISTRY_TRUST_MIN_GENERATION }}
+      CADENCR_MANAGED_PROVIDER_KEY_ID: ${{ vars.CADENCR_MANAGED_PROVIDER_KEY_ID }}
+      CADENCR_MANAGED_PROVIDER_PUBLIC_KEY_BASE64: ${{ vars.CADENCR_MANAGED_PROVIDER_PUBLIC_KEY_BASE64 }}
+      CADENCR_MANAGED_PROVIDER_INDEX_URL: ${{ vars.CADENCR_MANAGED_PROVIDER_INDEX_URL }}
+      CADENCR_MANAGED_PROVIDER_BLOCKLIST_URL: ${{ vars.CADENCR_MANAGED_PROVIDER_BLOCKLIST_URL }}
+      CADENCR_MANAGED_THEME_INDEX_URL: ${{ vars.CADENCR_MANAGED_THEME_INDEX_URL }}
+      CADENCR_MANAGED_THEME_BLOCKLIST_URL: ${{ vars.CADENCR_MANAGED_THEME_BLOCKLIST_URL }}
+      CADENCR_MANAGED_TAB_BLOCKLIST_URL: ${{ vars.CADENCR_MANAGED_TAB_BLOCKLIST_URL }}
       # afterSign hook gates on this; opt in for tagged releases only.
       CADENCR_NOTARIZE_APP: "true"
       # Apple ID credentials consumed by build/notarize-app.cjs and
@@ -52,8 +53,11 @@ jobs:
       # Developer ID Application certificate from a base64-encoded .p12.
       CSC_LINK: ${{ secrets.MAC_CERTIFICATE_BASE64 }}
       CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
-      # Read-only here: the existing-release preflight below.
+      # GitHub publish provider — needs write access to releases.
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # PAT with write access to the merkr-software/homebrew-cadencr tap. When
+      # unset, the cask-update step is skipped (see its `if` guard).
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
       - name: Validate release tag
         run: |
@@ -66,6 +70,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
+
+      - name: Test Homebrew cask update script
+        run: env -u BASH_ENV bash scripts/update-homebrew-cask.test.sh
 
       - name: Enable pnpm from packageManager
         run: corepack enable
@@ -213,172 +220,12 @@ jobs:
           grep -F "Cadencr-${version}-x64.dmg" "$dist_dir/latest-mac.yml" >/dev/null
           grep -F "Cadencr-${version}-arm64.dmg" "$dist_dir/latest-mac.yml" >/dev/null
 
-      # actions/upload-artifact@v4.6.2
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: desktop-macos
-          if-no-files-found: error
-          retention-days: 7
-          path: |
-            packages/desktop/dist-electron/*.dmg
-            packages/desktop/dist-electron/*.dmg.blockmap
-            packages/desktop/dist-electron/*-mac.zip
-            packages/desktop/dist-electron/*-mac.zip.blockmap
-            packages/desktop/dist-electron/latest-mac.yml
-
-  linux:
-    # The oldest supported runner image: the sidecar links against its glibc
-    # (2.35), so this build also runs on Debian 12 and Ubuntu 22.04.
-    runs-on: ubuntu-22.04
-    timeout-minutes: 90
-    steps:
-      - name: Validate release tag
-        run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Expected an existing version tag such as v0.14.0" >&2
-            exit 1
-          fi
-
-      # actions/checkout@v7.0.1
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
-
-      - name: Enable pnpm from packageManager
-        run: corepack enable
-
-      # actions/setup-node@v7.0.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-
-      - name: Install Rust toolchain from rust-toolchain.toml
-        run: rustup toolchain install
-
-      - name: Install Linux packaging tools
-        # rpmbuild for the RPM target; vendored OpenSSL needs perl + make.
-        run: sudo apt-get update && sudo apt-get install -y rpm perl make
-
-      - name: Verify release tag matches desktop version
-        run: |
-          node -e "const pkg=require('./packages/desktop/package.json'); const expected='v'+pkg.version; const actual=process.env.RELEASE_TAG; if (actual !== expected) { console.error('Release tag '+actual+' does not match desktop version '+expected); process.exit(1); }"
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Validate marketplace build configuration
-        run: node scripts/validate-marketplace-build-env.mjs
-
-      - name: Use bounded pnpm listing for packaging
-        run: |
-          packaging_pnpm="pnpm@11.13.0+sha512.88d94724d8f2e6c186744a5584c6e59ecac869ec7ba15e9cb4cd628e8dc7066820b2481d8ee3b51ea8da323a7378068aa58c556a3720d32b7c20a051d088363a"
-          COREPACK_ENABLE_PROJECT_SPEC=0 corepack "$packaging_pnpm" --pm-on-fail=ignore --version
-          original_pnpm="$(command -v pnpm)"
-          tool_dir="$RUNNER_TEMP/cadencr-packaging-tools"
-          mkdir -p "$tool_dir"
-          cat > "$tool_dir/pnpm" <<'SH'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          if [ "$#" -gt 0 ] && [ "$1" = list ]; then
-            exec env COREPACK_ENABLE_PROJECT_SPEC=0 corepack "$CADENCR_PACKAGING_PNPM" --pm-on-fail=ignore "$@"
-          fi
-          exec "$CADENCR_BUILD_PNPM" "$@"
-          SH
-          chmod +x "$tool_dir/pnpm"
-          printf 'CADENCR_PACKAGING_PNPM=%s\nCADENCR_BUILD_PNPM=%s\n' "$packaging_pnpm" "$original_pnpm" >> "$GITHUB_ENV"
-          printf '%s\n' "$tool_dir" >> "$GITHUB_PATH"
-
-      - name: Verify packaging dependency graph
-        working-directory: packages/desktop
-        run: |
-          ulimit -Sn 10240
-          dependency_tree="$RUNNER_TEMP/desktop-production-dependencies.json"
-          if ! pnpm list --prod --json --depth Infinity --silent --loglevel=error > "$dependency_tree"; then
-            cat "$dependency_tree" >&2
-            exit 1
-          fi
-
-      - name: Build renderer + main bundles
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
-        run: pnpm --filter @cadencr/desktop exec electron-vite build
-
-      - name: Build Rust service sidecar (x64)
-        run: node scripts/validate-marketplace-build-env.mjs -- pnpm --filter @cadencr/service build:sidecars
-
-      - name: Smoke test packaged service sidecar startup
-        run: |
-          pnpm --filter @cadencr/service smoke:packaged-sidecar \
-            "$GITHUB_WORKSPACE/packages/desktop/resources/bin/x64/cadencr-service"
-
-      - name: Build Linux AppImage, DEB, and RPM
-        run: |
-          pnpm --filter @cadencr/desktop exec electron-builder \
-            --config electron-builder.yml \
-            --linux \
-            --x64 \
-            --publish never
-
-      - name: Smoke test Linux packages
-        run: scripts/smoke-linux-packages.sh packages/desktop/dist-electron "${RELEASE_TAG#v}" x64
-
-      # actions/upload-artifact@v4.6.2
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: desktop-linux
-          if-no-files-found: error
-          retention-days: 7
-          # The AppImage embeds its block map: no separate block map file exists.
-          path: |
-            packages/desktop/dist-electron/*.AppImage
-            packages/desktop/dist-electron/*.deb
-            packages/desktop/dist-electron/*.rpm
-            packages/desktop/dist-electron/latest-linux.yml
-
-  publish:
-    needs: [release, linux]
-    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
-    runs-on: macos-15
-    timeout-minutes: 30
-    env:
-      # GitHub publish provider — needs write access to releases.
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # PAT with write access to the merkr-software/homebrew-cadencr tap. When
-      # unset, the cask-update step is skipped (see its `if` guard).
-      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-    steps:
-      # actions/checkout@v7.0.1
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
-
-      - name: Test Homebrew cask update script
-        run: env -u BASH_ENV bash scripts/update-homebrew-cask.test.sh
-
-      # actions/download-artifact@v4.3.0
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          pattern: desktop-*
-          merge-multiple: true
-          path: packages/desktop/dist-electron
-
-      - name: Verify downloaded Linux release assets
-        run: |
-          version="${RELEASE_TAG#v}"
-          dist_dir="packages/desktop/dist-electron"
-          for asset in \
-            "Cadencr-${version}-x86_64.AppImage" \
-            "Cadencr-${version}-amd64.deb" \
-            "Cadencr-${version}-x86_64.rpm" \
-            "latest-linux.yml"; do
-            test -f "$dist_dir/$asset" || { echo "Missing release asset: $dist_dir/$asset" >&2; exit 1; }
-          done
-
       - name: Extract GitHub release notes
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: scripts/release-notes.sh "$RELEASE_TAG" "$RUNNER_TEMP/release-notes.md"
 
       - name: Create draft GitHub release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
@@ -388,6 +235,7 @@ jobs:
             --notes-file "$RUNNER_TEMP/release-notes.md"
 
       - name: Upload GitHub release assets
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
           version="${RELEASE_TAG#v}"
           dist_dir="packages/desktop/dist-electron"
@@ -401,13 +249,10 @@ jobs:
             "$dist_dir/Cadencr-${version}-arm64.dmg.blockmap" \
             "$dist_dir/Cadencr-${version}-arm64-mac.zip" \
             "$dist_dir/Cadencr-${version}-arm64-mac.zip.blockmap" \
-            "$dist_dir/latest-mac.yml" \
-            "$dist_dir/Cadencr-${version}-x86_64.AppImage" \
-            "$dist_dir/Cadencr-${version}-amd64.deb" \
-            "$dist_dir/Cadencr-${version}-x86_64.rpm" \
-            "$dist_dir/latest-linux.yml"
+            "$dist_dir/latest-mac.yml"
 
       - name: Verify uploaded GitHub release assets
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
           version="${RELEASE_TAG#v}"
           expected_assets=(
@@ -420,10 +265,6 @@ jobs:
             "Cadencr-${version}-arm64-mac.zip"
             "Cadencr-${version}-arm64-mac.zip.blockmap"
             "latest-mac.yml"
-            "Cadencr-${version}-x86_64.AppImage"
-            "Cadencr-${version}-amd64.deb"
-            "Cadencr-${version}-x86_64.rpm"
-            "latest-linux.yml"
           )
 
           is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
@@ -443,6 +284,7 @@ jobs:
           done
 
       - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: |
           gh release edit "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
@@ -454,5 +296,5 @@ jobs:
         # Pushes the refreshed cask to the merkr-software/homebrew-cadencr tap.
         # Skipped until the HOMEBREW_TAP_TOKEN secret (write access to that repo)
         # is configured.
-        if: env.HOMEBREW_TAP_TOKEN != ''
+        if: (startsWith(github.ref, 'refs/tags/') || inputs.release_tag != '') && env.HOMEBREW_TAP_TOKEN != ''
         run: scripts/update-homebrew-cask.sh "$RELEASE_TAG"

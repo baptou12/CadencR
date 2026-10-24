@@ -187,7 +187,9 @@ feature release:
 Release tags (`vX.Y.Z`) are always cut from `main`. Pushing a tag triggers
 [`desktop-release.yml`](./.github/workflows/desktop-release.yml), which notarizes the app, publishes the
 GitHub release, and updates the Homebrew cask — so a tag reaches users immediately and its version number
-is spent for good.
+is spent for good. Linux ships as an alpha, by hand: once the release is published,
+[`desktop-linux-release.yml`](./.github/workflows/desktop-linux-release.yml) builds the same tag for Linux
+and attaches the packages to it (`gh workflow run desktop-linux-release.yml -f release_tag=vX.Y.Z`).
 
 **Why a version branch.** A feature is usually merged before it is polished. When the integration branch
 is also the release source, that half-finished feature blocks every unrelated fix from shipping until the
@@ -334,7 +336,7 @@ output and stopping at the first failure with the exact command to rerun:
 | `packages/brand/src/**`                                                                                                                                               | desktop and landing checks too, tracing desktop tests that import the brand file         |
 | `packages/service/src`, `packages/desktop/src`                                                                                                                        | provider-boundary scan                                                                   |
 | Rust: `packages/service`, any `packages/*-rs`, `packages/cli-discovery`, `Cargo.toml`/`Cargo.lock`, `rust-toolchain.toml`                                             | `@cadencr/service` `format:check`, `lint` (clippy), `test` for the whole Cargo workspace |
-| release scripts, `homebrew/**`, `desktop-release.yml`                                                                                                                 | `pnpm run test:release-scripts`                                                          |
+| release scripts, `homebrew/**`, `desktop-release.yml`, `desktop-linux-release.yml`                                                                                    | `pnpm run test:release-scripts`                                                          |
 | root tooling: `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `turbo.json`, `.oxlintrc.json`, `.oxfmtrc.json`, `.npmrc`, `.nvmrc`, `.husky/**`, `patches/**` | everything                                                                               |
 
 Preview the plan without running it, or force the full workspace check (also
