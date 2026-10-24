@@ -18,10 +18,10 @@ Base du premier lot : `102ea97a134700c1d0a57cd084a6740e5e6524b8`.
 | --- | --- | ---: | --- | --- |
 | 1 | Site et polices | 7 | Build statique, contenu Markdown/MDX, sitemap, navigation et polices dans le navigateur. | Fusionné : #310 |
 | 2 | Outils de test et types GPU | 3 | Tests frontend complets, typage du renderer Neovim. | Fusionné : #312 |
-| 3 | Distribution Electron | 2 | Build/package local, configuration des mises à jour et artefacts CI. | PR #313, CI en cours |
-| 4 | CSS | 5 | Build desktop/site/tab-kit, rendu clair/sombre et composants. | PR #315 |
-| 5a | Radix | 1 | Dialogs imbriqués, focus, menus, défilement et consommateur tab-kit. | Validé localement |
-| 5b | Composants UI | 4 | Calendrier, redimensionnement, listes longues et notifications. | À traiter |
+| 3 | Distribution Electron | 2 | Build/package local, configuration des mises à jour et artefacts CI. | Fusionné : #313 |
+| 4 | CSS | 5 | Build desktop/site/tab-kit, rendu clair/sombre et composants. | Fusionné : #315 |
+| 5a | Radix | 1 | Dialogs imbriqués, focus, menus, défilement et consommateur tab-kit. | PR #316, CI finale |
+| 5b | Composants UI | 4 | Calendrier, redimensionnement, listes longues et notifications. | Validé localement, limites documentées |
 | 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | À traiter |
 | 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | À traiter |
 | 8 | React | 4 | Typage, tests complets, StrictMode et interactions dans l'app. | À traiter |
@@ -187,3 +187,22 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - Observation hors upgrade : Escape dans le dialogue de création de thème quitte aussi Settings. Reproduit avec Radix 1.6.0 dans un checkout témoin du lot CSS, donc préexistant ; le raccourci global `settings-back` reste actif dans les formulaires. À considérer dans le lot raccourcis.
 - Preuves : `/tmp/cadencr-309/radix-{web-checks,build,security,dev,kit-build}.log`, `radix-lock-diff.json`, `radix-compare.json`. QA et témoin arrêtés, onglets fermés et données conservées.
 - Suivi : #312 fusionnée sur `144fbf0d5` après CI, CodeQL et audit verts. #313 cible maintenant main ; #315 attend sa fusion. Le hook du lot CSS a réussi ses 8 contrôles et 31 tâches.
+
+
+## Lot 5b : calendrier, panneaux, listes et notifications
+
+- Versions ciblées exactement résolues : `react-day-picker` 10.0.2, `react-resizable-panels` 4.14.3, `react-virtuoso` 4.18.16 et `sonner` 2.0.8. Le lockfile ne change que ces quatre packages ; Sonner ajoute des peers optionnels de types React. Aucun changement applicatif.
+- [DayPicker 10.0.2](https://github.com/gpbl/react-day-picker/releases/tag/v10.0.2) : focus lors d'un changement de mois contrôlé et imports date-fns/locales optimisables.
+- [Panneaux 4.11.2–4.14.3](https://github.com/bvaughn/react-resizable-panels/blob/4.14.3/CHANGELOG.md) : métadonnées des interactions, contraintes et ordre des panneaux, ARIA, capture du pointeur, groupes masqués, aperçus de redimensionnement, restauration après contraintes et fin de glissement sur annulation/perte de focus. Grid est additif ; il n'est pas utilisé. Les corrections ultérieures 4.14.4–4.14.8 ont été lues pour l'investigation mais ne font pas partie de cette mise à jour.
+- [Virtuoso 4.18.11–4.18.16](https://github.com/petyosi/react-virtuoso/blob/react-virtuoso%404.18.16/packages/react-virtuoso/CHANGELOG.md) : orientation horizontale, mesures hors écran, compensation des ajouts en tête, refs de listes personnalisées, nombre initial borné et ResizeObserver de TableVirtuoso. Comparaison des 42 commits revue.
+- [Sonner 2.0.8](https://github.com/emilkowalski/sonner/releases/tag/v2.0.8) : classes par défaut, icônes/promesses, swipe, ARIA, notifications antérieures au montage, réutilisation d'identifiants et nettoyage des timers/abonnements.
+- 25 tâches web réussies, dont 6 625 tests desktop ; 33 tests de sécurité du lockfile ; build de production desktop réussi.
+- QA réelle du calendrier : jours passés désactivés ; PageDown déplace le focus du 24 octobre au 24 novembre et change le mois ; Entrée sélectionne la date et ferme seulement le calendrier. Aucun schedule créé.
+- QA réelle des listes : 100 branches de test, seulement 12 lignes montées, défilement jusqu'à la dernière et filtre exact ; CSV de 5 000 lignes de données, 43 lignes DOM, dernière ligne et compteur corrects.
+- Banc navigateur avec le vrai Virtuoso sous StrictMode : ajout de 100 messages en tête sans déplacement du message visible (position identique au pixel), ajout en fin suivi, changement des hauteurs suivi, liste vide sans lignes fantômes et restauration. Console propre.
+- QA réelle Sonner : sauvegarde d'une disposition dans le projet isolé, toast de succès unique, une icône, SVG décoratifs masqués aux lecteurs d'écran ; dialogue ensuite fermé et disposition présente.
+- Panneaux : glissement par souris native CDP, valeur persistée vérifiée via l'API, bornes 220–400 px, repli/dépli. Un parcours complet conserve correctement 352 px après rechargement et repli/dépli avec chacune des versions.
+- Limites **préexistantes**, reproduites avec un checkout témoin en 4.11.2 et son propre service/DB : le clavier peut sauvegarder la largeur précédente ; le rechargement peut reprendre environ 256 px malgré une valeur persistée différente. Quatre parcours répétés par version donnent chacun un succès complet et trois échecs de restauration. Le premier témoin réussi avait initialement fait suspecter l'upgrade ; les répétitions infirment cette attribution. Ces défauts applicatifs ne sont pas corrigés dans ce lot.
+- Les tentatives initiales de glissement synthétique échouaient sur `setPointerCapture` (absence de pointeur natif) ; elles ont été remplacées par un navigateur dédié piloté via CDP. Après rechargement, seuls les trois diagnostics navigateur déjà connus restent présents.
+- Preuves : `/tmp/cadencr-309/ui-{web-checks,security,build,dev}.log`, `virtuoso-qa-results.json`, `native-panel-qa.mjs`, `native-panel-qa-results-{1459,1460}.json`, `panel-{repeat,baseline-repeat}-*.log`.
+- Suivi : #313 fusionnée sur `9be6ff8e6`, puis #315 sur `1c5b1db14`, après CI/CodeQL/audit verts. #316 est synchronisée avec main sur `5a35e67c8` et attend ses checks finaux.
