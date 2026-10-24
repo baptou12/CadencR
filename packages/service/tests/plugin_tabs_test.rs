@@ -177,6 +177,19 @@ async fn lifecycle(app: &Router) {
     assert_eq!(detail.json()["enablement"]["project"], true);
     let global = send(&app, Method::GET, "/api/plugin-tabs/graph", None).await;
     assert_eq!(global.json()["enablement"]["effective"], false);
+    let with_overrides = send(
+        &app,
+        Method::GET,
+        "/api/plugin-tabs?project_overrides=true",
+        None,
+    )
+    .await;
+    assert_eq!(
+        with_overrides.json()[0]["project_overrides"],
+        json!([{ "project_id": 1, "enabled": true }])
+    );
+    let plain = send(&app, Method::GET, "/api/plugin-tabs", None).await;
+    assert!(plain.json()[0].get("project_overrides").is_none());
     let missing_project = send(
         &app,
         Method::PUT,

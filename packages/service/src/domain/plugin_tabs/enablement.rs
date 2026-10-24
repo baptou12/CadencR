@@ -10,7 +10,7 @@ use axum::http::StatusCode;
 use sqlx::SqlitePool;
 
 use super::consent;
-use super::models::PluginTabEnablement;
+use super::models::{PluginTabEnablement, PluginTabProjectOverride};
 use super::registry::{self, LocalTab};
 use crate::error::AppError;
 
@@ -51,6 +51,29 @@ pub async fn stored_all(
     .fetch_all(pool)
     .await?;
     Ok(group(rows))
+}
+
+/// Every project override of every plugin, keyed by plugin id, in project order.
+pub async fn project_overrides_all(
+    pool: &SqlitePool,
+) -> Result<HashMap<String, Vec<PluginTabProjectOverride>>, AppError> {
+    let rows: Vec<(String, i64, bool)> = sqlx::query_as(
+        "SELECT plugin_id, project_id, enabled FROM plugin_tab_enablements \
+         WHERE project_id IS NOT NULL ORDER BY project_id",
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut grouped = HashMap::<String, Vec<PluginTabProjectOverride>>::new();
+    for (plugin_id, project_id, enabled) in rows {
+        grouped
+            .entry(plugin_id)
+            .or_default()
+            .push(PluginTabProjectOverride {
+                project_id,
+                enabled,
+            });
+    }
+    Ok(grouped)
 }
 
 fn group(rows: Vec<(String, Option<i64>, bool)>) -> HashMap<String, StoredEnablement> {
