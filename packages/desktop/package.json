@@ -124,7 +124,7 @@
     "pdfjs-dist": "^6.3.289",
     "postcss": "8.5.29",
     "qrcode.react": "^4.2.0",
-    "radix-ui": "^1.6.0",
+    "radix-ui": "^1.7.0",
     "react": "^19.2.7",
     "react-day-picker": "^10.0.1",
     "react-dom": "^19.2.7",
