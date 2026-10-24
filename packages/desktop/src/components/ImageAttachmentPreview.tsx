@@ -23,15 +23,13 @@ export function ImageAttachmentPreview({
     () =>
       attachments
         .filter((attachment) => attachment.kind === "image" && attachment.previewUrl)
-        .map(
-          (attachment): LightboxImage => ({
-            id: attachment.id,
-            src: attachment.previewUrl,
-            alt: attachment.fileName,
-            fileName: attachment.fileName,
-            mediaType: attachment.mimeType,
-          }),
-        ),
+        .map((attachment): LightboxImage => ({
+          id: attachment.id,
+          src: attachment.previewUrl,
+          alt: attachment.fileName,
+          fileName: attachment.fileName,
+          mediaType: attachment.mimeType,
+        })),
     [attachments],
   );
   const openAt = useCallback(

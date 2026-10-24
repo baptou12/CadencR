@@ -130,13 +130,13 @@ describe("global sidebar collapse", () => {
       () => new DOMRect(0, 0, GROUP_WIDTH, GROUP_HEIGHT),
     );
     // Pixel sizes resolve against the panels' offsetWidth, which jsdom leaves at 0.
-    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(
-      function (this: HTMLElement) {
-        if (!this.hasAttribute("data-panel")) return 0;
-        const grow = Number.parseFloat(this.style.flexGrow);
-        return Number.isFinite(grow) ? (grow / 100) * GROUP_WIDTH : GROUP_WIDTH / 2;
-      },
-    );
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (!this.hasAttribute("data-panel")) return 0;
+      const grow = Number.parseFloat(this.style.flexGrow);
+      return Number.isFinite(grow) ? (grow / 100) * GROUP_WIDTH : GROUP_WIDTH / 2;
+    });
     // The width query has not started yet: not loading, but not fetched either.
     mocks.width = { value: null, isFetched: false };
     render(<RootLayout />);

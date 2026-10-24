@@ -1,32 +1,21 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
-    "electron.vite.config.ts",
-    "electron/main/index.ts",
-    "electron/preload/index.ts",
-    "electron/preload/notch.ts",
-    "electron/preload/plugin-tab.ts",
     "src/App.tsx",
-    "src/notch/main.tsx",
     "src/routes/**/*.tsx"
   ],
   "project": [
     "electron/**/*.{ts,tsx}",
-    "src/**/*.{ts,tsx}"
+    "src/**/*.{ts,tsx,css}"
   ],
   "ignoreBinaries": [
     "clang",
     "oxfmt",
-    "security",
-    "spctl",
-    "xcrun"
+    "spctl"
   ],
   "ignoreDependencies": [
     "autoprefixer",
-    "postcss",
-    "tailwindcss",
-    "@fontsource-variable/inter",
-    "tw-animate-css"
+    "postcss"
   ],
   "tags": [
     "+@public"
