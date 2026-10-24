@@ -59,8 +59,8 @@ jobs:
           cargo fmt --version
           cargo clippy --version
 
-      # Swatinem/rust-cache@v2.9.2
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      # Swatinem/rust-cache@v2.9.3
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
           # PRs restore the cache of their base branch; only branch pushes
           # write one, so PR runs cannot evict the main/vX.Y.Z entries.
@@ -317,12 +317,16 @@ jobs:
             test "$(tar -tzf "$work/$theme-1.tar.gz")" = "theme.json"
           done
 
+  artifacts:
+    name: Release artifact compatibility
+    uses: ./.github/workflows/artifact-compatibility.yml
+
   # Branch protection requires a check with exactly this name. It aggregates the
   # parallel jobs so the requirement stays a single, stable context.
   precommit-checks:
     name: Pre-commit checks
     if: always()
-    needs: [rust, web, vitest, scripts, plugins]
+    needs: [rust, web, vitest, scripts, plugins, artifacts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
