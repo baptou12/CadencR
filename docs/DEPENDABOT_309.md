@@ -27,10 +27,10 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 | 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | Fusionné : #319 |
 | 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | Fusionné : #321 |
 | 8 | React | 4 | Typage, tests complets, StrictMode et interactions dans l'app. | Fusionné : #322 |
-| 9 | Éditeur riche | 2 | Saisie, sélection, copier/coller, mentions et envoi du prompt. | PR #323, CI finale |
-| 10 | Aperçus de contenu | 3 | Markdown diffusé, code coloré, PDF et workers. | PR #325, empilée sur Lexical |
-| 11a | Moteur CodeMirror | 4 | Saisie, historique, sélection, recherche et gros fichiers. | Validé localement |
-| 11b | Langages CodeMirror | 5 | Parsers uniques, Astro/YAML, Markdown et HTML. | À traiter |
+| 9 | Éditeur riche | 2 | Saisie, sélection, copier/coller, mentions et envoi du prompt. | Fusionné : #323 |
+| 10 | Aperçus de contenu | 3 | Markdown diffusé, code coloré, PDF et workers. | PR #325, CI finale |
+| 11a | Moteur CodeMirror | 4 | Saisie, historique, sélection, recherche et gros fichiers. | PR #328, empilée sur les aperçus |
+| 11b | Langages CodeMirror | 5 | Parsers uniques, Astro/YAML, Markdown et HTML. | Validé localement ; point serveur Astro suivi au lot 11d |
 | 11c | Vim et thèmes | 2 | Commandes Vim et stabilité du thème. | À traiter |
 | 11d | LSP | 2 | Connexion, complétion, diagnostics et navigation. | À traiter |
 | 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | À traiter |
@@ -296,3 +296,15 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - QA dans `pnpm dev` : saisie Unicode, annuler/rétablir, sauvegarde vérifiée sur disque puis fichier rouvert après rechargement ; remplacement de 150 occurrences ; navigation à la ligne 120 et sélection native de deux caractères au clavier.
 - QA gros fichier : 4 800 000 octets, 100 000 lignes, lecture seule effective, tentative de saisie rejetée, navigation à la dernière ligne avec 54 lignes DOM rendues. Capture inspectée ; aucune nouvelle erreur console. Les trois diagnostics habituels du navigateur restent inchangés.
 - Traces locales : `/tmp/cadencr-309/codemirror-core-{web-checks,security,build,dev}.log`, `codemirror-core-lock-diff.json` et `codemirror-core-transitives/`.
+
+## Lot 11b — langages CodeMirror
+
+- HTML `6.4.12`, Markdown `6.5.2`, language `6.13.1`, legacy-modes `6.5.5`, Lezer highlight `1.2.5`. Changelogs lus dans les tarballs exacts : [HTML](https://registry.npmjs.org/@codemirror/lang-html/-/lang-html-6.4.12.tgz), [Markdown](https://registry.npmjs.org/@codemirror/lang-markdown/-/lang-markdown-6.5.2.tgz), [language](https://registry.npmjs.org/@codemirror/language/-/language-6.13.1.tgz), [legacy-modes](https://registry.npmjs.org/@codemirror/legacy-modes/-/legacy-modes-6.5.5.tgz), [highlight](https://code.haverbeke.berlin/lezer/highlight/raw/tag/1.2.5/CHANGELOG.md).
+- Extraction de StringStream/StreamParser vers `@codemirror/streamparser@6.0.0`, réexports conservés ; code publié relu. Les changements corrigent la fermeture des balises HTML imbriquées, la continuation de paragraphes Markdown et la priorité des règles de coloration.
+- Régressions Astro/YAML reproduites : les anciennes copies de language/highlight/common rendent les tags et propriétés incompatibles. Overrides communs ajoutés, puis tests de coloration verts sans modifier l'implémentation des langages. Le correctif HTML s'applique aussi à la copie embarquée par Markdown.
+- Un gate du lockfile vérifie les cinq packages partageant des identités, rejette les copies imbriquées et détecte un override devenu incompatible avec le manifest. Quatre tests de coloration supplémentaires couvrent SCSS, TOML, Markdown et HTML.
+- Validation : 28 tâches web et 6 702 tests desktop avant les quatre nouveaux cas ; 43 tests ciblés de langages après ajout, 33 tests de sécurité et 3 tests d'intégrité des parsers ; build de production vert.
+- QA macOS, `pnpm dev` après intégration du support Linux : frontmatter et expressions Astro colorés, clés YAML colorées, nombres SCSS/TOML colorés ; `<div>` imbriqué complété en `<div></div>` malgré la fermeture du parent ; continuation d'une liste Markdown, citation conservée, sauvegardes vérifiées sur disque. Capture Astro inspectée.
+- Point à vérifier au lot LSP : le serveur Astro répond à initialize avec `-32603`, car `typescript.tsdk` manque. La coloration reste correcte. Aucun fichier frontend/backend LSP ni version LSP ne change dans ce lot ; la comparaison avec la base et la gestion de cette erreur restent à traiter avant de conclure sur le lot 11d.
+- Les tests automatisés des branches macOS/Linux sont suivis dans la CI Ubuntu ; la QA interactive ci-dessus a été exécutée sur macOS, pas sur un bureau Linux.
+- Traces : `/tmp/cadencr-309/codemirror-languages-{web-checks,regression-tests-2,security,build,dev}.log` et `codemirror-languages-lock-diff.json`. Premier démarrage au-delà du délai de santé pendant la recompilation Rust de main ; santé API/frontend ensuite confirmée à 200 avant QA.
