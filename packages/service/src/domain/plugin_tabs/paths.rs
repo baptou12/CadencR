@@ -11,7 +11,7 @@ use crate::error::AppError;
 /// never inside the app bundle. Per-test isolated in test builds (see
 /// `settings_store::dir::sibling_dir`) — resolve it *before* `spawn_blocking`.
 pub fn tabs_dir() -> PathBuf {
-    crate::domain::settings_store::dir::sibling_dir("plugins").join("tabs")
+    crate::domain::settings_store::dir::data_sibling_dir("plugins").join("tabs")
 }
 
 /// The writable folder of tab `id`'s backend (`~/.cadencr/plugins/tab-state/<id>`
@@ -19,7 +19,7 @@ pub fn tabs_dir() -> PathBuf {
 /// immutable, and storage retention must never find a backend's files in it.
 /// `id` must already be a valid tab id.
 pub fn state_dir(id: &str) -> PathBuf {
-    crate::domain::settings_store::dir::sibling_dir("plugins")
+    crate::domain::settings_store::dir::data_sibling_dir("plugins")
         .join("tab-state")
         .join(id)
 }

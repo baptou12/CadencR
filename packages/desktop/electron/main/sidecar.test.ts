@@ -4,9 +4,11 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   describeStartupFailure,
+  ensureLinuxSidecarExecutable,
   parsePhaseLine,
   productionDbPath,
   rethrowAfterCleanup,
+  resolveSettingsDir,
   serviceArgs,
   serviceEnv,
   waitForDevSidecar,
@@ -24,10 +26,16 @@ describe("production database path", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "cadencr-production-path-"));
     vi.spyOn(os, "homedir").mockReturnValue(home);
     vi.stubEnv("CADENCR_DB_PATH", path.join(home, "development.db"));
+    vi.stubEnv("XDG_DATA_HOME", "");
 
     const dbPath = productionDbPath();
 
-    expect(dbPath).toBe(path.join(home, ".cadencr", "database", "cadencr.db"));
+    // macOS keeps ~/.cadencr; Linux follows XDG (app-paths.test.ts covers both).
+    const dataRoot =
+      process.platform === "darwin"
+        ? path.join(home, ".cadencr")
+        : path.join(home, ".local", "share", "cadencr");
+    expect(dbPath).toBe(path.join(dataRoot, "database", "cadencr.db"));
     expect(fs.existsSync(dbPath)).toBe(false);
     if (process.platform !== "win32") {
       expect(fs.statSync(path.dirname(dbPath)).mode & 0o777).toBe(0o700);
@@ -82,12 +90,13 @@ describe("development sidecar startup", () => {
 describe("sidecar process arguments", () => {
   it("does not expose the auth token on argv", () => {
     const args = serviceArgs("/tmp/cadencr.db");
+    const settingsDir = resolveSettingsDir("/tmp/cadencr.db");
 
     expect(args).toEqual([
       "--db-path",
       "/tmp/cadencr.db",
       "--settings-dir",
-      "/settings",
+      settingsDir,
       "--port",
       "5004",
     ]);
@@ -108,12 +117,13 @@ describe("sidecar process arguments", () => {
 
   it("appends --app-version when provided", () => {
     const args = serviceArgs("/tmp/cadencr.db", "1.2.3");
+    const settingsDir = resolveSettingsDir("/tmp/cadencr.db");
 
     expect(args).toEqual([
       "--db-path",
       "/tmp/cadencr.db",
       "--settings-dir",
-      "/settings",
+      settingsDir,
       "--port",
       "5004",
       "--app-version",
@@ -122,17 +132,31 @@ describe("sidecar process arguments", () => {
   });
 
   it("appends --renderer-dir when provided, and omits it otherwise", () => {
+    const settingsDir = resolveSettingsDir("/tmp/cadencr.db");
     expect(serviceArgs("/tmp/cadencr.db", undefined, "/res/renderer")).toEqual([
       "--db-path",
       "/tmp/cadencr.db",
       "--settings-dir",
-      "/settings",
+      settingsDir,
       "--port",
       "5004",
       "--renderer-dir",
       "/res/renderer",
     ]);
     expect(serviceArgs("/tmp/cadencr.db", undefined, null)).not.toContain("--renderer-dir");
+  });
+
+  it("uses XDG config for Linux settings and preserves the legacy macOS layout", () => {
+    expect(
+      resolveSettingsDir(
+        "/home/u/.local/share/cadencr/database/cadencr.db",
+        "linux",
+        "/home/u/.config/cadencr",
+      ),
+    ).toBe("/home/u/.config/cadencr/settings");
+    expect(resolveSettingsDir("/Users/u/.cadencr/database/cadencr.db", "darwin")).toBe(
+      "/Users/u/.cadencr/settings",
+    );
   });
 });
 
@@ -224,5 +248,33 @@ describe("failed startup cleanup", () => {
         throw new Error("kill failed");
       }),
     ).rejects.toThrow(/health timeout[\s\S]*kill failed/);
+  });
+});
+
+describe("ensureLinuxSidecarExecutable", () => {
+  it("surfaces chmod failures on Linux when the binary is missing", () => {
+    expect(() =>
+      ensureLinuxSidecarExecutable("/definitely/missing/cadencr-service", "linux"),
+    ).toThrow(/Failed to mark cadencr-service executable/);
+  });
+
+  it("does nothing on non-Linux platforms", () => {
+    expect(() =>
+      ensureLinuxSidecarExecutable("/definitely/missing/cadencr-service", "darwin"),
+    ).not.toThrow();
+  });
+
+  it("is a no-op when the binary is already executable (e.g. deb/rpm installs)", () => {
+    // dpkg/rpm install the sidecar into a root-owned /opt/Cadencr/...
+    // directory where Cadencr (running as a normal user) can't chmod. The
+    // helper must not throw when the bit is already set.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cadencr-sidecar-"));
+    const binary = path.join(dir, "cadencr-service");
+    try {
+      fs.writeFileSync(binary, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      expect(() => ensureLinuxSidecarExecutable(binary, "linux")).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

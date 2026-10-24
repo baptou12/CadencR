@@ -86,7 +86,7 @@ pub enum Activation {
 }
 
 pub fn root() -> PathBuf {
-    crate::domain::settings_store::dir::sibling_dir("plugins").join("managed-tabs")
+    crate::domain::settings_store::dir::data_sibling_dir("plugins").join("managed-tabs")
 }
 pub fn owner(root: &Path, id: &str) -> Result<PathBuf, AppError> {
     if !cadencr_plugin_core::tab::is_valid_tab_id(id)

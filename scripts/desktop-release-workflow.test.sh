@@ -64,3 +64,37 @@ case "$workflow_text" in
   *'CADENCR_MANAGED_THEME_INDEX_URL: ${{ vars.CADENCR_MANAGED_THEME_INDEX_URL }}'*'Validate marketplace build configuration'*'node scripts/validate-marketplace-build-env.mjs -- pnpm --filter @cadencr/service build:macos-sidecars'*) ;;
   *) fail "desktop sidecar must validate and forward optional mixed theme feed configuration" ;;
 esac
+
+# Linux ships as a manual alpha (desktop-linux-release.yml) attached to the
+# published release, so a Linux failure can never hold up macOS.
+case "$workflow_text" in
+  *"--linux"*|*"latest-linux.yml"*|*"smoke-linux-packages.sh"*)
+    fail "the tag-triggered release must not build or publish Linux packages"
+    ;;
+esac
+
+linux_workflow="$repo_root/.github/workflows/desktop-linux-release.yml"
+[ -f "$linux_workflow" ] || fail "missing workflow: $linux_workflow"
+linux_text="$(cat "$linux_workflow")"
+
+case "$linux_text" in
+  *"  push:"*|*"--publish always"*)
+    fail "the Linux alpha must only run by hand and never let electron-builder publish"
+    ;;
+esac
+
+case "$linux_text" in
+  *"runs-on: ubuntu-22.04"*"pnpm --filter @cadencr/service build:sidecars"*"resources/bin/x64/cadencr-service"*"--linux"*"--publish never"*"scripts/smoke-linux-packages.sh"*) ;;
+  *) fail "the Linux alpha must build, sidecar-smoke and package-smoke on the oldest-glibc runner" ;;
+esac
+
+case "$linux_text" in
+  *"Upload Linux alpha assets"*'Cadencr-${version}-x86_64.AppImage'*'Cadencr-${version}-amd64.deb'*'Cadencr-${version}-x86_64.rpm'*'latest-linux.yml'*"Verify uploaded Linux alpha assets"*"## Linux (alpha)"*) ;;
+  *) fail "the Linux alpha must upload and verify every updater target, then flag the release notes" ;;
+esac
+
+case "$workflow_text$linux_text" in
+  *"AppImage.blockmap"*)
+    fail "electron-builder embeds the AppImage block map; never expect a separate AppImage block map file"
+    ;;
+esac

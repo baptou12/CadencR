@@ -60,6 +60,11 @@ import { SampleScope } from "@/components/SidebarSampleProvider";
 import { SidebarSampleProvider } from "@/components/SidebarSampleProvider";
 import { useSidebarShowsSamples } from "@/stores/sidebar-preview-store";
 import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
+import { formatCompactCombo } from "@/lib/shortcuts/format";
+import { getRegistryShortcut } from "@/lib/shortcuts/resolve";
+
+const SEARCH_COMBO = formatCompactCombo(getRegistryShortcut("command-palette").keys);
+const TOGGLE_SIDEBAR_COMBO = formatCompactCombo(getRegistryShortcut("toggle-sidebar").keys);
 
 export function Sidebar({ onSearch }: { onSearch: () => void }) {
   const { collapsed, setCollapsed } = useSidebarCollapsed();
@@ -177,7 +182,9 @@ function useSidebarActiveIds(selectedFeatureId: number | null): {
 
 function SidebarSearchButton({ onSearch }: { onSearch: () => void }): ReactElement {
   const terminalFocused = useIsTerminalFocusActive();
-  const title = terminalFocused ? "Search unavailable while terminal is focused" : "Search (⌘K)";
+  const title = terminalFocused
+    ? "Search unavailable while terminal is focused"
+    : `Search (${SEARCH_COMBO})`;
   return (
     <button
       type="button"
@@ -252,7 +259,7 @@ function SidebarHeader({ onCollapse }: { onCollapse: () => void }): ReactElement
             variant="ghost"
             size="icon"
             className="size-7"
-            title="Collapse sidebar (⌘B)"
+            title={`Collapse sidebar (${TOGGLE_SIDEBAR_COMBO})`}
             onClick={onCollapse}
           >
             <PanelLeftClose className="size-4" />

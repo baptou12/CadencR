@@ -2,11 +2,17 @@ const { existsSync } = require("node:fs");
 const { join } = require("node:path");
 const { execFileSync } = require("node:child_process");
 const { Arch } = require("electron-builder");
+const { prepareLinuxSidecar } = require("./linux-sidecar.cjs");
 
 // electron-builder arch → what `lipo -archs` reports for a matching binary.
 const LIPO_ARCH = { arm64: "arm64", x64: "x86_64" };
 
 exports.default = async function afterPack(context) {
+  if (context.electronPlatformName === "linux") {
+    prepareLinuxSidecar(join(context.appOutDir, "resources", "cadencr-service"), Arch[context.arch]);
+    return;
+  }
+
   if (context.electronPlatformName !== "darwin") return;
 
   const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);

@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+mod location;
 mod resolve;
 mod watcher;
 
@@ -156,16 +157,11 @@ impl Default for ScrollingConfig {
     }
 }
 
-/// Default path: `~/.config/alacritty/alacritty.toml`. `None` only when the
-/// home directory itself can't be resolved (no `$HOME`, no passwd entry —
-/// see `dirs::home_dir()`'s own doc comment for when that happens).
-///
+/// The config file Alacritty itself would load (see `location` for the
+/// search order), defaulting to `~/.config/alacritty/alacritty.toml`. `None`
+/// only when neither `$XDG_CONFIG_HOME` nor the home directory resolves.
 pub fn default_config_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| {
-        home.join(".config")
-            .join("alacritty")
-            .join("alacritty.toml")
-    })
+    location::config_path()
 }
 
 /// `GET /api/terminal/alacritty-config` response.

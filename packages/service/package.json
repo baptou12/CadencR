@@ -10,6 +10,7 @@
   "scripts": {
     "build": "node ../../scripts/cargo-env.mjs cargo build --release && node ../../scripts/cargo-env.mjs pnpm copy:release && pnpm check:macos-runtime-deps",
     "build:macos-sidecars": "node ./scripts/build-macos-sidecars.mjs",
+    "build:sidecars": "node ./scripts/build-sidecars.mjs",
     "build:debug": "node ../../scripts/cargo-env.mjs cargo build && node ../../scripts/cargo-env.mjs pnpm copy:debug",
     "dev": "node ../../scripts/cargo-env.mjs node ../../scripts/service-dev-watch.mjs",
     "test": "node ../../scripts/cargo-env.mjs cargo test --workspace",

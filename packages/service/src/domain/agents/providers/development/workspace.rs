@@ -36,7 +36,7 @@ pub(super) async fn create(
     request: &CreateProviderWorkspaceRequest,
 ) -> Result<ProviderWorkspace, AppError> {
     let roots = WorkspaceRoots {
-        workspaces: settings_store::dir::sibling_dir(WORKSPACES_DIR),
+        workspaces: settings_store::dir::data_sibling_dir(WORKSPACES_DIR),
         descriptors: descriptors_dir(),
     };
     create_with_roots(pool, request, &roots).await

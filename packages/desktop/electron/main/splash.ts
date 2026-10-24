@@ -1,4 +1,4 @@
-import { BrowserWindow } from "electron";
+import { app, BrowserWindow } from "electron";
 import { readFileSync } from "node:fs";
 import {
   EMERALD,
@@ -12,6 +12,7 @@ import {
 } from "@cadencr/brand";
 import { type StartupRecoveryAction, type StartupRecoveryActionId } from "./startup-recovery";
 import type { SidecarPhase } from "./sidecar";
+import { windowIconOption } from "./app-icon";
 import { secureSplashWebContents } from "./splash-security";
 
 // The splash loads from a data: URL before the renderer exists, so the brand
@@ -129,6 +130,11 @@ function createSplashBrowserWindow(): BrowserWindow {
     center: true,
     backgroundColor: BACKGROUND,
     title: "Cadencr",
+    ...windowIconOption({
+      appPath: app.getAppPath(),
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+    }),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

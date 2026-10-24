@@ -84,7 +84,8 @@ type UpdateEvent =
   | { kind: "not-available"; version: string }
   | { kind: "error"; message: string }
   | { kind: "download-progress"; percent: number; bytesPerSecond: number }
-  | { kind: "downloaded"; version: string };
+  | { kind: "downloaded"; version: string }
+  | { kind: "unsupported"; reason: "unsupported-install"; message: string };
 
 function onUpdateEvent(cb: (event: UpdateEvent) => void): () => void {
   const unsubs = [
@@ -104,6 +105,9 @@ function onUpdateEvent(cb: (event: UpdateEvent) => void): () => void {
     ),
     onIpc<{ version: string }>("update:downloaded", (p) =>
       cb({ kind: "downloaded", version: p.version }),
+    ),
+    onIpc<{ reason: "unsupported-install"; message: string }>("update:unsupported", (p) =>
+      cb({ kind: "unsupported", reason: p.reason, message: p.message }),
     ),
   ];
   return () => {
@@ -188,6 +192,7 @@ function onFileDrop(cb: (payload: FileDropPayload) => void): () => void {
 
 contextBridge.exposeInMainWorld("cadencr", {
   isElectron: true,
+  usesCustomWindowControls: process.platform === "linux",
   runtimeConfig: (): Promise<RuntimeConfig> => ipcRenderer.invoke("runtime-config"),
   readFileBase64: (handle: string): Promise<string> =>
     ipcRenderer.invoke("fs:read-file-base64", handle),
@@ -219,6 +224,9 @@ contextBridge.exposeInMainWorld("cadencr", {
   onCloseRequested: (cb: () => void): (() => void) => onIpc("app:close-requested", cb),
   confirmClose: (): Promise<void> => ipcRenderer.invoke("app:confirm-close"),
   requestQuit: (): Promise<void> => ipcRenderer.invoke("app:request-quit"),
+  windowMinimize: (): Promise<void> => ipcRenderer.invoke("app:window-minimize"),
+  windowToggleMaximize: (): Promise<void> => ipcRenderer.invoke("app:window-toggle-maximize"),
+  windowClose: (): Promise<void> => ipcRenderer.invoke("app:window-close"),
   reportRendererError: (payload: RendererErrorReportPayload): Promise<void> =>
     ipcRenderer.invoke("app:renderer-error", payload),
   setZoom: (factor: number): Promise<void> => ipcRenderer.invoke("webview:set-zoom", factor),

@@ -11,7 +11,12 @@ pub fn cursor_discovery_spec() -> DiscoverySpec {
     DiscoverySpec {
         bin_name: "agent".into(),
         well_known_relative_to_home: vec![".local/bin".into()],
-        well_known_absolute: vec!["/opt/homebrew/bin".into(), "/usr/local/bin".into()],
+        well_known_absolute: vec![
+            "/opt/homebrew/bin".into(),
+            "/usr/local/bin".into(),
+            "/usr/bin".into(),
+            "/snap/bin".into(),
+        ],
         version_args: vec!["--version".into()],
         // Cursor versions are date/hash strings such as
         // `2026.03.11-6dfa30c` and do not include a stable product marker.
