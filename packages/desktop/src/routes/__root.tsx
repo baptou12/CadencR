@@ -1,6 +1,7 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { ManagedThemeRegistry } from "@/hooks/useManagedThemes";
 import { AppShell } from "@/components/AppShell";
+import { AppWindowControls } from "@/components/AppWindowControls";
 import { GlobalOperationToasts } from "@/components/GlobalOperationToasts";
 import { NotchChannelBridge } from "@/components/notch/NotchChannelBridge";
 import { RootErrorBoundary } from "@/components/RootErrorBoundary";
@@ -32,6 +33,7 @@ function RootLayout() {
     >
       <UniversalContextMenu>
         <div className="flex h-[var(--app-vh)]">
+          <AppWindowControls />
           <AppShell
             isMobile={controller.isMobile}
             collapsed={sidebar.collapsed}

@@ -21,8 +21,8 @@ pub(super) fn prepare_database(db_path: &str, create: bool) -> anyhow::Result<()
         .map_err(|_| anyhow::anyhow!("database preparation lock poisoned"))?;
     let path = Path::new(db_path);
     crate::remote::secure_fs::secure_app_home(path)?;
-    if let Some(home) = dirs::home_dir() {
-        let database_dir = home.join(".cadencr/database");
+    if let Ok(data_dir) = crate::shared::app_paths::data_dir() {
+        let database_dir = data_dir.join("database");
         if path.parent() == Some(database_dir.as_path()) {
             crate::remote::secure_fs::create_dir_owner_only(&database_dir)?;
         }

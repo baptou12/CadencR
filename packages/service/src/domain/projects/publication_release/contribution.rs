@@ -107,7 +107,7 @@ async fn prepare(
     let plugin_id = prepared.local.plan.plugin_id.clone();
     let version = prepared.local.plan.version.clone();
     let root =
-        crate::domain::settings_store::dir::sibling_dir("provider-publication-contributions");
+        crate::domain::settings_store::dir::data_sibling_dir("provider-publication-contributions");
     let permit = prepared._permit;
     let (written, _permit) =
         tokio::task::spawn_blocking(move || (output::write(&root, project_id, documents), permit))

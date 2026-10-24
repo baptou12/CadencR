@@ -117,6 +117,8 @@ test("real Turbo plans keep official providers out of executable application tas
 const sidecarSources = ["resources/bin/cadencr-service", "resources/bin/${arch}/cadencr-service"];
 // The notch-island AppKit addon (packages/desktop/electron/mac-native-addon.ts).
 const macWindowAddon = { from: "resources/native", to: "native", filter: ["*.node"] };
+// The Linux BrowserWindow icon (packages/desktop/electron/main/app-icon.ts).
+const linuxWindowIcon = { from: "icons/512x512.png", to: "icons/512x512.png" };
 
 // Both reviewed desktop layouts are app-only; no other source is admitted.
 export function assertAppOnlyResources(config) {
@@ -127,6 +129,7 @@ export function assertAppOnlyResources(config) {
     { from: source, to: "cadencr-service" },
     { from: "out/renderer", to: "renderer" },
     macWindowAddon,
+    linuxWindowIcon,
   ]);
 }
 
@@ -136,6 +139,7 @@ const resourceFixture = (source) => ({
     { from: source, to: "cadencr-service" },
     { from: "out/renderer", to: "renderer" },
     { ...macWindowAddon, filter: [...macWindowAddon.filter] },
+    { ...linuxWindowIcon },
   ],
 });
 
@@ -171,6 +175,8 @@ test("app-only resource guard rejects plugins, extra resources and changed bundl
       [0, "filter", ["**/*"]],
       [2, "filter", ["**/*"]],
       [2, "from", "plugins/providers/pi"],
+      [3, "from", "plugins/providers/pi"],
+      [3, "to", "plugins/icon"],
     ]) {
       const fixture = resourceFixture(source);
       fixture.extraResources[index][field] = value;

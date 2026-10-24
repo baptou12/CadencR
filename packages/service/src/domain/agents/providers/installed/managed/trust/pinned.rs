@@ -33,8 +33,8 @@ pub fn pinned_index_trust_status() -> PinnedIndexTrustStatus {
 
 /// Run before installed-provider startup scans. All filesystem work is off the async worker.
 pub async fn initialize_pinned_registry_trust() -> Result<(), crate::error::AppError> {
-    let path =
-        crate::domain::settings_store::dir::sibling_dir("registry-trust").join("generation.json");
+    let path = crate::domain::settings_store::dir::data_sibling_dir("registry-trust")
+        .join("generation.json");
     let status = tokio::task::spawn_blocking(move || {
         let status = compiled_status();
         match (&status, root_configuration()) {

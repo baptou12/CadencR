@@ -4,11 +4,18 @@ pub(in crate::domain::lsp) const NPM_WELL_KNOWN_RELATIVE_TO_HOME: &[&str] = &[
     ".bun/bin",
     ".npm-global/bin",
     ".volta/bin",
+    // pnpm's global bin: macOS, then Linux (`$XDG_DATA_HOME` default).
     "Library/pnpm",
+    ".local/share/pnpm",
     ".cadencr-tools/node_modules/.bin",
 ];
-pub(in crate::domain::lsp) const HOMEBREW_WELL_KNOWN_ABSOLUTE: &[&str] =
-    &["/opt/homebrew/bin", "/usr/local/bin"];
+/// Homebrew (macOS), then distro packages and snaps (Linux).
+pub(in crate::domain::lsp) const SYSTEM_WELL_KNOWN_ABSOLUTE: &[&str] = &[
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/snap/bin",
+];
 
 /// Root markers for the JS/TS family (and TS-backed frameworks). Prefer the
 /// most specific config first so a nested package roots there rather than at
@@ -39,7 +46,7 @@ const fn npm_catalog_entry(
         bin_name,
         args,
         well_known_relative_to_home: NPM_WELL_KNOWN_RELATIVE_TO_HOME,
-        well_known_absolute: HOMEBREW_WELL_KNOWN_ABSOLUTE,
+        well_known_absolute: SYSTEM_WELL_KNOWN_ABSOLUTE,
         version_args: &["--version"],
         version_must_contain: None,
         download: Some(DownloadRecipe::NpmPackage { version, packages }),
@@ -236,7 +243,7 @@ pub const CATALOG: &[CatalogEntry] = &[
         bin_name: "rust-analyzer",
         args: &[],
         well_known_relative_to_home: &[".cargo/bin"],
-        well_known_absolute: HOMEBREW_WELL_KNOWN_ABSOLUTE,
+        well_known_absolute: SYSTEM_WELL_KNOWN_ABSOLUTE,
         version_args: &["--version"],
         // Reject rustup shims that don't have the component installed.
         version_must_contain: Some("rust-analyzer"),
@@ -276,7 +283,7 @@ pub const CATALOG: &[CatalogEntry] = &[
         bin_name: "gopls",
         args: &[],
         well_known_relative_to_home: &["go/bin"],
-        well_known_absolute: HOMEBREW_WELL_KNOWN_ABSOLUTE,
+        well_known_absolute: SYSTEM_WELL_KNOWN_ABSOLUTE,
         version_args: &["version"],
         version_must_contain: None,
         download: None,
@@ -289,7 +296,7 @@ pub const CATALOG: &[CatalogEntry] = &[
         bin_name: "pyright-langserver",
         args: &["--stdio"],
         well_known_relative_to_home: NPM_WELL_KNOWN_RELATIVE_TO_HOME,
-        well_known_absolute: HOMEBREW_WELL_KNOWN_ABSOLUTE,
+        well_known_absolute: SYSTEM_WELL_KNOWN_ABSOLUTE,
         version_args: &["--version"],
         version_must_contain: None,
         download: None,

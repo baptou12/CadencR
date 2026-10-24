@@ -8,6 +8,8 @@
  * engines that "CadencR" is a developer tool, not a misspelling of "cadence".
  */
 
+import { LINUX_AVAILABLE } from "@/lib/downloads";
+
 interface FaqItem {
   q: string;
   a: string;
@@ -32,7 +34,9 @@ export const FAQ_ITEMS: FaqItem[] = [
   },
   {
     q: "What platforms does CadencR run on?",
-    a: "CadencR currently ships a desktop build for macOS on both Apple Silicon and Intel. Native Linux and Windows builds are planned next.",
+    a: LINUX_AVAILABLE
+      ? "CadencR ships for macOS on Apple Silicon and Intel, plus an alpha for Linux x86-64 as AppImage, DEB, and RPM packages. Native Linux ARM64 and Windows builds are planned next."
+      : "CadencR ships for macOS on Apple Silicon and Intel. Linux x86-64 packages (AppImage, DEB, RPM) are coming as an alpha, and Windows is planned.",
   },
   {
     q: "Does CadencR collect telemetry?",

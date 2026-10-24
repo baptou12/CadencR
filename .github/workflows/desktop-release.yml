@@ -17,9 +17,11 @@ env:
 permissions:
   contents: write
 
-# Desktop app only. The `cadencr` CLI and the SDKs have their own versions and
-# workflows (cli-release.yml, npm-release.yml, crates-release.yml); app
-# releases up to v0.14.0 also carried a Linux CLI asset.
+# Desktop app on macOS only. The Linux alpha packages are attached to the
+# published release by hand (desktop-linux-release.yml), so Linux can never
+# hold up a macOS release. The `cadencr` CLI and the SDKs have their own
+# versions and workflows (cli-release.yml, npm-release.yml,
+# crates-release.yml); app releases up to v0.14.0 also carried a Linux CLI asset.
 jobs:
   release:
     # arm64 runner (build:macos-sidecars cross-compiles x64). macos-14 is
