@@ -92,10 +92,16 @@ trustPolicy: no-downgrade
 trustPolicyIgnoreAfter: 525600
 
 overrides:
-  # CodeMirror extensions share state/view identities; duplicate copies crash
-  # editor creation. Keep direct and transitive consumers on the same release.
+  # CodeMirror extensions and Lezer parsers share state, facets, props and tags.
+  # Duplicate copies crash editor creation or silently drop highlighting.
+  # Keep direct and transitive consumers on the same release.
+  "@codemirror/language": 6.13.1
   "@codemirror/state": 6.7.6
   "@codemirror/view": 6.43.14
+  "@lezer/common": 1.5.3
+  "@lezer/highlight": 1.2.5
+  # Apply the HTML tag-closing fix inside Markdown as well as standalone HTML.
+  "@codemirror/lang-markdown>@codemirror/lang-html": 6.4.12
   "@stoplight/spectral-functions": 1.10.2
   "@stoplight/spectral-rulesets": 1.22.2
   "@xmldom/xmldom@>=0.8.0 <0.8.15": 0.8.15
