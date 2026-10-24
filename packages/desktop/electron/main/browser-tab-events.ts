@@ -1,8 +1,10 @@
 import type { Input, Result, WebContents, WebContentsView } from "electron";
 import { normalizeBrowserOpenUrl } from "./browser-policy";
 import { installBrowserFaviconEvents } from "./browser-tab-favicon-events";
-import { consoleEntry, pushBounded, updateTabMetadata } from "./browser-manager-utils";
+import { consoleEntry, originOf, pushBounded, updateTabMetadata } from "./browser-manager-utils";
 import { COMMENT_BADGE_CLICK_SENTINEL } from "./browser-comment-overlay-script";
+import { invalidateBrowserDocument } from "./browser-document-security";
+import { isCadencrBrowserUrl } from "./browser-self-origin-policy";
 import type { BrowserProfile } from "./browser-profiles";
 import type {
   BrowserAgentAccess,
@@ -103,15 +105,29 @@ export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
     );
     host.emitState();
   });
-  wc.on("will-navigate", (event, url) => {
+  wc.on("will-navigate", (event) => {
     try {
-      normalizeBrowserOpenUrl(url);
+      normalizeBrowserOpenUrl(event.url);
       host.invalidateFind();
     } catch (error) {
       event.preventDefault();
       host.setLastError(error instanceof Error ? error.message : String(error));
       host.emitState();
     }
+  });
+  wc.on("will-redirect", (event) => {
+    if (tab.automationAccess !== "user" && isCadencrBrowserUrl(event.url)) {
+      event.preventDefault();
+      host.setLastError("Browser navigation to Cadencr's own origins is blocked.");
+      host.emitState();
+    }
+  });
+  wc.on("did-start-navigation", (details) => {
+    if (!details.isMainFrame || details.isSameDocument) return;
+    invalidateBrowserDocument(wc);
+    if (tab.externalAutomationOrigin !== originOf(details.url)) tab.externalAutomationOrigin = null;
+    tab.consoleEntries.length = 0;
+    tab.networkEntries.length = 0;
   });
   installPageLifecycleEvents(tab, host);
 }

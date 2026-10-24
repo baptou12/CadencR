@@ -169,7 +169,7 @@ function RemoteEnabledSections({ status }: { status: RemoteStatus }): ReactEleme
   return (
     <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
       {/* Hero: the primary task is pairing a device, so the QR leads. */}
-      <RemotePairSection />
+      <RemotePairSection status={status} />
 
       {/* Everything else is reference or management — collapsed by default so
           the dialog stays a one-glance "it's on, scan this". */}

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { dispatchBrowserMcpTool, type BrowserMcpTarget } from "./browser-mcp-dispatch";
 import type { BrowserTabMetadata } from "./browser-types";
 
+vi.mock("./runtime-config", () => ({ refreshBrowserOriginPolicy: vi.fn(async () => undefined) }));
+
 function tabMeta(): BrowserTabMetadata {
   return {
     id: "tab-1",
@@ -93,8 +95,10 @@ describe("dispatchBrowserMcpTool", () => {
     fake.automation.assert = vi.fn(() => {
       if (!shared) throw new Error("Browser tab is not shared with the agent.");
     });
+    fake.automation.guard = vi.fn(() => () => fake.automation.assert("tab-1", null));
     fake.inspection.snapshot = vi.fn(() => new Promise((resolve) => (finish = resolve)));
     const pending = dispatchBrowserMcpTool(fake, "browser_get_snapshot", {});
+    await vi.waitFor(() => expect(fake.inspection.snapshot).toHaveBeenCalledOnce());
     shared = false;
     finish({ secret: "must not escape" });
 
@@ -129,6 +133,7 @@ describe("dispatchBrowserMcpTool", () => {
         }),
     );
     const pending = dispatchBrowserMcpTool(fake, "browser_click", { ref: "e1" });
+    await vi.waitFor(() => expect(fake.inspection.clickTarget).toHaveBeenCalledOnce());
     shared = false;
     expect(() => finish()).toThrow("not shared");
 

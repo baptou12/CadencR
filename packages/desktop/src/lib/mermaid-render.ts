@@ -157,6 +157,8 @@ export async function renderWithMermaid(code: string, appearance: Appearance): P
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",
+    htmlLabels: false,
+    secure: [...(mermaid.mermaidAPI.defaultConfig.secure ?? []), "htmlLabels"],
     // Never let mermaid inject its error "bomb" diagram into document.body;
     // on a failed render it leaks a stray, un-React-managed node there.
     suppressErrorRendering: true,

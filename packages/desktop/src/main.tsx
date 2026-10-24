@@ -23,10 +23,10 @@ if (detectStandalone()) initializeStandaloneViewport();
 applyThemeToDocument(readPersistedTheme());
 installGlobalRendererErrorHandlers();
 
-// Preload port + token before mounting so sync accessors everywhere have
+// Preload the API endpoint before mounting so sync accessors everywhere have
 // the config by the time the first request or WebSocket fires.
 async function bootstrap(): Promise<void> {
-  // In a remote browser, exchange any `?code=` pairing code for a device token
+  // In a remote browser, exchange any `#code=` pairing code (or legacy query code) for a device token
   // and persist it *before* the API client reads its config below.
   await ensurePaired();
   await preloadRuntimeConfig();

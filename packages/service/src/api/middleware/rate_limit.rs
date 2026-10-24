@@ -17,7 +17,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use axum::extract::{ConnectInfo, Request};
-use axum::http::Method;
+use axum::http::{Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
 use axum::{extract::State, Extension};
@@ -33,6 +33,8 @@ const WINDOW: Duration = Duration::from_secs(60);
 /// Pairing-code attempts per IP per window. A code is single-use and expires in
 /// ~120s, so a legitimate device needs only one or two attempts.
 const PAIR_LIMIT: u32 = 5;
+/// Failed credentials per source IP; independent from authenticated traffic.
+const AUTH_FAILURE_LIMIT: u32 = 20;
 /// All other requests per IP per window, counted *before* listener-specific
 /// auth, so SPA assets and rejected tokens count too. A client opening the app
 /// bursts well past a "reasonable" steady rate — hashed chunks and fonts,
@@ -49,6 +51,7 @@ const PLUGIN_LIMIT: u32 = 1200;
 enum Bucket {
     Pair,
     General,
+    AuthFailure,
     LoopbackAuthenticated,
     /// One custom tab, keyed by a hash of its plugin id.
     Plugin(u64),
@@ -66,11 +69,22 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
+    /// Admission check: once failures exhaust the IP budget, shed anonymous
+    /// requests before authentication (including expensive remote token lookup).
+    fn auth_retry_after(&self, ip: IpAddr, now: Instant) -> Option<u64> {
+        let windows = self.windows.lock().expect("rate-limit mutex poisoned");
+        let window = windows.get(&(ip, Bucket::AuthFailure))?;
+        let elapsed = now.duration_since(window.start);
+        (window.count >= AUTH_FAILURE_LIMIT && elapsed < WINDOW)
+            .then(|| WINDOW.saturating_sub(elapsed).as_secs().max(1))
+    }
+
     /// Record a hit and report whether it is within the bucket's limit. Returns
     /// `Err(retry_after_secs)` when the limit is exceeded.
     fn check(&self, ip: IpAddr, bucket: Bucket, now: Instant) -> Result<(), u64> {
         let limit = match bucket {
             Bucket::Pair => PAIR_LIMIT,
+            Bucket::AuthFailure => AUTH_FAILURE_LIMIT,
             Bucket::General | Bucket::LoopbackAuthenticated => GENERAL_LIMIT,
             Bucket::Plugin(_) => PLUGIN_LIMIT,
         };
@@ -155,11 +169,30 @@ async fn apply_limit(
     if let Err(retry_after) = limiter.check(ip, bucket, Instant::now()) {
         return too_many_requests(retry_after);
     }
-    next.run(request).await
+    // Known loopback and plugin credentials retain their isolated allowance.
+    // Remote callers share an IP admission budget: an exhausted IP must wait
+    // for the window to elapse before authentication is attempted again.
+    if bucket == Bucket::General {
+        if let Some(retry_after) = limiter.auth_retry_after(ip, Instant::now()) {
+            return too_many_requests(retry_after);
+        }
+    }
+    let response = next.run(request).await;
+    if response.status() == StatusCode::UNAUTHORIZED {
+        if let Err(retry_after) = limiter.check(ip, Bucket::AuthFailure, Instant::now()) {
+            return too_many_requests(retry_after);
+        }
+    }
+    response
 }
 
 fn has_valid_loopback_credential(request: &Request, state: &AppState) -> bool {
     if is_websocket_upgrade(request) {
+        if let Some(presented) = request.headers().get(AUTH_HEADER) {
+            return presented
+                .to_str()
+                .is_ok_and(|token| constant_time_str_eq(token, &state.auth_token));
+        }
         return validate_ws_token(request.headers(), &state.auth_token).is_ok();
     }
 
@@ -188,6 +221,77 @@ fn client_ip(request: &Request) -> Option<IpAddr> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn exhausted_failure_budget_rejects_before_the_handler_runs() {
+        use axum::{body::Body, routing::get, Router};
+        use tower::ServiceExt;
+        let limiter = std::sync::Arc::new(RateLimiter::default());
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let handler_calls = calls.clone();
+        let app = Router::new()
+            .route(
+                "/failure",
+                get(move || {
+                    handler_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    async { StatusCode::UNAUTHORIZED }
+                }),
+            )
+            .route("/ok", get(|| async { StatusCode::OK }))
+            .layer(axum::middleware::from_fn(rate_limit_middleware))
+            .layer(Extension(limiter))
+            .layer(Extension(ConnectInfo(SocketAddr::from((
+                [10, 0, 0, 1],
+                1234,
+            )))));
+        for attempt in 0..=AUTH_FAILURE_LIMIT {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/failure")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            if attempt < AUTH_FAILURE_LIMIT {
+                assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            } else {
+                assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+                assert!(response.headers().contains_key("retry-after"));
+            }
+        }
+        let response = app
+            .oneshot(Request::builder().uri("/ok").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            AUTH_FAILURE_LIMIT
+        );
+    }
+
+    #[test]
+    fn auth_failure_bucket_is_per_ip_and_resets() {
+        let limiter = RateLimiter::default();
+        let now = Instant::now();
+        for _ in 0..AUTH_FAILURE_LIMIT {
+            assert!(limiter.check(ip(1), Bucket::AuthFailure, now).is_ok());
+        }
+        assert!(limiter.check(ip(1), Bucket::AuthFailure, now).is_err());
+        assert!(limiter.auth_retry_after(ip(1), now).is_some());
+        assert!(limiter.auth_retry_after(ip(2), now).is_none());
+        assert!(limiter.auth_retry_after(ip(1), now + WINDOW).is_none());
+        assert!(limiter.check(ip(2), Bucket::AuthFailure, now).is_ok());
+        assert!(limiter
+            .check(ip(1), Bucket::LoopbackAuthenticated, now)
+            .is_ok());
+        assert!(limiter
+            .check(ip(1), Bucket::AuthFailure, now + WINDOW)
+            .is_ok());
+    }
 
     fn ip(n: u8) -> IpAddr {
         IpAddr::from([10, 0, 0, n])

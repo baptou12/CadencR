@@ -8,6 +8,10 @@ const ipc = vi.hoisted(() => ({
   listeners: new Map<string, Handler>(),
 }));
 
+vi.mock("../renderer-window-security", () => ({
+  rendererLoadTarget: () => ({ kind: "url", value: "http://127.0.0.1:1420/" }),
+}));
+
 vi.mock("electron", () => ({
   app: { isPackaged: false, getPath: vi.fn(() => "/tmp"), getVersion: vi.fn(() => "0.0.0") },
   clipboard: { readText: vi.fn() },
@@ -25,8 +29,13 @@ vi.mock("electron", () => ({
 
 const { answerGuestThemeCss, registerPluginTabIpc } = await import("./plugin-tab-ipc");
 
-const mainWindow = { webContents: { id: 7 } } as unknown as BrowserWindow;
-const trusted = { sender: { id: 7 }, senderFrame: { url: "http://127.0.0.1:1420/" } };
+const mainWindow = {
+  webContents: { id: 7, mainFrame: { url: "http://127.0.0.1:1420/", processId: 1, routingId: 2 } },
+} as unknown as BrowserWindow;
+const trusted = {
+  sender: { id: 7 },
+  senderFrame: { url: "http://127.0.0.1:1420/", processId: 1, routingId: 2 },
+};
 const untrusted = { sender: { id: 99 }, senderFrame: { url: "cadencr-tab://graph/" } };
 
 function invoke(channel: string, event: unknown, ...args: unknown[]): unknown {

@@ -1,3 +1,4 @@
+import path from "node:path";
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import {
   notchConfigSchema,
@@ -9,6 +10,8 @@ import {
 } from "../../src/shared/notch";
 import { assertTrustedSender } from "./ipc";
 import { NotchController } from "./notch-window";
+import { notchPageUrl } from "./notch-island-window";
+import { rendererLoadTarget } from "./renderer-window-security";
 
 /**
  * Two audiences, two trust checks: the app renderer (`notch:*` host channels)
@@ -18,8 +21,14 @@ import { NotchController } from "./notch-window";
 export function registerNotchIpc(getMainWindow: () => BrowserWindow | null): NotchController {
   const controller = new NotchController({ getMainWindow });
 
-  const fromIsland = (event: IpcMainInvokeEvent): void =>
-    assertTrustedSender(event, () => controller.windowForSender(event.sender.id));
+  const fromIsland = (event: IpcMainInvokeEvent): void => {
+    const target = rendererLoadTarget();
+    const islandTarget =
+      target.kind === "url"
+        ? { kind: "url" as const, value: notchPageUrl(target.value) }
+        : { kind: "file" as const, value: path.join(path.dirname(target.value), "notch.html") };
+    assertTrustedSender(event, () => controller.windowForSender(event.sender.id), islandTarget);
+  };
 
   ipcMain.handle("notch:capabilities", (event) => {
     assertTrustedSender(event, getMainWindow);

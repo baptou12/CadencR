@@ -73,3 +73,13 @@ export function rendererCsp(
     "form-action 'none'",
   ].join("; ");
 }
+
+/** Vite must send this as a response header: frame-ancestors is ignored in HTML meta tags. */
+export function rendererDevelopmentHeaders(
+  developmentEndpoints: RendererCspDevelopmentEndpoints,
+): Record<string, string> {
+  return {
+    "Content-Security-Policy": rendererCsp(false, developmentEndpoints),
+    "X-Frame-Options": "DENY",
+  };
+}

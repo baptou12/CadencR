@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { BrowserNetworkCollector } from "./browser-network-collector";
+import { setBrowserOriginPolicyReady, setBrowserRemoteOrigins } from "./runtime-config";
 import type { BrowserNetworkEntry } from "./browser-types";
 
 type CollectedEntry = Omit<BrowserNetworkEntry, "tabId">;
@@ -7,6 +8,7 @@ type CollectedEntry = Omit<BrowserNetworkEntry, "tabId">;
 interface MockSession {
   handlers: Record<string, (details: unknown) => void>;
   webRequest: {
+    onBeforeRequest: ReturnType<typeof vi.fn>;
     onBeforeSendHeaders: ReturnType<typeof vi.fn>;
     onCompleted: ReturnType<typeof vi.fn>;
     onErrorOccurred: ReturnType<typeof vi.fn>;
@@ -18,6 +20,7 @@ function mockSession(): MockSession {
   return {
     handlers,
     webRequest: {
+      onBeforeRequest: vi.fn(),
       onBeforeSendHeaders: vi.fn((cb: (d: unknown) => void) => (handlers.beforeSend = cb)),
       onCompleted: vi.fn((cb: (d: unknown) => void) => (handlers.completed = cb)),
       onErrorOccurred: vi.fn((cb: (d: unknown) => void) => (handlers.error = cb)),
@@ -30,6 +33,39 @@ function asSession(mock: MockSession): Electron.Session {
 }
 
 describe("BrowserNetworkCollector", () => {
+  it("blocks automated self requests but preserves human browsing and normal dev sites", () => {
+    setBrowserRemoteOrigins(["https://127.0.0.1:9123", "https://tunnel.example.test"]);
+    let automated = true;
+    const collector = new BrowserNetworkCollector(
+      () => undefined,
+      () => automated,
+    );
+    const session = mockSession();
+    collector.ensure(asSession(session));
+    const request = session.webRequest.onBeforeRequest.mock.calls[0][0] as (
+      details: { url: string; webContentsId: number },
+      callback: (result: { cancel: boolean }) => void,
+    ) => void;
+    for (const url of [
+      "http://localhost:5005/api/remote/pairing-code",
+      "https://100.1.2.3:9123/",
+      "https://tunnel.example.test/",
+    ]) {
+      const callback = vi.fn();
+      request({ url, webContentsId: 7 }, callback);
+      expect(callback).toHaveBeenCalledWith({ cancel: true });
+    }
+    const callback = vi.fn();
+    request({ url: "http://localhost:3000/", webContentsId: 7 }, callback);
+    expect(callback).toHaveBeenLastCalledWith({ cancel: false });
+    automated = false;
+    request({ url: "http://localhost:5005/", webContentsId: 7 }, callback);
+    expect(callback).toHaveBeenLastCalledWith({ cancel: false });
+    automated = true;
+    setBrowserOriginPolicyReady(false);
+    request({ url: "http://localhost:3000/", webContentsId: 7 }, callback);
+    expect(callback).toHaveBeenLastCalledWith({ cancel: true });
+  });
   it("emits an entry for completed requests, keyed by webContents id", () => {
     const seen: Array<{ id: number; entry: CollectedEntry }> = [];
     const collector = new BrowserNetworkCollector((id, entry) => seen.push({ id, entry }));

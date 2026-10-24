@@ -30,7 +30,6 @@ type DesktopTheme = "light" | "dark";
 
 interface RuntimeConfig {
   baseUrl: string;
-  authToken: string | null;
 }
 
 interface NotificationClickPayload {
