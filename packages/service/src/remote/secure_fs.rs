@@ -3,7 +3,7 @@
 //! be readable either — so we create them `0600` from the first byte rather
 //! than writing at the umask default and tightening afterwards.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -55,15 +55,30 @@ pub fn open_owner_only(path: &Path, create: bool) -> Result<std::fs::File> {
     Ok(file)
 }
 
-/// Only the known Cadencr home is ours to tighten; custom ancestors are not.
+/// Only the known Cadencr roots are ours to tighten; custom ancestors are not.
+/// The roots come from `app_paths`: `~/.cadencr` on macOS, the XDG data,
+/// config and cache dirs on Linux.
 pub fn secure_app_home(path: &Path) -> Result<()> {
-    if let Some(home) = dirs::home_dir() {
-        let root = home.join(".cadencr");
-        if path.starts_with(&root) && path != root {
-            create_dir_owner_only(&root)?;
-        }
+    use crate::shared::app_paths;
+    let roots: Vec<PathBuf> = [
+        app_paths::data_dir(),
+        app_paths::config_dir(),
+        app_paths::cache_dir(),
+    ]
+    .into_iter()
+    .filter_map(|root| root.ok())
+    .collect();
+    for root in app_roots_containing(path, &roots) {
+        create_dir_owner_only(root)?;
     }
     Ok(())
+}
+
+fn app_roots_containing<'a>(path: &Path, roots: &'a [PathBuf]) -> Vec<&'a PathBuf> {
+    roots
+        .iter()
+        .filter(|root| path.starts_with(root) && path != root.as_path())
+        .collect()
 }
 
 /// Create missing directories privately without changing existing ancestors.
@@ -122,6 +137,29 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
+
+    #[test]
+    fn app_roots_cover_xdg_and_macos_layouts_but_not_custom_paths() {
+        let linux = [
+            PathBuf::from("/home/u/.local/share/cadencr"),
+            PathBuf::from("/home/u/.config/cadencr"),
+            PathBuf::from("/home/u/.cache/cadencr"),
+        ];
+        let db = Path::new("/home/u/.local/share/cadencr/database/cadencr.db");
+        assert_eq!(app_roots_containing(db, &linux), vec![&linux[0]]);
+        let settings = Path::new("/home/u/.config/cadencr/settings");
+        assert_eq!(app_roots_containing(settings, &linux), vec![&linux[1]]);
+        assert!(app_roots_containing(&linux[0], &linux).is_empty());
+        assert!(app_roots_containing(Path::new("/srv/custom/x.db"), &linux).is_empty());
+
+        let macos = [
+            PathBuf::from("/Users/u/.cadencr"),
+            PathBuf::from("/Users/u/.cadencr/config"),
+            PathBuf::from("/Users/u/.cadencr/cache"),
+        ];
+        let db = Path::new("/Users/u/.cadencr/database/cadencr.db");
+        assert_eq!(app_roots_containing(db, &macos), vec![&macos[0]]);
+    }
 
     fn mode(path: &Path) -> u32 {
         std::fs::metadata(path).unwrap().permissions().mode() & 0o777

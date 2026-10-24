@@ -13,7 +13,7 @@
 // Runs inside scripts/linux-container (needs xvfb-run). Exits non-zero on any
 // failed check.
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -185,6 +185,10 @@ try {
 
   const dataDb = path.join(home, ".local/share/cadencr/database/cadencr.db");
   check(existsSync(dataDb), `database created under XDG data (${dataDb})`);
+  for (const dir of [path.dirname(path.dirname(dataDb)), path.dirname(dataDb)]) {
+    const mode = existsSync(dir) ? (statSync(dir).mode & 0o777).toString(8) : "missing";
+    check(mode === "700", `${dir} is private to the user (mode ${mode})`);
+  }
   check(existsSync(path.join(home, ".config/cadencr")), "config created under XDG config");
   check(!existsSync(path.join(home, ".cadencr")), "nothing written to the macOS-style ~/.cadencr");
 

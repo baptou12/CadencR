@@ -89,7 +89,6 @@ pub fn data_dir() -> Result<PathBuf, String> {
 ///
 /// Linux: `$XDG_CONFIG_HOME/cadencr` (default `~/.config/cadencr`).
 /// macOS: `~/.cadencr`.
-#[allow(dead_code)] // Reserved for future config-file callers (Phase 3+).
 pub fn config_dir() -> Result<PathBuf, String> {
     resolve(Kind::Config)
 }
@@ -98,7 +97,6 @@ pub fn config_dir() -> Result<PathBuf, String> {
 ///
 /// Linux: `$XDG_CACHE_HOME/cadencr` (default `~/.cache/cadencr`).
 /// macOS: `~/.cadencr`.
-#[allow(dead_code)] // Used via `logs_dir`; kept public for direct cache use.
 pub fn cache_dir() -> Result<PathBuf, String> {
     resolve(Kind::Cache)
 }
