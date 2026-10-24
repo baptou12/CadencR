@@ -137,4 +137,6 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - [WebGPU types 0.1.71–0.1.74](https://github.com/gpuweb/types/compare/v0.1.71...v0.1.74) : trois membres ajoutés aux unions de formats/features, aucun code runtime.
 - Toutes les versions ont plus de 14 jours. Le lockfile ne change que ces trois packages et leurs références.
 - Validation : suite web complète avec les assertions existantes, dont CodeMirror, raccourcis, presse-papiers et custom tabs ; typage du renderer WebGPU. Ce lot ne modifie aucune dépendance embarquée au runtime.
-- 25 tâches web réussies : 6 604 tests desktop, 57 tests tab-sdk, 37 tests tab-kit et 17 tests landing. Aucune assertion modifiée, aucun test ignoré ajouté. Les tests CodeMirror et raccourcis passent avec ce lot isolé. Logs : `/tmp/cadencr-309/test-tooling-checks.log`.
+- Validation initiale : 25 tâches web réussies, dont 6 604 tests desktop. Après intégration de `main` (`ccf5e2649`, custom tabs et correctif SQLite) : 25 tâches web réussies à nouveau, dont 6 625 tests desktop dans 829 fichiers. Aucune assertion modifiée, aucun test ignoré ajouté. Les tests CodeMirror et raccourcis passent avec ce lot isolé. Logs : `/tmp/cadencr-309/integration-test-checks.log`.
+
+- Reprise : lot 1 synchronisé avec `main` dans le commit `ccae3ffd0`. Son ancien commit `52cd9b419` a passé CI, CodeQL et audit ; les trois workflows sont relancés sur le nouveau commit.
