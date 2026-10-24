@@ -80,7 +80,7 @@ export function registerAutoUpdaterIpc({ getMainWindow, prepareInstallUpdate }: 
       return;
     }
     void autoUpdater.checkForUpdates().catch((error: unknown) => {
-      sendUpdate(getMainWindow, { channel: "update:error", message: errorMessage(error) });
+      reportUpdateFailure(getMainWindow, error);
     });
   });
   ipcMain.handle("app:install-update", async (event: IpcMainInvokeEvent) => {
@@ -184,7 +184,7 @@ export function initAutoUpdater({ getMainWindow }: InitOptions): void {
     });
   });
   autoUpdater.on("error", (error) => {
-    sendUpdate(getMainWindow, { channel: "update:error", message: errorMessage(error) });
+    reportUpdateFailure(getMainWindow, error);
   });
   autoUpdater.on("download-progress", (progress) => {
     sendUpdate(getMainWindow, {
@@ -199,13 +199,13 @@ export function initAutoUpdater({ getMainWindow }: InitOptions): void {
 
   setTimeout(() => {
     void autoUpdater.checkForUpdates().catch((error: unknown) => {
-      sendUpdate(getMainWindow, { channel: "update:error", message: errorMessage(error) });
+      reportUpdateFailure(getMainWindow, error);
     });
   }, FIRST_CHECK_DELAY_MS);
 
   intervalHandle = setInterval(() => {
     void autoUpdater.checkForUpdates().catch((error: unknown) => {
-      sendUpdate(getMainWindow, { channel: "update:error", message: errorMessage(error) });
+      reportUpdateFailure(getMainWindow, error);
     });
   }, CHECK_INTERVAL_MS);
 }
@@ -224,6 +224,29 @@ export function shutdownAutoUpdater(): void {
 function sendUpdate(getMainWindow: () => BrowserWindow | null, payload: UpdateChannel): void {
   const { channel, ...data } = payload;
   sendToWindow(getMainWindow(), channel, data);
+}
+
+/**
+ * Linux packages are attached to a release by hand, after macOS ships, so the
+ * latest release can lack `latest-linux.yml`. That means no Linux update yet,
+ * not a failed check: report it as "not available" instead of an error.
+ */
+function isMissingLinuxFeed(error: unknown): boolean {
+  return (
+    process.platform === "linux" &&
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "ERR_UPDATER_CHANNEL_FILE_NOT_FOUND"
+  );
+}
+
+function reportUpdateFailure(getMainWindow: () => BrowserWindow | null, error: unknown): void {
+  if (isMissingLinuxFeed(error)) {
+    console.info("[updater] the latest release has no Linux packages yet");
+    sendUpdate(getMainWindow, { channel: "update:not-available", version: app.getVersion() });
+    return;
+  }
+  sendUpdate(getMainWindow, { channel: "update:error", message: errorMessage(error) });
 }
 
 function errorMessage(error: unknown): string {
