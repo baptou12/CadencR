@@ -301,27 +301,23 @@ function getKeySuggestions(token: string): UnifiedAgentsFilterSuggestion[] {
   const normalized = token.toLowerCase();
   return UNIFIED_AGENTS_FILTER_KEYS.filter((key: string): boolean =>
     key.startsWith(normalized),
-  ).map(
-    (key: UnifiedAgentsFilterKey): UnifiedAgentsFilterSuggestion => ({
-      label: `/${key}:`,
-      detail: keySuggestionDetail(key),
-      replacement: `/${key}:`,
-      key,
-    }),
-  );
+  ).map((key: UnifiedAgentsFilterKey): UnifiedAgentsFilterSuggestion => ({
+    label: `/${key}:`,
+    detail: keySuggestionDetail(key),
+    replacement: `/${key}:`,
+    key,
+  }));
 }
 
 function getLastSuggestions(value: string): UnifiedAgentsFilterSuggestion[] {
   return LAST_PRESETS.filter((preset: string): boolean =>
     preset.startsWith(normalizeFilterValue(value)),
-  ).map(
-    (preset: string): UnifiedAgentsFilterSuggestion => ({
-      label: `/last:${preset}`,
-      detail: preset === "all" ? "Every agent (default)" : `Active in the last ${preset} minutes`,
-      replacement: `/last:${preset}`,
-      key: "last",
-    }),
-  );
+  ).map((preset: string): UnifiedAgentsFilterSuggestion => ({
+    label: `/last:${preset}`,
+    detail: preset === "all" ? "Every agent (default)" : `Active in the last ${preset} minutes`,
+    replacement: `/last:${preset}`,
+    key: "last",
+  }));
 }
 
 function getSortSuggestions(value: string): UnifiedAgentsFilterSuggestion[] {
@@ -346,14 +342,12 @@ function getPinSuggestions(value: string): UnifiedAgentsFilterSuggestion[] {
     .filter((preset: string): boolean =>
       preset.startsWith(normalizeFilterValue(value).toLowerCase()),
     )
-    .map(
-      (preset: string): UnifiedAgentsFilterSuggestion => ({
-        label: `/pin:${preset}`,
-        detail: "Only pinned agents",
-        replacement: `/pin:${preset}`,
-        key: "pin",
-      }),
-    );
+    .map((preset: string): UnifiedAgentsFilterSuggestion => ({
+      label: `/pin:${preset}`,
+      detail: "Only pinned agents",
+      replacement: `/pin:${preset}`,
+      key: "pin",
+    }));
 }
 
 function getProjectSuggestions(
@@ -365,15 +359,13 @@ function getProjectSuggestions(
   return projects
     .filter((project: Project): boolean => project.name.toLowerCase().includes(currentValue))
     .slice(0, 8)
-    .map(
-      (project: Project): UnifiedAgentsFilterSuggestion => ({
-        label: project.name,
-        detail: project.path,
-        replacement: `/project:${prefix}${quoteFilterValue(project.name)}`,
-        key: "project",
-        projectId: project.id,
-      }),
-    );
+    .map((project: Project): UnifiedAgentsFilterSuggestion => ({
+      label: project.name,
+      detail: project.path,
+      replacement: `/project:${prefix}${quoteFilterValue(project.name)}`,
+      key: "project",
+      projectId: project.id,
+    }));
 }
 
 function keySuggestionDetail(key: UnifiedAgentsFilterKey): string {

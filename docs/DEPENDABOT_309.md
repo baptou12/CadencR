@@ -32,10 +32,10 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 | 11a | Moteur CodeMirror | 4 | Saisie, historique, sélection, recherche et gros fichiers. | Fusionné : #328 |
 | 11b | Langages CodeMirror | 5 | Parsers uniques, Astro/YAML, Markdown et HTML. | Fusionné : #330 |
 | 11c | Vim et thèmes | 2 | Commandes Vim et stabilité du thème. | Fusionné : #332 |
-| 11d | LSP | 2 | Connexion, complétion, diagnostics et navigation. | PR #333, CI finale sur main |
+| 11d | LSP | 2 | Connexion, complétion, diagnostics et navigation. | Fusionné : #333 |
 | 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | PR #336 |
-| 13 | Orchestration | 1 | Graphe de tâches, cache et scripts CI. | Validation finale locale |
-| 14 | Analyse et formatage | 3 | Changelogs des règles, formatage reproductible, lint et exports inutilisés. | À traiter |
+| 13 | Orchestration | 1 | Graphe de tâches, cache et scripts CI. | PR #338, 8 checks / 31 tâches sans cache verts |
+| 14 | Analyse et formatage | 3 | Changelogs des règles, formatage reproductible, lint et exports inutilisés. | Validation finale locale |
 | 15 | Génération API | 1 | Régénération des deux clients, revue du diff, types et appels réels. | À traiter |
 
 ## Inventaire exhaustif
@@ -348,3 +348,12 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - Le shell utilisait Node `22.18.0`, malgré un chemin d'installation pnpm mentionnant une autre version. Les vérifications finales et le démarrage QA utilisent explicitement le binaire Node `22.19.0` demandé par le dépôt ; Python `3.13` est également sélectionné pour les tests des scripts.
 - QA dans pnpm dev sous Node `22.19.0` : API et frontend à 200, paramètres chargés depuis l'API, section éditeur et aide des raccourcis fonctionnelles. Aucun nouveau diagnostic applicatif. Un ancien processus Astro de notre QA native a été identifié par son chemin puis arrêté avant le démarrage ; aucun autre environnement utilisateur touché.
 - Preuves : `/tmp/cadencr-309/turbo-graph-comparison.json`, `turbo-{before,after,dev-graph}.json`, `turbo-cache-node22-{cold,warm}.log`, `turbo-force-proof.log`, `turbo-node22-dev.log` et `turbo-commit.log`. Processus QA arrêtés ; base conservée. Pas de QA graphique Linux.
+
+## Lot 14 — analyse et formatage
+
+- Oxfmt `0.56.0 → 0.72.0`, Oxlint `1.71.0 → 1.87.0`, Knip `6.22.0 → 6.41.0`, dans les sept manifests concernés. Changelogs intermédiaires lus : [Oxfmt](https://github.com/oxc-project/oxc/blob/oxfmt_v0.72.0/apps/oxfmt/CHANGELOG.md), [Oxlint](https://github.com/oxc-project/oxc/releases/tag/oxlint_v1.87.0), [Knip](https://github.com/webpro-nl/knip/releases/tag/knip%406.41.0).
+- Oxfmt remplace ses moteurs CSS/YAML/Markdown et ajuste la disposition des fonctions typées. Seulement sept fichiers TypeScript existants nécessitent un reformatage ; leur sortie JavaScript compilée est identique avant/après. Aucun fichier généré ni CSS modifié. Oxlint passe sans désactiver de règle ; le découpage des règles React Compiler ne concerne pas notre configuration.
+- Le nouveau Knip signale Tailwind inutilisé dans tab-kit parce que les CSS étaient exclus de project. Ces fichiers sont maintenant analysés dans desktop/tab-kit ; le vrai import de l'exemple est suivi. Les exceptions devenues inutiles sont supprimées. Le plugin electron-vite découvre désormais les entrées main/preload/notch : présence vérifiée dans sa trace après suppression des entrées redondantes. Quinze contrôles ciblés passent, sans avertissement Knip restant.
+- Transitifs : Knip utilise le nouvel AST readonly d'[unbash 5](https://github.com/webpro-nl/unbash/blob/5.0.0/docs/MIGRATION-v4-to-v5.md), formatly ajoute Oxfmt et fiabilise le lancement des formatters, get-tsconfig corrige les exclusions outDir. Resolver actualise les chemins tsconfig, parser suit la nouvelle AST Oxc. Emnapi corrige les buffers partagés et le receiver de setImmediate. [Tinypool 2.2](https://github.com/tinylibs/tinypool/releases/tag/v2.2.0) conserve les correctifs de sécurité, ajoute les URL de workers et supprime des références CJS ; les tests sont rejoués avec cette version. Les copies déjà validées de yaml/picomatch sont dédupliquées. Politiques pnpm et correctifs de sécurité inchangés.
+- Validation sous Node `22.19.0` : typage, lint, formatage, Knip, tests des scripts et workspace via le hook complet. Pas de changement fonctionnel applicatif : les seules modifications de source sont celles du formatter, avec équivalence de compilation vérifiée.
+- Preuves : `/tmp/cadencr-309/quality-{install,first-checks,second-checks,security,commit}.log`, `quality-lock.diff`, `quality-format-equivalence.json` et `quality-knip-debug.log`.

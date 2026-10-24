@@ -8,16 +8,14 @@
   ],
   "project": [
     "src/**/*.ts",
+    "*.css",
     "scripts/**/*.{ts,mjs}",
     "test/**/*.ts",
-    "example/**/*.{ts,tsx}"
+    "example/**/*.{ts,tsx,css}"
   ],
   "ignoreDependencies": [
     "@fontsource-variable/inter",
     "tw-animate-css",
-    "radix-ui",
-    "class-variance-authority",
-    "clsx",
     "tailwind-merge",
     "lucide-react"
   ]
