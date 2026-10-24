@@ -192,6 +192,26 @@ describe("useShortcut", () => {
     });
     expect(onFire).toHaveBeenCalledTimes(1);
   });
+
+  it("does not consume composing letter input or the wrong AZERTY letter", () => {
+    const onFire = vi.fn();
+    render(<PaneAgentHarness onFire={onFire} />);
+
+    fireEvent.keyDown(document.body, {
+      key: "Q",
+      code: "KeyA",
+      metaKey: true,
+      shiftKey: true,
+    });
+    fireEvent.keyDown(document.body, {
+      key: "A",
+      code: "KeyQ",
+      metaKey: true,
+      shiftKey: true,
+      isComposing: true,
+    });
+    expect(onFire).not.toHaveBeenCalled();
+  });
 });
 
 describe("useGlobalShortcutById", () => {

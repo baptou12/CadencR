@@ -30,10 +30,10 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 | 9 | Éditeur riche | 2 | Saisie, sélection, copier/coller, mentions et envoi du prompt. | Fusionné : #323 |
 | 10 | Aperçus de contenu | 3 | Markdown diffusé, code coloré, PDF et workers. | Fusionné : #325 |
 | 11a | Moteur CodeMirror | 4 | Saisie, historique, sélection, recherche et gros fichiers. | Fusionné : #328 |
-| 11b | Langages CodeMirror | 5 | Parsers uniques, Astro/YAML, Markdown et HTML. | PR #330, CI finale sur main |
-| 11c | Vim et thèmes | 2 | Commandes Vim et stabilité du thème. | PR #332, empilée sur #330 |
-| 11d | LSP | 2 | Connexion, complétion, diagnostics et navigation. | Validé localement |
-| 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | À traiter |
+| 11b | Langages CodeMirror | 5 | Parsers uniques, Astro/YAML, Markdown et HTML. | Fusionné : #330 |
+| 11c | Vim et thèmes | 2 | Commandes Vim et stabilité du thème. | Fusionné : #332 |
+| 11d | LSP | 2 | Connexion, complétion, diagnostics et navigation. | PR #333, CI finale sur main |
+| 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | Validé localement |
 | 13 | Orchestration | 1 | Graphe de tâches, cache et scripts CI. | À traiter |
 | 14 | Analyse et formatage | 3 | Changelogs des règles, formatage reproductible, lint et exports inutilisés. | À traiter |
 | 15 | Génération API | 1 | Régénération des deux clients, revue du diff, types et appels réels. | À traiter |
@@ -328,3 +328,14 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - La configuration Astro reste une limitation préexistante : aucun chemin TypeScript n'est fourni au serveur. Le nouvel initializationOptions rend son intégration possible mais la résolution backend de ce chemin est une évolution distincte. Ce lot corrige l'état trompeur et la gestion de l'échec ; il ne prétend pas rendre Astro LSP fonctionnel.
 - Deux autres anomalies reproduites dans l'app témoin sous les anciennes dépendances : modifications non sauvegardées perdues au changement de fichier, et 400 du gutter Git sur le chemin absolu ouvert par F12 (l'éditeur et la définition fonctionnent). Les fichiers de gestion des buffers/navigation concernés sont identiques à la base. Pas de nouvelle régression attribuée à ce lot.
 - Preuves : `/tmp/cadencr-309/lsp-{handshake-tests,retry-tests,focused-tests,web-checks,build-2,dev}.log`, `lsp-baseline-{service,desktop}.log`. QA native effectuée sur macOS ; automatisation Linux en CI. Processus arrêtés, bases conservées.
+
+## Lot 12 — raccourcis clavier
+
+- `@tanstack/hotkeys 0.8.0 → 0.11.0` et `@tanstack/react-hotkeys 0.10.0 → 0.13.0`. Changelogs [0.9](https://github.com/TanStack/hotkeys/releases/tag/%40tanstack/hotkeys%400.9.0), [0.10](https://github.com/TanStack/hotkeys/releases/tag/%40tanstack/hotkeys%400.10.0), [0.10.1](https://github.com/TanStack/hotkeys/releases/tag/%40tanstack/hotkeys%400.10.1), [0.11](https://github.com/TanStack/hotkeys/releases/tag/%40tanstack/hotkeys%400.11.0) et adaptateurs React lus. ESM ES2022 / Node 20 minimum compatibles ; aucun recorder utilisé. Les deux copies transitives de TanStack Store sont regroupées sur 0.11.2 déjà validée avec le routage.
+- Trois régressions reproduites dans les tests existants : Shift implicite sur les caractères déclenchait le zoom arrière, la navigation historique de l'app et celle du navigateur à la place du changement d'onglet. Les trois chemins gardent maintenant le Shift de chaque variante explicitement développée ; matching des lettres et gardes de shell conservés.
+- Six nouveaux tests couvrent les conflits crochets/historique, les lettres AZERTY, les événements de composition et les caractères Shift sur macOS/Linux. Quatre mocks de composants fournissent désormais un vrai KeyboardEvent et le contexte TanStack, via un helper commun ; toutes leurs assertions restent présentes.
+- Validation : 246 tests ciblés, 109 tests des composants concernés, puis 28 tâches web et 6 717 tests desktop verts ; 59 contrôles de sécurité/dépendances et build renderer réussi. Aucun assouplissement des politiques pnpm.
+- QA réelle dans pnpm dev sur macOS : aide depuis CodeMirror, recherche de fichiers, navigation entre deux fichiers par Cmd+Shift+crochets sans changer de conversation, zoom 100 → 90 → 100 et Shift+moins sans effet. AZERTY simulé avec key/code distincts dans les listeners réels : aide via Shift+Comma, remappage de sidebar réactif, mauvaise lettre et composition ignorées ; override supprimé après contrôle. Pas de nouvelle erreur applicative console.
+- QA native Electron ajoutée : instrumentation temporaire via les ports locaux 9259/9260 et sendInputEvent, aucune instrumentation livrée. L'injection CDP directe dans la page ne traverse pas before-input-event ; les vérifications du relais utilisent l'entrée native d'Electron.
+- Relais natif vérifié avec deux pages locales : Cmd+Shift+crochets change d'onglet sans changer la conversation ni l'URL du guest ; Cmd+crochets parcourt l'historique des conversations une fois les navigations stabilisées. Zoom Chromium 100 → 83 → 100 ; Cmd+F focalise Find in page. Le navigateur embarqué a son propre pas de zoom, distinct du zoom global. Les deux onglets créés pour le test sont fermés ; les processus et ports de débogage sont arrêtés, bases conservées.
+- Sources/preuves : `/tmp/cadencr-309/remaining-notes/{hotkeys,react-hotkeys}-interval.md`, `hotkeys-{focused-fixed,component-mocks,web-checks-2,security,build,dev}.log`, `hotkeys-native-results.json`, `native-history-trace.json` et `hotkeys-native-inspected-dev.log`. QA native macOS ; tests de branches Linux automatisés, pas de session graphique Linux.

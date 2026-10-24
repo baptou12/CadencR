@@ -4,6 +4,8 @@ import { act, fireEvent, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { AgentPromptBar } from "./AgentPromptBar";
 import type { PromptCommandPolicy } from "@/lib/prompt-command-policy";
+import type { HotkeyCallback } from "@tanstack/hotkeys";
+import { invokeRegisteredHotkey } from "@/test/hotkeys";
 
 const DOLLAR_SKILLS_POLICY: PromptCommandPolicy = {
   slashCommandPlacement: "prompt_start",
@@ -26,7 +28,7 @@ interface HotkeyEntry {
   options?: { enabled?: boolean };
 }
 interface HotkeyDefinition {
-  callback: (e: Partial<KeyboardEvent>) => void;
+  callback: HotkeyCallback;
   hotkey: string;
   options?: { enabled?: boolean };
 }
@@ -35,7 +37,7 @@ vi.mock("@tanstack/react-hotkeys", () => ({
   useHotkeys: vi.fn((definitions: HotkeyDefinition[]) => {
     definitions.forEach((definition) => {
       hotkeyHandlers.set(definition.hotkey, {
-        handler: definition.callback,
+        handler: (event) => invokeRegisteredHotkey(definition.callback, definition.hotkey, event),
         options: definition.options,
       });
     });

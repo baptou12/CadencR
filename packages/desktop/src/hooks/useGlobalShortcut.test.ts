@@ -205,6 +205,31 @@ describe("useGlobalShortcut", () => {
     expect(callback).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["[", "BracketLeft"],
+    ["]", "BracketRight"],
+  ])("keeps history and tab switching separate for %s", (key, code) => {
+    const history = vi.fn();
+    renderHook(() => {
+      useGlobalShortcut(`Mod+${key}`, history);
+      useGlobalShortcut(`Mod+Shift+${key}`, callback);
+    });
+
+    fireKey(key, { metaKey: true, shiftKey: true, code });
+    expect(callback).toHaveBeenCalledOnce();
+    expect(history).not.toHaveBeenCalled();
+
+    fireKey(key, { metaKey: true, code });
+    expect(history).toHaveBeenCalledOnce();
+    expect(callback).toHaveBeenCalledOnce();
+  });
+
+  it("does not consume composing letter input", () => {
+    renderHook(() => useGlobalShortcut("Mod+A", callback));
+    fireKey("a", { metaKey: true, code: "KeyQ", isComposing: true });
+    expect(callback).not.toHaveBeenCalled();
+  });
+
   it("does not fire when enabled is false", () => {
     renderHook(() => useGlobalShortcut("meta+p", callback, { enabled: false }));
     fireKey("p", { metaKey: true, code: "KeyP" });
