@@ -26,10 +26,13 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 | 5b | Composants UI | 4 | Calendrier, redimensionnement, listes longues et notifications. | Fusionné : #318 |
 | 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | Fusionné : #319 |
 | 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | Fusionné : #321 |
-| 8 | React | 4 | Typage, tests complets, StrictMode et interactions dans l'app. | PR #322, CI finale |
-| 9 | Éditeur riche | 2 | Saisie, sélection, copier/coller, mentions et envoi du prompt. | PR #323, empilée sur React |
-| 10 | Aperçus de contenu | 3 | Markdown diffusé, code coloré, PDF et workers. | Validé localement |
-| 11 | CodeMirror et LSP | 13 | Unicité des parsers, Astro/YAML, gros fichiers, sélection, recherche, Vim et LSP. | À traiter |
+| 8 | React | 4 | Typage, tests complets, StrictMode et interactions dans l'app. | Fusionné : #322 |
+| 9 | Éditeur riche | 2 | Saisie, sélection, copier/coller, mentions et envoi du prompt. | PR #323, CI finale |
+| 10 | Aperçus de contenu | 3 | Markdown diffusé, code coloré, PDF et workers. | PR #325, empilée sur Lexical |
+| 11a | Moteur CodeMirror | 4 | Saisie, historique, sélection, recherche et gros fichiers. | Validé localement |
+| 11b | Langages CodeMirror | 5 | Parsers uniques, Astro/YAML, Markdown et HTML. | À traiter |
+| 11c | Vim et thèmes | 2 | Commandes Vim et stabilité du thème. | À traiter |
+| 11d | LSP | 2 | Connexion, complétion, diagnostics et navigation. | À traiter |
 | 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | À traiter |
 | 13 | Orchestration | 1 | Graphe de tâches, cache et scripts CI. | À traiter |
 | 14 | Analyse et formatage | 3 | Changelogs des règles, formatage reproductible, lint et exports inutilisés. | À traiter |
@@ -79,19 +82,19 @@ Les versions de départ ci-dessous sont les plages des manifests, pas nécessair
 | 10 | `highlight.js` | `^11.11.1` | `^11.12.0` |
 | 10 | `streamdown` | `2.5.0` | `2.7.0` |
 | 10 | `pdfjs-dist` | `^6.3.289` | `^6.4.299` |
-| 11 | `@codemirror/commands` | `^6.10.4` | `^6.11.1` |
-| 11 | `@codemirror/lang-html` | `^6.4.9` | `^6.4.12` |
-| 11 | `@codemirror/lang-markdown` | `^6.3.2` | `^6.5.2` |
-| 11 | `@codemirror/language` | `^6.12.4` | `^6.13.1` |
-| 11 | `@codemirror/legacy-modes` | `^6.5.3` | `^6.5.5` |
-| 11 | `@codemirror/lsp-client` | `^6.2.5` | `^6.3.0` |
-| 11 | `@codemirror/search` | `^6.7.1` | `^6.7.2` |
-| 11 | `@codemirror/state` | `^6.7.0` | `^6.7.6` |
-| 11 | `@codemirror/view` | `^6.43.4` | `^6.43.14` |
-| 11 | `@lezer/highlight` | `^1.2.3` | `^1.2.5` |
-| 11 | `@replit/codemirror-vim` | `^6.3.0` | `^6.4.0` |
-| 11 | `@uiw/codemirror-themes` | `^4.25.10` | `^4.25.12` |
-| 11 | `vscode-languageserver-protocol` | `^3.18.1` | `^3.18.4` |
+| 11a | `@codemirror/commands` | `^6.10.4` | `^6.11.1` |
+| 11b | `@codemirror/lang-html` | `^6.4.9` | `^6.4.12` |
+| 11b | `@codemirror/lang-markdown` | `^6.3.2` | `^6.5.2` |
+| 11b | `@codemirror/language` | `^6.12.4` | `^6.13.1` |
+| 11b | `@codemirror/legacy-modes` | `^6.5.3` | `^6.5.5` |
+| 11d | `@codemirror/lsp-client` | `^6.2.5` | `^6.3.0` |
+| 11a | `@codemirror/search` | `^6.7.1` | `^6.7.2` |
+| 11a | `@codemirror/state` | `^6.7.0` | `^6.7.6` |
+| 11a | `@codemirror/view` | `^6.43.4` | `^6.43.14` |
+| 11b | `@lezer/highlight` | `^1.2.3` | `^1.2.5` |
+| 11c | `@replit/codemirror-vim` | `^6.3.0` | `^6.4.0` |
+| 11c | `@uiw/codemirror-themes` | `^4.25.10` | `^4.25.12` |
+| 11d | `vscode-languageserver-protocol` | `^3.18.1` | `^3.18.4` |
 | 12 | `@tanstack/hotkeys` | `0.8.0` | `0.11.0` |
 | 12 | `@tanstack/react-hotkeys` | `0.10.0` | `0.13.0` |
 | 13 | `turbo` | `^2.10.0` | `^2.11.7` |
@@ -281,3 +284,15 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - QA PDF via l'éditeur réel : fixture Mozilla tracemonkey.pdf (14 pages), rendu visuellement inspecté, zoom 94 → 100 % puis ajustement, texte sélectionnable, défilement jusqu'à la dernière page. Trois canvases seulement, celui de la première page démonté hors champ. Réouverture après changement de fichier réussie, buffer conservé. Worker local et qcms_bg.wasm répondent 200 ; aucun CDN.
 - PDF invalide et PDF chiffré Mozilla : messages explicites attendus. Le warning Indexing all PDF objects appartient au fichier invalide ; seuls les trois diagnostics navigateur habituels restent autrement. Bases et fichiers QA conservés ; onglet et runtime de ce lot arrêtés.
 - Preuves : /tmp/cadencr-309/previews-{install,web-checks-2,security,build,dev}.log, previews-lock-diff.json, previews-qa-results.json, preview-release-notes.json et marked-notes.json. #323 contient Lexical après hook complet (8 contrôles, 31 tâches) ; #322 attend uniquement CodeQL après CI et audit verts.
+
+## Lot 11a — moteur CodeMirror
+
+- Cibles : commands `6.11.1`, search `6.7.2`, state `6.7.6`, view `6.43.14`.
+- Changelogs des tarballs exacts relus : [commands](https://registry.npmjs.org/@codemirror/commands/-/commands-6.11.1.tgz), [search](https://registry.npmjs.org/@codemirror/search/-/search-6.7.2.tgz), [state](https://registry.npmjs.org/@codemirror/state/-/state-6.7.6.tgz), [view](https://registry.npmjs.org/@codemirror/view/-/view-6.43.14.tgz). Corrections de sélection bidi, mapping de ranges, composition, widgets, défilement et annonces VoiceOver ; les nouvelles commandes restent additives.
+- L'installation simple conserve deux copies de state/view et casse la création d'éditeur. Deux overrides alignent tous les consommateurs ; le lockfile contient maintenant une seule version de chacun. Aucun assouplissement des politiques pnpm.
+- Les deux tests réels de BaseCodeMirrorEditor reproduisent ensuite les mises à jour imbriquées déjà vues dans #309 : happy-dom déclenche `selectionchange` synchroniquement, contrairement à [la tâche prévue par la spécification](https://w3c.github.io/selection-api/#selectionchange-event). Ces deux tests utilisent désormais jsdom ; aucun changement du comportement de production ni assertion supprimée.
+- Transitifs relus par comparaison des tarballs : Lezer common `1.5.3` corrige les offsets et parcours répétés des arbres imbriqués ; find-cluster-break `1.0.4` actualise les graphèmes Unicode 17 ; style-mod `4.1.4` évite de réécrire un style inchangé ; Babel runtime `7.29.10` (testing-library) corrige le cache interop et la garde de Symbol. Les anciennes copies de Lezer/common et style-mod utilisées ailleurs sont conservées ; les tests de langages restent verts.
+- Validation locale : 28 tâches web vertes, 6 633 tests desktop, 33 tests de sécurité et build de production. Les deux tests CodeMirror conservent leurs assertions sur le buffer de 100 000 lignes et la sélection après rerender.
+- QA dans `pnpm dev` : saisie Unicode, annuler/rétablir, sauvegarde vérifiée sur disque puis fichier rouvert après rechargement ; remplacement de 150 occurrences ; navigation à la ligne 120 et sélection native de deux caractères au clavier.
+- QA gros fichier : 4 800 000 octets, 100 000 lignes, lecture seule effective, tentative de saisie rejetée, navigation à la dernière ligne avec 54 lignes DOM rendues. Capture inspectée ; aucune nouvelle erreur console. Les trois diagnostics habituels du navigateur restent inchangés.
+- Traces locales : `/tmp/cadencr-309/codemirror-core-{web-checks,security,build,dev}.log`, `codemirror-core-lock-diff.json` et `codemirror-core-transitives/`.
