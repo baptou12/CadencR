@@ -93,6 +93,8 @@ function toHotkeyCallback(
   options: ShortcutHotkeyOptions | undefined,
 ): HotkeyCallback {
   return (event: KeyboardEvent, context: HotkeyCallbackContext) => {
+    // Optional Shift is already expanded explicitly for layout-produced glyphs.
+    if (event.shiftKey !== context.parsedHotkey.shift) return;
     if (definition.exactKeys && !definition.exactKeys.includes(event.key)) return;
     if (shellOwnsKeyEvent(event)) return;
     if (options?.preventDefault) event.preventDefault();
