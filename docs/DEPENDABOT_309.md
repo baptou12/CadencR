@@ -35,8 +35,8 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 | 11d | LSP | 2 | Connexion, complétion, diagnostics et navigation. | Fusionné : #333 |
 | 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | PR #336 |
 | 13 | Orchestration | 1 | Graphe de tâches, cache et scripts CI. | PR #338, 8 checks / 31 tâches sans cache verts |
-| 14 | Analyse et formatage | 3 | Changelogs des règles, formatage reproductible, lint et exports inutilisés. | Validation finale locale |
-| 15 | Génération API | 1 | Régénération des deux clients, revue du diff, types et appels réels. | À traiter |
+| 14 | Analyse et formatage | 3 | Changelogs des règles, formatage reproductible, lint et exports inutilisés. | PR #339, 8 checks / 31 tâches verts |
+| 15 | Génération API | 1 | Régénération des deux clients, revue du diff, types et appels réels. | Validation finale locale |
 
 ## Inventaire exhaustif
 
@@ -357,3 +357,14 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - Transitifs : Knip utilise le nouvel AST readonly d'[unbash 5](https://github.com/webpro-nl/unbash/blob/5.0.0/docs/MIGRATION-v4-to-v5.md), formatly ajoute Oxfmt et fiabilise le lancement des formatters, get-tsconfig corrige les exclusions outDir. Resolver actualise les chemins tsconfig, parser suit la nouvelle AST Oxc. Emnapi corrige les buffers partagés et le receiver de setImmediate. [Tinypool 2.2](https://github.com/tinylibs/tinypool/releases/tag/v2.2.0) conserve les correctifs de sécurité, ajoute les URL de workers et supprime des références CJS ; les tests sont rejoués avec cette version. Les copies déjà validées de yaml/picomatch sont dédupliquées. Politiques pnpm et correctifs de sécurité inchangés.
 - Validation sous Node `22.19.0` : typage, lint, formatage, Knip, tests des scripts et workspace via le hook complet. Pas de changement fonctionnel applicatif : les seules modifications de source sont celles du formatter, avec équivalence de compilation vérifiée.
 - Preuves : `/tmp/cadencr-309/quality-{install,first-checks,second-checks,security,commit}.log`, `quality-lock.diff`, `quality-format-equivalence.json` et `quality-knip-debug.log`.
+
+## Lot 15 — Orval
+
+- Orval `8.26.0 → 8.41.0` dans desktop et tab-sdk, tous les packages @orval alignés. Les 15 releases intermédiaires ont été relues, jusqu'à [8.41](https://github.com/orval-labs/orval/releases/tag/v8.41.0) : clés de mutations, inférence des mutators, échappement des valeurs OpenAPI, chargement paresseux et TypeDoc optionnel. Les options React Query v5/Axios et fetch/pluginFetch sont conservées.
+- Deux clients régénérés par leurs scripts officiels. Le client tab-sdk est identique octet pour octet : aucune archive vendored à changer. Le desktop ajoute 159 helpers de clés de mutation et les appelle à la place des tableaux inline ; une normalisation de ces seules différences retrouve exactement le fichier antérieur. Aucun chemin HTTP, type de réponse, corps de requête ou query key changé.
+- Les tests de contrat vérifient aussi les nouvelles clés par défaut et la conservation d'une clé fournie par l'appelant. Les tests d'échappement de chemin, de refus des références distantes et de refus des références locales hors du dossier restent verts.
+- TypeDoc et ses dépendances sortent du lockfile, dont markdown-it. Le gate permet l'absence de ce seul package mais conserve son seuil de sécurité et rejette explicitement une ancienne version ; toutes les autres exigences restent identiques. Les changelogs Scalar exacts ont été lus : corrections de pollution de prototype, résolution URI, références de schémas et validation OpenAPI. Undici reste sur le correctif imposé par le dépôt.
+- Validation locale : 25 tâches web, 6 718 tests desktop, 62 contrôles de dépendances/sécurité, installation frozen et build renderer verts. Régénération répétée pour vérifier sa stabilité ; hook complet requis avant publication.
+- QA dans pnpm dev : conversation 1 et liste des trois conversations chargées via les vrais clients ; contenu TypeScript lu via readFile. Clic Vim motion dans les paramètres, valeur 1 relue depuis le service ; retour à la valeur initiale 0 via mutationFn générée avec une clé personnalisée, puis relecture confirmée. Requête pré-annulée : ERR_CANCELED ; conversation inexistante : 404 / NOT_FOUND. Aucune commande ni agent lancé.
+- Console : les trois diagnostics navigateur connus, l'avertissement de formulaire connu et le 404 volontaire du scénario d'erreur. Processus/onglet QA fermés, base conservée. Les installations modifiant le lockfile restent parfois en attente après leur message Done ; seuls leurs processus identifiés ont été arrêtés, puis les installations frozen sortent normalement à zéro. Aucun changement de politique pnpm.
+- Preuves : `/tmp/cadencr-309/orval-{install,generate-desktop,generate-sdk,web-checks,security,build,dev,commit}.log`, `orval-desktop.diff`, `orval-qa-results.json` et `orval-scalar-notes/`.

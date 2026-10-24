@@ -47,6 +47,10 @@ const safeVersions = {
   zod: ">=4.6.6",
 };
 
+// Orval 8.34 made TypeDoc optional, removing its Markdown parser from our tree.
+// Keep the security floor if another dependency brings markdown-it back.
+const optionalPackages = new Set(["markdown-it"]);
+
 function versionsFor(entries, name) {
   assert.ok(entries && typeof entries === "object", "missing pnpm lockfile section");
   return Object.keys(entries)
@@ -66,7 +70,10 @@ for (const name of Object.keys(safeVersions)) {
   test(`every locked ${name} copy is patched, including peer-specific snapshots`, () => {
     for (const section of ["packages", "snapshots"]) {
       const versions = versionsFor(lock[section], name);
-      assert.ok(versions.length > 0, `${name} missing from lockfile ${section}`);
+      assert.ok(
+        optionalPackages.has(name) || versions.length > 0,
+        `${name} missing from lockfile ${section}`,
+      );
       for (const version of versions) assertSafe(name, version);
     }
   });
@@ -163,4 +170,6 @@ test("the gate detects vulnerable nested copies even when a direct copy is patch
     () => assertSafe("@vitest/mocker", versionsFor(entries, "@vitest/mocker")[0]),
     /vulnerable/,
   );
+  assert.throws(() => assertSafe("markdown-it", "14.3.0"), /vulnerable/);
+  assert.doesNotThrow(() => assertSafe("markdown-it", "14.3.3"));
 });
