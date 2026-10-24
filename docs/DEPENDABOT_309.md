@@ -33,8 +33,8 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 | 11b | Langages CodeMirror | 5 | Parsers uniques, Astro/YAML, Markdown et HTML. | Fusionné : #330 |
 | 11c | Vim et thèmes | 2 | Commandes Vim et stabilité du thème. | Fusionné : #332 |
 | 11d | LSP | 2 | Connexion, complétion, diagnostics et navigation. | PR #333, CI finale sur main |
-| 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | Validé localement |
-| 13 | Orchestration | 1 | Graphe de tâches, cache et scripts CI. | À traiter |
+| 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | PR #336 |
+| 13 | Orchestration | 1 | Graphe de tâches, cache et scripts CI. | Validation finale locale |
 | 14 | Analyse et formatage | 3 | Changelogs des règles, formatage reproductible, lint et exports inutilisés. | À traiter |
 | 15 | Génération API | 1 | Régénération des deux clients, revue du diff, types et appels réels. | À traiter |
 
@@ -339,3 +339,12 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - QA native Electron ajoutée : instrumentation temporaire via les ports locaux 9259/9260 et sendInputEvent, aucune instrumentation livrée. L'injection CDP directe dans la page ne traverse pas before-input-event ; les vérifications du relais utilisent l'entrée native d'Electron.
 - Relais natif vérifié avec deux pages locales : Cmd+Shift+crochets change d'onglet sans changer la conversation ni l'URL du guest ; Cmd+crochets parcourt l'historique des conversations une fois les navigations stabilisées. Zoom Chromium 100 → 83 → 100 ; Cmd+F focalise Find in page. Le navigateur embarqué a son propre pas de zoom, distinct du zoom global. Les deux onglets créés pour le test sont fermés ; les processus et ports de débogage sont arrêtés, bases conservées.
 - Sources/preuves : `/tmp/cadencr-309/remaining-notes/{hotkeys,react-hotkeys}-interval.md`, `hotkeys-{focused-fixed,component-mocks,web-checks-2,security,build,dev}.log`, `hotkeys-native-results.json`, `native-history-trace.json` et `hotkeys-native-inspected-dev.log`. QA native macOS ; tests de branches Linux automatisés, pas de session graphique Linux.
+
+## Lot 13 — Turbo
+
+- Turbo `2.10.0 → 2.11.7`, avec ses six binaires de plateforme alignés. Les 21 releases intermédiaires ont été relues, jusqu'à [2.11.7](https://github.com/vercel/turborepo/releases/tag/v2.11.7) : parsing du lockfile pnpm 11, stabilité des hashes, validation des archives/symlinks du cache et arrêt des tâches persistantes. Les intégrations natives Cargo/uv/Go restent expérimentales et désactivées ; nos commandes Rust passent toujours par le wrapper du dépôt.
+- Comparaison du graphe avant/après avec le binaire local : 61 nœuds, 31 tâches exécutables, aucune différence de commande, dépendance, sortie, configuration ou mode d'environnement. Les prérequis du démarrage desktop sont conservés.
+- Cache local isolé vérifié sous Node `22.19.0` : premier ts-check exécuté, second relu depuis le cache avec le même hash. `TURBO_FORCE=true` vérifié : la tâche est bien rejouée, zéro résultat de cache. Ce mode est utilisé pour la validation complète finale.
+- Le shell utilisait Node `22.18.0`, malgré un chemin d'installation pnpm mentionnant une autre version. Les vérifications finales et le démarrage QA utilisent explicitement le binaire Node `22.19.0` demandé par le dépôt ; Python `3.13` est également sélectionné pour les tests des scripts.
+- QA dans pnpm dev sous Node `22.19.0` : API et frontend à 200, paramètres chargés depuis l'API, section éditeur et aide des raccourcis fonctionnelles. Aucun nouveau diagnostic applicatif. Un ancien processus Astro de notre QA native a été identifié par son chemin puis arrêté avant le démarrage ; aucun autre environnement utilisateur touché.
+- Preuves : `/tmp/cadencr-309/turbo-graph-comparison.json`, `turbo-{before,after,dev-graph}.json`, `turbo-cache-node22-{cold,warm}.log`, `turbo-force-proof.log`, `turbo-node22-dev.log` et `turbo-commit.log`. Processus QA arrêtés ; base conservée. Pas de QA graphique Linux.
