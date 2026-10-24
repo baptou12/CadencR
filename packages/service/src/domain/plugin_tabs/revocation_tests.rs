@@ -120,7 +120,7 @@ async fn a_blocked_tab_cannot_run_or_be_accepted_but_can_be_removed() {
         !shown.enablement.effective,
         "switched on and consented, yet off"
     );
-    let listed = summary::list(&pool, None).await.unwrap();
+    let listed = summary::list(&pool, None, false).await.unwrap();
     assert_eq!(listed[0].status, PluginTabStatus::Blocked);
     let inventory = managed::service::inventory().await.unwrap();
     assert_eq!(inventory[0].blocked.as_deref(), Some("malware"));

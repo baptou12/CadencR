@@ -8,8 +8,8 @@ use axum::Router;
 use sqlx::SqlitePool;
 
 use super::models::{
-    CreatePluginTabRequest, PluginTabConfiguration, PluginTabConsentRequest, PluginTabProjectQuery,
-    PluginTabSummary, PluginTabWorkspace, PutPluginTabConfigurationRequest,
+    CreatePluginTabRequest, PluginTabConfiguration, PluginTabConsentRequest, PluginTabListQuery,
+    PluginTabProjectQuery, PluginTabSummary, PluginTabWorkspace, PutPluginTabConfigurationRequest,
     SetPluginTabEnablementRequest,
 };
 use super::{
@@ -61,15 +61,15 @@ pub fn plugin_tabs_router() -> Router<AppState> {
 #[utoipa::path(
     get,
     path = "/api/plugin-tabs",
-    params(PluginTabProjectQuery),
+    params(PluginTabListQuery),
     responses((status = 200, body = Vec<PluginTabSummary>))
 )]
 pub async fn plugin_tab_list_handler(
     State(state): State<AppState>,
-    Query(query): Query<PluginTabProjectQuery>,
+    Query(query): Query<PluginTabListQuery>,
 ) -> Result<Json<Vec<PluginTabSummary>>, AppError> {
     Ok(Json(
-        summary::list(&state.read_pool, query.project_id).await?,
+        summary::list(&state.read_pool, query.project_id, query.project_overrides).await?,
     ))
 }
 
