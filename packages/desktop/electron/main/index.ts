@@ -4,7 +4,8 @@ import { loadDevEnv } from "./env";
 import { clearRegisteredFilePaths, registerIpc, registerThemeEvents } from "./ipc";
 import { installApplicationMenu } from "./menu";
 import { registerPower, shutdownPower } from "./power";
-import { setRuntimeConfig } from "./runtime-config";
+import { refreshBrowserOriginPolicy, setRuntimeConfig } from "./runtime-config";
+import { installServiceTransport } from "./service-transport";
 import { initAutoUpdater, registerAutoUpdaterIpc, shutdownAutoUpdater } from "./updater";
 import {
   createDevSidecarHandle,
@@ -76,6 +77,7 @@ async function prepareRuntime(): Promise<void> {
   if (!app.isPackaged && browserBridge)
     await registerBrowserBridgeWithService(sidecar, browserBridge);
   setRuntimeConfig({ baseUrl: sidecar.baseUrl, authToken: sidecar.authToken });
+  await refreshBrowserOriginPolicy();
 }
 
 async function registerBrowserBridgeWithService(
@@ -145,6 +147,7 @@ function createWindow(): BrowserWindow {
       sandbox: true,
     },
   });
+  installServiceTransport(win.webContents.session, () => mainWindow);
   secureWebContents(win.webContents);
   installContextMenu(win, win.webContents);
   installDefaultRendererCrashRecovery(win);

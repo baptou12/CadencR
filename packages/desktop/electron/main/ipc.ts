@@ -12,7 +12,9 @@ import {
   type IpcMainEvent,
   type IpcMainInvokeEvent,
 } from "electron";
-import { getRuntimeConfig } from "./runtime-config";
+import { getRendererRuntimeConfig } from "./runtime-config";
+import { isMainRendererFrame, type RendererTarget } from "./renderer-trust";
+import { rendererLoadTarget } from "./renderer-window-security";
 import {
   notificationPermission,
   sendNotification,
@@ -44,7 +46,7 @@ export interface IpcOptions {
 export function registerIpc({ getMainWindow, confirmClose, requestQuit }: IpcOptions): void {
   ipcMain.handle("runtime-config", (event) => {
     assertTrustedSender(event, getMainWindow);
-    return getRuntimeConfig();
+    return getRendererRuntimeConfig();
   });
   ipcMain.handle("fs:register-file-paths", (event, rawPaths: unknown) => {
     assertTrustedSender(event, getMainWindow);
@@ -176,27 +178,14 @@ export function clearRegisteredFilePaths(): void {
 export function assertTrustedSender(
   event: IpcMainEvent | IpcMainInvokeEvent,
   getMainWindow: () => BrowserWindow | null,
+  target: RendererTarget = rendererLoadTarget(),
 ): void {
   const mainWindow = requireMainWindow(getMainWindow);
   if (event.sender.id !== mainWindow.webContents.id) {
     throw new Error("Rejected IPC call from an untrusted window.");
   }
-  const senderFrame = event.senderFrame;
-  if (senderFrame === null) return;
-  const senderUrl = senderFrame?.url;
-  if (!senderUrl || !isTrustedRendererUrl(senderUrl)) {
-    throw new Error("Rejected IPC call from an untrusted renderer origin.");
-  }
-}
-
-export function isTrustedRendererUrl(rawUrl: string): boolean {
-  if (app.isPackaged) return rawUrl.startsWith("file://");
-  try {
-    const parsed = new URL(rawUrl);
-    const isLoopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
-    return parsed.protocol === "http:" && isLoopback;
-  } catch {
-    return false;
+  if (!isMainRendererFrame(event.senderFrame, mainWindow.webContents.mainFrame, target)) {
+    throw new Error("Rejected IPC call from an untrusted renderer origin or frame.");
   }
 }
 

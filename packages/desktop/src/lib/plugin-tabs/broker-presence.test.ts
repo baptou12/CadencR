@@ -5,6 +5,8 @@ import {
   PresenceLease,
   type PresenceDeps,
 } from "./broker-presence";
+import { serviceError } from "@/components/settings/custom-tabs/custom-tabs-fixtures";
+import { PLUGIN_TAB_ERROR } from "./error-codes";
 
 function deps(overrides: Partial<PresenceDeps> = {}): PresenceDeps {
   return {
@@ -160,5 +162,18 @@ describe("PresenceLease", () => {
       expect.stringContaining("could not be stopped right away"),
       failure,
     );
+  });
+
+  it("stops for good, silently, once its conversation is deleted elsewhere", async () => {
+    const gone = serviceError(404, PLUGIN_TAB_ERROR.conversationNotFound, "conversation 7 is gone");
+    const presence = deps({ renew: vi.fn(() => Promise.reject(gone)) });
+    const lease = new PresenceLease("ports", 7, "Ports", presence);
+    await vi.advanceTimersByTimeAsync(PRESENCE_RENEW_MS * 5);
+    expect(presence.renew).toHaveBeenCalledTimes(1);
+    expect(presence.report).not.toHaveBeenCalled();
+    // The service already took the lease back: closing has nothing to release.
+    lease.dispose();
+    await vi.advanceTimersByTimeAsync(PRESENCE_RERELEASE_MS);
+    expect(presence.release).not.toHaveBeenCalled();
   });
 });

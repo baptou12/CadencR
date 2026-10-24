@@ -139,9 +139,12 @@ pub(super) fn rewrite(
             .by_index_raw(index)
             .map_err(|e| format!("Unreadable workbook entry: {e}"))?;
         let write_error = |e: &dyn std::fmt::Display| format!("Couldn't rebuild the workbook: {e}");
-        match replaced.get(entry.name()) {
+        let name = entry
+            .name()
+            .map_err(|e| format!("Unreadable workbook entry name: {e}"))?
+            .into_owned();
+        match replaced.get(&name) {
             Some(xml) => {
-                let name = entry.name().to_string();
                 drop(entry);
                 writer
                     .start_file(name, options)

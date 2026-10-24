@@ -16,11 +16,15 @@ This is source preparation, **not evidence of deployment**. Reinspect the actual
 registry default branch and protections before delivering it. Desktop visibility
 and production trust/feed configuration are unchanged by this migration.
 
-| Runtime contract                                                           | Delivery status                                                                                                                       |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Contribution validation, schema-2 index building and protected publication | Candidate `ci/released-cli.env` pins qualified `0.13.1-dev.39108033875.1`                                                             |
-| `validate-metadata`, `validate-submission`, `check-metadata-expiry`        | Included in released `0.13.1-dev.39144478778.1`; see its [QA record](../../docs/MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-18.md) |
-| Full template tests and operator diagnostics                               | Do not deploy using the older pin; review the replacement pin and rebuild delivery approvals first                                    |
+| Runtime contract                                                                             | Local selection / delivery status                                                                                                        |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Contribution validation, schema-2 index building and protected publication                   | `ci/released-cli.env` locally selects qualified `0.13.1-dev.39306959010.1`                                                               |
+| `validate-metadata`, `validate-submission`, `check-metadata-expiry` and full template checks | Included in the exact qualified release; see [October 21 qualification](../../docs/MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-21.md) |
+| Bootstrap, CI cutover and production adoption                                                | Review preparation only; fresh payload approvals, bootstrap merge and hosted checks remain pending                                       |
+
+The [local pin review](../../docs/MARKETPLACE_CLI_PIN_REVIEW_2026-10-21.md)
+binds this selection to released artifacts and qualification. It does not adopt a
+production pin or grant author/catalog publication authority.
 
 No placeholder digest or source-built executable may masquerade as a qualified
 release. Missing, invalid or unsupported runtime inputs fail; do not restore a JS
@@ -53,7 +57,7 @@ entries. Use the [Rust CLI contract](../../packages/cli/README.md) for all kinds
 ```sh
 cadencr registry validate --base /reviewed/base --candidate /reviewed/candidate
 
-# Use CLI 0.13.1-dev.39144478778.1; the current CI pin predates these commands.
+# Use the locally selected qualified CLI 0.13.1-dev.39306959010.1.
 cadencr registry validate-metadata /reviewed/package.json
 cadencr registry validate-submission /reviewed/submission.json
 ```

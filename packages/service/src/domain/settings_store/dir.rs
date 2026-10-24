@@ -5,6 +5,19 @@ use std::sync::OnceLock;
 
 static SETTINGS_DIR: OnceLock<PathBuf> = OnceLock::new();
 
+/// Tighten existing settings documents before any credentials are loaded.
+pub fn secure(dir: &Path) -> anyhow::Result<()> {
+    crate::remote::secure_fs::create_dir_owner_only(dir)?;
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        if name == "settings.json" || name.ends_with(".settings.json") {
+            crate::remote::secure_fs::ensure_owner_only(&path)?;
+        }
+    }
+    Ok(())
+}
+
 /// Set the settings directory. Called once from `main` after the path is
 /// resolved. Subsequent calls are ignored (the first one wins).
 pub fn init(dir: PathBuf) {

@@ -26,6 +26,8 @@ pub fn load_optional_package_dotenv(
         return Ok(None);
     }
 
+    crate::remote::secure_fs::ensure_owner_only(&dotenv_path)?;
+
     // `from_path_override` so a parent process leaking CADENCR_* vars (the
     // most common case: an in-app agent shell running `cargo run` from a
     // worktree) cannot shadow the dev defaults declared in `.env`.

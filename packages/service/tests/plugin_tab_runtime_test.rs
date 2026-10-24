@@ -521,6 +521,12 @@ async fn presence(fixture: &Fixture) {
         )
         .await;
     assert_eq!(malformed.status, StatusCode::BAD_REQUEST);
+    // A conversation deleted from another client: its tabs there still renew.
+    let deleted = fixture
+        .send(Method::PUT, lease, None, Some(json!({ "feature_id": 999 })))
+        .await;
+    assert_eq!(deleted.status, StatusCode::NOT_FOUND);
+    assert_eq!(deleted.code(), "PLUGIN_TAB_CONVERSATION_NOT_FOUND");
     fixture.enable("runner").await;
     let token = fixture.token("runner").await;
     let by_a_tab = fixture.send(Method::PUT, lease, Some(&token), body()).await;

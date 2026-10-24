@@ -38,10 +38,10 @@ cleanup() {
   python3 - <<'PY'
 import os,json,pathlib,hashlib
 root=pathlib.Path(os.environ['CLI_WORK_ROOT'])
-e={'schema_version':1,'qualification':'offline-only','status':os.environ['QUALIFICATION_STATUS'],'version':(root/'reviewed-version').read_text(),'cli_sha256':hashlib.file_digest(open(os.environ['CLI'],'rb'),'sha256').hexdigest(),'public_publication':'pending','interruption_resume':'pending','fresh_runner_recovery':'pending','renewal':'pending','lifecycle_qualified':False,'production_pins_changed':False,'keys':'disposable-test-keys-only-never-uploaded','checks':[]}
+e={'schema_version':1,'qualification':'offline-only','status':os.environ['QUALIFICATION_STATUS'],'version':(root/'reviewed-version').read_text(),'cli_sha256':hashlib.file_digest(open(os.environ['CLI'],'rb'),'sha256').hexdigest(),'public_publication':'pending','interruption_resume':'pending','fresh_runner_recovery':'pending','renewal':'pending','lifecycle_qualified':False,'production_pins_changed':False,'native_backend_conformance':'not-run-inert-fixtures','native_archive_install_validation':'pending','keys':'disposable-test-keys-only-never-uploaded','checks':[]}
 for p in sorted((root/'logs').glob('*.passed')): e['checks'].append(p.stem)
 e['artifact_sha256']={}
-for name in ['provider-1.tar.gz','theme-1.tar.gz','tab-1.tar.gz','payload.json','signed.json','signed-policy.json']:
+for name in ['provider-1.tar.gz','theme-1.tar.gz','tab-1.tar.gz','payload.json','signed.json','signed-policy.json','native-ui-1.tar.gz','native-package.json','native-author-request.json']+[f'native-{p}-1.tar.gz' for p in ['darwin-aarch64','darwin-x86_64','linux-x86_64']]:
  p=root/name
  if p.is_file() and not p.is_symlink(): e['artifact_sha256'][name]=hashlib.file_digest(p.open('rb'),'sha256').hexdigest()
 (root/'evidence'/'evidence.json').write_text(json.dumps(e,indent=2)+'\n')
@@ -57,7 +57,7 @@ run() {
   (ulimit -f 128; exec timeout --kill-after=2s 30s env -i PATH="$PATH" HOME="$CLI_WORK_ROOT/home" "$CLI" "$@") > "$CLI_WORK_ROOT/logs/$name.out" 2> "$CLI_WORK_ROOT/logs/$name.err" || result=$?
   [ "$result" -eq 0 ] || return "$result"
   case "$name" in
-    version|validate-metadata-*|validate-submission-*|expiry-*) ;;
+    version|validate-metadata-*|validate-submission-*|validate-native-metadata|validate-native-submission|inspect-native-author|expiry-*) ;;
     *) touch "$CLI_WORK_ROOT/logs/$name.passed" ;;
   esac
 }
@@ -251,4 +251,5 @@ p['signed']['generated_at']=(datetime.datetime.fromisoformat(p['signed']['genera
 (r/'tampered-policy.json').write_text(json.dumps(p))
 PY
 reject reject-signed-policy-tampering REGISTRY_VERIFICATION_FAILED --json registry verify-theme-blocklist --index "$CLI_WORK_ROOT/tampered-policy.json" --public-key "$CLI_WORK_ROOT/keys/public.pem" --key-id qualification-only
+. "$SCRIPT_ROOT/qualify-native-tab.sh"
 status=passed

@@ -10,6 +10,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { TanStackRouterVite } from "@tanstack/router-vite-plugin";
 import {
   rendererCsp,
+  rendererDevelopmentHeaders,
   resolveRendererCspDevelopment,
   type RendererCspDevelopmentEndpoints,
 } from "./electron/main/csp";
@@ -18,6 +19,7 @@ import {
   type ElectronBundleContract,
 } from "./electron/bundle-contract";
 import { macNativeAddonPlugin } from "./electron/mac-native-addon";
+import { devServiceProxy } from "./electron/dev-service-proxy";
 import pkg from "./package.json" with { type: "json" };
 
 const excalidrawFontsDir = path.join(
@@ -158,6 +160,11 @@ const electronBundleContracts = {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, "VITE_");
   const development = resolveRendererCspDevelopment(env);
+  const serviceProxy = devServiceProxy(
+    `http://127.0.0.1:${development.frontendPort}`,
+    env.VITE_API_URL || "http://127.0.0.1:5005",
+    env.VITE_API_TOKEN || "",
+  );
   return {
     main: {
       plugins: [
@@ -192,11 +199,13 @@ export default defineConfig(({ mode }) => {
     renderer: {
       root: ".",
       envDir: __dirname,
-      envPrefix: "VITE_",
+      envPrefix: ["VITE_API_URL", "VITE_FRONTEND_PORT", "VITE_INTERNAL_MARKETPLACE"],
       server: {
         host: "127.0.0.1",
         port: development.frontendPort,
         strictPort: true,
+        headers: rendererDevelopmentHeaders(development),
+        proxy: serviceProxy.proxy,
       },
       define: {
         __APP_VERSION__: JSON.stringify(pkg.version),
@@ -214,6 +223,7 @@ export default defineConfig(({ mode }) => {
         exclude: ["@silurus/ooxml"],
       },
       plugins: [
+        serviceProxy.plugin,
         react(),
         tailwindcss(),
         staticAssetDirsPlugin(STATIC_ASSET_DIRS),

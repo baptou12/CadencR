@@ -102,11 +102,16 @@ test("source-owned package template fixes identity without inventing publication
   });
 });
 
-test("retained artwork has only the recorded local geometry, not external content", () => {
+test("connector artwork has only the recorded local geometry, not external content", () => {
   const svg = read("icon.svg").toString("utf8");
   assert.deepEqual(
     [...svg.matchAll(/<([a-z][a-z0-9]*)(?:\s|>)/g)].map((match) => match[1]),
-    ["svg", "rect", "path", "path"],
+    ["svg", "rect", "path", "circle", "circle", "circle"],
   );
+  assert.ok(svg.includes("SPDX-License-Identifier: Apache-2.0"));
+  const artwork = JSON.parse(read("readiness.json")).artwork;
+  assert.equal(artwork.declared_spdx, "Apache-2.0");
+  assert.equal(artwork.creation_record, "README.md#connector-artwork");
+  assert.ok(!svg.includes("165.29"));
   assert.ok(!/\bhref\s*=|\bon\w+\s*=|url\s*\(|<script|<style/i.test(svg));
 });

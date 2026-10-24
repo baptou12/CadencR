@@ -215,7 +215,7 @@ pub async fn connect_handler(
         }
     };
 
-    let ws = ws.protocols([selected_proto]);
+    let ws = ws.protocols(selected_proto);
     let display_name = spec.server.display_name.clone();
     let crash_tracker = state.lsp_crashes.clone();
     let live = state.remote.live();

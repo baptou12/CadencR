@@ -147,7 +147,7 @@
             },
             "README.md": {
               "mode": "100644",
-              "sha256": "1c8f4f162bb8a11bbfa5978478bad243da608d5618b80544239bc81bed022349"
+              "sha256": "48d079cb1653998d327cf8ad7f5dee2ee141e437404fa44fcf0aa3da398d47f8"
             },
             "LICENSE": {
               "mode": "100644",
@@ -155,7 +155,7 @@
             },
             "icon.svg": {
               "mode": "100644",
-              "sha256": "a5624bc3b8cac94de75f6f13701eca2ad3ef67bbeba286c4af3f398806f0858a"
+              "sha256": "d63a4105ad46a62af1ed10a649d431dfe58ffcd529bc1e9a151b9f99cf3a265c"
             }
           }
         }

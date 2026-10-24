@@ -20,4 +20,9 @@ export const PLUGIN_TAB_ERROR = {
   policyUnavailable: "MANAGED_TAB_POLICY_UNAVAILABLE",
   /** Install refused: the version's backend ships no binary for this platform. */
   platformUnsupported: "MANAGED_TAB_PLATFORM_UNSUPPORTED",
+  /**
+   * A presence renewal for a conversation deleted, possibly from another
+   * client: the service took back every lease held in it.
+   */
+  conversationNotFound: "PLUGIN_TAB_CONVERSATION_NOT_FOUND",
 } as const;

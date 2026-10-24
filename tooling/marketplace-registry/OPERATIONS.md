@@ -8,33 +8,36 @@ signing, tags, feed advancement, production pins or remote writes require review
 targets/inputs and protected operator authority; preparation alone is insufficient.
 Examples are syntax, not actual keys, destinations or assigned owners. No scheduler
 is deployed here. Earlier distributed CLI qualification is dated evidence, not
-production deployment. The newer `0.13.1-dev.39144478778.1` ships standalone Rust
-diagnostics, but its initial renewal returned an error after publication; exact
-recovery does not make that first run green. See the
-[qualification record](../../docs/MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-18.md).
+production deployment. The locally selected `0.13.1-dev.39306959010.1` includes
+standalone Rust diagnostics and the bounded discovery-convergence correction.
+Its exact distributed executable passed first-pass renewal, unchanged replays,
+fresh-runner recovery and three-kind publication checks; see the
+[current qualification record](../../docs/MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-21.md).
+The historical renewal failure remains failed and its exact cause unknown.
 
-| Required record before activation | Accountable role / evidence                                                             |
-| --------------------------------- | --------------------------------------------------------------------------------------- |
-| Renewal and backup owner          | Named maintainers, handoff and protected environment access review                      |
-| Incident and revocation owner     | Named decision maker, monitored security contact and escalation backup                  |
-| Alert delivery                    | Real monitored destination, failed-run subscription and acknowledged test alert         |
-| Recovery                          | Reviewed offline-root custody, replacement app-delivery owner and tabletop evidence     |
-| Deployment                        | Real feed URLs, protections, reviewed trust roots and populated provider/theme catalog  |
-| Runtime cutover                   | Released Rust binary independently downloaded/verified/exercised; both CI pins reviewed |
+| Required record before activation | Accountable role / evidence                                                                |
+| --------------------------------- | ------------------------------------------------------------------------------------------ |
+| Renewal and backup owner          | Named maintainers, handoff and protected environment access review                         |
+| Incident and revocation owner     | Named decision maker, monitored security contact and escalation backup                     |
+| Alert delivery                    | Real monitored destination, failed-run subscription and acknowledged test alert            |
+| Recovery                          | Reviewed offline-root custody, replacement app-delivery owner and tabletop evidence        |
+| Deployment                        | Real feed URLs, protections, reviewed trust roots and populated provider/theme catalog     |
+| Runtime cutover                   | Exact distributed binary qualified; three local pins selected; production adoption pending |
 
 The owners and live controls above remain unassigned/unverified in this template.
-The candidate contribution/publisher pin selects the qualified Rust binary with
-no JavaScript fallback. **Full cutover needs a corrected, qualified CLI release**
-closing the post-publication renewal gate, then separately reviewed replacement
-pins. Source changes and successful recovery do not close that delivery gate.
-Reinspect the remote default branch, regenerate delivery payload hashes and follow
-the [deployment sequence](README.md#remote-deployment-requires-two-reviewed-changes).
+The local contribution/publisher, author and qualification pins select the same
+qualified Rust binary with no JavaScript fallback. Selection is not production
+adoption or publication authority: fresh bootstrap/cutover approval, actual
+bootstrap merge and hosted checks remain pending. See the
+[local review record](../../docs/MARKETPLACE_CLI_PIN_REVIEW_2026-10-21.md).
+Reinspect the remote default branch and follow the
+[deployment sequence](README.md#remote-deployment-requires-two-reviewed-changes).
 The JavaScript business implementation has been removed from this source template;
 that does not deploy these changes or authorize desktop trust/feed/key changes.
 
 ## Read-only expiry and failure alert preparation
 
-Use the **newly released and qualified Rust CLI**, not the older CI pin. Run this
+Use the **locally selected qualified Rust CLI**. Run this
 read-only diagnostic against local catalog/provider/theme-policy snapshots:
 
 ```sh
@@ -90,8 +93,9 @@ isolated environment, and retain real acknowledgment evidence as an activation g
 
 ### Source-only discovery convergence correction
 
-The source correction is not included in the CLI qualified above. A deterministic
-regression reproduces the failure class: after discovery advances, its stable
+This historical heading is retained for existing links. The correction is now
+included in qualified `0.13.1-dev.39306959010.1`; it is no longer source-only.
+A deterministic regression reproduces the failure class: after discovery advances, its stable
 public URL serves the exact previous signed catalog before serving the candidate.
 This does not establish which response caused the historical hosted error.
 
@@ -112,9 +116,10 @@ This does not establish which response caused the historical hosted error.
   Persistent predecessor bytes exhaust the budget without a success receipt.
   Preserve the original operation after failure, as required by step 4 above.
 
-Merge, green CI, a new CLI-only release and actual distributed-binary qualification
-are required before deployment or pin promotion. Demonstrate first-pass renewal,
-same-intent replay and clean-runner recovery. A separately reviewed new operation
+Merge, green CI, CLI-only release and exact distributed-binary qualification
+are recorded in the October 21 evidence, including first-pass renewal, same-intent
+replay and clean-runner recovery. Production adoption still requires separately
+approved delivery. A separately reviewed new operation
 may follow a reconciled prior operation; if an attempt fails, preserve its exact
 request, commit and timestamps rather than replacing them to manufacture success.
 

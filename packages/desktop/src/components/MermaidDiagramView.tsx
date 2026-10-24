@@ -1,10 +1,11 @@
-import { memo, type KeyboardEvent, type ReactNode } from "react";
+import { memo, useMemo, type KeyboardEvent, type ReactNode } from "react";
 import { Maximize2Icon, RotateCcwIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { usePanZoom, type PanZoom } from "@/hooks/usePanZoom";
 import { formatKey } from "@/lib/shortcuts/format";
 import { cn } from "@/lib/utils";
+import { sanitizeDiagramSvg } from "@/lib/sanitize-diagram-svg";
 
 type ControlSize = "icon-xs" | "icon-sm";
 
@@ -70,13 +71,13 @@ type MermaidDiagramViewProps = { svg: string } & (
 /**
  * Renders a mermaid SVG inside a scrollable zoom viewport: native two-finger
  * scroll pans both axes, pinch zooms around the pointer, Cmd/Ctrl + drag pans,
- * and the controls zoom in/out and reset to fit. The SVG is injected with
- * `dangerouslySetInnerHTML`; it comes from beautiful-mermaid (which escapes
- * every label) or from mermaid at `securityLevel: "strict"`.
+ * and the controls zoom in/out and reset to fit. Both renderers' final SVG
+ * passes through the same local sanitizer before entering the app document.
  */
 export const MermaidDiagramView = memo(function MermaidDiagramView(props: MermaidDiagramViewProps) {
   const fullscreen = props.variant === "fullscreen";
-  const panZoom = usePanZoom(props.svg, fullscreen ? "contain" : "width");
+  const svg = useMemo(() => sanitizeDiagramSvg(props.svg), [props.svg]);
+  const panZoom = usePanZoom(svg, fullscreen ? "contain" : "width");
   const { zoomIn, zoomOut, reset } = panZoom;
   const zoom = { zoomIn, zoomOut, reset };
 
@@ -127,7 +128,7 @@ export const MermaidDiagramView = memo(function MermaidDiagramView(props: Mermai
           ref={panZoom.contentRef}
           className="[&_svg]:block [&_svg]:h-full [&_svg]:w-full [&_svg]:max-w-none"
           style={panZoom.contentStyle}
-          dangerouslySetInnerHTML={{ __html: props.svg }}
+          dangerouslySetInnerHTML={{ __html: svg }}
         />
       </div>
     </div>

@@ -88,3 +88,31 @@ test("three-kind offline job has no write authority and exports evidence only", 
   assert.equal(upload.if, "${{ always() }}");
   for (const step of steps.filter((step) => step.uses)) assert.match(step.uses, /@[a-f0-9]{40}$/);
 });
+
+test("reviewed CLI selection is atomic across repository consumers without author publication authority", () => {
+  const selected = readFileSync(new URL("./cli-qualification.env", import.meta.url), "utf8")
+    .split("\n")
+    .filter((line) => line && !line.startsWith("#"));
+  for (const file of [
+    "../tooling/marketplace-registry/ci/released-cli.env",
+    "./official-plugin-author-cli.env",
+  ]) {
+    assert.deepEqual(
+      readFileSync(new URL(file, import.meta.url), "utf8")
+        .split("\n")
+        .filter((line) => line && !line.startsWith("#")),
+      selected,
+    );
+  }
+  const preflight = readFileSync(
+    new URL("./qualify-released-cli-github.sh", import.meta.url),
+    "utf8",
+  );
+  for (const pin of selected) assert.ok(preflight.includes(pin));
+  const version = selected[0].split("=")[1];
+  assert.ok(preflight.includes(`b'cadencr ${version}\\n\\nstatus:0\\n'`));
+  const policy = JSON.parse(
+    readFileSync(new URL("./official-plugin-author-policy.json", import.meta.url), "utf8"),
+  );
+  assert.equal(policy.publication, "PENDING");
+});

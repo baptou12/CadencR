@@ -235,7 +235,10 @@ test(
         receipt.readiness.targets[receipt.candidate_target].preparation,
         "external-node-pi-candidate",
       );
-      assert.equal(receipt.readiness.artwork.authorship, "not-established-by-retained-source");
+      assert.equal(
+        receipt.readiness.artwork.authorship,
+        "created-during-cadencr-source-maintenance-2026-10-23",
+      );
       assert.equal(
         receipt.readiness.historical_protocol_evidence.qualifies_current_candidate,
         false,

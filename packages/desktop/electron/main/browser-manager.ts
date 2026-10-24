@@ -89,12 +89,16 @@ export class BrowserManager {
       this.stateAuthority.emit(scopeId);
     },
   );
-  private readonly network = new BrowserNetworkCollector((webContentsId, entry) => {
-    const tab = [...this.tabs.values()].find((t) => t.webContents.id === webContentsId);
-    if (!tab) return;
-    pushBounded(tab.networkEntries, { ...entry, tabId: tab.metadata.id }, MAX_NETWORK_PER_TAB);
-    this.stateAuthority.emit(tab.metadata.scopeId);
-  });
+  private readonly network = new BrowserNetworkCollector(
+    (webContentsId, entry) => {
+      const tab = [...this.tabs.values()].find((t) => t.webContents.id === webContentsId);
+      if (!tab) return;
+      pushBounded(tab.networkEntries, { ...entry, tabId: tab.metadata.id }, MAX_NETWORK_PER_TAB);
+      this.stateAuthority.emit(tab.metadata.scopeId);
+    },
+    (id) =>
+      [...this.tabs.values()].find((tab) => tab.webContents.id === id)?.automationAccess !== "user",
+  );
   private readonly siteController = new BrowserSiteController({
     send: (channel, payload) => sendToWindow(this.getMainWindow(), channel, payload),
     reportError: (message) => {

@@ -287,3 +287,74 @@ async fn remote_pair_is_rate_limited() {
 
     controller.stop().await;
 }
+
+/// Invalid HTTP and WS credentials share a tight admission allowance. An
+/// exhausted source IP must wait, even with a subsequently valid credential.
+#[tokio::test]
+async fn failed_http_and_ws_auth_exhaust_a_shared_admission_budget() {
+    let pool = pool_with_remote_tables().await;
+    let port = free_port();
+    let renderer = tempfile::tempdir().unwrap();
+    std::fs::write(renderer.path().join("index.html"), "<!doctype html>").unwrap();
+    let data = tempfile::tempdir().unwrap();
+    let controller = Arc::new(RemoteController::new(RemoteConfig {
+        renderer_dir: Some(renderer.path().to_path_buf()),
+        remote_port: port,
+        data_dir: data.path().to_path_buf(),
+    }));
+    let mut state = AppState::with_pool(pool);
+    state.remote = controller.clone();
+    controller.start(&state).await.unwrap();
+    let base = format!("https://127.0.0.1:{port}");
+    let client = rustls_client();
+    let code = controller.pairing().mint().code;
+    let paired: Value = client
+        .post(format!("{base}/api/remote/pair"))
+        .json(&serde_json::json!({ "code": code }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let token = paired["device_token"].as_str().unwrap();
+    for _ in 0..10 {
+        assert_eq!(
+            client
+                .get(format!("{base}/api/health"))
+                .header("x-cadencr-token", "wrong")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            ws_status(&client, &base, &base, Some("cadencr-token.wrong".into())).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    let limited = client
+        .get(format!("{base}/api/health"))
+        .header("x-cadencr-token", "wrong")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(limited.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(limited.headers().contains_key("retry-after"));
+    assert_eq!(
+        ws_status(&client, &base, &base, Some("cadencr-token.wrong".into())).await,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(
+        client
+            .get(format!("{base}/api/health"))
+            .header("x-cadencr-token", token)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    controller.stop().await;
+}

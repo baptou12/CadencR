@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
+  chmodSync,
+  statSync,
+  symlinkSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -15,9 +18,11 @@ import test from "node:test";
 import { parseEnv } from "node:util";
 import {
   isPlaceholderToken,
+  readEnvFile,
   portMismatches,
   setEnvValues,
   updateEnvFile,
+  writePrivateEnv,
   urlPort,
 } from "./dev-env.mjs";
 import { gitCheckout } from "./git-worktrees.mts";
@@ -205,3 +210,43 @@ test("gitCheckout tells the main checkout from a linked worktree", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test(
+  "env secrets are private on creation and tighten existing files",
+  { skip: process.platform === "win32" },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "cadencr-env-mode-"));
+    try {
+      const path = join(dir, ".env");
+      writePrivateEnv(path, "TOKEN=original-secret\n");
+      assert.equal(statSync(path).mode & 0o777, 0o600);
+      chmodSync(path, 0o644);
+      writePrivateEnv(path, "TOKEN=x\n");
+      assert.equal(statSync(path).mode & 0o777, 0o600);
+      assert.equal(readFileSync(path, "utf8"), "TOKEN=x\n");
+      const link = join(dir, "linked.env");
+      symlinkSync(path, link);
+      assert.throws(() => writePrivateEnv(link, "TOKEN=replaced\n"));
+      assert.equal(readFileSync(path, "utf8"), "TOKEN=x\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "reading private env files leaves metadata unchanged",
+  { skip: process.platform === "win32" },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "cadencr-env-mode-"));
+    try {
+      const path = join(dir, ".env");
+      writePrivateEnv(path, "TOKEN=secret\n");
+      const before = statSync(path, { bigint: true }).ctimeNs;
+      assert.equal(readEnvFile(dir, ".env").TOKEN, "secret");
+      assert.equal(statSync(path, { bigint: true }).ctimeNs, before);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

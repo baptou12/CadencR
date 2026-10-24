@@ -10,9 +10,9 @@ boundary, not a built-in adapter or a bundled desktop provider. This source
 import does not publish, sign, install, or certify a provider package.
 
 Imported from the sibling connector repository at commit `95bb90c`, preserving
-candidate version `0.4.0`. `LICENSE` and `icon.svg` are retained unchanged; icon
-provenance remains pending. No release should be made until provenance and
-licensing review are complete.
+candidate version `0.4.0`. `LICENSE` is retained unchanged. The imported Pi-derived icon has been replaced
+with original neutral connector artwork; see [Connector artwork](#connector-artwork).
+Runtime, managed-install and exact-release-candidate qualification remain separate gates.
 
 The import adapts documentation and package scripts for the monorepo. Runtime
 hardening beyond that baseline adds a stdin-`EPIPE` guard so fast native-child
@@ -287,6 +287,19 @@ This is protocol evidence, not external-model authentication, tool-permission,
 managed installation, x86_64, or publication approval. See the
 [native and generic-service evidence](../../../docs/qa/MARKETPLACE_PI_LOOPBACK_2026_10_18.md).
 
+## Connector artwork
+
+`icon.svg` was created during AI-assisted Cadencr source maintenance on
+2026-10-23 as a neutral connector/network symbol: a 64-unit rounded background,
+one orthogonal branching line and three circular nodes. It was constructed from
+these basic local SVG primitives, not traced from the imported Pi paths. No
+upstream Pi artwork is included in the replacement. The asset is licensed under
+this connector’s Apache-2.0 `LICENSE`; its SVG carries an SPDX notice.
+
+The replacement contains no upstream Pi logo and does not imply upstream
+endorsement. The imported logo was removed rather than inferring artwork
+permission from the connector’s code license.
+
 ## Source review and package inputs
 
 [`readiness.json`](readiness.json) records exact retained-source asset digests,
@@ -294,14 +307,14 @@ external runtime requirements and per-target evidence boundaries. Preparation
 verifies those digests and prerequisites against committed Git blobs. It is a
 review aid, not an approval or a replacement for canonical CLI validation.
 
-| Item            | Reviewed source fact                                                                                 | Boundary                                                                                          |
-| --------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Connector       | Package and retained `LICENSE` declare Apache-2.0; runtime has no npm dependencies                   | License-file presence is not an authorship/legal attestation                                      |
-| Artwork         | Retained `icon.svg` contains a rectangle and two local paths, without scripts or external references | Original creator, licensing grant and brand-use permission are not established by retained source |
-| Runtime         | External Node.js `>=22.19.0 <23.0.0` and Pi `0.85.1`                                                 | Neither runtime, credentials nor model access is bundled                                          |
-| macOS arm64     | Recorded extracted candidate passed native loopback and local-descriptor protocol checks             | Exact historical source/archive are in the manifest; managed admission remains separate           |
-| macOS x86_64    | Explicit portable preparation target                                                                 | No native x86_64 execution is recorded                                                            |
-| Linux / Windows | Not prepared application targets                                                                     | Linux CI does not imply application support; Windows needs a verified launcher                    |
+| Item            | Reviewed source fact                                                                        | Boundary                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Connector       | Package and retained `LICENSE` declare Apache-2.0; runtime has no npm dependencies          | License-file presence is not an authorship/legal attestation                            |
+| Artwork         | Original `icon.svg` uses a rounded rectangle, orthogonal connector and three circular nodes | Created during source maintenance; Apache-2.0; not upstream Pi branding                 |
+| Runtime         | External Node.js `>=22.19.0 <23.0.0` and Pi `0.85.1`                                        | Neither runtime, credentials nor model access is bundled                                |
+| macOS arm64     | Recorded extracted candidate passed native loopback and local-descriptor protocol checks    | Exact historical source/archive are in the manifest; managed admission remains separate |
+| macOS x86_64    | Explicit portable preparation target                                                        | No native x86_64 execution is recorded                                                  |
+| Linux / Windows | Not prepared application targets                                                            | Linux CI does not imply application support; Windows needs a verified launcher          |
 
 [`package-template.json`](package-template.json) fixes the discriminated provider
 kind, Pi identity, source repository, Apache declaration, executable and assets.

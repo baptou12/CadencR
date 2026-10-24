@@ -10,6 +10,22 @@ minimumReleaseAge: 20160
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
 minimumReleaseAgeExclude:
+  # GHSA-mrhx-c7xc-m3w5: bound validation of oversized collections.
+  # Remove after 2026-10-25T16:18:23.878Z (14 days after publication).
+  - "zod@4.6.6"
+  # GHSA-jr5w-w6x2-84p9: distrust compromised intermediate certificates.
+  # Remove after 2026-11-03T02:53:45.996Z (14 days after publication).
+  - "electron@42.11.16"
+  # GHSA-834v-8h66-3h79: validate imported local bindings before compilation.
+  # Remove after 2026-11-03T18:05:53.295Z (14 days after publication).
+  - "happy-dom@21.0.4"
+  # GHSA-w74x-v6f9-j3xg, GHSA-xhq7-xmqj-769h, GHSA-wjr9-j795-jxcr,
+  # GHSA-333x-w4r6-6crp: fix URI scheme, host and path normalization.
+  # Remove after 2026-11-02T23:05:26.357Z (14 days after publication).
+  - "fast-uri@3.1.9"
+  # GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472, GHSA-xjj6-f33q-929c.
+  # Remove after 2026-10-29T15:05:34.415Z (14 days after the latest publication).
+  - "undici@6.29.1 || 7.30.1 || 8.12.2"
   # GHSA-qxg6-89mg-rqv8, GHSA-xp26-3454-mjgp: keep the fixed Vitest suite aligned.
   # Remove after 2026-10-29T15:00:00Z (14 days after publication).
   - "vitest@4.1.12"
@@ -86,7 +102,7 @@ overrides:
   "browserslist@>=4.0.0 <4.28.7": 4.28.7
   "devalue@>=5.0.0 <5.9.3": 5.9.3
   "dompurify@>=3.0.0 <3.4.17": 3.4.17
-  "fast-uri@>=3.0.0 <3.1.8": 3.1.8
+  "fast-uri@>=3.0.0 <3.1.9": 3.1.9
   "follow-redirects@>=1.16.0 <1.16.1": 1.16.1
   # global-agent v4 preserves bootstrap() and removes roarr/sprintf-js,
   # which has no published fix for GHSA-hp3w-g68c-fv3c.
@@ -114,12 +130,13 @@ overrides:
   "svgo@>=4.0.0 <4.1.0": 4.1.0
   "tar@>=7.0.0 <=7.5.20": 7.5.21
   "tinypool@>=2.0.0 <2.1.2": 2.1.2
-  "undici@>=6.0.0 <6.28.1": 6.28.1
-  "undici@>=7.0.0 <7.29.1": 7.29.1
-  "undici@>=8.0.0 <8.10.2": 8.10.2
+  "undici@>=6.0.0 <6.29.1": 6.29.1
+  "undici@>=7.0.0 <7.30.1": 7.30.1
+  "undici@>=8.0.0 <8.12.2": 8.12.2
   "vite@>=6.0.0 <6.4.4": 6.4.4
   "vite@>=8.0.0 <8.1.6": 8.1.6
   volar-service-yaml: 0.0.71
+  "zod@>=4.0.0 <4.6.6": 4.6.6
 
 allowBuilds:
   # Keep dependency lifecycle scripts disabled by default. If a package truly

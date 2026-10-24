@@ -1,7 +1,8 @@
 # Prepare a provider release locally
 
-The standalone `validate-submission` command requires the next qualified CLI
-release; it is not in `0.13.1-dev.39108033875.1`. See [runtime gates](README.md#status-and-runtime).
+The standalone `validate-submission` command is included in the locally selected,
+qualified `0.13.1-dev.39306959010.1`. Binary selection is not production adoption
+or publication authority. See [runtime gates](README.md#status-and-runtime).
 
 These commands prepare artifacts only. They do not create a GitHub repository,
 publish a release, submit a registry PR, or establish publisher trust.

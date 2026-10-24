@@ -20,6 +20,10 @@ vi.mock("./linux-install-type", () => ({
   detectLinuxInstallType: vi.fn(() => "deb"),
 }));
 
+vi.mock("./renderer-window-security", () => ({
+  rendererLoadTarget: () => ({ kind: "file", value: "/app/index.html" }),
+}));
+
 vi.mock("electron", () => ({
   app: {
     get isPackaged() {
@@ -61,14 +65,19 @@ vi.mock("electron-updater", () => ({
 function trustedEvent(): IpcMainInvokeEvent {
   return {
     sender: { id: 7 },
-    senderFrame: { url: "file:///app/index.html" },
+    senderFrame: { url: "file:///app/index.html", processId: 1, routingId: 2 },
   } as unknown as IpcMainInvokeEvent;
 }
 
 function mainWindow(): BrowserWindow {
   return {
     isDestroyed: () => false,
-    webContents: { id: 7, isDestroyed: () => false, send: vi.fn() },
+    webContents: {
+      id: 7,
+      mainFrame: { url: "file:///app/index.html", processId: 1, routingId: 2 },
+      isDestroyed: () => false,
+      send: vi.fn(),
+    },
   } as unknown as BrowserWindow;
 }
 

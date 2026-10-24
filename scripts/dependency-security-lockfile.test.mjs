@@ -27,8 +27,9 @@ const safeVersions = {
   "brace-expansion": "^1.1.21 || ^2.1.7 || >=5.0.12",
   browserslist: ">=4.28.7",
   dompurify: ">=3.4.16",
-  electron: "^42.10.0 || ^43.5.0 || >=44.0.0",
-  "fast-uri": "^2.4.6 || ^3.1.8 || >=4.1.4",
+  electron: "^42.11.16 || ^43.8.1 || >=44.9.1",
+  "fast-uri": "^2.4.8 || ^3.1.9 || >=4.2.3",
+  "happy-dom": ">=21.0.4",
   "http-cache-semantics": ">=4.3.0",
   "js-yaml": ">=4.3.2",
   katex: ">=0.18.2",
@@ -42,7 +43,8 @@ const safeVersions = {
   "source-map-js": ">=1.2.2",
   svgo: ">=4.1.0",
   tinypool: ">=2.1.2",
-  undici: "^6.28.1 || ^7.29.1 || >=8.10.2",
+  undici: "^6.29.1 || ^7.30.1 || >=8.12.2",
+  zod: ">=4.6.6",
 };
 
 function versionsFor(entries, name) {

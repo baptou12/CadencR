@@ -26,7 +26,7 @@ const FEATURE_COLUMNS: &str = r#"f.id, f.project_id, f.title, f.status,
 
 /// Latest user message per feature (`ua.last_user_at`): the list endpoints'
 /// sort key, exposed as `last_activity_at`.
-const LAST_USER_MESSAGE_JOIN: &str = r#"
+pub(crate) const LAST_USER_MESSAGE_JOIN: &str = r#"
 LEFT JOIN (
   SELECT s.feature_id AS feature_id, MAX(m.created_at) AS last_user_at
   FROM agent_sessions s
@@ -34,10 +34,11 @@ LEFT JOIN (
   GROUP BY s.feature_id
 ) ua ON ua.feature_id = f.id"#;
 
-const LAST_ACTIVITY_COLUMN: &str = "COALESCE(ua.last_user_at, f.created_at) AS last_activity_at";
+pub(crate) const LAST_ACTIVITY_COLUMN: &str =
+    "COALESCE(ua.last_user_at, f.created_at) AS last_activity_at";
 
 /// Join the latest agent session once so model/provider/thinking come from the same row.
-const LATEST_SESSION_JOIN: &str = r#"
+pub(crate) const LATEST_SESSION_JOIN: &str = r#"
 LEFT JOIN agent_sessions ls ON ls.id = (
   SELECT id FROM agent_sessions WHERE feature_id = f.id ORDER BY id DESC LIMIT 1
 )"#;

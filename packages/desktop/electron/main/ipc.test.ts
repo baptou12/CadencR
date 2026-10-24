@@ -19,6 +19,10 @@ const electronState = vi.hoisted(() => ({
   openPath: vi.fn<(_path: string) => Promise<string>>(() => Promise.resolve("")),
 }));
 
+vi.mock("./renderer-window-security", () => ({
+  rendererLoadTarget: () => ({ kind: "url", value: "http://127.0.0.1:1420/" }),
+}));
+
 vi.mock("electron", () => ({
   app: {
     get isPackaged() {
@@ -56,19 +60,26 @@ function trustedEvent(
 ): IpcMainInvokeEvent {
   return {
     sender: { id: 7 },
-    senderFrame: senderFrameUrl === null ? null : { url: senderFrameUrl },
+    senderFrame:
+      senderFrameUrl === null ? null : { url: senderFrameUrl, processId: 1, routingId: 2 },
   } as unknown as IpcMainInvokeEvent;
 }
 
 function ipcEvent(senderId: number, senderFrameUrl: string | null): IpcMainInvokeEvent {
   return {
     sender: { id: senderId },
-    senderFrame: senderFrameUrl === null ? null : { url: senderFrameUrl },
+    senderFrame:
+      senderFrameUrl === null ? null : { url: senderFrameUrl, processId: 1, routingId: 2 },
   } as unknown as IpcMainInvokeEvent;
 }
 
 function mainWindow(): BrowserWindow {
-  return { webContents: { id: 7 } } as unknown as BrowserWindow;
+  return {
+    webContents: {
+      id: 7,
+      mainFrame: { processId: 1, routingId: 2, url: "http://127.0.0.1:1420/" },
+    },
+  } as unknown as BrowserWindow;
 }
 
 function ipcHandler(channel: string): (event: IpcMainInvokeEvent, payload?: unknown) => unknown {
@@ -223,8 +234,10 @@ describe("ipc validators", () => {
     await expect(openExternalLink(pathToFileURL(file).href)).rejects.toThrow(/No app/);
   });
 
-  it("accepts null senderFrame only after the sender webContents matched", () => {
-    expect(() => assertTrustedSender(trustedEvent(null), () => mainWindow())).not.toThrow();
+  it("rejects a missing sender frame even when the sender webContents matched", () => {
+    expect(() => assertTrustedSender(trustedEvent(null), () => mainWindow())).toThrow(
+      /untrusted renderer/,
+    );
     expect(() => assertTrustedSender(ipcEvent(8, null), () => mainWindow())).toThrow(
       /untrusted window/,
     );
@@ -292,7 +305,10 @@ describe("ipc validators", () => {
     const unmaximize = vi.fn();
     const close = vi.fn();
     const win = {
-      webContents: { id: 7 },
+      webContents: {
+        id: 7,
+        mainFrame: { processId: 1, routingId: 2, url: "http://127.0.0.1:1420/" },
+      },
       minimize,
       maximize,
       unmaximize,
