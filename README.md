@@ -106,7 +106,7 @@ Or [download the latest DMG / ZIP from GitHub Releases](https://github.com/merkr
 
 [Get oriented with the workspace guide →](https://cadencr.com/docs/feature-workspace/)
 
-Linux x86-64 packages (AppImage, DEB, RPM) ship with the next release ([porting status](./docs/LINUX_PORTING_PLAN.md)); native Windows packages are planned. For source builds, follow the [Linux setup](./docs/LINUX_SETUP.md) or [Windows / WSL setup](./docs/WINDOWS_WSL_SETUP.md).
+Linux x86-64 packages (AppImage, DEB, RPM) are an alpha, attached by hand to selected releases ([porting status](./docs/LINUX_PORTING_PLAN.md)); native Windows packages are planned. For source builds, follow the [Linux setup](./docs/LINUX_SETUP.md) or [Windows / WSL setup](./docs/WINDOWS_WSL_SETUP.md).
 
 > CadencR is early `0.x` software, with fast iteration and frequent updates. [Report a bug](https://github.com/merkr-software/CadencR/issues/new/choose) or [join the discussion](https://github.com/merkr-software/CadencR/discussions).
 
