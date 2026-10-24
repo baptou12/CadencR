@@ -60,11 +60,29 @@ where
     // final provider events; only then is the pending-write set complete.
     crate::domain::ws_session::stream_readers::shutdown(&write_pool).await;
     crate::domain::usage_stats::flush_pending_writes(&write_pool).await;
-    if let Err(error) = crate::shared::private_temp::remove_process_private_dir() {
-        // The process is exiting: the log is the only place left to report it.
-        tracing::warn!("could not remove the private temp directory: {error}");
+    with_cleanup_result(
+        served,
+        crate::shared::private_temp::remove_process_private_dir(),
+    )
+}
+
+/// Reports a failed scratch cleanup through the shutdown result, keeping the
+/// serve error first when both failed.
+fn with_cleanup_result(
+    served: std::io::Result<()>,
+    cleanup: std::io::Result<()>,
+) -> std::io::Result<()> {
+    match (served, cleanup) {
+        (served, Ok(())) => served,
+        (Ok(()), Err(cleanup)) => Err(std::io::Error::new(
+            cleanup.kind(),
+            format!("remove private temp directory: {cleanup}"),
+        )),
+        (Err(served), Err(cleanup)) => Err(std::io::Error::new(
+            served.kind(),
+            format!("{served}; also could not remove private temp directory: {cleanup}"),
+        )),
     }
-    served
 }
 
 /// Everything that keeps running after the listener closes. Nothing here is
@@ -156,7 +174,39 @@ async fn wait_for_signal() {
 
 #[cfg(test)]
 mod tests {
-    use super::serve_then_shutdown_within;
+    use super::{serve_then_shutdown_within, with_cleanup_result};
+    use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn cleanup_failures_reach_the_shutdown_result() {
+        assert!(with_cleanup_result(Ok(()), Ok(())).is_ok());
+
+        let cleanup_only = with_cleanup_result(
+            Ok(()),
+            Err(Error::new(ErrorKind::PermissionDenied, "denied")),
+        )
+        .unwrap_err();
+        assert_eq!(cleanup_only.kind(), ErrorKind::PermissionDenied);
+        assert!(cleanup_only
+            .to_string()
+            .contains("private temp directory: denied"));
+
+        let both = with_cleanup_result(
+            Err(Error::new(ErrorKind::AddrInUse, "listener failed")),
+            Err(Error::new(ErrorKind::PermissionDenied, "denied")),
+        )
+        .unwrap_err();
+        assert_eq!(both.kind(), ErrorKind::AddrInUse);
+        assert!(both.to_string().starts_with("listener failed"));
+        assert!(both.to_string().contains("denied"));
+
+        let serve_only = with_cleanup_result(
+            Err(Error::new(ErrorKind::AddrInUse, "listener failed")),
+            Ok(()),
+        )
+        .unwrap_err();
+        assert_eq!(serve_only.to_string(), "listener failed");
+    }
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
