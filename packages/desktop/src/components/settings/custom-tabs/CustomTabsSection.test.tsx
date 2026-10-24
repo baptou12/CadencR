@@ -7,11 +7,9 @@ import { CustomTabsSection } from "./CustomTabsSection";
 const mocks = vi.hoisted(() => ({
   tabs: [] as PluginTabSummary[],
   projects: [] as Project[],
-  /** project id → that project's list (its overrides). */
-  perProject: new Map<number, PluginTabSummary[]>(),
+  /** The params the section's list was asked with. */
+  listParams: [] as unknown[],
   fresh: null as PluginTabSummary | null,
-  /** This project's list (its overrides) fails to load. */
-  failingProject: null as number | null,
   projectsFail: false,
   search: {} as Record<string, unknown>,
   navigate: vi.fn(() => Promise.resolve()),
@@ -30,15 +28,10 @@ vi.mock("@/api/generated", async (importOriginal) => {
   const { useMutation, useQuery } = await import("@tanstack/react-query");
   return {
     ...(await importOriginal<typeof import("@/api/generated")>()),
-    usePluginTabList: () => useQuery({ queryKey: ["/api/plugin-tabs"], queryFn: () => mocks.tabs }),
-    getPluginTabListQueryOptions: (params: { project_id: number }) => ({
-      queryKey: ["/api/plugin-tabs", params],
-      queryFn: () => {
-        if (mocks.failingProject === params.project_id)
-          throw serviceError(500, "INTERNAL", "disk unreadable");
-        return mocks.perProject.get(params.project_id) ?? [];
-      },
-    }),
+    usePluginTabList: (params: unknown) => {
+      mocks.listParams.push(params);
+      return useQuery({ queryKey: ["/api/plugin-tabs", params], queryFn: () => mocks.tabs });
+    },
     getPluginTabGetQueryOptions: (id: string) => ({
       queryKey: [`/api/plugin-tabs/${id}`],
       queryFn: () => mocks.fresh,
@@ -58,20 +51,17 @@ vi.mock("@/api/generated", async (importOriginal) => {
   };
 });
 
-const listFor = (projectId: number, project: boolean | null): void => {
-  mocks.perProject.set(projectId, [
-    tabFixture({ enablement: { ...tabFixture().enablement, project } }),
-  ]);
-};
+const overridden = (projectId: number, enabled: boolean) => ({
+  project_overrides: [{ project_id: projectId, enabled }],
+});
 
 describe("CustomTabsSection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.tabs = [];
     mocks.projects = [];
-    mocks.perProject = new Map();
+    mocks.listParams = [];
     mocks.fresh = null;
-    mocks.failingProject = null;
     mocks.projectsFail = false;
     mocks.search = {};
     mocks.setEnablement.mockResolvedValue(tabFixture());
@@ -86,17 +76,6 @@ describe("CustomTabsSection", () => {
     expect(screen.getAllByRole("button", { name: "Create custom tab" })).toHaveLength(1);
   });
 
-  it("says so when a project's choices could not be loaded, rather than showing Inherit", async () => {
-    mocks.projects = [projectFixture(1, "app"), projectFixture(2, "api")];
-    listFor(1, true);
-    mocks.failingProject = 2;
-    mocks.tabs = [tabFixture()];
-    render(<CustomTabsSection />);
-    expect(
-      await screen.findByText(/Per-project choices could not be loaded.*disk unreadable/),
-    ).toBeInTheDocument();
-  });
-
   it("says so when the projects could not be loaded", async () => {
     mocks.projectsFail = true;
     mocks.tabs = [tabFixture()];
@@ -108,10 +87,8 @@ describe("CustomTabsSection", () => {
 
   it("shows each tab's status and where it is on", async () => {
     mocks.projects = [projectFixture(1, "app"), projectFixture(2, "api")];
-    listFor(1, true);
-    listFor(2, null);
     mocks.tabs = [
-      tabFixture(),
+      tabFixture(overridden(1, true)),
       tabFixture({ id: "broken", name: "Broken", status: "invalid" }),
       tabFixture({ id: "draft", name: "Draft", entry_present: false }),
       tabFixture({
@@ -129,9 +106,13 @@ describe("CustomTabsSection", () => {
     expect(within(card("Draft")).getByText("Not built")).toBeInTheDocument();
     expect(within(card("Everywhere")).getByText("On everywhere")).toBeInTheDocument();
     expect(within(card("Draft")).getByText("Off")).toBeInTheDocument();
-    // The graph overrides project 1 on (per-project list), but has no consent.
+    // The graph overrides project 1 on, but has no consent.
     await waitFor(() =>
       expect(within(card("Changed files graph")).getByText("Needs consent")).toBeInTheDocument(),
+    );
+    // Every project's override comes with the one list request.
+    expect(new Set(mocks.listParams.map((params) => JSON.stringify(params)))).toEqual(
+      new Set([JSON.stringify({ project_overrides: true })]),
     );
   });
 
@@ -226,9 +207,8 @@ describe("CustomTabsSection", () => {
 
   it("sets and clears a project override without consent when it is current", async () => {
     mocks.projects = [projectFixture(7, "app")];
-    listFor(7, false);
     const consented = { global: null, project: null, effective: false, consent_required: false };
-    mocks.tabs = [tabFixture({ enablement: consented })];
+    mocks.tabs = [tabFixture({ enablement: consented, ...overridden(7, false) })];
     const { user } = render(<CustomTabsSection />);
     await screen.findByRole("button", { name: /Changed files graph/, expanded: true });
 

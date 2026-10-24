@@ -15,16 +15,26 @@ use super::{consent, enablement, workspace};
 use crate::error::AppError;
 
 /// Every local tab, with enablement as seen from `project_id` (global only when
-/// `None`). The folder scan and the three tables are each read once.
+/// `None`) and, with `with_project_overrides`, every project's override. The
+/// folder scan and each table are read once.
 pub async fn list(
     pool: &SqlitePool,
     project_id: Option<i64>,
+    with_project_overrides: bool,
 ) -> Result<Vec<PluginTabSummary>, AppError> {
-    let (tabs, projects, mut stored, consents) = tokio::try_join!(
+    let overrides = async {
+        if with_project_overrides {
+            enablement::project_overrides_all(pool).await.map(Some)
+        } else {
+            Ok(None)
+        }
+    };
+    let (tabs, projects, mut stored, consents, mut overrides) = tokio::try_join!(
         registry::list(),
         authoring_projects(pool),
         enablement::stored_all(pool, project_id),
         consent::consented_all(pool),
+        overrides,
     )?;
     Ok(tabs
         .into_iter()
@@ -33,7 +43,13 @@ pub async fn list(
             let consented = consents.get(&tab.id).map(String::as_str);
             let enablement = enablement::from_stored(&tab, stored, consented);
             let authoring = projects.get(&tab.id).copied();
-            build(tab, enablement, authoring)
+            let project_overrides = overrides
+                .as_mut()
+                .map(|all| all.remove(&tab.id).unwrap_or_default());
+            PluginTabSummary {
+                project_overrides,
+                ..build(tab, enablement, authoring)
+            }
         })
         .collect())
 }
@@ -121,6 +137,7 @@ fn build(
         dir: report.directory.to_string_lossy().into_owned(),
         authoring_project_id,
         enablement,
+        project_overrides: None,
         id: tab.id,
     }
 }
@@ -216,7 +233,7 @@ mod tests {
         std::fs::create_dir_all(&broken).unwrap();
         std::fs::write(broken.join("tab.json"), "{").unwrap();
 
-        let summaries = list(&pool, None).await.unwrap();
+        let summaries = list(&pool, None, false).await.unwrap();
         assert_eq!(summaries.len(), 2);
         let broken = &summaries[0];
         assert_eq!(
@@ -234,7 +251,58 @@ mod tests {
         assert_eq!(graph.backend_availability, None);
         assert!(graph.enablement.consent_required && !graph.enablement.effective);
         assert_eq!(graph.authoring_project_id, None);
+        assert_eq!(graph.project_overrides, None);
         assert_eq!(get(&pool, "graph", Some(1)).await.unwrap().id, "graph");
+    }
+
+    #[tokio::test]
+    async fn lists_every_project_override_only_when_asked() {
+        let pool = pool().await;
+        write_tab("graph", serde_json::json!({}));
+        write_tab("other", serde_json::json!({}));
+        for id in [1, 2, 3] {
+            sqlx::query("INSERT INTO projects (id, name, path) VALUES (?, 'P', ?)")
+                .bind(id)
+                .bind(format!("/tmp/p{id}"))
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        for (project_id, enabled) in [(None, true), (Some(3), false), (Some(1), true)] {
+            sqlx::query(
+                "INSERT INTO plugin_tab_enablements (plugin_id, project_id, enabled) \
+                 VALUES ('graph', ?, ?)",
+            )
+            .bind(project_id)
+            .bind(enabled)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let summaries = list(&pool, Some(1), true).await.unwrap();
+        let overrides = |id: &str| {
+            summaries
+                .iter()
+                .find(|summary| summary.id == id)
+                .unwrap()
+                .project_overrides
+                .clone()
+        };
+        let override_of = |project_id, enabled| models::PluginTabProjectOverride {
+            project_id,
+            enabled,
+        };
+        assert_eq!(
+            overrides("graph"),
+            Some(vec![override_of(1, true), override_of(3, false)])
+        );
+        assert_eq!(overrides("other"), Some(vec![]));
+        assert!(list(&pool, Some(1), false)
+            .await
+            .unwrap()
+            .iter()
+            .all(|summary| summary.project_overrides.is_none()));
     }
 
     #[tokio::test]

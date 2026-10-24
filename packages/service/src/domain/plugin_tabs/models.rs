@@ -68,6 +68,17 @@ pub struct PluginTabSummary {
     /// The project this tab is authored in, when Cadencr created one.
     pub authoring_project_id: Option<i64>,
     pub enablement: PluginTabEnablement,
+    /// Every project override, by project id; only on a list asked for them
+    /// (`?project_overrides=true`), so the settings page needs one request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_overrides: Option<Vec<PluginTabProjectOverride>>,
+}
+
+/// One project's switch for a tab, overriding the global one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+pub struct PluginTabProjectOverride {
+    pub project_id: i64,
+    pub enabled: bool,
 }
 
 /// What a staged marketplace update would run, for the review dialog.
@@ -179,6 +190,17 @@ pub struct PluginTabEnablement {
 #[into_params(parameter_in = Query)]
 pub struct PluginTabProjectQuery {
     pub project_id: Option<i64>,
+}
+
+/// `GET /api/plugin-tabs`: [`PluginTabProjectQuery`], and whether to include
+/// every project's override.
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct PluginTabListQuery {
+    pub project_id: Option<i64>,
+    /// Fill each summary's `project_overrides`.
+    #[serde(default)]
+    pub project_overrides: bool,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

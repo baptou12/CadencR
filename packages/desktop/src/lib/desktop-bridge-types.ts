@@ -153,6 +153,13 @@ export interface CadencrDesktopBridge {
   setRemoteHostAwake: (enabled: boolean) => Promise<void>;
   onPowerSuspend: (cb: () => void) => () => void;
   onPowerResume: (cb: () => void) => () => void;
+  /**
+   * Whether the app window has focus, also while a guest view inside it (a
+   * custom tab, a browser pane) holds it. Desktop only: in a browser the
+   * document's own focus is the window's.
+   */
+  isWindowFocused?: () => Promise<boolean>;
+  onWindowFocusChange?: (cb: (focused: boolean) => void) => () => void;
   checkForUpdates: () => Promise<void>;
   installUpdate: () => Promise<void>;
   fetchChangelog: (version: string) => Promise<string | null>;
