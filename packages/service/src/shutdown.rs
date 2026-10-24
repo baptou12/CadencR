@@ -60,6 +60,10 @@ where
     // final provider events; only then is the pending-write set complete.
     crate::domain::ws_session::stream_readers::shutdown(&write_pool).await;
     crate::domain::usage_stats::flush_pending_writes(&write_pool).await;
+    if let Err(error) = crate::shared::private_temp::remove_process_private_dir() {
+        // The process is exiting: the log is the only place left to report it.
+        tracing::warn!("could not remove the private temp directory: {error}");
+    }
     served
 }
 
