@@ -3,6 +3,8 @@
 Qualification du 24 octobre 2026, cible initiale `f2f1cb8b25638b28f307b2cb32333a5618f4e20a`.
 Base du premier lot : `102ea97a134700c1d0a57cd084a6740e5e6524b8`.
 
+Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à jour). Le présent inventaire conserve les 58 cibles initiales ; cette fermeture automatique ne vaut pas validation des lots restants.
+
 ## Méthode
 
 - 58 dépendances réparties par surface fonctionnelle. L'ordre peut évoluer après lecture des changelogs.
@@ -20,9 +22,9 @@ Base du premier lot : `102ea97a134700c1d0a57cd084a6740e5e6524b8`.
 | 2 | Outils de test et types GPU | 3 | Tests frontend complets, typage du renderer Neovim. | Fusionné : #312 |
 | 3 | Distribution Electron | 2 | Build/package local, configuration des mises à jour et artefacts CI. | Fusionné : #313 |
 | 4 | CSS | 5 | Build desktop/site/tab-kit, rendu clair/sombre et composants. | Fusionné : #315 |
-| 5a | Radix | 1 | Dialogs imbriqués, focus, menus, défilement et consommateur tab-kit. | PR #316, CI finale |
-| 5b | Composants UI | 4 | Calendrier, redimensionnement, listes longues et notifications. | Validé localement, limites documentées |
-| 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | À traiter |
+| 5a | Radix | 1 | Dialogs imbriqués, focus, menus, défilement et consommateur tab-kit. | Fusionné : #316 |
+| 5b | Composants UI | 4 | Calendrier, redimensionnement, listes longues et notifications. | PR #318, CI finale |
+| 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | Validé localement |
 | 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | À traiter |
 | 8 | React | 4 | Typage, tests complets, StrictMode et interactions dans l'app. | À traiter |
 | 9 | Éditeur riche | 2 | Saisie, sélection, copier/coller, mentions et envoi du prompt. | À traiter |
@@ -206,3 +208,19 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - Les tentatives initiales de glissement synthétique échouaient sur `setPointerCapture` (absence de pointeur natif) ; elles ont été remplacées par un navigateur dédié piloté via CDP. Après rechargement, seuls les trois diagnostics navigateur déjà connus restent présents.
 - Preuves : `/tmp/cadencr-309/ui-{web-checks,security,build,dev}.log`, `virtuoso-qa-results.json`, `native-panel-qa.mjs`, `native-panel-qa-results-{1459,1460}.json`, `panel-{repeat,baseline-repeat}-*.log`.
 - Suivi : #313 fusionnée sur `9be6ff8e6`, puis #315 sur `1c5b1db14`, après CI/CodeQL/audit verts. #316 est synchronisée avec main sur `5a35e67c8` et attend ses checks finaux.
+
+
+## Lot 6 : état et cache
+
+- `zustand` 5.0.15, `idb-keyval` 6.3.0 et les trois packages Query 5.104.1 exactement résolus. Les deux cores Query transitifs suivent 5.104.1 ; le peer optionnel d'unstorage/Astro suit idb-keyval 6.3.0, sans mise à jour d'Astro.
+- [Zustand 5.0.15](https://github.com/pmndrs/zustand/releases/tag/v5.0.15) : chemins DevTools avec espaces et annulation de réhydratation après clearStorage. L'app n'utilise pas le middleware persist.
+- [idb-keyval 6.2.5–6.3.0](https://github.com/jakearchibald/idb-keyval/compare/v6.2.5...v6.3.0) : promesse d'ouverture rejetée réinitialisée, type getMany incluant undefined, update et exports compat/UMD. L'app utilise get/set ; aucun changement de types requis.
+- Revue des changelogs [Query core](https://github.com/TanStack/query/blob/main/packages/query-core/CHANGELOG.md), [React Query](https://github.com/TanStack/query/blob/main/packages/react-query/CHANGELOG.md) et des trois modules de persistance, limitée à 5.101.4–5.104.1 : nouvelles méthodes query/infiniteQuery, corrections observers/mutations, notifications, erreurs et types, filtres de clés, hydration et valeurs falsy. Les méthodes impératives historiques restent disponibles ; les API expérimentales retirées ne sont pas utilisées. Le passage du build upstream à Vite 8 ne modifie pas notre outillage.
+- 25 tâches web réussies, dont 6 625 tests desktop ; 33 tests de sécurité ; builds desktop et site (41 pages) réussis. Aucun changement applicatif.
+- QA réelle : préférence d'animations modifiée, confirmée par l'API et conservée après rechargement. Cache localStorage de 34 Ko / 81 queries inspecté : préférence à jour, aucun agent-state, état Git, port ou health persisté.
+- Modification de la même préférence dans un deuxième client : le premier se met à jour via le service, puis son cache persistant reflète la confirmation. Création d'une disposition : notification de succès, liste invalidée et nouvelle disposition visible après réouverture du menu et rechargement.
+- Store de disposition Zustand : activation Editor, ouverture de example.ts, passage Agent puis Editor ; fichier et contenu conservés, activeTabId cohérent. Hors ligne, les projets déjà chargés restent disponibles ; un refetch du vrai QueryClient passe à paused puis reprend en success/idle au retour du réseau.
+- IndexedDB : le hook historique useFeatureAgentState n'a plus d'appel dans l'interface actuelle. Le vrai module agentStateCache a donc été exercé directement dans le navigateur avec la réponse réelle de /api/features/1/agent-state : écriture différée, lecture identique et conservation après rechargement. Aucune requête/prompt envoyé à un agent.
+- Correction idb-keyval vérifiée dans une base IndexedDB de QA distincte : injection d'un échec natif VersionError sur la première ouverture ; le même store réussit ensuite set/get, sans recréation du store ni suppression de base.
+- Après retour en ligne et rechargement, uniquement les trois diagnostics navigateur déjà connus ; l'erreur réseau pendant la coupure était attendue. Preuves : `/tmp/cadencr-309/state-{web-checks,security,build,landing-build,dev}.log` et `state-qa.json`.
+- Suivi : #316 fusionnée sur `03e351bac` après CI, CodeQL et audit verts ; #318 est synchronisée sur main à `5ce725ccc` et attend ses checks finaux.
