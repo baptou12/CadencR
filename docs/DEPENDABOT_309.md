@@ -3,7 +3,7 @@
 Qualification du 24 octobre 2026, cible initiale `f2f1cb8b25638b28f307b2cb32333a5618f4e20a`.
 Base du premier lot : `102ea97a134700c1d0a57cd084a6740e5e6524b8`.
 
-Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à jour). #317 a ensuite été remplacée par #320 (41 mises à jour), encore ouverte lors du lot 10. Le présent inventaire conserve les 58 cibles initiales ; cette fermeture automatique ne vaut pas validation des lots restants.
+Dependabot a fermé #309 le 24 octobre à 13:43 UTC, puis a remplacé successivement ses PRs groupées au fil des fusions. Le présent inventaire conserve les 58 cibles initiales, couvertes par les lots ci-dessous ; Orval (#341) constitue le dernier lot. Une fermeture automatique du bot ne vaut pas validation technique.
 
 ## Méthode
 
@@ -11,7 +11,7 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 - Un lot est terminé après revue du lockfile, checks requis, QA pertinente, CI verte et fusion.
 - Les versions sont celles de #309 ; chaque occurrence dans les workspaces est traitée ensemble.
 - Conserver la politique pnpm, les correctifs de sécurité et les patches existants.
-- Fermer #309 seulement quand toutes ses mises à jour sont effectivement intégrées ou explicitement écartées.
+- Fermer une PR Dependabot de remplacement seulement quand toutes ses mises à jour sont effectivement intégrées ou explicitement écartées.
 - `main` exige le check `Pre-commit checks` et une review approuvée. Aucune dérogation aux protections.
 
 ## Lots et validations
@@ -33,10 +33,10 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 | 11b | Langages CodeMirror | 5 | Parsers uniques, Astro/YAML, Markdown et HTML. | Fusionné : #330 |
 | 11c | Vim et thèmes | 2 | Commandes Vim et stabilité du thème. | Fusionné : #332 |
 | 11d | LSP | 2 | Connexion, complétion, diagnostics et navigation. | Fusionné : #333 |
-| 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | PR #336 |
-| 13 | Orchestration | 1 | Graphe de tâches, cache et scripts CI. | PR #338, 8 checks / 31 tâches sans cache verts |
-| 14 | Analyse et formatage | 3 | Changelogs des règles, formatage reproductible, lint et exports inutilisés. | PR #339, 8 checks / 31 tâches verts |
-| 15 | Génération API | 1 | Régénération des deux clients, revue du diff, types et appels réels. | Validation finale locale |
+| 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | Fusionné : #336 |
+| 13 | Orchestration | 1 | Graphe de tâches, cache et scripts CI. | Fusionné : #338 |
+| 14 | Analyse et formatage | 3 | Changelogs des règles, formatage reproductible, lint et exports inutilisés. | Fusionné : #339 |
+| 15 | Génération API | 1 | Régénération des deux clients, revue du diff, types et appels réels. | Lot final : #341 |
 
 ## Inventaire exhaustif
 
@@ -365,7 +365,16 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - Deux clients régénérés par leurs scripts officiels. Le client tab-sdk est identique octet pour octet : aucune archive vendored à changer. Le desktop ajoute 159 helpers de clés de mutation et les appelle à la place des tableaux inline ; une normalisation de ces seules différences retrouve exactement le fichier antérieur. Aucun chemin HTTP, type de réponse, corps de requête ou query key changé.
 - Les tests de contrat vérifient aussi les nouvelles clés par défaut et la conservation d'une clé fournie par l'appelant. Les tests d'échappement de chemin, de refus des références distantes et de refus des références locales hors du dossier restent verts.
 - TypeDoc et ses dépendances sortent du lockfile, dont markdown-it. Le gate permet l'absence de ce seul package mais conserve son seuil de sécurité et rejette explicitement une ancienne version ; toutes les autres exigences restent identiques. Les changelogs Scalar exacts ont été lus : corrections de pollution de prototype, résolution URI, références de schémas et validation OpenAPI. Undici reste sur le correctif imposé par le dépôt.
-- Validation locale : 25 tâches web, 6 718 tests desktop, 62 contrôles de dépendances/sécurité, installation frozen et build renderer verts. Régénération répétée pour vérifier sa stabilité ; hook complet requis avant publication.
+- Validation locale : 25 tâches web, 6 718 tests desktop, 62 contrôles de dépendances/sécurité, installation frozen et build renderer verts. Régénération répétée pour vérifier sa stabilité ; hook complet passé avant publication (8 contrôles, 31 tâches). La synchronisation du correctif Knip a aussi passé le hook complet, puis la CI et l'audit sur la branche empilée.
 - QA dans pnpm dev : conversation 1 et liste des trois conversations chargées via les vrais clients ; contenu TypeScript lu via readFile. Clic Vim motion dans les paramètres, valeur 1 relue depuis le service ; retour à la valeur initiale 0 via mutationFn générée avec une clé personnalisée, puis relecture confirmée. Requête pré-annulée : ERR_CANCELED ; conversation inexistante : 404 / NOT_FOUND. Aucune commande ni agent lancé.
 - Console : les trois diagnostics navigateur connus, l'avertissement de formulaire connu et le 404 volontaire du scénario d'erreur. Processus/onglet QA fermés, base conservée. Les installations modifiant le lockfile restent parfois en attente après leur message Done ; seuls leurs processus identifiés ont été arrêtés, puis les installations frozen sortent normalement à zéro. Aucun changement de politique pnpm.
 - Preuves : `/tmp/cadencr-309/orval-{install,generate-desktop,generate-sdk,web-checks,security,build,dev,commit}.log`, `orval-desktop.diff`, `orval-qa-results.json` et `orval-scalar-notes/`.
+
+## Bilan de l'inventaire initial
+
+- Les 58 cibles sont présentes dans tous les manifests consommateurs du lot final. Les peerDependencies React `^19.0.0` des bibliothèques restent compatibles avec les autres consommateurs React 19 ; leurs dépendances de développement utilisent bien `^19.3.0`.
+- Chaque lot a fait l'objet d'une revue des changements upstream, du lockfile, des contrôles appropriés et de QA dans l'app lorsque le comportement était concerné. Les preuves ci-dessus distinguent les régressions corrigées des défauts reproduits sur l'ancienne version.
+- Les validations locales finales utilisent Node `22.19.0` et Python `3.13`. La QA native couvre macOS ; les branches Linux sont vérifiées par les tests et la CI Ubuntu, sans session graphique Linux.
+- La CI Turbo a rencontré une fois la course existante du test d'écriture précoce du SDK, suivie séparément dans #326. Une relance ciblée a réussi au même SHA, sans modification ni suppression d'assertion. Le correctif de synchronisation d'un autre test du SDK reste dans #335.
+- Le patch `react-resizable-panels 4.14.4`, ajouté ensuite par Dependabot, est hors des 58 cibles : cet inventaire visait `4.14.3`. La PR groupée qui contient ce nouveau patch doit rester ouverte jusqu'à son traitement. La migration Rust ACP #304 est également distincte.
+- Runtimes de QA et ports de débogage arrêtés, bases conservées. Le worktree d'origine et ses deux archives vendored modifiées préexistantes sont préservés.
