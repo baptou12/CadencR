@@ -9,6 +9,9 @@ import {
 } from "react";
 import { ImageOffIcon, Loader2Icon } from "lucide-react";
 
+/** Internal Streamdown marker: render a loader, never fetch it as an image. */
+export const INCOMPLETE_MARKDOWN_IMAGE_SRC = "streamdown:incomplete-image";
+
 export interface MarkdownImageProps {
   src?: string;
   alt?: string;
@@ -132,5 +135,12 @@ export function DecodedMarkdownImage(props: MarkdownImageProps): ReactElement {
  */
 export function MarkdownImg(props: MarkdownImageProps): ReactElement {
   const Renderer = useContext(MarkdownImageContext);
+  if (props.src === INCOMPLETE_MARKDOWN_IMAGE_SRC) {
+    return (
+      <MarkdownImageNotice label={props.alt || "image"}>
+        <Loader2Icon className="size-3.5 shrink-0 animate-spin" aria-label="Loading image" />
+      </MarkdownImageNotice>
+    );
+  }
   return Renderer ? <Renderer {...props} /> : <PlainMarkdownImage {...props} />;
 }

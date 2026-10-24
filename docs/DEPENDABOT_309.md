@@ -3,7 +3,7 @@
 Qualification du 24 octobre 2026, cible initiale `f2f1cb8b25638b28f307b2cb32333a5618f4e20a`.
 Base du premier lot : `102ea97a134700c1d0a57cd084a6740e5e6524b8`.
 
-Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à jour). Le présent inventaire conserve les 58 cibles initiales ; cette fermeture automatique ne vaut pas validation des lots restants.
+Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à jour). #317 a ensuite été remplacée par #320 (41 mises à jour), encore ouverte lors du lot 10. Le présent inventaire conserve les 58 cibles initiales ; cette fermeture automatique ne vaut pas validation des lots restants.
 
 ## Méthode
 
@@ -27,8 +27,8 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 | 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | Fusionné : #319 |
 | 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | Fusionné : #321 |
 | 8 | React | 4 | Typage, tests complets, StrictMode et interactions dans l'app. | PR #322, CI finale |
-| 9 | Éditeur riche | 2 | Saisie, sélection, copier/coller, mentions et envoi du prompt. | Validé localement |
-| 10 | Aperçus de contenu | 3 | Markdown diffusé, code coloré, PDF et workers. | À traiter |
+| 9 | Éditeur riche | 2 | Saisie, sélection, copier/coller, mentions et envoi du prompt. | PR #323, empilée sur React |
+| 10 | Aperçus de contenu | 3 | Markdown diffusé, code coloré, PDF et workers. | Validé localement |
 | 11 | CodeMirror et LSP | 13 | Unicité des parsers, Astro/YAML, gros fichiers, sélection, recherche, Vim et LSP. | À traiter |
 | 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | À traiter |
 | 13 | Orchestration | 1 | Graphe de tâches, cache et scripts CI. | À traiter |
@@ -267,3 +267,17 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - Anomalie préexistante reproduite en app sous Lexical 0.46 et 0.52 : une référence de conversation en fin de document peut empêcher Tout sélectionner, car sa longueur sérialisée dépasse celle du label DOM (IndexSizeError 72 > 38). Même warning dans les anciens tests React/routage. Pas introduite par ce lot ; les trois diagnostics navigateur habituels restent présents.
 - Preuves : /tmp/cadencr-309/lexical-{install,web-checks-3,security,build,dev}.log, lexical-notes/, lexical-lock-diff.json, lexical-baseline-{service,web-2}.log. Processus QA arrêtés, bases conservées.
 - #321 fusionnée à 21bf177b5 après CI, audit et CodeQL verts ; #322 synchronisée sur main à 4be733421 pour ses contrôles finaux.
+
+
+## Lot 10 : aperçus de contenu
+
+- Streamdown 2.5.0 → 2.7.0, Highlight.js 11.11.1 → 11.12.0 et PDF.js 6.3.289 → 6.4.299. Le lockfile ajoute marked 18.1.0 et remend 1.4.0 ; tailwind-merge 3.6.0 disparaît au profit de 3.7.0 déjà validé. Highlight.js 11.11.1 reste pour ses autres consommateurs. Markdown-it reste présent via Orval/TypeDoc : aucun assouplissement du contrôle de sécurité dans ce lot.
+- [Streamdown 2.6](https://github.com/vercel/streamdown/releases/tag/streamdown%402.6.0) et [2.7](https://github.com/vercel/streamdown/releases/tag/streamdown%402.7.0) : timeline d'animation compatible StrictMode, réutilisation des blocs, remend linéaire/idempotent, correction des remplacements de même longueur, marqueurs de liens/images incomplets. API codeDownload retirée mais non utilisée. Nos renderers Mermaid et code restent dédiés ; stagger=0 conservé pour afficher immédiatement les rafales, commentaires actualisés.
+- [Marked 18.0–18.1](https://github.com/markedjs/marked/releases/tag/v18.1.0) : séparation des espaces finaux des tokens, adaptée par Streamdown ; corrections CommonMark, liens/entités, listes et complexités quadratique/cubique. Version 18.1.1 trop récente pour la politique pnpm, non installée. [Highlight.js 11.12](https://github.com/highlightjs/highlight.js/releases/tag/11.12.0) : corrections des grammaires, captures nommées, limites contre le backtracking C/C++ et sous-langages XML. [PDF.js 6.4.299](https://github.com/mozilla/pdf.js/releases/tag/v6.4.299) : workers, polices, CMaps, texte et décodeurs ; nos API getDocument/TextLayer restent compatibles.
+- Régression reproduite dans le navigateur : notre renderer d'images tentait de charger streamdown:incomplete-image et déclenchait une erreur CSP. Il consomme maintenant ce marqueur avec le composant de chargement existant, avant toute image/proxy. La sanitisation le préserve uniquement pour src ; la transformation URL refuse les autres variantes streamdown et les liens incomplets restent inactifs. Sept cas de régression couvrent HTML brut/prose, arrivée de l'URL complète et protocoles interdits, dont la casse.
+- 25 tâches web réussies, 6 633 tests desktop, 33 tests de sécurité. Build de production avant QA réussi ; build final et hook complet requis avant publication.
+- QA Markdown dans le navigateur avec le vrai composant sous StrictMode : chargement d'image dans les deux pipelines, puis favicon local décodé ; scripts/attributs événementiels/URL javascript supprimés ; remplacement alpha → omega de même longueur ; 24 mots sans délai avec le premier nœud DOM conservé ; code TypeScript coloré, tableau, liste et zéro span animé après stabilisation.
+- Scénario de flux : 151 mises à jour, 153 commits React en 1,66 s, début/fin/code complets, aucune erreur ; un abonnement actif et zéro après démontage. Le flux est synthétique, sans exécution d'agent.
+- QA PDF via l'éditeur réel : fixture Mozilla tracemonkey.pdf (14 pages), rendu visuellement inspecté, zoom 94 → 100 % puis ajustement, texte sélectionnable, défilement jusqu'à la dernière page. Trois canvases seulement, celui de la première page démonté hors champ. Réouverture après changement de fichier réussie, buffer conservé. Worker local et qcms_bg.wasm répondent 200 ; aucun CDN.
+- PDF invalide et PDF chiffré Mozilla : messages explicites attendus. Le warning Indexing all PDF objects appartient au fichier invalide ; seuls les trois diagnostics navigateur habituels restent autrement. Bases et fichiers QA conservés ; onglet et runtime de ce lot arrêtés.
+- Preuves : /tmp/cadencr-309/previews-{install,web-checks-2,security,build,dev}.log, previews-lock-diff.json, previews-qa-results.json, preview-release-notes.json et marked-notes.json. #323 contient Lexical après hook complet (8 contrôles, 31 tâches) ; #322 attend uniquement CodeQL après CI et audit verts.
