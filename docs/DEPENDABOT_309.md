@@ -24,9 +24,9 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 | 4 | CSS | 5 | Build desktop/site/tab-kit, rendu clair/sombre et composants. | Fusionné : #315 |
 | 5a | Radix | 1 | Dialogs imbriqués, focus, menus, défilement et consommateur tab-kit. | Fusionné : #316 |
 | 5b | Composants UI | 4 | Calendrier, redimensionnement, listes longues et notifications. | Fusionné : #318 |
-| 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | PR #319, CI finale |
-| 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | Validé localement |
-| 8 | React | 4 | Typage, tests complets, StrictMode et interactions dans l'app. | À traiter |
+| 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | Fusionné : #319 |
+| 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | PR #321, CI finale |
+| 8 | React | 4 | Typage, tests complets, StrictMode et interactions dans l'app. | Validé localement |
 | 9 | Éditeur riche | 2 | Saisie, sélection, copier/coller, mentions et envoi du prompt. | À traiter |
 | 10 | Aperçus de contenu | 3 | Markdown diffusé, code coloré, PDF et workers. | À traiter |
 | 11 | CodeMirror et LSP | 13 | Unicité des parsers, Astro/YAML, gros fichiers, sélection, recherche, Vim et LSP. | À traiter |
@@ -239,3 +239,17 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - Feature inexistante : message explicite et lien Back to home fonctionnel ; URL inconnue : Not Found, puis récupération via navigation. Marketplace reste désactivé par son flag de build ; son ancien lien reste dans Settings conformément au garde existant.
 - Console : trois diagnostics navigateur connus ; les requêtes 404 et le warning de composant NotFound par défaut sont attendus pour les cas d'erreur exercés. Preuves : `/tmp/cadencr-309/router-{web-checks,security,build,dev}.log`.
 - #318 fusionnée à `6af18b06e` après CI, audit et CodeQL verts. #319 synchronisée sur main à `c5743ad48`, sans changement de contenu, puis passée prête ; checks finaux en cours.
+
+
+## Lot 8 : React
+
+- React, React DOM et leurs types passent exactement à 19.3.0 dans desktop, tab-kit et tab-sdk. Les peers publics restent compatibles avec React 19 ; les exemples hors workspace ne font pas partie des manifests de #309. Le lockfile ne remplace que ces quatre packages et scheduler 0.27.0 → 0.28.0 ; les fichiers JavaScript publiés de scheduler sont identiques.
+- Revue complète de [React 19.3](https://github.com/react/react/releases/tag/v19.3.0) et comparaison des déclarations npm : transitions indépendantes, corrections StrictMode/Fast Refresh, contextes Suspense, useDeferredValue et useSyncExternalStore, intégration Trusted Types, événements et formulaires DOM. ViewTransition, refs de Fragment et browser() sont additifs ; les changements de types serveur ne concernent pas notre renderer client. Les correctifs RSC de 19.2.7 sont présents dans 19.3.
+- 25 tâches web, 6 625 tests desktop, 33 tests de sécurité, build desktop et build tab-kit réussis. Aucun changement applicatif requis.
+- QA dans pnpm dev sous StrictMode : brouillon saisi, changement Agent/Editor, passage Settings, rechargement puis retour au workspace ; texte intégral conservé, aucun prompt envoyé. Préférence d'animations modifiée via l'UI, confirmée par /api/workspace/settings puis conservée au rechargement.
+- Filtrage différé réel : saisie router dans la sidebar, une seule conversation correspondante, Escape restaure les deux lignes et le focus initial. Largeur 1280 → 740 → 1280 : disposition mobile puis desktop, sans débordement horizontal ni perte du brouillon.
+- Flux simulé dans le navigateur avec les vrais Markdown et useStreamingMarkdownThrottle : 151 mises à jour via useSyncExternalStore sous StrictMode, premier et dernier mots présents, marqueur final et bloc TypeScript complets, aucune erreur. Un abonnement actif puis zéro après démontage ; 1,77 s pour le scénario. Il s'agit d'un flux synthétique, pas d'une exécution d'agent.
+- Excalidraw : ouverture d'un fichier QA, canvas, bibliothèque et changement d'onglet interne fonctionnels. Ses anciens Radix 1.0.x déclarent seulement React ≤18, avertissement déjà présent avec 19.2.7. La QA constate 230 diagnostics de polices CDN bloquées par CSP : reproduits à l'identique dans un checkout témoin sous React 19.2.7, donc préexistants. Les trois autres diagnostics navigateur sont ceux déjà connus ; aucun nouveau diagnostic applicatif.
+- Les warnings pnpm sur seroval, postcss, browserslist et vite viennent des overrides de sécurité existants. Exemple vérifié : seroval-plugins 1.6.9 publie le peer ^1.0, compatible avec le core 1.6.9 ; pnpm affiche 1.6.3 après application de l'override. Politiques de sécurité conservées.
+- Preuves : `/tmp/cadencr-309/react-{web-checks,security,build,tab-kit-build,dev,peers}.log`, `react-types-review/`, `react-stream-qa-results.json`, `react-baseline-{service,web}.log`. Bases QA conservées, processus et onglets créés pour le test arrêtés.
+- #319 fusionnée à `21a1a5115` après CI, audit et CodeQL verts ; #321 synchronisée sur main à `4f199d814` pour ses checks finaux.
