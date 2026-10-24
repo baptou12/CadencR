@@ -95,7 +95,7 @@ export function KeyboardShortcutsPlugin({
     );
 
     function registerArrowHandler(
-      command: LexicalCommand<KeyboardEvent | null>,
+      command: LexicalCommand<KeyboardEvent>,
       callback: (() => string | null) | undefined,
       boundary: "start" | "end",
     ) {

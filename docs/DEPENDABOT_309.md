@@ -25,9 +25,9 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 | 5a | Radix | 1 | Dialogs imbriqués, focus, menus, défilement et consommateur tab-kit. | Fusionné : #316 |
 | 5b | Composants UI | 4 | Calendrier, redimensionnement, listes longues et notifications. | Fusionné : #318 |
 | 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | Fusionné : #319 |
-| 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | PR #321, CI finale |
-| 8 | React | 4 | Typage, tests complets, StrictMode et interactions dans l'app. | Validé localement |
-| 9 | Éditeur riche | 2 | Saisie, sélection, copier/coller, mentions et envoi du prompt. | À traiter |
+| 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | Fusionné : #321 |
+| 8 | React | 4 | Typage, tests complets, StrictMode et interactions dans l'app. | PR #322, CI finale |
+| 9 | Éditeur riche | 2 | Saisie, sélection, copier/coller, mentions et envoi du prompt. | Validé localement |
 | 10 | Aperçus de contenu | 3 | Markdown diffusé, code coloré, PDF et workers. | À traiter |
 | 11 | CodeMirror et LSP | 13 | Unicité des parsers, Astro/YAML, gros fichiers, sélection, recherche, Vim et LSP. | À traiter |
 | 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | À traiter |
@@ -253,3 +253,17 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - Les warnings pnpm sur seroval, postcss, browserslist et vite viennent des overrides de sécurité existants. Exemple vérifié : seroval-plugins 1.6.9 publie le peer ^1.0, compatible avec le core 1.6.9 ; pnpm affiche 1.6.3 après application de l'override. Politiques de sécurité conservées.
 - Preuves : `/tmp/cadencr-309/react-{web-checks,security,build,tab-kit-build,dev,peers}.log`, `react-types-review/`, `react-stream-qa-results.json`, `react-baseline-{service,web}.log`. Bases QA conservées, processus et onglets créés pour le test arrêtés.
 - #319 fusionnée à `21a1a5115` après CI, audit et CodeQL verts ; #321 synchronisée sur main à `4f199d814` pour ses checks finaux.
+
+
+## Lot 9 : Lexical
+
+- lexical et @lexical/react passent de 0.46.0 à 0.52.0, avec les 23 packages Lexical alignés. Nouveau transitif @lexical/a11y ; signals-core 1.14.4 corrige les computed périmés après batch annulé et la capture des effects dans untracked/action ([release](https://github.com/preactjs/signals/releases/tag/%40preact%2Fsignals-core%401.14.4)). Aucun autre changement de résolution.
+- Releases [0.47](https://github.com/facebook/lexical/releases/tag/v0.47.0), [0.48](https://github.com/facebook/lexical/releases/tag/v0.48.0), [0.49](https://github.com/facebook/lexical/releases/tag/v0.49.0), [0.50](https://github.com/facebook/lexical/releases/tag/v0.50.0), [0.51](https://github.com/facebook/lexical/releases/tag/v0.51.0), [0.52](https://github.com/facebook/lexical/releases/tag/v0.52.0) lues : ESM-only compatible avec Node 22/Vite, React ≥18, nouvelles déclarations de nodes et sérialisation, clipboard/IME/sélection. Nos quatre custom nodes conservent leurs implémentations explicites supportées. LexicalComposer est déprécié, toujours supporté. Aucun usage des API retirées ni de SELECTION_CHANGE_COMMAND dont le moment de dispatch change ; les popovers lisent déjà l'état commité via registerUpdateListener.
+- Adaptation aux LexicalCommand invariants : les flèches utilisent KeyboardEvent, les callbacks de suggestions infèrent le payload exact de la commande. Entrée conserve KeyboardEvent | null. Le test de suggestions utilise désormais un vrai éditeur Lexical, sans casts de commandes incompatibles ; ajout du cas Entrée programmatique null.
+- 25 tâches web réussies, 6 625 tests desktop avant ajout du cas null, 33 tests de sécurité et build desktop réussi. Hook complet requis avant publication.
+- QA réelle : saisie Unicode multiligne, Shift+Enter, annuler/rétablir, sélection de texte normal, mention de fichier avec flèche/Entrée, commande avec flèche/Tab, marqueur shell puis sortie du mode en conservant le texte. Aucune commande exécutée et aucun prompt envoyé.
+- Référence de conversation restaurée via le vrai helper d'éditeur : token et feature ID conservés dans JSON, clipboard HTML/texte conserve la référence sérialisée ; collage en texte brut puis rechargement restaure le token. Le menu @@ affiche correctement une liste vide : la base QA ne contient aucun historique d'agent, exigé par l'API.
+- Filtre Agents : suggestions /sort, flèches, Entrée, Tab et Échap fonctionnels. Montage navigateur du vrai PromptEditor sous StrictMode : historique haut/bas seulement aux bornes, déplacement normal au milieu d'un texte multiligne, Entrée déclenche exactement un callback, Shift+Enter insère une ligne. Le callback de test ne lance pas d'agent ; montage démonté après vérification.
+- Anomalie préexistante reproduite en app sous Lexical 0.46 et 0.52 : une référence de conversation en fin de document peut empêcher Tout sélectionner, car sa longueur sérialisée dépasse celle du label DOM (IndexSizeError 72 > 38). Même warning dans les anciens tests React/routage. Pas introduite par ce lot ; les trois diagnostics navigateur habituels restent présents.
+- Preuves : /tmp/cadencr-309/lexical-{install,web-checks-3,security,build,dev}.log, lexical-notes/, lexical-lock-diff.json, lexical-baseline-{service,web-2}.log. Processus QA arrêtés, bases conservées.
+- #321 fusionnée à 21bf177b5 après CI, audit et CodeQL verts ; #322 synchronisée sur main à 4be733421 pour ses contrôles finaux.
