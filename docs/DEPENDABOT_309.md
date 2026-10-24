@@ -28,10 +28,10 @@ Dependabot a fermé #309 le 24 octobre à 13:43 UTC et créé #317 (51 mises à 
 | 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | Fusionné : #321 |
 | 8 | React | 4 | Typage, tests complets, StrictMode et interactions dans l'app. | Fusionné : #322 |
 | 9 | Éditeur riche | 2 | Saisie, sélection, copier/coller, mentions et envoi du prompt. | Fusionné : #323 |
-| 10 | Aperçus de contenu | 3 | Markdown diffusé, code coloré, PDF et workers. | PR #325, CI finale |
-| 11a | Moteur CodeMirror | 4 | Saisie, historique, sélection, recherche et gros fichiers. | PR #328, empilée sur les aperçus |
-| 11b | Langages CodeMirror | 5 | Parsers uniques, Astro/YAML, Markdown et HTML. | Validé localement ; point serveur Astro suivi au lot 11d |
-| 11c | Vim et thèmes | 2 | Commandes Vim et stabilité du thème. | À traiter |
+| 10 | Aperçus de contenu | 3 | Markdown diffusé, code coloré, PDF et workers. | Fusionné : #325 |
+| 11a | Moteur CodeMirror | 4 | Saisie, historique, sélection, recherche et gros fichiers. | Fusionné : #328 |
+| 11b | Langages CodeMirror | 5 | Parsers uniques, Astro/YAML, Markdown et HTML. | PR #330, CI finale sur main |
+| 11c | Vim et thèmes | 2 | Commandes Vim et stabilité du thème. | Validé localement |
 | 11d | LSP | 2 | Connexion, complétion, diagnostics et navigation. | À traiter |
 | 12 | Raccourcis | 2 | Shift, ponctuation, AZERTY/QWERTY, navigation et raccourcis globaux. | À traiter |
 | 13 | Orchestration | 1 | Graphe de tâches, cache et scripts CI. | À traiter |
@@ -305,6 +305,16 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - Un gate du lockfile vérifie les cinq packages partageant des identités, rejette les copies imbriquées et détecte un override devenu incompatible avec le manifest. Quatre tests de coloration supplémentaires couvrent SCSS, TOML, Markdown et HTML.
 - Validation : 28 tâches web et 6 702 tests desktop avant les quatre nouveaux cas ; 43 tests ciblés de langages après ajout, 33 tests de sécurité et 3 tests d'intégrité des parsers ; build de production vert.
 - QA macOS, `pnpm dev` après intégration du support Linux : frontmatter et expressions Astro colorés, clés YAML colorées, nombres SCSS/TOML colorés ; `<div>` imbriqué complété en `<div></div>` malgré la fermeture du parent ; continuation d'une liste Markdown, citation conservée, sauvegardes vérifiées sur disque. Capture Astro inspectée.
-- Point à vérifier au lot LSP : le serveur Astro répond à initialize avec `-32603`, car `typescript.tsdk` manque. La coloration reste correcte. Aucun fichier frontend/backend LSP ni version LSP ne change dans ce lot ; la comparaison avec la base et la gestion de cette erreur restent à traiter avant de conclure sur le lot 11d.
+- Point à vérifier au lot LSP : le serveur Astro répond à initialize avec `-32603`, car `typescript.tsdk` manque. La coloration reste correcte. Aucun fichier frontend/backend LSP ni version LSP ne change dans ce lot ; la même erreur a été reproduite avec les anciennes versions frontend dans une application témoin distincte. La configuration et la gestion de cette erreur préexistante sont suivies au lot 11d.
 - Les tests automatisés des branches macOS/Linux sont suivis dans la CI Ubuntu ; la QA interactive ci-dessus a été exécutée sur macOS, pas sur un bureau Linux.
 - Traces : `/tmp/cadencr-309/codemirror-languages-{web-checks,regression-tests-2,security,build,dev}.log` et `codemirror-languages-lock-diff.json`. Premier démarrage au-delà du délai de santé pendant la recompilation Rust de main ; santé API/frontend ensuite confirmée à 200 avant QA.
+
+
+## Lot 11c — Vim et thèmes
+
+- Vim `6.3.0 → 6.4.0`, thèmes `4.25.10 → 4.25.12`. Revue du [changelog Vim](https://github.com/replit/codemirror-vim/blob/v6.4.0/packages/codemirror-vim/CHANGELOG.md), du diff de l'extraction du moteur dans `@replit/codemirror-vim-core@0.1.0` et des releases [thèmes 4.25.11](https://github.com/uiwjs/react-codemirror/releases/tag/v4.25.11) / [4.25.12](https://github.com/uiwjs/react-codemirror/releases/tag/v4.25.12). Le moteur extrait n'ajoute aucune dépendance. Le lockfile ne change que ces trois packages ; aucun changement applicatif.
+- Vim ajoute gcc et corrige les déplacements gj aux bornes, la recherche inversée en mode visuel, les plages ex, le tri par motif et le libellé du mode visual line. Thèmes corrige la déclaration des dépendances de runtime ; la correction de recréation du thème par le wrapper React ne concerne pas notre createTheme appelé une fois au chargement du module.
+- 28 tâches web vertes, 6 706 tests desktop, 36 contrôles sécurité/singletons et build Electron/Vite de production réussi. Le packaging complet lancé initialement a été interrompu pendant la compilation des sidecars, hors du périmètre de ce lot ; le build du renderer a ensuite réussi.
+- QA réelle macOS : activation du mode Vim via Settings, gcc puis undo, insertion Unicode puis sauvegarde vérifiée sur disque, tri `2,3sort r/[a-z]+ =/`, G puis gj répétés à la dernière ligne, recherche visuelle f/point puis répétition inverse avec virgule. La sélection revient bien de `// ab.cd.ef.` à `// ab.cd.`.
+- Aller-retour clair/sombre via le sélecteur de thèmes : même instance DOM de l'éditeur, même texte et huit balises style avant/après ; fond calculé modifié puis restauré. Mode Vim désactivé en fin de QA. Aucun nouveau diagnostic applicatif ; les trois diagnostics navigateur connus restent présents. Pas de QA native Linux ; CI Ubuntu pour les contrôles automatisés.
+- Preuves : `/tmp/cadencr-309/vim-themes-{install,web-checks,security,renderer-build,dev}.log`. Processus de QA arrêtés, base conservée.

@@ -199,8 +199,8 @@ importers:
         specifier: ^1.4.1
         version: 1.4.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@replit/codemirror-vim':
-        specifier: ^6.3.0
-        version: 6.3.0(@codemirror/commands@6.11.1)(@codemirror/language@6.13.1)(@codemirror/search@6.7.2)(@codemirror/state@6.7.6)(@codemirror/view@6.43.14)
+        specifier: ^6.4.0
+        version: 6.4.0(@codemirror/commands@6.11.1)(@codemirror/language@6.13.1)(@codemirror/search@6.7.2)(@codemirror/state@6.7.6)(@codemirror/view@6.43.14)
       '@silurus/ooxml':
         specifier: ^0.88.0
         version: 0.88.0
@@ -250,8 +250,8 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0(@types/react@19.3.0)
       '@uiw/codemirror-themes':
-        specifier: ^4.25.10
-        version: 4.25.10(@codemirror/language@6.13.1)(@codemirror/state@6.7.6)(@codemirror/view@6.43.14)
+        specifier: ^4.25.12
+        version: 4.25.12(@codemirror/language@6.13.1)(@codemirror/state@6.7.6)(@codemirror/view@6.43.14)
       '@vitejs/plugin-react':
         specifier: ^5.1.4
         version: 5.1.4(vite@6.4.4(@types/node@22.19.17)(jiti@2.7.0)(lightningcss@1.33.0)(sass@1.104.0)(yaml@2.9.1))
@@ -3971,8 +3971,11 @@ packages:
       react: '>= 16.8'
       react-dom: '>= 16.8'
 
-  '@replit/codemirror-vim@6.3.0':
-    resolution: {integrity: sha512-aTx931ULAMuJx6xLf7KQDOL7CxD+Sa05FktTDrtLaSy53uj01ll3Zf17JdKsriER248oS55GBzg0CfCTjEneAQ==}
+  '@replit/codemirror-vim-core@0.1.0':
+    resolution: {integrity: sha512-1i6EBKpcNfDKvTmTh6N6g9lL6udD5t+uFNh4JCqozRnVlvUGOps7h/QzS2ne4zcvPUjvApKpmcP7Grc3fNbZiQ==}
+
+  '@replit/codemirror-vim@6.4.0':
+    resolution: {integrity: sha512-t9UMDNhkmeAkl0uRbiJVotv97bGD6mf4GyJJoEbrjUqa/Pov0s9eL+4AaI0Xto3OGri17i9qwIpT0JbVlVXt8A==}
     peerDependencies:
       '@codemirror/commands': 6.x.x
       '@codemirror/language': 6.13.1
@@ -4802,8 +4805,8 @@ packages:
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
-  '@uiw/codemirror-themes@4.25.10':
-    resolution: {integrity: sha512-Fqiz1HIuDlDftcL+/O53V333UOH6MqQ84VbiQB5egn6u+uDwAqACp1FrdAoi4wgpR3b3TGW4Gr0wIYcrJSSz1A==}
+  '@uiw/codemirror-themes@4.25.12':
+    resolution: {integrity: sha512-3bLX6C+gstr82SmY2FAj2TfHXnl2SnC+whRZJmRsv82wMhG8RZlZVy+o0rLuGRIPD9acuY0gpouHVRNUnzBj3g==}
     peerDependencies:
       '@codemirror/language': 6.13.1
       '@codemirror/state': 6.7.6
@@ -12012,13 +12015,16 @@ snapshots:
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
 
-  '@replit/codemirror-vim@6.3.0(@codemirror/commands@6.11.1)(@codemirror/language@6.13.1)(@codemirror/search@6.7.2)(@codemirror/state@6.7.6)(@codemirror/view@6.43.14)':
+  '@replit/codemirror-vim-core@0.1.0': {}
+
+  '@replit/codemirror-vim@6.4.0(@codemirror/commands@6.11.1)(@codemirror/language@6.13.1)(@codemirror/search@6.7.2)(@codemirror/state@6.7.6)(@codemirror/view@6.43.14)':
     dependencies:
       '@codemirror/commands': 6.11.1
       '@codemirror/language': 6.13.1
       '@codemirror/search': 6.7.2
       '@codemirror/state': 6.7.6
       '@codemirror/view': 6.43.14
+      '@replit/codemirror-vim-core': 0.1.0
 
   '@rolldown/binding-android-arm-eabi@1.2.13':
     optional: true
@@ -12798,7 +12804,7 @@ snapshots:
     dependencies:
       '@types/node': 22.19.17
 
-  '@uiw/codemirror-themes@4.25.10(@codemirror/language@6.13.1)(@codemirror/state@6.7.6)(@codemirror/view@6.43.14)':
+  '@uiw/codemirror-themes@4.25.12(@codemirror/language@6.13.1)(@codemirror/state@6.7.6)(@codemirror/view@6.43.14)':
     dependencies:
       '@codemirror/language': 6.13.1
       '@codemirror/state': 6.7.6
