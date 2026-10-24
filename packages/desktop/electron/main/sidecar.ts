@@ -93,7 +93,7 @@ export async function waitForDevSidecar(
 
 export function productionDbPath(): string {
   const dbPath = path.join(os.homedir(), ".cadencr", "database", "cadencr.db");
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true, mode: 0o700 });
   return dbPath;
 }
 
