@@ -3975,6 +3975,14 @@ export interface PluginTabPresenceRequest {
   feature_id: number;
 }
 
+/**
+ * One project's switch for a tab, overriding the global one.
+ */
+export interface PluginTabProjectOverride {
+  enabled: boolean;
+  project_id: number;
+}
+
 export type PluginTabStatus = (typeof PluginTabStatus)[keyof typeof PluginTabStatus];
 
 export const PluginTabStatus = {
@@ -4137,6 +4145,12 @@ export interface PluginTabSummary {
    * @nullable
    */
   permissions_hash?: string | null;
+  /**
+   * Every project override, by project id; only on a list asked for them
+   * (`?project_overrides=true`), so the settings page needs one request.
+   * @nullable
+   */
+  project_overrides?: PluginTabProjectOverride[] | null;
   /** Keyboard shortcuts the tab handles while it has focus. */
   shortcuts: TabShortcut[];
   status: PluginTabStatus;
@@ -6511,6 +6525,10 @@ export type LspRootParams = {
 
 export type PluginTabListParams = {
   project_id?: number;
+  /**
+   * Fill each summary's `project_overrides`.
+   */
+  project_overrides?: boolean;
 };
 
 export type PluginTabSelfConfiguration200 = { [key: string]: unknown };

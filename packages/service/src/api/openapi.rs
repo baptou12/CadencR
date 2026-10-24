@@ -336,6 +336,7 @@ use crate::domain::ws_session::routes as ws_routes;
         crate::domain::plugin_tabs::models::PluginTabNetwork,
         crate::domain::plugin_tabs::models::PluginTabStatus,
         crate::domain::plugin_tabs::models::PluginTabEnablement,
+        crate::domain::plugin_tabs::models::PluginTabProjectOverride,
         crate::domain::plugin_tabs::models::SetPluginTabEnablementRequest,
         crate::domain::plugin_tabs::models::PluginTabConsentRequest,
         crate::domain::plugin_tabs::models::PluginTabConfiguration,
