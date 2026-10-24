@@ -82,6 +82,7 @@ export const noopPluginTabs: PluginTabsBridge = {
 
 const browserBridge: CadencrBrowserBridge = {
   isElectron: false,
+  usesCustomWindowControls: false,
   runtimeConfig: () => unavailable("runtimeConfig"),
   readFileBase64: () => unavailable("readFileBase64"),
   suppressNextNativeContextMenu: () => undefined,
@@ -127,6 +128,9 @@ const browserBridge: CadencrBrowserBridge = {
   onCloseRequested: () => () => undefined,
   confirmClose: () => Promise.resolve(),
   requestQuit: () => Promise.resolve(),
+  windowMinimize: () => unavailable("windowMinimize"),
+  windowToggleMaximize: () => unavailable("windowToggleMaximize"),
+  windowClose: () => unavailable("windowClose"),
   reportRendererError: () => Promise.resolve(),
   setZoom: () => Promise.resolve(),
   setTrafficLightsCenter: () => Promise.resolve(),

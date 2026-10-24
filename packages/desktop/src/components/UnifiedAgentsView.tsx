@@ -92,6 +92,7 @@ function UnifiedAgentsHeader({ view }: { view: ViewState }): ReactElement {
       data-feature-header
       data-unified-agents-header
       data-mac-controls={HAS_MAC_WINDOW_CONTROLS ? "true" : undefined}
+      data-window-control-safe
       className="titlebar-drag flex shrink-0 items-center gap-3 border-b border-border/40 bg-background px-4 py-3 md:px-6"
     >
       <SidebarCollapsedChrome

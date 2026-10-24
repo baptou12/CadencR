@@ -22,6 +22,7 @@ use super::handle::{RecomputePing, RegistryInner};
 use crate::app_state::AppState;
 use crate::domain::git::git_status;
 use crate::domain::ws_session::protocol::WsEnvelope;
+use crate::shared::watch_limits::describe_watch_error;
 
 /// Debounce window for raw fs events before triggering a recompute.
 pub(super) const GIT_WATCHER_DEBOUNCE_MS: u64 = 250;
@@ -74,19 +75,19 @@ pub(super) fn build_debouncer(
                 );
                 return;
             }
-            if events.iter().any(|ev| {
-                ev.kind == DebouncedEventKind::Any && is_relevant(&cb_path, &cb_extra, &ev.path)
-            }) {
+            if has_relevant_event(&cb_path, &cb_extra, &events) {
                 let _ = ping_tx.send(RecomputePing::FsEvent(generation));
             }
         },
     )
-    .map_err(|e| crate::error::AppError::Internal(format!("git watcher: {e}")))?;
+    .map_err(|e| crate::error::AppError::Internal(describe_watch_error("git watcher", &e)))?;
 
     debouncer
         .watcher()
         .watch(&worktree_path, RecursiveMode::Recursive)
-        .map_err(|e| crate::error::AppError::Internal(format!("git watcher watch: {e}")))?;
+        .map_err(|e| {
+            crate::error::AppError::Internal(describe_watch_error("git watcher watch", &e))
+        })?;
 
     // Linked-worktree support: the worktree's own gitdir
     // (`<main>/.git/worktrees/<name>/`) and the shared common dir
@@ -112,6 +113,22 @@ pub(super) fn build_debouncer(
     }
 
     Ok(debouncer)
+}
+
+/// Both settled and continuous debounced events represent real filesystem
+/// changes. The compute task coalesces sustained churn, so forwarding both
+/// variants remains bounded.
+fn has_relevant_event(
+    worktree_root: &Path,
+    extra_git_roots: &[PathBuf],
+    events: &[DebouncedEvent],
+) -> bool {
+    events.iter().any(|event| {
+        matches!(
+            event.kind,
+            DebouncedEventKind::Any | DebouncedEventKind::AnyContinuous
+        ) && is_relevant(worktree_root, extra_git_roots, &event.path)
+    })
 }
 
 /// Resolve the worktree-specific gitdir and the shared common dir for
@@ -189,11 +206,15 @@ pub(super) fn spawn_compute_task(
                     (MIN_RECOMPUTE_GAP_MS - elapsed) as u64,
                 ))
                 .await;
-                match drain_latest_generation(&mut ping_rx) {
-                    Ok(Some(generation)) => expected_generation = generation,
-                    Ok(None) => {}
-                    Err(()) => return,
-                }
+            }
+            // Always collapse work queued during the previous Git computation.
+            // In large repositories that computation can exceed the minimum
+            // gap; draining only after the sleep would then replay every stale
+            // ping from the unbounded channel.
+            match drain_latest_generation(&mut ping_rx) {
+                Ok(Some(generation)) => expected_generation = generation,
+                Ok(None) => {}
+                Err(()) => return,
             }
             if write_generation.load(Ordering::Acquire) != expected_generation
                 || now_ms() - last_nudge_ms.load(Ordering::Relaxed) < NUDGE_DEDUPE_MS
@@ -355,6 +376,28 @@ fn broadcast(senders: &[mpsc::UnboundedSender<Message>], envelope: &WsEnvelope) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn continuous_events_trigger_a_refresh() {
+        let root = PathBuf::from("/repo");
+        let events = vec![DebouncedEvent::new(
+            root.join("src/main.rs"),
+            DebouncedEventKind::AnyContinuous,
+        )];
+
+        assert!(has_relevant_event(&root, &[], &events));
+    }
+
+    #[test]
+    fn continuous_git_noise_stays_filtered() {
+        let root = PathBuf::from("/repo");
+        let events = vec![DebouncedEvent::new(
+            root.join(".git/objects/aa/bb"),
+            DebouncedEventKind::AnyContinuous,
+        )];
+
+        assert!(!has_relevant_event(&root, &[], &events));
+    }
 
     #[tokio::test]
     async fn rapid_writes_coalesce_to_one_emission() {

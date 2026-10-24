@@ -63,7 +63,7 @@ pub async fn prepare_publication_package_handler(
     let (project_root, plugin_id, kind) =
         super::publication_readiness::author_project(&state.read_pool, project_id).await?;
     let output_root =
-        crate::domain::settings_store::dir::sibling_dir("provider-publication-bundles");
+        crate::domain::settings_store::dir::data_sibling_dir("provider-publication-bundles");
     let permit = PACKAGE_BUILD.try_acquire().map_err(|_| {
         AppError::coded(
             StatusCode::CONFLICT,

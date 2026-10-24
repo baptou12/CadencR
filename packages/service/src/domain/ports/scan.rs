@@ -28,6 +28,23 @@ const CWD_BATCH: usize = 256;
 /// instead and let the next scan try again.
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// A required system tool is not installed (spawn failed with `NotFound`).
+/// Kept distinct so the API can tell the user what to install instead of
+/// reporting an opaque internal error — `lsof` is absent from minimal Linux
+/// installs (Arch, Fedora minimal, containers).
+#[derive(Debug)]
+pub struct MissingTool {
+    pub program: String,
+}
+
+impl std::fmt::Display for MissingTool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "`{}` is not installed", self.program)
+    }
+}
+
+impl std::error::Error for MissingTool {}
+
 pub async fn listening_sockets() -> anyhow::Result<Vec<ListenSocket>> {
     let out = capture("lsof", &["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pcn"]).await?;
     Ok(parse_listen_sockets(&out))
@@ -35,8 +52,18 @@ pub async fn listening_sockets() -> anyhow::Result<Vec<ListenSocket>> {
 
 /// Map of pid -> parent pid for every process on the machine.
 pub async fn parent_map() -> anyhow::Result<HashMap<i32, i32>> {
-    let out = capture("ps", &["-axo", "pid=,ppid="]).await?;
+    let out = capture("ps", parent_map_args(cfg!(target_os = "macos"))).await?;
     Ok(parse_parent_map(&out))
+}
+
+/// BSD `ps -ax` on macOS (unchanged); POSIX `-A` elsewhere, which procps-ng on
+/// Linux documents for "every process" without relying on BSD flag parsing.
+fn parent_map_args(is_macos: bool) -> &'static [&'static str] {
+    if is_macos {
+        &["-axo", "pid=,ppid="]
+    } else {
+        &["-Ao", "pid=,ppid="]
+    }
 }
 
 /// Working directory of each requested pid. Pids that have exited between the
@@ -70,7 +97,7 @@ async fn capture(program: &str, args: &[&str]) -> anyhow::Result<String> {
     let output = tokio::time::timeout(COMMAND_TIMEOUT, run)
         .await
         .map_err(|_| anyhow::anyhow!("`{program}` timed out after {COMMAND_TIMEOUT:?}"))?
-        .map_err(|error| anyhow::anyhow!("could not run `{program}`: {error}"))?;
+        .map_err(|error| spawn_error(program, error))?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     if !output.status.success() && stdout.trim().is_empty() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -80,6 +107,16 @@ async fn capture(program: &str, args: &[&str]) -> anyhow::Result<String> {
         }
     }
     Ok(stdout)
+}
+
+fn spawn_error(program: &str, error: std::io::Error) -> anyhow::Error {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        return MissingTool {
+            program: program.to_owned(),
+        }
+        .into();
+    }
+    anyhow::anyhow!("could not run `{program}`: {error}")
 }
 
 /// Parse `lsof -F pcn` output. Fields arrive as one-character-tagged lines,
@@ -224,6 +261,26 @@ mod tests {
 
         assert_eq!(cwds.get(&11).map(String::as_str), Some("/Users/me/work"));
         assert_eq!(cwds.get(&22).map(String::as_str), Some("/tmp"));
+    }
+
+    #[test]
+    fn missing_program_is_reported_as_a_missing_tool() {
+        let error = spawn_error("lsof", std::io::Error::from(std::io::ErrorKind::NotFound));
+        let missing = error
+            .downcast_ref::<MissingTool>()
+            .expect("typed missing tool");
+        assert_eq!(missing.program, "lsof");
+        let other = spawn_error(
+            "lsof",
+            std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        );
+        assert!(other.downcast_ref::<MissingTool>().is_none());
+    }
+
+    #[test]
+    fn ps_arguments_per_platform() {
+        assert_eq!(parent_map_args(true), ["-axo", "pid=,ppid="]);
+        assert_eq!(parent_map_args(false), ["-Ao", "pid=,ppid="]);
     }
 
     #[test]

@@ -54,6 +54,7 @@ import {
   notifyTransition,
   snapshotCursor,
 } from "@/stores/session-status-handlers";
+import { handleAppSocketError } from "./app-socket-errors";
 import { createAppWsConnect, createAppWsDisconnect } from "@/stores/session-status-connection";
 import { revealAgentDocument } from "@/lib/auto-layout/agent-document-activity";
 
@@ -105,6 +106,7 @@ function createEnvelopeDispatcher(
     if (domain === "editor" && action === "file_tree.changed") {
       revealAgentDocument(payload, get().bySession);
     }
+    if (handleAppSocketError(domain, action, payload)) return;
     if (handleAppEnvelope(domain, action, payload)) return;
     if (domain !== "app") return;
     if (action === "session_status.snapshot") {

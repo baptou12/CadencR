@@ -67,9 +67,8 @@ impl HistoryLocations {
             .as_ref()
             .map(|path| path.join(".claude").join("projects"));
         let codex_sessions_root = crate::domain::imports::codex_sessions_dir();
-        let opencode_databases = home
-            .as_ref()
-            .map(|path| opencode_databases(&path.join(".local").join("share").join("opencode")))
+        let opencode_databases = crate::domain::imports::opencode_data_dir()
+            .map(|dir| opencode_databases(&dir))
             .unwrap_or_default();
         Self {
             claude_projects_root,

@@ -103,6 +103,22 @@ pub const DENIED_PROGRAMS: &[&str] = &[
     "regsvr32",
     "systemd-run",
     "script",
+    // Linux launchers, sandbox escapes, and scheduling wrappers
+    "xdg-open",
+    "gio",
+    "setsid",
+    "pkexec",
+    "busybox",
+    "flatpak-spawn",
+    "nsenter",
+    "unshare",
+    "chroot",
+    "firejail",
+    "stdbuf",
+    "ionice",
+    "taskset",
+    "chrt",
+    "flock",
 ];
 
 /// `^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`: a file name, never a path.
@@ -324,6 +340,16 @@ mod tests {
         }
         for windows in ["pythonw.exe", "wscript", "mshta.exe", "rundll32.EXE"] {
             assert!(is_denied_program(windows), "{windows}");
+        }
+        for linux in [
+            "xdg-open",
+            "pkexec",
+            "flatpak-spawn",
+            "nsenter",
+            "BusyBox",
+            "setsid",
+        ] {
+            assert!(is_denied_program(linux), "{linux}");
         }
         assert!(!is_denied_program("gitk"));
         assert!(!is_denied_program("nodemon-free"));

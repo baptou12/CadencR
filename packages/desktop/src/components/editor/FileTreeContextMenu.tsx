@@ -11,6 +11,10 @@ import {
 import { ContextMenuActionButton, type ContextMenuIcon } from "@/components/ContextMenuActionItem";
 import { FileTreeContextMenuPortal } from "@/components/file-tree/FileTreeContextMenuPortal";
 import { isDocumentFile } from "@/lib/document-file";
+import { formatCompactCombo } from "@/lib/shortcuts/format";
+
+// Mirrors the tree's Mod+Backspace handler (`useFileTreeController`).
+const MOVE_TO_TRASH_COMBO = formatCompactCombo(["mod", "backspace"]);
 
 export type FileTreeContextMenuItem = ContextMenuItem;
 export type FileTreeContextMenuOpenContext = ContextMenuOpenContext;
@@ -100,7 +104,7 @@ function buildMenuItems(
     {
       label: "Move to Trash",
       icon: Trash2Icon,
-      shortcut: "⌘⌫",
+      shortcut: MOVE_TO_TRASH_COMBO,
       destructive: true,
       onSelect: () => onAction("delete", item, context),
     },

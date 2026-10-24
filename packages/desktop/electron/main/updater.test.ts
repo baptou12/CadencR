@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
 
 const electronState = vi.hoisted(() => ({
@@ -14,6 +14,10 @@ const updaterState = vi.hoisted(() => ({
   quitAndInstall: vi.fn(),
   checkForUpdates: vi.fn(() => Promise.resolve()),
   on: vi.fn(),
+}));
+
+vi.mock("./linux-install-type", () => ({
+  detectLinuxInstallType: vi.fn(() => "deb"),
 }));
 
 vi.mock("./renderer-window-security", () => ({
@@ -88,7 +92,7 @@ describe("auto-updater IPC", () => {
     imageState.fetchChangelogImage.mockReset();
   });
 
-  it("runs install preparation before quitAndInstall", async () => {
+  it("runs install preparation before quitAndInstall for a Linux deb package", async () => {
     const { registerAutoUpdaterIpc } = await import("./updater");
     const calls: string[] = [];
 
@@ -105,8 +109,13 @@ describe("auto-updater IPC", () => {
     expect(handler).toBeDefined();
     await handler?.(trustedEvent());
 
+    const checkHandler = electronState.handlers.get("app:check-for-updates");
+    expect(checkHandler).toBeDefined();
+    await checkHandler?.(trustedEvent());
+
     expect(calls).toEqual(["prepare", "quitAndInstall"]);
     expect(updaterState.quitAndInstall).toHaveBeenCalledWith(false, true);
+    expect(updaterState.checkForUpdates).toHaveBeenCalledOnce();
   });
 
   it("rejects malformed image arguments before fetching", async () => {
@@ -134,5 +143,48 @@ describe("auto-updater IPC", () => {
 
     await expect(handler?.(trustedEvent(), source)).resolves.toEqual(response);
     expect(imageState.fetchChangelogImage).toHaveBeenCalledWith(source);
+  });
+
+  describe("a latest release without latest-linux.yml", () => {
+    const realPlatform = process.platform;
+    const missingFeed = Object.assign(new Error("Cannot find latest-linux.yml"), {
+      code: "ERR_UPDATER_CHANNEL_FILE_NOT_FOUND",
+    });
+
+    afterEach(() => {
+      Object.defineProperty(process, "platform", { value: realPlatform });
+    });
+
+    async function checkWith(platform: NodeJS.Platform, error: Error) {
+      Object.defineProperty(process, "platform", { value: platform });
+      updaterState.checkForUpdates.mockImplementationOnce(() => Promise.reject(error));
+      const { registerAutoUpdaterIpc } = await import("./updater");
+      const window = mainWindow();
+      registerAutoUpdaterIpc({ getMainWindow: () => window });
+      await electronState.handlers.get("app:check-for-updates")?.(trustedEvent());
+      await vi.waitFor(() => expect(window.webContents.send).toHaveBeenCalledOnce());
+      return vi.mocked(window.webContents.send).mock.calls[0];
+    }
+
+    it("means no update yet on Linux, where the alpha packages are attached by hand", async () => {
+      expect(await checkWith("linux", missingFeed)).toEqual([
+        "update:not-available",
+        { version: "0.1.0" },
+      ]);
+    });
+
+    it("stays an error on macOS, whose feed every release carries", async () => {
+      expect(await checkWith("darwin", missingFeed)).toEqual([
+        "update:error",
+        { message: "Cannot find latest-linux.yml" },
+      ]);
+    });
+
+    it("leaves other Linux update failures as errors", async () => {
+      expect(await checkWith("linux", new Error("network down"))).toEqual([
+        "update:error",
+        { message: "network down" },
+      ]);
+    });
   });
 });

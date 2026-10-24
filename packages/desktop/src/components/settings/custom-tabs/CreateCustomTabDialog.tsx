@@ -217,8 +217,8 @@ function CreatedSummary(): React.JSX.Element {
       <p className="font-medium text-foreground">Cadencr creates:</p>
       <ul className="mt-1.5 list-disc space-y-1 pl-4">
         <li>
-          a starter tab (Vite, React and the Cadencr tab kit) in its own Git folder under{" "}
-          <span className="font-mono">~/.cadencr/plugins/tabs</span>;
+          a starter tab (Vite, React and the Cadencr tab kit) in its own Git folder under the{" "}
+          <span className="font-mono">plugins/tabs</span> folder of Cadencr&apos;s app data;
         </li>
         <li>a project for it with an agent conversation, ready to build the tab;</li>
         <li>the tab, switched on in that project so you see it change as it is built.</li>

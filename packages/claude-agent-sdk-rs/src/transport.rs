@@ -58,11 +58,17 @@ pub fn claude_discovery_spec() -> DiscoverySpec {
             ".volta/bin",
             ".fnm/aliases/default/bin",
             ".asdf/shims",
+            ".cargo/bin",
         ]
         .into_iter()
         .map(str::to_string)
         .collect(),
-        well_known_absolute: vec!["/opt/homebrew/bin".into(), "/usr/local/bin".into()],
+        well_known_absolute: vec![
+            "/opt/homebrew/bin".into(),
+            "/usr/local/bin".into(),
+            "/usr/bin".into(),
+            "/snap/bin".into(),
+        ],
         version_args: vec!["--version".into()],
         version_must_contain: None,
     }
@@ -172,6 +178,10 @@ mod tests {
             .well_known_absolute
             .iter()
             .any(|path| path == "/opt/homebrew/bin"));
+        // Linux distro packages and snaps install outside the macOS dirs.
+        for dir in ["/usr/bin", "/snap/bin"] {
+            assert!(spec.well_known_absolute.iter().any(|path| path == dir));
+        }
     }
 
     #[tokio::test]

@@ -5,6 +5,9 @@ import { Input } from "@/components/ui/input";
 import { useCustomTabShortcutGroups } from "@/components/plugin-tabs/useCustomTabShortcutGroups";
 import { comboSearchText, formatCombo, PLATFORM_IS_MAC } from "@/lib/shortcuts/format";
 import { SHORTCUTS_BY_SCOPE, type ShortcutKey } from "@/lib/shortcuts/registry";
+import { getRegistryShortcut } from "@/lib/shortcuts/resolve";
+
+const COMMAND_PALETTE_COMBO = formatCombo(getRegistryShortcut("command-palette").keys).join(" ");
 
 interface KeyboardShortcutsModalProps {
   open: boolean;
@@ -79,7 +82,7 @@ export function KeyboardShortcutsModal({
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search shortcuts — try “zoom”, “git”, or “⌘ k”…"
+              placeholder={`Search shortcuts — try “zoom”, “git”, or “${COMMAND_PALETTE_COMBO}”…`}
               className="h-8 pl-8 pr-32 text-sm"
               aria-label="Search shortcuts"
             />

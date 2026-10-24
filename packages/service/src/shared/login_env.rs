@@ -1,7 +1,7 @@
 //! Hydrate the service process env from the user's login shell so GUI launches
 //! get the same `PATH`, signing, and SSH variables the user sees in Terminal.
 //! All later service-spawned Git and agent subprocesses inherit this env.
-//! Scope: macOS-only by default, best-effort, and bounded by a timeout.
+//! Scope: macOS/Linux by default, best-effort, and bounded by a timeout.
 
 use std::collections::HashSet;
 use std::process::Stdio;
@@ -93,29 +93,21 @@ pub async fn hydrate_from_login_shell() -> usize {
         return 0;
     }
 
-    // Linux/Windows GUI launchers don't reproduce the macOS launchd vs
-    // login-shell split nearly as often. Restrict to macOS for now; if we
-    // ever ship a Linux desktop build with a similar bug we can lift this.
-    if !cfg!(target_os = "macos") {
+    // macOS launchd and Linux desktop launchers often omit the user's
+    // interactive shell PATH, which hides agent CLIs installed in user dirs.
+    if !cfg!(any(target_os = "macos", target_os = "linux")) {
         return 0;
     }
 
-    let shell = match dscl_login_shell().await {
-        Some(s) => s,
-        None => match std::env::var("SHELL") {
-            Ok(s) if !s.is_empty() => s,
-            _ => {
-                tracing::warn!("$SHELL not set and dscl lookup failed; falling back to /bin/zsh for env hydration");
-                "/bin/zsh".to_string()
-            }
-        },
-    };
+    let shell = crate::shared::login_shell::resolve_login_shell().await;
 
     let raw = match capture_login_shell_env(&shell).await {
         Ok(s) => s,
         Err(e) => {
-            tracing::warn!("login-shell env hydration failed: {e}; continuing with launchd env");
-            return crate::shared::ssh_env::hydrate_macos_ssh_auth_sock().await;
+            tracing::warn!(
+                "login-shell env hydration failed: {e}; continuing with the inherited env"
+            );
+            return crate::shared::ssh_env::hydrate_ssh_auth_sock().await;
         }
     };
 
@@ -129,35 +121,7 @@ pub async fn hydrate_from_login_shell() -> usize {
     parsed.push(("SHELL".to_string(), shell));
 
     let written = apply_env(parsed);
-    written + crate::shared::ssh_env::hydrate_macos_ssh_auth_sock().await
-}
-
-/// Resolve the user's configured login shell from Directory Services — the
-/// source of truth macOS itself uses for Terminal.app. Independent of
-/// whatever `$SHELL` launchd happened to hand this process, which is why
-/// `capture_login_shell_env` alone can't fix a wrong value: it launches
-/// `$SHELL -ilc '...'`, which just re-runs the same wrong shell.
-async fn dscl_login_shell() -> Option<String> {
-    let user = std::env::var("USER").ok().filter(|s| !s.is_empty())?;
-    let output = tokio::process::Command::new("dscl")
-        .args([".", "-read", &format!("/Users/{user}"), "UserShell"])
-        .output()
-        .await
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    parse_dscl_usershell_output(&String::from_utf8_lossy(&output.stdout))
-}
-
-/// Parses `dscl`'s `UserShell: /opt/homebrew/bin/fish\n` output.
-fn parse_dscl_usershell_output(text: &str) -> Option<String> {
-    let shell = text.strip_prefix("UserShell:")?.trim().to_string();
-    if shell.is_empty() {
-        None
-    } else {
-        Some(shell)
-    }
+    written + crate::shared::ssh_env::hydrate_ssh_auth_sock().await
 }
 
 /// Spawn `$SHELL -ilc '<sentinel>; env -0'`: `-0` preserves multiline values,
@@ -313,21 +277,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_dscl_usershell_output() {
-        assert_eq!(
-            parse_dscl_usershell_output("UserShell: /opt/homebrew/bin/fish\n"),
-            Some("/opt/homebrew/bin/fish".to_string())
-        );
-    }
-
-    #[test]
-    fn rejects_malformed_or_empty_dscl_output() {
-        assert_eq!(parse_dscl_usershell_output(""), None);
-        assert_eq!(parse_dscl_usershell_output("no such record"), None);
-        assert_eq!(parse_dscl_usershell_output("UserShell: \n"), None);
-    }
-
-    #[test]
     fn blocks_dyld_and_ldso_injection_vectors() {
         // Defense-in-depth: hardened-runtime macOS strips these at exec,
         // but dev / unsigned builds would otherwise inherit a user's shell
@@ -416,18 +365,24 @@ mod tests {
         let blocked = "CADENCR_LOGIN_ENV_TEST_BLOCKED_42";
 
         let prev_path = std::env::var(always).ok();
-        std::env::set_var(always, "/launchd/only");
+        let launch_path = prev_path
+            .clone()
+            .unwrap_or_else(|| "/usr/bin:/bin".to_string());
+        let login_path = format!("/bin:{launch_path}");
+        // PATH is process-global, so keep both fixture values executable-safe
+        // for unrelated tests that may spawn a child concurrently.
+        std::env::set_var(always, &launch_path);
         std::env::set_var(fill_only, "preexisting");
         std::env::remove_var(blocked);
 
         let pairs = vec![
-            (always.into(), "/from/login".into()),
+            (always.into(), login_path.clone()),
             (fill_only.into(), "from-login".into()),
             (blocked.into(), "should-not-appear".into()),
         ];
         apply_env(pairs);
 
-        assert_eq!(std::env::var(always).unwrap(), "/from/login");
+        assert_eq!(std::env::var(always).unwrap(), login_path);
         // Pre-existing non-override key keeps its value.
         assert_eq!(std::env::var(fill_only).unwrap(), "preexisting");
         // Blocked key never written.
