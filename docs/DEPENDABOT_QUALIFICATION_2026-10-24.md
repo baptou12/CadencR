@@ -1,5 +1,8 @@
 # Qualification des PR Dependabot — 24 octobre 2026
 
+> L'inventaire ci-dessous décrit l'étape 1. Le traitement ultérieur des huit PR
+> faibles et ses validations sont consignés dans la section finale.
+
 ## Périmètre et résultat
 
 - **13 PR Dependabot ouvertes : 8 à faible charge, 3 à charge moyenne, 2 à charge élevée.**
@@ -196,3 +199,48 @@ La correction Zod a une priorité de sécurité : elle mérite d'être traitée 
 | #298 | `7430866b65be` | [En cours](https://github.com/merkr-software/CadencR/actions/runs/40072072979) | [CodeQL en cours](https://github.com/merkr-software/CadencR/actions/runs/40072072941), [audit rouge](https://github.com/merkr-software/CadencR/actions/runs/40072072921) |
 
 GitHub confirme les conflits de #192 et #202. #201/#203/#204/#270/#271/#272/#273/#274/#295/#297 sont fusionnables textuellement mais en retard (`behind`). #298 est fusionnable textuellement et bloquée par les checks (`blocked`). Les cinq PR Actions ont été relues après le recalcul GitHub : leur état final observé est bien `behind`, pas un conflit.
+
+## Étape 2 — lot des huit PR faibles
+
+Les mises à jour `#201`, `#202`, `#203`, `#204`, `#270`, `#272`, `#273` et `#297`
+sont regroupées dans la [PR #300](https://github.com/merkr-software/CadencR/pull/300).
+Le correctif de sécurité indépendant `9907fece` arrivé sur `main` pendant ce
+travail a été intégré sans conflit. Il corrige notamment le Zod du workspace et
+l'audit racine qui étaient encore problématiques lors de l'inventaire initial.
+
+### Changements réalisés
+
+- Résolution Cargo ciblée : Anyhow 1.0.104, Libc 0.2.189, Ignore 0.4.33,
+  Regex Automata 0.4.18 et les neuf crates Futures 0.3.34 ; Futures 0.1.31 reste
+  présent pour la compatibilité existante. Cargo a également réaffecté neuf
+  liens transitifs Windows à des versions compatibles déjà présentes dans le
+  lockfile. Aucun manifeste Rust ni code applicatif modifié.
+- `setup-node` 7.1.0 sur les 15 usages actuels, avec les commentaires actualisés.
+- CodeQL `init` et `analyze` 4.39.0 au même SHA, et groupe Dependabot commun.
+- Zod 4.6.6 pour l'exemple Port Monitor, construit hors workspace racine.
+
+### Validation locale
+
+| Contrôle | Résultat |
+| --- | --- |
+| Six contrôles pre-commit du dépôt | Réussis : scripts, release, format Rust, Clippy et tests Rust, cohérence AGENTS.md |
+| Tests Rust workspace | 4 741 réussites, 3 ignorés, aucun échec |
+| Format, lint, TypeScript, Knip web | 20 tâches réussies ; revalidation après intégration de `9907fece` |
+| Scripts racine | 340 réussites, 8 ignorés, aucun échec |
+| Port Monitor UI | TypeScript et build de production réussis avec Zod 4.6.6 |
+| Port Monitor backend | 19 tests réussis, dont ports et arrêt d'un processus de test |
+| Port Monitor UI dans le navigateur | Réponse valide, erreur de schéma et récupération après rafraîchissement ; hôte de test contrôlé ; aucune erreur console |
+| API réelle de recherche/arbre | `.gitignore` imbriqués respectés ; fichiers ignorés de bordure grisés ; dossiers ignorés non parcourus ; fichiers cachés et `.env` accessibles |
+| Terminal réel | Création, redimensionnement, écriture, sortie WebSocket et sortie du processus avec code 0 |
+| Démarrage frontend/service | Réussi avec une base QA séparée ; accueil visible et connexion WebSocket active |
+
+La base de développement existante a refusé le démarrage avec
+`database disk image is malformed`. Elle a été conservée ; les essais ont utilisé
+une nouvelle base isolée, sans remplacement ni suppression d'une base existante.
+Le navigateur signale aussi l'avertissement CSP existant sur `frame-ancestors`
+dans une balise meta. Aucun changement de CSP ne fait partie du lot.
+
+Les contrôles GitHub sur la tête finale et l'état de fusion sont suivis dans la
+PR #300. Les essais natifs locaux couvrent macOS arm64 ; la CI apporte la
+couverture Linux. Les archives SDK reconstruites pour la QA ne font pas partie
+du commit : seuls leurs manifestes embarqués avaient changé.
