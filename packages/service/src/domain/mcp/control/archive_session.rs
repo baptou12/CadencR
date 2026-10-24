@@ -94,6 +94,9 @@ async fn archive_and_clean(
         source.feature_id,
     )
     .await?;
+    state
+        .plugin_tab_presence
+        .release_features(&archived.archived_ids);
     for feature_id in &archived.archived_ids {
         state
             .feature_events_tx

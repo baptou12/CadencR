@@ -174,7 +174,7 @@ fn validate_new_project(name: &str, path: &str) -> Result<(String, String), AppE
     ))
 }
 
-pub async fn delete_project(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
+pub async fn delete_project(pool: &SqlitePool, id: i64) -> Result<Vec<i64>, AppError> {
     repository::delete_project(pool, id).await
 }
 

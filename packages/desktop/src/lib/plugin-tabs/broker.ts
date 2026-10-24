@@ -163,6 +163,11 @@ export class PluginTabBroker {
     this.emit("visibility.changed", { visible });
   }
 
+  /** One of the tab's active shortcuts was pressed while it had focus. */
+  pressShortcut(id: string): void {
+    if (this.runtime.plugin.shortcuts.includes(id)) this.emit("shortcut", { id });
+  }
+
   /** The grant was revoked server-side (hot reload): mint a fresh one on next use. */
   resetGrant(): void {
     this.runtime.grant.invalidate();
@@ -252,6 +257,7 @@ export class PluginTabBroker {
       capabilities: await this.capabilities(),
       // A page recreated while hidden (a rebuild) gets no visibility change.
       visible: this.visible,
+      shortcuts: [...this.runtime.plugin.shortcuts],
     };
     return { result };
   }

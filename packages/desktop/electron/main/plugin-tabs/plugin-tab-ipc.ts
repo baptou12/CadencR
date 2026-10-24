@@ -10,6 +10,7 @@ import { createPluginTabGuest } from "./plugin-tab-guest";
 import { GUEST_THEME_CSS_CHANNEL, parseInstanceId, parsePluginId } from "./plugin-tab-ids";
 import { PluginTabManager } from "./plugin-tab-manager";
 import { PluginTabSessions } from "./plugin-tab-session";
+import { parseAppShortcutBindings, parseTabShortcuts } from "./plugin-tab-shortcuts";
 
 // Neutral fallbacks until the renderer pushes its first theme.
 const DARK_BACKGROUND = "#0f1115";
@@ -97,6 +98,17 @@ function registerRendererIpc(
     assertTrustedSender(event, getMainWindow);
     manager.setTheme(themeSchema.parse(theme));
   });
+  ipcMain.handle("plugin-tab:set-app-shortcuts", (event, bindings: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    manager.setAppShortcuts(parseAppShortcutBindings(bindings));
+  });
+  ipcMain.handle(
+    "plugin-tab:set-tab-shortcuts",
+    (event, instanceId: unknown, shortcuts: unknown) => {
+      assertTrustedSender(event, getMainWindow);
+      manager.setTabShortcuts(parseInstanceId(instanceId), parseTabShortcuts(shortcuts));
+    },
+  );
 }
 
 /**

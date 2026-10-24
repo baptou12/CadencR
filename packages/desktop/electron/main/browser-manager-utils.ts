@@ -88,17 +88,11 @@ export function reclaimFocusForShortcut(
 
 /**
  * Hand the renderer a chord a focused guest view swallowed (the renderer
- * listens on `browser:shortcut`). `alwaysReclaimFocus` is for guests whose every
- * relayed chord switches away from them (custom tabs); a Browser guest reclaims
- * focus only for chords that land on renderer chrome.
+ * listens on `browser:shortcut`), reclaiming focus only for chords that land
+ * on renderer chrome.
  */
-export function relayGuestShortcut(
-  win: BrowserWindow | null,
-  shortcut: BrowserShortcut,
-  options: { alwaysReclaimFocus?: boolean } = {},
-): void {
-  if (options.alwaysReclaimFocus) win?.webContents.focus();
-  else reclaimFocusForShortcut(win, shortcut);
+export function relayGuestShortcut(win: BrowserWindow | null, shortcut: BrowserShortcut): void {
+  reclaimFocusForShortcut(win, shortcut);
   sendToWindow(win, "browser:shortcut", shortcut);
 }
 

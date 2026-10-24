@@ -2,6 +2,9 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use std::str::FromStr;
 
+mod permissions;
+use permissions::prepare_database;
+
 #[derive(Debug)]
 pub enum QuickCheckError {
     Query(sqlx::Error),
@@ -48,43 +51,10 @@ fn validate_quick_check(rows: Vec<String>) -> Result<(), QuickCheckError> {
     }
 }
 
-/// Secure the database in place before SQLite opens it. An existing database
-/// is only opened and chmodded, never truncated, replaced, or deleted. SQLite
-/// derives new WAL/SHM permissions from the main database's 0600 mode.
-fn prepare_database(db_path: &str, create: bool) -> anyhow::Result<()> {
-    if db_path == ":memory:" {
-        return Ok(());
-    }
-    let path = std::path::Path::new(db_path);
-    crate::remote::secure_fs::secure_app_home(path)?;
-    if let Ok(data_dir) = crate::shared::app_paths::data_dir() {
-        let database_dir = data_dir.join("database");
-        if path.parent() == Some(database_dir.as_path()) {
-            crate::remote::secure_fs::create_dir_owner_only(&database_dir)?;
-        }
-    }
-    let fs = crate::remote::secure_fs::create_missing_dirs;
-    if let Some(parent) = path.parent() {
-        fs(parent)?;
-    }
-    crate::remote::secure_fs::open_owner_only(path, create)?;
-    for suffix in ["-wal", "-shm", "-journal"] {
-        let mut sibling = path.as_os_str().to_owned();
-        sibling.push(suffix);
-        let sibling = std::path::PathBuf::from(sibling);
-        match std::fs::symlink_metadata(&sibling) {
-            Ok(_) => crate::remote::secure_fs::ensure_owner_only(&sibling)?,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
-    }
-    Ok(())
-}
-
 /// Create a read-only SQLite pool (max 4 connections, query_only pragma).
 pub async fn create_read_pool(db_path: &str) -> Result<SqlitePool, sqlx::Error> {
     prepare_database(db_path, false)
-        .map_err(|error| sqlx::Error::Io(std::io::Error::other(error.to_string())))?;
+        .map_err(|error| sqlx::Error::Io(std::io::Error::other(format!("{error:#}"))))?;
     let options = SqliteConnectOptions::from_str(&format!("sqlite:{db_path}"))?
         .journal_mode(SqliteJournalMode::Wal)
         .busy_timeout(std::time::Duration::from_millis(5000))
@@ -101,12 +71,14 @@ pub async fn create_read_pool(db_path: &str) -> Result<SqlitePool, sqlx::Error> 
 /// Create a read-write SQLite pool (max 1 connection to serialize writes).
 pub async fn create_write_pool(db_path: &str) -> Result<SqlitePool, sqlx::Error> {
     prepare_database(db_path, true)
-        .map_err(|error| sqlx::Error::Io(std::io::Error::other(error.to_string())))?;
+        .map_err(|error| sqlx::Error::Io(std::io::Error::other(format!("{error:#}"))))?;
     let options = SqliteConnectOptions::from_str(&format!("sqlite:{db_path}"))?
         .journal_mode(SqliteJournalMode::Wal)
         .busy_timeout(std::time::Duration::from_millis(5000))
         .pragma("journal_size_limit", "67108864")
-        .create_if_missing(true);
+        // Preparation creates missing files exclusively with private permissions.
+        // If the path disappears afterward, fail instead of recreating it here.
+        .create_if_missing(false);
 
     SqlitePoolOptions::new()
         .max_connections(1)
@@ -118,45 +90,23 @@ pub async fn create_write_pool(db_path: &str) -> Result<SqlitePool, sqlx::Error>
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
-    #[test]
-    fn database_permissions_preserve_data_and_custom_parent_permissions() {
-        use std::os::unix::fs::{MetadataExt, PermissionsExt};
-        let dir = tempfile::tempdir().unwrap().keep();
-        std::fs::set_permissions(dir.as_path(), std::fs::Permissions::from_mode(0o755)).unwrap();
-        let path = dir.as_path().join("private.db");
-        for suffix in ["", "-wal", "-shm", "-journal"] {
-            let file = dir.as_path().join(format!("private.db{suffix}"));
-            std::fs::write(&file, b"preserved").unwrap();
-            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
-        }
-        let inode = std::fs::metadata(&path).unwrap().ino();
-        prepare_database(path.to_str().unwrap(), true).unwrap();
-        assert_eq!(std::fs::metadata(&path).unwrap().ino(), inode);
-        for suffix in ["", "-wal", "-shm", "-journal"] {
-            let file = dir.as_path().join(format!("private.db{suffix}"));
-            assert_eq!(std::fs::read(&file).unwrap(), b"preserved");
-            assert_eq!(
-                std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
-                0o600
-            );
-        }
-        assert_eq!(
-            std::fs::metadata(dir.as_path())
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o777,
-            0o755
-        );
-    }
-
     #[tokio::test]
     async fn read_pool_does_not_create_missing_database() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("missing.db");
         assert!(create_read_pool(path.to_str().unwrap()).await.is_err());
         assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn write_pool_still_supports_in_memory_databases() {
+        let pool = create_write_pool(":memory:").await.unwrap();
+        sqlx::query("CREATE TABLE entries (value TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        run_quick_check(&pool).await.unwrap();
+        pool.close().await;
     }
 
     #[cfg(unix)]

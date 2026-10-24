@@ -60,7 +60,8 @@ const TOKEN_TO_ENGINE: Record<string, string> = {
 
 function tokenToEngine(token: ShortcutKey): string {
   if (token in TOKEN_TO_ENGINE) return TOKEN_TO_ENGINE[token];
-  if (/^[a-z]$/i.test(token)) return token.toUpperCase();
+  // Letters, and function keys beyond the named ones (custom tabs may declare F1–F12).
+  if (/^[a-z]$/i.test(token) || /^f\d{1,2}$/.test(token)) return token.toUpperCase();
   return token;
 }
 

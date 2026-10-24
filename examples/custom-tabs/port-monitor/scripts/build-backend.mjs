@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 // `npm run build:backend`: builds the native backend (the Rust crate in
-// backend/) in release mode and copies it to bin/<platform>/port-monitor, the
-// path tab.json names for that platform.
+// backend/) in release mode and copies it to the path tab.json's
+// `backend.binary` names for its platform.
 //
 // The platform is the one the binary is built for — the Rust host, or the
 // `--target <triple>` passed through (`npm run build:backend -- --target
 // x86_64-apple-darwin`, after `rustup target add x86_64-apple-darwin`).
+// `--locked` is passed on to cargo.
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const BINARY = "port-monitor";
 
 /** Rust target triple → `backend.binary` key (docs/TAB_BACKEND_PROTOCOL.md §2.1). */
 const PLATFORMS = {
@@ -46,8 +46,10 @@ function run(command, args, options = {}) {
   return result.stdout;
 }
 
-/** `--target <triple>` from the arguments, else the Rust host triple. */
+/** `--target <triple>` or `--target=<triple>` from the arguments, else the Rust host triple. */
 function targetTriple(args) {
+  const inline = args.find((arg) => arg.startsWith("--target="));
+  if (inline) return { triple: inline.slice("--target=".length), explicit: true };
   const index = args.indexOf("--target");
   if (index !== -1) {
     if (!args[index + 1]) fail("--target needs a triple");
@@ -58,38 +60,44 @@ function targetTriple(args) {
   return { triple: host, explicit: false };
 }
 
-/** The executable cargo reports building, from its JSON messages. */
+/** The `bin` executable cargo reports building, from its JSON messages. */
 function builtExecutable(messages) {
   for (const line of messages.split("\n")) {
     if (!line.startsWith("{")) continue;
     const message = JSON.parse(line);
     if (
       message.reason === "compiler-artifact" &&
-      message.target?.name === BINARY &&
+      message.target?.kind?.includes("bin") &&
       message.executable
     ) {
       return message.executable;
     }
   }
-  return fail(`cargo did not report building ${BINARY}`);
+  return fail("cargo did not report building a binary");
 }
 
-const { triple, explicit } = targetTriple(process.argv.slice(2));
+const args = process.argv.slice(2);
+const { triple, explicit } = targetTriple(args);
 const platform = PLATFORMS[triple];
 if (!platform)
   fail(
     `${triple} is not a platform custom tab backends run on (${Object.keys(PLATFORMS).join(", ")})`,
   );
+const declared = JSON.parse(readFileSync(join(root, "tab.json"), "utf8")).backend?.binary?.[
+  platform
+];
+if (typeof declared !== "string") fail(`tab.json declares no backend.binary.${platform}`);
 
 const cargoArgs = ["build", "--release", "--manifest-path", join(root, "backend", "Cargo.toml")];
 if (explicit) cargoArgs.push("--target", triple);
+if (args.includes("--locked")) cargoArgs.push("--locked");
 cargoArgs.push("--message-format=json-render-diagnostics");
 // stdout carries cargo's JSON messages; its progress and diagnostics go to stderr.
 const executable = builtExecutable(
   run("cargo", cargoArgs, { stdio: ["inherit", "pipe", "inherit"] }),
 );
 
-const destination = join(root, "bin", platform, BINARY);
+const destination = join(root, declared);
 mkdirSync(dirname(destination), { recursive: true });
 // A new file, never the old one overwritten in place: macOS caches the code
 // signature of an executable it has run, and kills (SIGKILL) a rewritten

@@ -62,6 +62,26 @@ describe("PluginTabView", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
+  it("sets its active shortcuts — not those Cadencr takes — and ignores their presses' phase", async () => {
+    renderView({
+      shortcuts: [
+        { id: "palette", keys: ["mod", "k"], description: "Taken by Cadencr" },
+        { id: "refresh", keys: ["mod", "alt", "shift", "r"], description: "Refresh" },
+      ],
+    });
+    await waitFor(() =>
+      expect(mock.bridge.setTabShortcuts).toHaveBeenCalledWith("7:plugin:graph", [
+        { id: "refresh", keys: ["mod", "alt", "shift", "r"] },
+      ]),
+    );
+    act(() => mock.emit({ instanceId: "7:plugin:graph", type: "loaded" }));
+    act(() => mock.emit({ instanceId: "7:plugin:graph", type: "shortcut", detail: "refresh" }));
+    // Still shown: a shortcut is not a page lifecycle event.
+    await waitFor(() =>
+      expect(mock.bridge.setVisible).toHaveBeenLastCalledWith("7:plugin:graph", true),
+    );
+  });
+
   it("closes the guest on unmount", async () => {
     const view = renderView();
     await waitFor(() => expect(mock.bridge.open).toHaveBeenCalled());

@@ -99,7 +99,7 @@ export function productionDbPath(): string {
   const dbPath = resolveDatabasePath();
   const dir = path.dirname(dbPath);
   try {
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   } catch (error) {
     const cause = error instanceof Error ? error.message : String(error);
     throw new Error(`Cadencr can't initialize its data directory at ${dir}: ${cause}`);

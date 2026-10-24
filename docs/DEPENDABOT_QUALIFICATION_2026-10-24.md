@@ -244,3 +244,59 @@ Les contrôles GitHub sur la tête finale et l'état de fusion sont suivis dans 
 PR #300. Les essais natifs locaux couvrent macOS arm64 ; la CI apporte la
 couverture Linux. Les archives SDK reconstruites pour la QA ne font pas partie
 du commit : seuls leurs manifestes embarqués avaient changé.
+
+## Deuxième lot — faibles et moyennes
+
+Base : `7f2e46b62`, après fusion du premier lot et clôture de ses huit PR.
+
+| PR | Dépendance | Version intégrée | Revue du changelog et impact |
+| --- | --- | --- | --- |
+| #303 | Serde, Serde Core, Serde Derive | 1.0.229 | [Migration du derive vers Syn 3](https://github.com/serde-rs/serde/releases/tag/v1.0.229) ; aucun changement de sérialisation annoncé. |
+| #305 | CodeQL init + analyze | 4.39.1 | [Bundle 2.27.3](https://github.com/github/codeql-action/releases/tag/v4.39.1) ; les deux actions restent au même SHA. |
+| #306 | Rust Cache | 2.9.3 | [Correction du nettoyage par timestamp et du niveau de log rustup](https://github.com/Swatinem/rust-cache/releases/tag/v2.9.3). |
+| #302 | nvim-rs | 0.9.2 | [Transport IPC et bindings actualisés](https://github.com/KillTheMule/nvim-rs/blob/v0.9.2/CHANGELOG.md) ; le [diff 0.9.1→0.9.2](https://github.com/KillTheMule/nvim-rs/compare/v0.9.1...v0.9.2) change uniquement la version. |
+| #274 | Upload Artifact | 7.0.2 | [Node 24, ESM et upload direct optionnel](https://github.com/actions/upload-artifact/releases/tag/v7.0.0). Le ZIP par défaut conserve les noms et chemins attendus. |
+| #271 | Download Artifact | 8.0.2 | [Vérification du digest bloquante par défaut](https://github.com/actions/download-artifact/releases/tag/v8.0.0), conservée. Le téléchargement des archives reste extrait aux emplacements existants. |
+
+### Adaptations
+
+- Résolution Cargo ciblée ; suppression des sept dépendances transitives
+  devenues inutiles avec `parity-tokio-ipc`. Cargo réaffecte aussi neuf liens
+  Windows à `windows-sys 0.61.2`, déjà présent dans le lockfile.
+- Les API Neovim utilisées (`new_path`, `exec_lua`, fenêtres et onglets)
+  restent compatibles ; aucune adaptation du code applicatif nécessaire.
+- Sept uploads et trois downloads mis à jour dans les workflows existants.
+  Leurs runners sont hébergés par GitHub ; aucun runner privé à migrer.
+- Workflow réutilisable `artifact-compatibility.yml`, appelé par la CI et
+  inclus dans `Pre-commit checks` : transfert réel entre deux runners pour
+  une archive npm, les fichiers CLI et un dossier de plugin. Il vérifie
+  chemins, octets, SHA-256, exclusions des fichiers cachés et mode exécutable
+  dans l'archive tar. Rétention d'un jour ; aucune publication de release.
+
+### QA dans l'app de dev
+
+`pnpm dev`, service compilé avec les nouvelles dépendances, Chrome à
+1440×1000 et Neovim 0.11.5. Base et configuration Neovim isolées ; la base de
+dev existante refuse toujours de démarrer avec `database disk image is malformed`.
+
+| Scénario | Résultat |
+| --- | --- |
+| Activation Full Neovim, ouverture de `sample.lua` depuis l'arbre | Réussi ; coloration Lua et rendu terminal visibles |
+| Saisie au clavier et `:write` | Réussi ; contenu sauvegardé vérifié sur disque |
+| Chemin `a \| b.txt`, ligne 2, colonne 3 | Réussi ; position relue dans Neovim, deux onglets sans duplication |
+| Rechargement de l'interface | Réussi ; même processus, buffers et curseur conservés |
+| Arrêt puis redémarrage | Réussi ; nouveau processus, fichier sauvegardé rouvert depuis l'arbre |
+| Fichier absent | Réussi ; HTTP 404 et code `NEOVIM_FILE_NOT_FOUND` |
+
+Les 29 tests Rust Neovim passent, dont les attentes d'initialisation et les
+callbacks de plugins. Les 20 contrôles web passent (cache Turbo valide).
+Les scripts racine passent : 342 réussites, 8 ignorés. Les scripts de release
+passent également. Les cinq contrôles pre-commit passent, dont format Rust,
+Clippy et les tests du workspace : 4 741 réussites, 3 ignorés, aucun échec.
+La CI GitHub est suivie dans la PR de ce lot.
+
+La console montre les avertissements du mode navigateur de dev : CSP meta,
+configuration Electron indisponible et sockets fermés pendant le remontage.
+Les connexions se rétablissent et aucun échec fonctionnel Neovim n'est observé.
+Les serveurs et l'onglet démarrés pour cette QA ont été arrêtés ; les bases
+sont conservées. Preuves locales : `/tmp/cadencr-batch2-qa/`.

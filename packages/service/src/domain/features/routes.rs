@@ -8,11 +8,8 @@ use crate::app_state::AppState;
 use crate::domain::feature_events::FeatureEventAction;
 use crate::domain::features::models::*;
 use crate::domain::features::service;
-use crate::domain::features::worktree_settings::{
-    normalize_feature_setting_value, validate_reuse_branch_for_project,
-};
+use crate::domain::features::worktree_settings::validate_reuse_branch_for_project;
 use crate::domain::features::worktree_validation::validate_worktree_mode;
-use crate::domain::settings_allowlist;
 use crate::domain::terminal::activity::foreground_command_counts_by_feature;
 use crate::domain::workflow::ws_sender::{
     send_feature_renamed_envelope, send_feature_updated_envelope,
@@ -144,6 +141,8 @@ pub async fn delete_feature_handler(
         debug!(%error, feature_id = id, "no neovim to stop before feature deletion");
     }
     service::delete_feature(&state.write_pool, &state.read_pool, id).await?;
+    // Its custom tabs' backends stop now, not when their leases lapse.
+    state.plugin_tab_presence.release_features(&[id]);
     state
         .session_status_tx
         .forget_deleted_sessions(&state.write_pool)
@@ -187,6 +186,9 @@ pub async fn update_feature_status_handler(
     Json(body): Json<UpdateStatusRequest>,
 ) -> Result<Json<SuccessResponse>, AppError> {
     service::update_status(&state.write_pool, id, body.status).await?;
+    if matches!(body.status, FeatureStatus::Archived) {
+        state.plugin_tab_presence.release_features(&[id]);
+    }
     // Archive/unarchive changes which features the sidebar shows.
     state
         .feature_events_tx
@@ -247,96 +249,6 @@ async fn broadcast_label_update(state: &AppState, feature_id: i64) {
     }
 }
 
-#[utoipa::path(get, path = "/api/features/{id}/settings",
-    params(("id" = i64, Path,)),
-    responses((status = 200, body = Vec<FeatureSetting>)))]
-pub async fn get_feature_settings_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<Json<Vec<FeatureSetting>>, AppError> {
-    Ok(Json(
-        service::get_feature_settings(&state.read_pool, id).await?,
-    ))
-}
-
-#[utoipa::path(put, path = "/api/features/{id}/settings",
-    params(("id" = i64, Path,)),
-    request_body = SetFeatureSettingRequest,
-    responses((status = 200, body = SuccessResponse)))]
-pub async fn set_feature_setting_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-    Json(body): Json<SetFeatureSettingRequest>,
-) -> Result<Json<SuccessResponse>, AppError> {
-    if !settings_allowlist::is_feature_key_allowed(&body.key) {
-        return Err(AppError::BadRequest(format!(
-            "unknown feature settings key: {}",
-            body.key
-        )));
-    }
-    let value =
-        normalize_feature_setting_value(&state.read_pool, id, &body.key, &body.value).await?;
-    service::set_feature_setting(&state.write_pool, id, &body.key, &value).await?;
-    Ok(Json(SuccessResponse { success: true }))
-}
-
-#[utoipa::path(get, path = "/api/features/{id}/model-settings",
-    params(("id" = i64, Path,)),
-    responses((status = 200, body = FeatureModelSettings)))]
-pub async fn get_feature_model_settings_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<Json<FeatureModelSettings>, AppError> {
-    Ok(Json(
-        service::get_feature_model_settings(&state.read_pool, id).await?,
-    ))
-}
-
-#[utoipa::path(put, path = "/api/features/{id}/model-settings",
-    params(("id" = i64, Path,)),
-    request_body = SetFeatureModelSettingRequest,
-    responses((status = 200, body = SuccessResponse)))]
-pub async fn set_feature_model_setting_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-    Json(body): Json<SetFeatureModelSettingRequest>,
-) -> Result<Json<SuccessResponse>, AppError> {
-    service::set_feature_model_setting(&state.write_pool, id, &body.model_type, &body.model)
-        .await?;
-    Ok(Json(SuccessResponse { success: true }))
-}
-
-#[utoipa::path(get, path = "/api/features/{id}/provider-settings",
-    params(("id" = i64, Path,)),
-    responses((status = 200, body = FeatureProviderSettings)))]
-pub async fn get_feature_provider_settings_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<Json<FeatureProviderSettings>, AppError> {
-    Ok(Json(
-        service::get_feature_provider_settings(&state.read_pool, id).await?,
-    ))
-}
-
-#[utoipa::path(put, path = "/api/features/{id}/provider-settings",
-    params(("id" = i64, Path,)),
-    request_body = SetFeatureProviderSettingRequest,
-    responses((status = 200, body = SuccessResponse)))]
-pub async fn set_feature_provider_setting_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-    Json(body): Json<SetFeatureProviderSettingRequest>,
-) -> Result<Json<SuccessResponse>, AppError> {
-    service::set_feature_provider_setting(
-        &state.write_pool,
-        id,
-        &body.provider_type,
-        &body.provider,
-    )
-    .await?;
-    Ok(Json(SuccessResponse { success: true }))
-}
-
 #[utoipa::path(get, path = "/api/features/{id}/working-dir",
     params(("id" = i64, Path,), ResolveWorkingDirParams),
     responses((status = 200, body = WorkingDirResponse)))]
@@ -383,18 +295,6 @@ pub fn features_router() -> Router<AppState> {
         .route("/api/features/{id}/pin", put(update_feature_pinned_handler))
         .route("/api/features/{id}/empty", get(is_empty_handler))
         .route(
-            "/api/features/{id}/settings",
-            get(get_feature_settings_handler).put(set_feature_setting_handler),
-        )
-        .route(
-            "/api/features/{id}/model-settings",
-            get(get_feature_model_settings_handler).put(set_feature_model_setting_handler),
-        )
-        .route(
-            "/api/features/{id}/provider-settings",
-            get(get_feature_provider_settings_handler).put(set_feature_provider_setting_handler),
-        )
-        .route(
             "/api/features/{id}/working-dir",
             get(get_working_dir_handler),
         )
@@ -404,4 +304,5 @@ pub fn features_router() -> Router<AppState> {
         )
         .merge(crate::domain::features::pending_gate::pending_gate_routes())
         .merge(crate::domain::features::archive_routes::archive_routes())
+        .merge(crate::domain::features::settings_routes::settings_routes())
 }

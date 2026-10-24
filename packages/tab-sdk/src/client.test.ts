@@ -159,6 +159,29 @@ describe("events", () => {
     host.close();
   });
 
+  it("delivers manifest shortcuts and lists the active ones", async () => {
+    const { host, client } = await connected({ shortcuts: ["refresh"] });
+    const pressed: string[] = [];
+    client.onShortcut((id) => pressed.push(id));
+    host.pressShortcut("refresh");
+    await flush();
+    expect(pressed).toEqual(["refresh"]);
+    expect(client.shortcuts).toEqual(["refresh"]);
+    client.close();
+    host.close();
+  });
+
+  it("ignores events from a newer host", async () => {
+    const { host, client } = await connected();
+    const errors: unknown[] = [];
+    client.onError((error) => errors.push(error));
+    (host.emit as (event: string, payload: object) => void)("made.up", {});
+    await flush();
+    expect(errors).toEqual([]);
+    client.close();
+    host.close();
+  });
+
   it("starts hidden when the host says so in the handshake", async () => {
     const { host, client } = await connected({ visible: false });
     expect(client.visible).toBe(false);

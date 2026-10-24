@@ -8,7 +8,7 @@ use utoipa::{IntoParams, ToSchema};
 use super::managed::storage::{InstalledBackend, ManagedFacts};
 pub use cadencr_plugin_core::tab::{
     TabAccessLevel, TabBackend, TabCommand, TabConfigField, TabConfigFieldType, TabConfigScope,
-    TabIssue, TabIssueCode, TabPlatform,
+    TabIssue, TabIssueCode, TabPlatform, TabShortcut,
 };
 
 /// One local custom tab, valid or not.
@@ -35,6 +35,8 @@ pub struct PluginTabSummary {
     pub configuration: Vec<TabConfigField>,
     /// Programs the tab may ask Cadencr to run.
     pub commands: Vec<TabCommand>,
+    /// Keyboard shortcuts the tab handles while it has focus.
+    pub shortcuts: Vec<TabShortcut>,
     /// The native process the tab ships, which runs with the user's rights.
     pub backend: Option<TabBackend>,
     /// Whether `backend` can run where Cadencr runs; `None` without one.

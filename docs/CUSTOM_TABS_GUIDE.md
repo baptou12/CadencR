@@ -169,6 +169,29 @@ The client also has the following:
 `@cadencr/tab-sdk/testing` provides a fake host so you can unit-test a tab
 without Cadencr.
 
+### Keyboard shortcuts
+
+A tab can declare the keys it handles while it has focus, and receive them
+with `useShortcut`:
+
+```json
+"shortcuts": [
+  { "id": "refresh", "keys": ["mod", "alt", "r"], "description": "Refresh the graph" }
+]
+```
+
+```tsx
+useShortcut("refresh", () => void refresh());
+```
+
+`mod` is ⌘ on macOS and Ctrl elsewhere, and `mod`, `ctrl` or `alt` must be
+held. Cadencr's own shortcuts — the command palette, the pane switches, Git
+actions and the rest — always win over a focused tab, so a declared shortcut
+on the same keys never fires. Settings → Custom tabs lists such a shortcut as
+not available and names the Cadencr shortcut that takes it. The keyboard
+shortcuts cheatsheet (⌘⇧?) lists the shortcuts that can fire. The format is
+in [CUSTOM_TABS.md](CUSTOM_TABS.md#3-manifest--tabjson).
+
 ### Look native
 
 Import the kit once:
@@ -401,8 +424,6 @@ private network addresses, are refused.
 - Desktop only. The phone and remote views show a placeholder.
 - At most six custom tabs stay alive at once; a hidden one beyond that is
   unloaded and comes back, with its `state`, when shown again.
-- While a custom tab has keyboard focus, only the pane shortcuts
-  (⌘⇧A/T/G/E/B) reach Cadencr.
 - Every plugin route is `proposed`: it may still change before custom tabs can
   be published. The SDK and kit are versioned `0.x` and ship vendored inside the
   starter until they are published on npm.

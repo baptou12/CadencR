@@ -182,7 +182,11 @@ pub async fn remove(pool: &SqlitePool, theme_id: &str) -> Result<(), AppError> {
     let Some(project_id) = authored_folder(theme_id, &cwd).find_project(pool).await? else {
         return Ok(());
     };
-    crate::domain::projects::repository::delete_project(pool, project_id).await
+    // Leases its custom tabs may hold go at their next renewal, refused once
+    // the conversation is gone.
+    crate::domain::projects::repository::delete_project(pool, project_id)
+        .await
+        .map(drop)
 }
 
 fn theme_label(theme: &super::models::UserTheme) -> Option<String> {

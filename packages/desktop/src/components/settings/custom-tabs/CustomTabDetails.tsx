@@ -20,6 +20,7 @@ import { customTabStatus } from "./custom-tab-model";
 import type { CustomTabCardProps } from "./CustomTabCard";
 import { CustomTabConfiguration } from "./CustomTabConfiguration";
 import { CustomTabPermissions } from "./CustomTabPermissions";
+import { CustomTabShortcuts } from "./CustomTabShortcuts";
 import { CustomTabUpdateNotice } from "./CustomTabUpdateNotice";
 
 /** The expanded half of a custom tab card. */
@@ -59,6 +60,11 @@ export function CustomTabDetails({
           enablement={enablement}
         />
       </DetailBlock>
+      {tab.shortcuts.length > 0 ? (
+        <DetailBlock title="Keyboard shortcuts">
+          <CustomTabShortcuts tab={tab} />
+        </DetailBlock>
+      ) : null}
       {tab.configuration.length > 0 ? (
         <DetailBlock title="Settings">
           {tab.status === "valid" ? (

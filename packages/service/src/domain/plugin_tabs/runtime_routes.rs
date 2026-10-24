@@ -22,7 +22,7 @@ use super::presence::check_lease_id;
 use super::principal::PluginPrincipal;
 use super::registry::{self, CurrentRevision};
 use crate::app_state::AppState;
-use crate::domain::features::repository::project_id_for_feature;
+use crate::domain::features::repository::is_feature_archived;
 use crate::domain::features::service::get_feature_cwd;
 use crate::error::AppError;
 
@@ -262,9 +262,10 @@ pub struct PluginTabPresenceRequest {
 /// conversation, so its backend keeps running, idle or not. The desktop
 /// renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
 /// malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases, 404
-/// `PLUGIN_TAB_CONVERSATION_NOT_FOUND` once the conversation is deleted —
-/// possibly from another client, whose tabs still renew: every lease held
-/// in it goes too, so its backends stop.
+/// `PLUGIN_TAB_CONVERSATION_NOT_FOUND` once the conversation is deleted and
+/// 409 `PLUGIN_TAB_CONVERSATION_ARCHIVED` while it is archived — possibly
+/// from another client, whose tabs still renew: every lease held in it goes
+/// too, so its backends stop.
 #[utoipa::path(
     put,
     path = "/api/plugin-tabs/{id}/presence/{lease_id}",
@@ -279,17 +280,23 @@ pub async fn plugin_tab_renew_presence_handler(
 ) -> Result<StatusCode, AppError> {
     let feature_id = body.feature_id;
     check_lease_id(&lease_id)?;
-    match project_id_for_feature(&state.read_pool, feature_id).await {
-        Ok(_) => {}
-        Err(AppError::NotFound(_)) => {
-            state.plugin_tab_presence.release_feature(feature_id);
-            return Err(AppError::coded(
-                StatusCode::NOT_FOUND,
-                "PLUGIN_TAB_CONVERSATION_NOT_FOUND",
-                format!("conversation {feature_id} no longer exists"),
-            ));
-        }
+    let refusal = match is_feature_archived(&state.read_pool, feature_id).await {
+        Ok(false) => None,
+        Ok(true) => Some(AppError::coded(
+            StatusCode::CONFLICT,
+            "PLUGIN_TAB_CONVERSATION_ARCHIVED",
+            format!("conversation {feature_id} is archived"),
+        )),
+        Err(AppError::NotFound(_)) => Some(AppError::coded(
+            StatusCode::NOT_FOUND,
+            "PLUGIN_TAB_CONVERSATION_NOT_FOUND",
+            format!("conversation {feature_id} no longer exists"),
+        )),
         Err(error) => return Err(error),
+    };
+    if let Some(refusal) = refusal {
+        state.plugin_tab_presence.release_features(&[feature_id]);
+        return Err(refusal);
     }
     state
         .plugin_tab_presence

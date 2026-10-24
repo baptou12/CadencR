@@ -71,6 +71,7 @@ async fn take_back(state: &AppState, schedule_id: i64, feature_id: i64, project_
         // The `Created` event may already be out; retract it so clients don't
         // keep a conversation that no longer exists in their sidebar.
         Ok(()) => {
+            state.plugin_tab_presence.release_features(&[feature_id]);
             state
                 .feature_events_tx
                 .emit(feature_id, Some(project_id), FeatureEventAction::Deleted)

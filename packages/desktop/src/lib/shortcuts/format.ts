@@ -66,7 +66,7 @@ const GLYPHS = IS_MAC ? MAC_GLYPHS : { ...MAC_GLYPHS, ...NON_MAC_OVERRIDES };
 /** Renders a single key token (`"mod"`, `"a"`, `"1-9"`, …) for display. */
 export function formatKey(key: ShortcutKey): string {
   if (key in GLYPHS) return GLYPHS[key];
-  if (key.length === 1) return key.toUpperCase();
+  if (key.length === 1 || /^f\d{1,2}$/.test(key)) return key.toUpperCase();
   // Tokens like "1-9", "↑↓←→" pass through unchanged.
   return key;
 }

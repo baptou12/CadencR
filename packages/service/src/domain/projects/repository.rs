@@ -107,7 +107,9 @@ fn project_from_row(row: ProjectRow) -> Result<Project, AppError> {
     })
 }
 
-pub async fn delete_project(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
+/// Delete a project and all its conversations; returns the deleted
+/// conversations' ids.
+pub async fn delete_project(pool: &SqlitePool, id: i64) -> Result<Vec<i64>, AppError> {
     // Resolve the project's settings file path while the project row still
     // exists (path derivation reads its name). We only remove the file after the
     // DB delete commits, and only when no other project shares this name —
@@ -219,7 +221,7 @@ pub async fn delete_project(pool: &SqlitePool, id: i64) -> Result<(), AppError> 
         }
     }
 
-    Ok(())
+    Ok(feature_ids)
 }
 
 // Project settings now live in `~/.cadencr/settings/<name>.settings.json`

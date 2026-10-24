@@ -58,7 +58,9 @@ describe("registerPluginTabIpc", () => {
       "plugin-tab:open",
       "plugin-tab:open-devtools",
       "plugin-tab:reload",
+      "plugin-tab:set-app-shortcuts",
       "plugin-tab:set-bounds",
+      "plugin-tab:set-tab-shortcuts",
       "plugin-tab:set-theme",
       "plugin-tab:set-visible",
     ]);

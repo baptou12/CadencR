@@ -83,6 +83,7 @@ function createBroker(
     hasBackend?: boolean;
     socket?: SocketFactory;
     visible?: boolean;
+    shortcuts?: string[];
   } = {},
 ): PluginTabBroker {
   const broker = new PluginTabBroker(
@@ -96,6 +97,7 @@ function createBroker(
         allowedOrigins: options.origins ?? [],
         hasCommands: options.hasCommands ?? false,
         hasBackend: options.hasBackend ?? false,
+        shortcuts: options.shortcuts ?? [],
       },
       context: CONTEXT,
       visible: options.visible ?? true,
@@ -167,6 +169,12 @@ describe("PluginTabBroker handshake", () => {
     const capabilities = (result as { capabilities: string[] }).capabilities;
     expect(capabilities).toContain("exec.run");
     expect(capabilities).toContain("backend.request");
+  });
+
+  it("names the active shortcuts in hello", async () => {
+    const guest = connect(createBroker({ shortcuts: ["refresh"] }));
+    const result = ok(await guest.request("hello", { sdkVersion: "0.1.0", apiVersions: [1, 1] }));
+    expect(result).toMatchObject({ shortcuts: ["refresh"] });
   });
 
   it("tells a page recreated while hidden that it is hidden", async () => {
@@ -466,6 +474,18 @@ describe("PluginTabBroker events", () => {
         event: "visibility.changed",
         payload: { visible: false },
       }),
+    );
+  });
+
+  it("delivers presses of its active shortcuts only", async () => {
+    const broker = createBroker({ shortcuts: ["refresh"] });
+    const guest = connect(broker);
+    broker.pressShortcut("taken-by-cadencr");
+    broker.pressShortcut("refresh");
+    await vi.waitFor(() =>
+      expect(guest.events).toEqual([
+        expect.objectContaining({ event: "shortcut", payload: { id: "refresh" } }),
+      ]),
     );
   });
 });

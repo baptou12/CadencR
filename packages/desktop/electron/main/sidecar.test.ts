@@ -6,6 +6,7 @@ import {
   describeStartupFailure,
   ensureLinuxSidecarExecutable,
   parsePhaseLine,
+  productionDbPath,
   rethrowAfterCleanup,
   resolveSettingsDir,
   serviceArgs,
@@ -16,6 +17,30 @@ import {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
+
+describe("production database path", () => {
+  it("uses the standard production path even when a development path is inherited", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "cadencr-production-path-"));
+    vi.spyOn(os, "homedir").mockReturnValue(home);
+    vi.stubEnv("CADENCR_DB_PATH", path.join(home, "development.db"));
+    vi.stubEnv("XDG_DATA_HOME", "");
+
+    const dbPath = productionDbPath();
+
+    // macOS keeps ~/.cadencr; Linux follows XDG (app-paths.test.ts covers both).
+    const dataRoot =
+      process.platform === "darwin"
+        ? path.join(home, ".cadencr")
+        : path.join(home, ".local", "share", "cadencr");
+    expect(dbPath).toBe(path.join(dataRoot, "database", "cadencr.db"));
+    expect(fs.existsSync(dbPath)).toBe(false);
+    if (process.platform !== "win32") {
+      expect(fs.statSync(path.dirname(dbPath)).mode & 0o777).toBe(0o700);
+    }
+  });
 });
 
 describe("development sidecar startup", () => {
