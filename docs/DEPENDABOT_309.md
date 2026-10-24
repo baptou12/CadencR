@@ -16,9 +16,9 @@ Base du premier lot : `102ea97a134700c1d0a57cd084a6740e5e6524b8`.
 
 | Lot | Surface | Nombre | Validation ciblée | État |
 | --- | --- | ---: | --- | --- |
-| 1 | Site et polices | 7 | Build statique, contenu Markdown/MDX, sitemap, navigation et polices dans le navigateur. | PR #310, CI en cours |
-| 2 | Outils de test et types GPU | 3 | Tests frontend complets, typage du renderer Neovim. | En validation |
-| 3 | Distribution Electron | 2 | Build/package local, configuration des mises à jour et artefacts CI. | À traiter |
+| 1 | Site et polices | 7 | Build statique, contenu Markdown/MDX, sitemap, navigation et polices dans le navigateur. | Fusionné : #310 |
+| 2 | Outils de test et types GPU | 3 | Tests frontend complets, typage du renderer Neovim. | PR #312, CI finale en cours |
+| 3 | Distribution Electron | 2 | Build/package local, configuration des mises à jour et artefacts CI. | Validé localement |
 | 4 | CSS | 5 | Build desktop/site/tab-kit, rendu clair/sombre et composants. | À traiter |
 | 5 | Composants UI | 5 | Dialogs, calendrier, redimensionnement, listes longues et notifications. | À traiter |
 | 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | À traiter |
@@ -139,4 +139,19 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - Validation : suite web complète avec les assertions existantes, dont CodeMirror, raccourcis, presse-papiers et custom tabs ; typage du renderer WebGPU. Ce lot ne modifie aucune dépendance embarquée au runtime.
 - Validation initiale : 25 tâches web réussies, dont 6 604 tests desktop. Après intégration de `main` (`ccf5e2649`, custom tabs et correctif SQLite) : 25 tâches web réussies à nouveau, dont 6 625 tests desktop dans 829 fichiers. Aucune assertion modifiée, aucun test ignoré ajouté. Les tests CodeMirror et raccourcis passent avec ce lot isolé. Logs : `/tmp/cadencr-309/integration-test-checks.log`.
 
-- Reprise : lot 1 synchronisé avec `main` dans le commit `ccae3ffd0`. Son ancien commit `52cd9b419` a passé CI, CodeQL et audit ; les trois workflows sont relancés sur le nouveau commit.
+- Lot 1 fusionné via #310 (`358c79a79`) : CI, CodeQL et audit réussis sur `ccae3ffd0`, synchronisé avec `main`.
+- Lot 2 : [PR #312](https://github.com/merkr-software/CadencR/pull/312) retargetée sur `main`, puis synchronisée dans `ff6a2fe8f`. Cette synchronisation ne change aucun fichier ; CI finale relancée.
+
+
+## Lot 3 : distribution Electron
+
+- [electron-builder 26.15.3–26.17.0](https://github.com/electron-userland/electron-builder/compare/electron-builder@26.15.3...electron-builder@26.17.0) : revue des versions intermédiaires. ZIP macOS natif préservant les symlinks des frameworks ; résolution des dépendances de production pnpm (workspaces, plages, déduplication) ; correctifs icônes/signature macOS et packaging Linux/Windows.
+- [electron-updater 6.8.10](https://github.com/electron-userland/electron-builder/releases/tag/electron-updater%406.8.10) : cohérence du cache blockmap et téléchargement multipart avec délimiteurs CRLF/LF fragmentés ; nettoyage du watchdog de batch.
+- Revue de `electron/main/updater.ts` : import CJS et API employés compatibles, configuration et garde du mode dev inchangées. Aucun changement de code applicatif requis.
+- Le passage transitif de `@noble/hashes` 2.2.0 à 1.8.0 est intentionnel upstream pour la compatibilité Node. Politique pnpm, overrides et patches inchangés ; versions publiées depuis plus de 14 jours.
+- Validation : 25 tâches web réussies, 6 625 tests desktop et 33 tests de sécurité du lockfile. Build Rust debug et build Electron/Vite de production réussis.
+- Packaging réel macOS arm64 : ZIP et DMG générés avec `electron-builder.local.yml`, `--publish never` et signature désactivée. Sidecar debug utilisé. Signature, notarisation et installation d'une release distante non exercées.
+- ZIP : 1 702 entrées, 14 symlinks préservés (dont les frameworks). DMG : vérification CRC `hdiutil verify` réussie. ASAR : 343 fichiers, dépendances de production et updater 6.8.10 présents ; renderer externe, module natif et sidecar présents.
+- QA du vrai `GenericDifferentialDownloader` / `NodeHttpExecutor` contre un serveur HTTP local : 10 cas (CRLF/LF × fragments de 1, 2, 3, 7 ou 65 536 octets), reconstruction COPY + deux plages téléchargées, une requête multipart par cas, SHA-512 correct sans fallback complet. Le parseur upstream journalise parfois les octets du délimiteur final comme ignorés ; tous les téléchargements se terminent et sont vérifiés.
+- App via `pnpm dev`, profil et base QA isolés : service sain, Electron connecté, garde updater dev confirmée dans les logs ; onboarding ignoré et réglages accessibles via le navigateur. Console navigateur : trois diagnostics connus (CSP meta, configuration réservée au shell et fermeture initiale WebSocket StrictMode). L'interaction native du bouton de recherche de mise à jour n'a pas été validée : l'automatisation native ne déclenche pas les contrôles de cette fenêtre.
+- Preuves locales : `/tmp/cadencr-309/electron-web-checks.log`, `electron-security-lock.log`, `electron-package.log`, `mac-package-qa.json`, `dmg-verify.log`, `updater-http-qa.cjs`, `updater-http-qa.log`, `integration-dev.log`.
