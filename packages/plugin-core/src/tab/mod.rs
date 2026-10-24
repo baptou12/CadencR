@@ -17,6 +17,7 @@ mod macho;
 mod manifest;
 mod network;
 mod platform;
+mod shortcuts;
 mod validate;
 
 /// The `docs/CUSTOM_TABS.md` §3 example manifest, for tests here and in the
@@ -38,7 +39,7 @@ pub use folder::{
 pub use issues::{describe_all, TabFindings, TabIssue, TabIssueCode};
 pub use manifest::{
     TabAccessLevel, TabBackend, TabCommand, TabConfigField, TabConfigFieldType, TabConfigScope,
-    TabManifest, TabNetwork, TabSection,
+    TabManifest, TabNetwork, TabSection, TabShortcut,
 };
 pub use platform::{TabOs, TabPlatform};
 pub use validate::{

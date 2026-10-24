@@ -95,11 +95,14 @@ sibling of `plugins/themes`. Cadencr rescans it on startup and watches it
       "linux-x86_64": "bin/linux-x86_64/ports"
     },
     "reasoning": "Lists the processes listening on local ports."
-  }
+  },
+  "shortcuts": [
+    { "id": "refresh", "keys": ["mod", "shift", "r"], "description": "Refresh the graph" }
+  ]
 }
 ```
 
-`commands` and `backend` are optional; most tabs declare neither.
+`commands`, `backend` and `shortcuts` are optional; most tabs declare none.
 
 Rules (validated by `cadencr-plugin-core::tab`, the service and
 `cadencr plugin validate --kind tab`):
@@ -146,6 +149,19 @@ Rules (validated by `cadencr-plugin-core::tab`, the service and
   entry cannot run the backend (the summary's `backend_availability` is
   `unavailable_on_platform`). The former `command`/`args` launch line is
   refused with `BACKEND_COMMAND_REMOVED` and how to migrate.
+- `shortcuts`: ≤ 16 entries (`SHORTCUTS_TOO_MANY`), each fired only while the
+  tab has focus (§5.1). `id` `^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$`, unique
+  (`SHORTCUT_ID_INVALID`, `SHORTCUT_ID_DUPLICATE`); `description` 1–80 chars
+  (`SHORTCUT_DESCRIPTION_INVALID`); `keys` in the desktop's shortcut tokens:
+  modifiers `mod` (⌘ on macOS, Ctrl elsewhere), `ctrl`, `alt`, `shift`, each
+  at most once, plus exactly one key — a lowercase letter, a digit, `f1`–`f12`,
+  `enter`, `escape`, `space`, `up`, `down`, `left`, `right`, `plus`, `minus`,
+  `comma`, `slash`, `backtick`, `backspace`, `lbracket` or `rbracket` — with
+  `mod`, `ctrl` or `alt` held, since a bare or Shift-only key is typing
+  (`SHORTCUT_KEYS_INVALID`); no two on the same keys
+  (`SHORTCUT_KEYS_DUPLICATE`). Colliding with a Cadencr shortcut is not a
+  validation error, as Cadencr's are rebindable: the host disables that one
+  (§5.1). Shortcuts are not permissions, so they leave the hash unchanged.
 - Unknown top-level keys are errors (the format is closed until it is published).
 
 **Permissions hash**: SHA-256 (hex) over the canonical JSON
@@ -598,10 +614,25 @@ table bounds only what it can reach _through Cadencr_.
   never receives a port.
 - Instance ids match `^[A-Za-z0-9_.:-]{1,200}$`. The renderer bridge is
   `desktopBridge.pluginTabs` (`open`, `setBounds`, `setVisible`, `reload`,
-  `close`, `openDevTools`, `focus`, `setTheme`, `onEvent`); shared types live in
+  `close`, `openDevTools`, `focus`, `setTheme`, `setAppShortcuts`,
+  `setTabShortcuts`, `onEvent`, `onAppShortcut`); shared types live in
   `packages/desktop/src/shared/plugin-tab-host.ts`.
-- Pane chords (⌘⇧A/T/G/E/B) pressed in a focused guest are relayed to the
-  renderer; other renderer shortcuts are not.
+- **Keyboard.** A focused guest receives its keys before the renderer, so
+  the main process matches each key down first (`before-input-event`,
+  `plugin-tab-shortcuts.ts`), with the renderer's layout-aware matcher:
+  1. Cadencr's shortcuts win. Every shortcut of the `global`, `feature` and
+     `feature-panes` scopes holding `mod`, `ctrl` or `alt`, as currently
+     bound (`setAppShortcuts`, `lib/plugin-tabs/tab-shortcuts.ts`), is taken
+     from the page: focus returns to the renderer, which dispatches the same
+     key from its body, so it runs exactly as if pressed there. `⌘Q` stays
+     with the application menu.
+  2. The tab's own `shortcuts` (`setTabShortcuts`, per instance) are taken
+     from the page too and delivered to it as a `shortcut {id}` event (§7).
+     One on the same keys as a Cadencr shortcut never fires: it is left out
+     of `hello.shortcuts`, and Settings → Custom tabs lists it as not
+     available, naming the Cadencr shortcut. The cheatsheet (`⌘⇧?`) lists
+     the active ones of the current project's tabs.
+  3. Every other key reaches the page.
 
 ### 5.2 Asset responses
 
@@ -788,7 +819,11 @@ on the same port (React StrictMode re-mounts). The SDK sets
 Events: `context.changed {context}`, `theme.changed {theme}`,
 `visibility.changed {visible}`, `stream.event {subscriptionId, seq, data:
 {domain, action, payload}}`, `stream.resync {subscriptionId}` (the plugin
-should refetch), `stream.error {subscriptionId, error}`.
+should refetch), `stream.error {subscriptionId, error}`, `shortcut {id}` (one
+of the manifest's `shortcuts`, pressed while the tab had focus; §5.1). Events
+are additive: a guest ignores one it does not know (`@cadencr/tab-sdk` from
+0.2; 0.1 reports it as a `HOST_ERROR`). `hello` also answers `shortcuts`: the
+ids of the manifest's shortcuts that can fire.
 
 Error codes: `PLUGIN_API_UNSUPPORTED`, `CAPABILITY_DENIED`,
 `PLUGIN_SCOPE_DENIED`, `PLUGIN_BINDING_DENIED`, `PLUGIN_NETWORK_DENIED`,
@@ -846,7 +881,8 @@ folder holding `entry` (`dist/` in the scaffold) reloads live instances.
 
 - `@cadencr/tab-sdk` (`packages/tab-sdk`): `connect()`, context, theme,
   `api` (+ a generated, typed client of the plugin surface), `streams`,
-  `storage`, `state`, `config`, `net.fetch`, `ui`, `capabilities`; React
+  `storage`, `state`, `config`, `net.fetch`, `ui`, `capabilities`,
+  `onShortcut`/`shortcuts` (React: `useShortcut(id, handler)`); React
   bindings in `@cadencr/tab-sdk/react`; a fake host in
   `@cadencr/tab-sdk/testing`; the wire types in `@cadencr/tab-sdk/protocol`
   (imported by the renderer broker). No runtime dependencies.

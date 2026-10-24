@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   CadencrProvider,
   useCadencr,
+  useShortcut,
   useStorage,
   useStream,
   useTabContext,
@@ -54,6 +55,28 @@ describe("CadencrProvider", () => {
       await flush();
     });
     expect(screen.getByTestId("info").textContent).toBe("Next|light|hidden");
+  });
+
+  it("runs a useShortcut handler for its id only", async () => {
+    host = createTestHost({ shortcuts: ["refresh", "next"] });
+    function Counter() {
+      const [count, setCount] = useState(0);
+      useShortcut("refresh", () => setCount((value) => value + 1));
+      return <p data-testid="count">{count}</p>;
+    }
+    render(
+      <CadencrProvider connectOptions={{ transport: host.transport }}>
+        <Counter />
+      </CadencrProvider>,
+    );
+    await screen.findByTestId("count");
+    await act(async () => {
+      host.pressShortcut("refresh");
+      host.pressShortcut("next");
+      host.pressShortcut("refresh");
+      await flush();
+    });
+    expect(screen.getByTestId("count").textContent).toBe("2");
   });
 
   it("renders errorFallback when the connection fails", async () => {

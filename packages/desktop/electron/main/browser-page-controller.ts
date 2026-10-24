@@ -1,6 +1,7 @@
 import type { Input, Result } from "electron";
 
 import { BrowserFindController } from "./browser-find-controller";
+import { shortcutPlatform } from "./browser-guest-shortcuts";
 import type { ManagedTab } from "./browser-tab-events";
 import type {
   BrowserFindRequest,
@@ -89,8 +90,7 @@ export class BrowserPageController {
   }
 
   setGuestShortcutBindings(bindings: BrowserGuestShortcutBindings): void {
-    const platform =
-      process.platform === "darwin" ? "mac" : process.platform === "win32" ? "windows" : "linux";
+    const platform = shortcutPlatform();
     this.findShortcutMatcher = compileBrowserShortcutBinding(bindings.find, platform);
     this.downloadsShortcutMatcher = compileBrowserShortcutBinding(bindings.downloads, platform);
     this.responsiveShortcutMatcher = compileBrowserShortcutBinding(bindings.responsive, platform);

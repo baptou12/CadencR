@@ -345,6 +345,7 @@ use crate::domain::ws_session::routes as ws_routes;
         crate::domain::plugin_tabs::models::CreatePluginTabGrantRequest,
         crate::domain::plugin_tabs::models::PluginTabGrant,
         crate::domain::plugin_tabs::models::TabConfigField,
+        crate::domain::plugin_tabs::models::TabShortcut,
         crate::domain::plugin_tabs::models::TabConfigFieldType,
         crate::domain::plugin_tabs::models::TabConfigScope,
         crate::domain::plugin_tabs::models::TabIssue,

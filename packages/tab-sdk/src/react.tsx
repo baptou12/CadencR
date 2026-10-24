@@ -143,6 +143,25 @@ export function useVisibility(): boolean {
   return useSyncExternalStore(subscribe, () => client.visible);
 }
 
+/**
+ * Runs `handler` each time the manifest's shortcut `id` is pressed while the
+ * tab has focus. `handler` may be an inline closure.
+ */
+export function useShortcut(id: string, handler: () => void): void {
+  const client = useCadencr();
+  const latest = useRef(handler);
+  useEffect(() => {
+    latest.current = handler;
+  });
+  useEffect(
+    () =>
+      client.onShortcut((pressed) => {
+        if (pressed === id) latest.current();
+      }),
+    [client, id],
+  );
+}
+
 export interface UseStreamOptions extends SubscribeOptions {
   /** `false` keeps the subscription closed. Default `true`. */
   enabled?: boolean;

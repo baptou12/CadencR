@@ -7,6 +7,7 @@ const { PluginTabManager } = await import("./plugin-tab-manager");
 const { PluginTabPorts } = await import("./plugin-tab-ports");
 type PluginTabGuest = import("./plugin-tab-guest").PluginTabGuest;
 type PluginTabGuestOptions = import("./plugin-tab-guest").PluginTabGuestOptions;
+type PluginTabKeyInput = import("../../../src/shared/plugin-tab-host").PluginTabKeyInput;
 
 interface FakeGuest {
   options: PluginTabGuestOptions;
@@ -323,12 +324,46 @@ describe("PluginTabManager lifecycle", () => {
     expect(guests[0]?.webContents.focus).toHaveBeenCalled();
   });
 
-  it("relays pane shortcuts to the renderer and takes focus back", () => {
+  it("hands Cadencr's shortcuts to the renderer, the tab's own to its page, and the rest back", () => {
     const tabs = manager();
+    tabs.setAppShortcuts([{ keys: ["mod", "k"] }]);
+    tabs.setTabShortcuts("i1", [{ id: "refresh", keys: ["mod", "shift", "r"] }]);
     tabs.open("i1", "graph");
-    guests[0]?.options.hooks.shortcut("pane-agent");
+    const hooks = guests[0]?.options.hooks;
+    const mod = process.platform === "darwin" ? { meta: true } : { control: true };
+    const key = (letter: string, extra: Partial<PluginTabKeyInput> = {}): PluginTabKeyInput => ({
+      key: letter,
+      code: `Key${letter.toUpperCase()}`,
+      meta: false,
+      control: false,
+      alt: false,
+      shift: false,
+      ...mod,
+      ...extra,
+    });
+
+    expect(hooks?.keyDown(key("k"))).toBe(true);
     expect(win.webContents.focus).toHaveBeenCalled();
-    expect(win.webContents.send).toHaveBeenCalledWith("browser:shortcut", "pane-agent");
+    expect(win.webContents.send).toHaveBeenCalledWith("plugin-tab:app-shortcut", key("k"));
+
+    expect(hooks?.keyDown(key("r", { shift: true }))).toBe(true);
+    expect(win.webContents.send).toHaveBeenCalledWith("plugin-tab:event", {
+      instanceId: "i1",
+      type: "shortcut",
+      detail: "refresh",
+    });
+
+    vi.mocked(win.webContents.send).mockClear();
+    expect(hooks?.keyDown(key("r"))).toBe(false);
+    expect(hooks?.keyDown({ ...key("k"), meta: false, control: false })).toBe(false);
+    expect(win.webContents.send).not.toHaveBeenCalled();
+
+    // Closing the instance drops its shortcuts; Cadencr's stay.
+    tabs.close("i1");
+    tabs.open("i1", "graph");
+    const reopened = guests[1]?.options.hooks;
+    expect(reopened?.keyDown(key("r", { shift: true }))).toBe(false);
+    expect(reopened?.keyDown(key("k"))).toBe(true);
   });
 
   it("destroys and detaches everything when the window goes away", () => {

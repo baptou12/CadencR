@@ -46,6 +46,3 @@ export const SHORTCUTS_BY_SCOPE: ReadonlyArray<{ scope: ShortcutScope; items: Sh
     scope,
     items: SHORTCUTS.filter((s) => s.scope === scope.id),
   })).filter((g) => g.items.length > 0);
-
-/** Total shortcut count — also constant, used by the modal's "n of N" badge. */
-export const TOTAL_SHORTCUTS = SHORTCUTS_BY_SCOPE.reduce((acc, g) => acc + g.items.length, 0);
