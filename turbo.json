@@ -142,6 +142,15 @@
     "knip": {
       "outputs": []
     },
+    "@cadencr/tab-kit#knip": {
+      "dependsOn": ["build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/desktop/src/components/ui/**",
+        "$TURBO_ROOT$/packages/desktop/src/lib/utils.ts"
+      ],
+      "outputs": []
+    },
     "format": {
       "outputs": [],
       "cache": false
