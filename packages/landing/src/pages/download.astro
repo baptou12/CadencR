@@ -15,14 +15,14 @@ const defaultDownload = selectRecommendedDownload({ os: "macos", arch: "unknown"
 const macAssets = DOWNLOAD_ASSETS.filter((asset) => asset.os === "macos");
 const linuxAssets = DOWNLOAD_ASSETS.filter((asset) => asset.os === "linux");
 const downloadGroups = [
-  { title: "macOS", note: "Apple Silicon and Intel", assets: macAssets },
-  { title: "Linux", note: "x86-64 · AppImage, DEB, RPM", assets: linuxAssets },
+  { title: "macOS", stage: null, note: "Apple Silicon and Intel", assets: macAssets },
+  { title: "Linux", stage: "Alpha", note: "x86-64 · AppImage, DEB, RPM", assets: linuxAssets },
 ].filter((group) => group.assets.length > 0);
 const pageTitle = LINUX_AVAILABLE
-  ? "Download CadencR for macOS and Linux — agent IDE"
+  ? "Download CadencR for macOS and Linux (alpha) — agent IDE"
   : "Download CadencR for macOS — agent IDE";
 const pageDescription = LINUX_AVAILABLE
-  ? "Download CadencR for macOS or Linux. Choose Apple Silicon or Intel on macOS, or AppImage, DEB, or RPM on Linux x86-64."
+  ? "Download CadencR for macOS or Linux. Choose Apple Silicon or Intel on macOS, or the Linux x86-64 alpha as an AppImage, DEB, or RPM."
   : "Download CadencR for macOS on Apple Silicon or Intel.";
 
 const softwareApplication = {
@@ -64,7 +64,7 @@ const structuredData = [softwareApplication, breadcrumbs];
           Get CadencR for your machine.
         </h1>
         <p class="mt-4 max-w-[620px] text-sm leading-[1.65] text-muted-foreground [text-wrap:pretty]">
-          CadencR ships for {LINUX_AVAILABLE ? "macOS and Linux" : "macOS"}. We detect a recommended build in your browser,
+          CadencR ships for {LINUX_AVAILABLE ? "macOS, with an alpha for Linux" : "macOS"}. We detect a recommended build in your browser,
           and every available target remains listed below.
         </p>
       </div>
@@ -125,8 +125,13 @@ const structuredData = [softwareApplication, breadcrumbs];
             downloadGroups.map((group) => (
               <section aria-labelledby={`downloads-${group.title.toLowerCase()}`}>
                 <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-                  <h3 id={`downloads-${group.title.toLowerCase()}`} class="text-base font-semibold">
+                  <h3 id={`downloads-${group.title.toLowerCase()}`} class="flex items-center gap-2 text-base font-semibold">
                     {group.title}
+                    {group.stage && (
+                      <span class="rounded-full bg-accent px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                        {group.stage}
+                      </span>
+                    )}
                   </h3>
                   <p class="font-mono text-[10.5px] text-muted-foreground">{group.note}</p>
                 </div>
@@ -196,8 +201,8 @@ const structuredData = [softwareApplication, breadcrumbs];
         </div>
         <p class="mt-5 text-[12.5px] leading-[1.6] text-muted-foreground">
           {LINUX_AVAILABLE
-            ? "Official Linux packages update through CadencR. DEB and RPM installs may request administrator authentication. Linux builds currently require x86-64; Windows is coming next."
-            : "Linux packages ship with the next release; until then you can build CadencR from source. Windows is planned."}
+            ? "Linux packages are an alpha: expect rough edges and report what breaks on GitHub. They update through CadencR; DEB and RPM installs may request administrator authentication. Linux builds currently require x86-64; Windows is coming next."
+            : "Linux packages are coming as an alpha; until then you can build CadencR from source. Windows is planned."}
         </p>
         <a href={`${import.meta.env.BASE_URL}docs/installation/`} class="mt-4 inline-flex text-[13px] font-medium text-primary hover:underline">
           Read the complete installation guide →
@@ -304,7 +309,7 @@ const structuredData = [softwareApplication, breadcrumbs];
   function describeDetection(os: DetectedOs, arch: DetectedArch): string {
     if (os === "macos") return `Detected macOS${arch === "unknown" ? "" : ` (${arch})`}.`;
     if (os === "linux") {
-      if (!linuxAvailable) return "Detected Linux. Linux packages ship with the next release.";
+      if (!linuxAvailable) return "Detected Linux. Linux packages are coming as an alpha.";
       return arch === "arm64"
         ? "Detected Linux (ARM64). Linux downloads currently require x86-64."
         : `Detected Linux${arch === "unknown" ? "" : " (x86-64)"}.`;
@@ -340,9 +345,9 @@ const structuredData = [softwareApplication, breadcrumbs];
           os === "linux"
             ? linuxAvailable
               ? "Current Linux packages target x86-64. ARM64 users can build from source while native artifacts are planned."
-              : "Linux packages ship with the next release. Until then you can build CadencR from source."
+              : "Linux packages are coming as an alpha. Until then you can build CadencR from source."
             : linuxAvailable
-              ? "CadencR currently ships for macOS and Linux. Windows builds are planned next."
+              ? "CadencR currently ships for macOS, with an alpha for Linux. Windows builds are planned next."
               : "CadencR currently ships for macOS. Linux and Windows builds are planned.";
       }
       if (label) label.textContent = "View available downloads";
@@ -355,7 +360,7 @@ const structuredData = [softwareApplication, breadcrumbs];
     if (title) title.textContent = recommendation.label;
     if (copy) {
       copy.textContent = os === "linux"
-        ? "The portable AppImage is recommended for Linux. Native DEB and RPM packages are available below."
+        ? "Linux support is an alpha. The portable AppImage is recommended; native DEB and RPM packages are available below."
         : "Recommended for this browser. You can still choose another macOS target below.";
     }
     if (label) {

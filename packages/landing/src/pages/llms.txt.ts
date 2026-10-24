@@ -30,7 +30,7 @@ export async function GET(context: APIContext): Promise<Response> {
     "",
     "## Start",
     `- [Home](${abs("/")}): Product overview and feature tour.`,
-    `- [Download](${abs("/download/")}): macOS builds for Apple Silicon and Intel${LINUX_AVAILABLE ? ", plus Linux x86-64 AppImage, DEB, and RPM packages" : ""}.`,
+    `- [Download](${abs("/download/")}): macOS builds for Apple Silicon and Intel${LINUX_AVAILABLE ? ", plus Linux x86-64 AppImage, DEB, and RPM packages (alpha)" : ""}.`,
     `- [News](${abs("/news/")}): Release notes and announcements.`,
     "- [Source on GitHub](https://github.com/merkr-software/cadencr): Apache-2.0 source, issues, and discussions.",
     "",

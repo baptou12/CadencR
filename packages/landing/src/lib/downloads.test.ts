@@ -3,7 +3,7 @@ import landingPackage from "../../package.json";
 import {
   archFromRenderer,
   DOWNLOAD_ASSETS,
-  hasLinuxRelease,
+  LINUX_ALPHA_RELEASE,
   LINUX_AVAILABLE,
   linuxReleaseAssets,
   macReleaseAssetName,
@@ -33,8 +33,8 @@ describe("selectRecommendedDownload", () => {
     expect(result?.assetName).toBe(`Cadencr-${appVersion}-arm64.dmg`);
   });
 
-  it("recommends the x64 AppImage to Linux browsers once Linux has shipped", () => {
-    const expected = LINUX_AVAILABLE ? `Cadencr-${appVersion}-x86_64.AppImage` : undefined;
+  it("recommends the x64 AppImage to Linux browsers once the Linux alpha has shipped", () => {
+    const expected = LINUX_AVAILABLE ? `Cadencr-${LINUX_ALPHA_RELEASE}-x86_64.AppImage` : undefined;
 
     expect(selectRecommendedDownload({ os: "linux", arch: "x64" })?.assetName).toBe(expected);
     expect(selectRecommendedDownload({ os: "linux", arch: "unknown" })?.assetName).toBe(expected);
@@ -48,13 +48,16 @@ describe("selectRecommendedDownload", () => {
     expect(selectRecommendedDownload({ os: "windows", arch: "x64" })).toBeUndefined();
   });
 
-  it("keeps asset URLs pinned to the current landing version", () => {
-    expect(DOWNLOAD_ASSETS.every((asset) => asset.url.includes(`/v${appVersion}/`))).toBe(true);
+  it("keeps macOS asset URLs pinned to the current landing version", () => {
+    const macAssets = DOWNLOAD_ASSETS.filter((asset) => asset.os === "macos");
+    expect(macAssets).toHaveLength(4);
+    expect(macAssets.every((asset) => asset.url.includes(`/v${appVersion}/`))).toBe(true);
   });
 
-  it("lists exactly the Linux targets the current version ships", () => {
+  it("lists exactly the Linux targets of the release carrying the alpha", () => {
+    expect(LINUX_AVAILABLE).toBe(LINUX_ALPHA_RELEASE !== null);
     expect(DOWNLOAD_ASSETS.filter((asset) => asset.os === "linux")).toEqual(
-      linuxReleaseAssets(appVersion),
+      linuxReleaseAssets(LINUX_ALPHA_RELEASE),
     );
   });
 });
@@ -130,14 +133,12 @@ describe("resolveMacArch", () => {
 });
 
 describe("linuxReleaseAssets", () => {
-  it("links no Linux assets for releases before the first Linux build", () => {
-    expect(hasLinuxRelease("0.14.1")).toBe(false);
-    expect(linuxReleaseAssets("0.14.1")).toEqual([]);
+  it("links no Linux assets while no release carries the alpha", () => {
+    expect(linuxReleaseAssets(null)).toEqual([]);
   });
 
-  it("names the arch of every Linux target from the first Linux release on", () => {
+  it("links the arch-named targets of the release carrying the alpha", () => {
     for (const version of ["0.15.0", "0.15.2", "1.0.0"]) {
-      expect(hasLinuxRelease(version)).toBe(true);
       expect(linuxReleaseAssets(version).map((asset) => asset.assetName)).toEqual([
         `Cadencr-${version}-x86_64.AppImage`,
         `Cadencr-${version}-amd64.deb`,

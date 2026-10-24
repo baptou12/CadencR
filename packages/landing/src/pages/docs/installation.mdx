@@ -7,11 +7,16 @@ description: "Download, install, update, and uninstall CadencR on supported macO
 import DocCallout from "@/components/docs/DocCallout.astro";
 import { LINUX_AVAILABLE } from "@/lib/downloads";
 
-{!LINUX_AVAILABLE && (
+{LINUX_AVAILABLE ? (
 
+  <DocCallout title="Linux is an alpha" variant="note">
+    The Linux AppImage, DEB, and RPM packages work but are still an alpha: expect rough edges, and
+    please report what breaks in <a href="https://github.com/merkr-software/CadencR/issues">GitHub issues</a>.
+  </DocCallout>
+) : (
   <DocCallout title="Linux packages are coming" variant="note">
-    The Linux AppImage, DEB, and RPM packages described below ship with the next CadencR release.
-    Until then, build CadencR from source on Linux.
+    The Linux AppImage, DEB, and RPM packages described below are coming as an alpha. Until then,
+    build CadencR from source on Linux.
   </DocCallout>
 )}
 
@@ -19,10 +24,10 @@ CadencR ships native desktop builds for macOS and Linux. Start on the [download 
 
 ## Supported systems
 
-| Platform | Builds                          |
-| -------- | ------------------------------- |
-| macOS    | Apple Silicon and Intel DMG/ZIP |
-| Linux    | x86-64 AppImage, DEB, and RPM   |
+| Platform | Builds                                |
+| -------- | ------------------------------------- |
+| macOS    | Apple Silicon and Intel DMG/ZIP       |
+| Linux    | x86-64 AppImage, DEB, and RPM (alpha) |
 
 Linux ARM64 and native Windows packages are not available yet.
 

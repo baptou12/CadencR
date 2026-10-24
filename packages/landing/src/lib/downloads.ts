@@ -50,27 +50,16 @@ function macAsset(
   return { ...display, assetName, arch, kind, os: "macos", url: releaseAssetUrl(assetName) };
 }
 
-/** The first desktop release that ships Linux packages. */
-const FIRST_LINUX_RELEASE = "0.15.0";
+/**
+ * The desktop release carrying the Linux alpha packages, or `null` while none
+ * does. desktop-linux-release.yml attaches them to a published release by hand,
+ * so this can lag the macOS version: set it once that workflow has succeeded.
+ */
+export const LINUX_ALPHA_RELEASE: string | null = null;
 
-function versionAtLeast(version: string, minimum: string): boolean {
-  const parse = (value: string) => value.split(".").map((part) => Number.parseInt(part, 10));
-  const [actual, wanted] = [parse(version), parse(minimum)];
-  for (let index = 0; index < wanted.length; index += 1) {
-    const difference = (actual[index] ?? 0) - (wanted[index] ?? 0);
-    if (difference !== 0) return difference > 0;
-  }
-  return true;
-}
-
-/** Whether `version` has Linux packages, so the site never links missing assets. */
-export function hasLinuxRelease(version: string): boolean {
-  return versionAtLeast(version, FIRST_LINUX_RELEASE);
-}
-
-/** `version` is a parameter only so tests can cover releases before and after Linux. */
-export function linuxReleaseAssets(version: string): DownloadAsset[] {
-  if (!hasLinuxRelease(version)) return [];
+/** `version` is a parameter only so tests can cover both states of the flag. */
+export function linuxReleaseAssets(version: string | null): DownloadAsset[] {
+  if (version === null) return [];
   const linuxAsset = (
     assetName: string,
     kind: DownloadKind,
@@ -102,7 +91,7 @@ export function linuxReleaseAssets(version: string): DownloadAsset[] {
   ];
 }
 
-export const LINUX_AVAILABLE: boolean = hasLinuxRelease(appVersion);
+export const LINUX_AVAILABLE: boolean = LINUX_ALPHA_RELEASE !== null;
 
 export const LATEST_RELEASE_URL: string =
   "https://github.com/merkr-software/CadencR/releases/latest";
@@ -129,7 +118,7 @@ export const DOWNLOAD_ASSETS: DownloadAsset[] = [
     label: "macOS Intel ZIP",
     size: "147 MB",
   }),
-  ...linuxReleaseAssets(appVersion),
+  ...linuxReleaseAssets(LINUX_ALPHA_RELEASE),
 ];
 
 /**
