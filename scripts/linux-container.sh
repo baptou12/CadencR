@@ -118,8 +118,10 @@ container_run() {
     -e CADENCR_CONTAINER_SCRIPT="$script" \
     -w /src "$image" bash -euo pipefail -c '
       if [ "$CADENCR_CONTAINER_USER" = root ]; then exec bash -euo pipefail -c "$CADENCR_CONTAINER_SCRIPT"; fi
-      # Volumes from earlier root runs: hand them to dev once.
-      [ "$(stat -c %u /src)" = 1000 ] || chown -R dev:dev /src /cache
+      # Volumes from earlier root runs or a fresh cache volume: hand each to dev
+      # once. Checked apart: sync_tree already gives /src to dev on every run.
+      [ "$(stat -c %u /src)" = 1000 ] || chown -R dev:dev /src
+      [ "$(stat -c %u /cache)" = 1000 ] || chown -R dev:dev /cache
       exec setpriv --reuid=1000 --regid=1000 --init-groups env HOME=/home/dev \
         bash -euo pipefail -c "$CADENCR_CONTAINER_SCRIPT"'
 }
