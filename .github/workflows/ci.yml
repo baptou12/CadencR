@@ -321,12 +321,46 @@ jobs:
     name: Release artifact compatibility
     uses: ./.github/workflows/artifact-compatibility.yml
 
+  # The native-starter template becomes an author's own repository, so its UI
+  # is built the way it will be there — npm from its own lockfile, against the
+  # published SDK packages — and its release workflow is linted. The rust job
+  # checks its backend.
+  tab-template:
+    name: Custom tab template (UI build, release workflow lint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: examples/custom-tabs/native-starter
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      # actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: examples/custom-tabs/native-starter/package-lock.json
+
+      - name: Build the UI
+        run: |
+          npm ci
+          npm run build:ui
+
+      # rhysd/actionlint:1.7.7, with shellcheck for the run scripts.
+      - name: Lint the release workflow
+        run: >-
+          docker run --rm -v "$PWD:/repo" -w /repo
+          rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+          .github/workflows/release.yml
+
   # Branch protection requires a check with exactly this name. It aggregates the
   # parallel jobs so the requirement stays a single, stable context.
   precommit-checks:
     name: Pre-commit checks
     if: always()
-    needs: [rust, web, vitest, scripts, plugins, artifacts]
+    needs: [rust, web, vitest, scripts, plugins, artifacts, tab-template]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

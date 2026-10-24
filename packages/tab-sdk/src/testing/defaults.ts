@@ -19,6 +19,7 @@ export interface HostState {
   theme: ThemeSnapshot;
   capabilities: string[];
   visible: boolean;
+  shortcuts: string[];
   instanceId: string;
   plugin: { id: string; version: string };
   apiVersions: ApiVersionRange;
@@ -57,6 +58,7 @@ export function createDefaultHandlers(state: HostState): Handlers {
         theme: state.theme,
         capabilities: state.capabilities,
         visible: state.visible,
+        shortcuts: state.shortcuts,
       };
     },
     "api.request": (request) => {

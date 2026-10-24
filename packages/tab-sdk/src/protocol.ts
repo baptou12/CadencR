@@ -155,6 +155,12 @@ export interface HelloResult {
   capabilities: string[];
   /** Whether the tab is shown right now; later changes arrive as `visibility.changed`. */
   visible: boolean;
+  /**
+   * The ids of the manifest's `shortcuts` that are active: those colliding
+   * with a Cadencr shortcut are left out. Absent from hosts older than the
+   * field (Cadencr 0.15).
+   */
+  shortcuts?: string[];
 }
 
 export interface ApiRequestParams {
@@ -286,6 +292,8 @@ export interface EventMap {
   /** The plugin should refetch: events were lost. */
   "stream.resync": { subscriptionId: string };
   "stream.error": { subscriptionId: string; error: WireError };
+  /** One of the manifest's `shortcuts` was pressed while the tab had focus. */
+  shortcut: { id: string };
 }
 
 export type EventName = keyof EventMap;
@@ -297,6 +305,7 @@ export const EVENT_NAMES = [
   "stream.event",
   "stream.resync",
   "stream.error",
+  "shortcut",
 ] as const satisfies readonly EventName[];
 
 /** An event narrowed to one name. */
@@ -351,6 +360,7 @@ const EVENT_PAYLOADS: { [E in EventName]: (payload: Record<string, unknown>) => 
     typeof payload.data.action === "string",
   "stream.resync": hasSubscription,
   "stream.error": (payload) => hasSubscription(payload) && isWireError(payload.error),
+  shortcut: ({ id }) => typeof id === "string",
 };
 
 function isEventName(value: unknown): value is EventName {
@@ -358,19 +368,17 @@ function isEventName(value: unknown): value is EventName {
 }
 
 /**
- * A message from the host, checked at the `MessagePort` boundary: a known
- * event with the payload its handlers expect, or a response carrying either a
- * result or a well-formed error. Results are method-specific and checked by
- * the method that asked for them.
+ * A message from the host, checked at the `MessagePort` boundary: an event
+ * (a known one with the payload its handlers expect; an unknown one, from a
+ * newer host, is let through for the client to ignore — events are
+ * additive), or a response carrying either a result or a well-formed error.
+ * Results are method-specific and checked by the method that asked for them.
  */
 export function isHostToGuest(value: unknown): value is HostToGuest {
   if (!isRecord(value) || value.v !== PROTOCOL_VERSION) return false;
   if (value.kind === "event") {
-    return (
-      isEventName(value.event) &&
-      isRecord(value.payload) &&
-      EVENT_PAYLOADS[value.event](value.payload)
-    );
+    if (typeof value.event !== "string" || !isRecord(value.payload)) return false;
+    return !isEventName(value.event) || EVENT_PAYLOADS[value.event](value.payload);
   }
   if (value.kind !== "response" || typeof value.id !== "string") return false;
   return "error" in value ? isWireError(value.error) : "result" in value;

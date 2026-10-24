@@ -82,6 +82,14 @@ jobs:
       - name: Add the Rust targets
         run: rustup target add ${{ matrix.targets }}
 
+      # Swatinem/rust-cache@v2.9.2: the dependencies' build, reused while
+      # Cargo.lock and the toolchain stay the same. Pull requests only read it.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: backend -> target
+          key: ${{ matrix.os }}
+          save-if: ${{ github.event_name != 'pull_request' }}
+
       # The code is the same on every platform: linting once is enough.
       - name: Lint
         if: matrix.lint

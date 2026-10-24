@@ -1,23 +1,18 @@
 import { WebContentsView, type Session, type WebContents } from "electron";
 
-import { guestChrome } from "../browser-tab-events";
-import { PANE_SHORTCUTS, type BrowserShortcut } from "../../../src/shared/browser-types";
+import type { PluginTabKeyInput } from "../../../src/shared/plugin-tab-host";
 import { isOwnPluginTabUrl, pluginTabEntryUrl, pluginTabPartition } from "./plugin-tab-ids";
 
 // net::ERR_ABORTED: a navigation we (or the page) cancelled, or one superseded
 // by a newer load — never a real failure worth a placeholder.
 const ERR_ABORTED = -3;
 
-// Feature-pane chords are the only app shortcuts that make sense while a custom
-// tab holds focus; the Browser tab's own chords (⌘T, ⌘W, ⌘L…) would act on a
-// different pane, so they stay with the guest.
-const RELAYED_SHORTCUTS = new Set<BrowserShortcut>(PANE_SHORTCUTS);
-
 export interface PluginTabGuestHooks {
   loaded: () => void;
   loadFailed: (detail: string) => void;
   crashed: (detail: string) => void;
-  shortcut: (shortcut: BrowserShortcut) => void;
+  /** A key pressed in the guest; `true` takes it from the page (a shortcut). */
+  keyDown: (input: PluginTabKeyInput) => boolean;
 }
 
 export interface PluginTabGuestOptions {
@@ -112,13 +107,19 @@ function isAbortedLoad(error: unknown): boolean {
 }
 
 function installShortcutRelay(wc: WebContents, hooks: PluginTabGuestHooks): void {
-  // A focused guest swallows keydown before the renderer sees it; relay the
-  // pane switches exactly like Browser guests do (browser-tab-events.ts).
+  // A focused guest swallows keydown before the renderer sees it: the host
+  // matches every key first (plugin-tab-shortcuts.ts).
   wc.on("before-input-event", (event, input) => {
-    const shortcut = guestChrome(input, null);
-    if (!shortcut || !RELAYED_SHORTCUTS.has(shortcut)) return;
-    event.preventDefault();
-    hooks.shortcut(shortcut);
+    if (input.type !== "keyDown") return;
+    const taken = hooks.keyDown({
+      key: input.key,
+      code: input.code,
+      meta: input.meta,
+      control: input.control,
+      alt: input.alt,
+      shift: input.shift,
+    });
+    if (taken) event.preventDefault();
   });
 }
 

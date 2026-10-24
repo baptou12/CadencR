@@ -4036,6 +4036,12 @@ export const TabIssueCode = {
   BACKEND_PLATFORM_UNKNOWN: "BACKEND_PLATFORM_UNKNOWN",
   BACKEND_REASONING_REQUIRED: "BACKEND_REASONING_REQUIRED",
   BACKEND_UNAVAILABLE: "BACKEND_UNAVAILABLE",
+  SHORTCUTS_TOO_MANY: "SHORTCUTS_TOO_MANY",
+  SHORTCUT_ID_INVALID: "SHORTCUT_ID_INVALID",
+  SHORTCUT_ID_DUPLICATE: "SHORTCUT_ID_DUPLICATE",
+  SHORTCUT_KEYS_INVALID: "SHORTCUT_KEYS_INVALID",
+  SHORTCUT_KEYS_DUPLICATE: "SHORTCUT_KEYS_DUPLICATE",
+  SHORTCUT_DESCRIPTION_INVALID: "SHORTCUT_DESCRIPTION_INVALID",
 } as const;
 
 /**
@@ -4047,6 +4053,23 @@ export interface TabIssue {
   /** @nullable */
   field?: string | null;
   message: string;
+}
+
+/**
+ * One keyboard shortcut a tab handles while it has focus (`shortcuts[]`),
+ * delivered to the page as a `shortcut` event naming its `id`.
+ */
+export interface TabShortcut {
+  /** What it does, for the shortcuts cheatsheet and the tab's settings. */
+  description: string;
+  /** Stable within the tab, e.g. `refresh`. */
+  id: string;
+  /**
+   * Shortcut tokens, e.g. `["mod", "shift", "r"]`: modifiers (`mod`,
+   * `ctrl`, `alt`, `shift`) and exactly one key; `mod`, `ctrl` or `alt`
+   * is required.
+   */
+  keys: string[];
 }
 
 /**
@@ -4114,6 +4137,8 @@ export interface PluginTabSummary {
    * @nullable
    */
   permissions_hash?: string | null;
+  /** Keyboard shortcuts the tab handles while it has focus. */
+  shortcuts: TabShortcut[];
   status: PluginTabStatus;
   /** @nullable */
   version?: string | null;
@@ -24302,9 +24327,10 @@ export const usePluginTabCreateGrant = <TError = ErrorType<unknown>, TContext = 
 conversation, so its backend keeps running, idle or not. The desktop
 renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
 malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases, 404
-`PLUGIN_TAB_CONVERSATION_NOT_FOUND` once the conversation is deleted —
-possibly from another client, whose tabs still renew: every lease held
-in it goes too, so its backends stop.
+`PLUGIN_TAB_CONVERSATION_NOT_FOUND` once the conversation is deleted and
+409 `PLUGIN_TAB_CONVERSATION_ARCHIVED` while it is archived — possibly
+from another client, whose tabs still renew: every lease held in it goes
+too, so its backends stop.
  */
 export const pluginTabRenewPresence = (
   id: string,
@@ -24372,9 +24398,10 @@ export type PluginTabRenewPresenceMutationVariables = {
 conversation, so its backend keeps running, idle or not. The desktop
 renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
 malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases, 404
-`PLUGIN_TAB_CONVERSATION_NOT_FOUND` once the conversation is deleted —
-possibly from another client, whose tabs still renew: every lease held
-in it goes too, so its backends stop.
+`PLUGIN_TAB_CONVERSATION_NOT_FOUND` once the conversation is deleted and
+409 `PLUGIN_TAB_CONVERSATION_ARCHIVED` while it is archived — possibly
+from another client, whose tabs still renew: every lease held in it goes
+too, so its backends stop.
  */
 export const usePluginTabRenewPresence = <TError = ErrorType<unknown>, TContext = unknown>(
   options?: {

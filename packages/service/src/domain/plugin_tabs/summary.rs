@@ -98,6 +98,9 @@ fn build(
         commands: manifest
             .map(|manifest| manifest.commands.clone())
             .unwrap_or_default(),
+        shortcuts: manifest
+            .map(|manifest| manifest.shortcuts.clone())
+            .unwrap_or_default(),
         backend: manifest.and_then(|manifest| manifest.backend.clone()),
         backend_availability: manifest.and_then(|manifest| manifest.backend.as_ref()).map(
             |backend| {

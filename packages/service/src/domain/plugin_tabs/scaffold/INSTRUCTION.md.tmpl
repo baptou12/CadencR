@@ -157,6 +157,19 @@ Secrets are never readable by the tab. Write `{{secret:<key>}}` in a
 service substitutes it before the request leaves the machine. A secret the
 user has not set fails the call with `PLUGIN_TAB_SECRET_UNKNOWN`.
 
+### Keyboard shortcuts
+
+`"shortcuts": [{ "id": "refresh", "keys": ["mod", "shift", "r"], "description": "Refresh" }]`
+declares keys the tab handles while it has focus (≤ 16). `keys`: `mod` (⌘ on
+macOS, Ctrl elsewhere), `ctrl`, `alt`, `shift`, plus exactly one key — a
+lowercase letter, a digit, `f1`–`f12`, `enter`, `escape`, `space`, an arrow
+(`up`…), `plus`, `minus`, `comma`, `slash`, `backtick`, `backspace`,
+`lbracket` or `rbracket` — and `mod`, `ctrl` or `alt` must be held. Handle a
+press with `useShortcut("refresh", () => …)`, not a `keydown` listener.
+Cadencr's own shortcuts always win: one on the same keys never fires (Settings
+→ Custom tabs says which Cadencr shortcut takes it; `client.shortcuts` lists
+the ids that can fire), so prefer `mod`+`alt` or `mod`+`shift`+`alt` chords.
+
 ## The SDK: `@cadencr/tab-sdk`
 
 `src/main.tsx` wraps the app in `<CadencrProvider>`, which connects and
@@ -166,7 +179,7 @@ to render your own). Inside it:
 
 ```tsx
 import {
-  useCadencr, useStorage, useStream, useTabContext, useTheme, useVisibility,
+  useCadencr, useShortcut, useStorage, useStream, useTabContext, useTheme, useVisibility,
 } from "@cadencr/tab-sdk/react";
 ```
 
@@ -175,6 +188,7 @@ import {
 | `useTabContext()` | `{ project: { id, name, path }, feature: { id, name, branch, baseBranch, worktreePath }, pullRequest: { number, url, state, title } \| null, session: { id, provider, status } \| null }` — live |
 | `useTheme()` | `{ id, appearance: "light" \| "dark", tokens }` — live |
 | `useVisibility()` | `true` while the tab is shown; pause polling and heavy work when `false` |
+| `useShortcut(id, handler)` | runs `handler` when the manifest shortcut `id` is pressed while the tab has focus |
 | `useStream(topic, handler, { params?, onResync?, onError?, enabled? })` | one subscription for the component's lifetime |
 | `useStorage(key, initial)` | `{ value, loading, error, set(value) }` for one storage key |
 | `useCadencr()` | the client (below) |

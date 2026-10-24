@@ -45,6 +45,10 @@ pub struct TabManifest {
     /// the user's rights ([`TabAccessLevel::Backend`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<TabBackend>,
+    /// Keyboard shortcuts the tab handles while it has focus; one that
+    /// collides with a Cadencr shortcut is disabled by the host.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shortcuts: Vec<TabShortcut>,
 }
 
 impl TabManifest {
@@ -92,6 +96,21 @@ pub struct TabCommand {
     /// Shown to the user at consent time; required.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<String>,
+}
+
+/// One keyboard shortcut a tab handles while it has focus (`shortcuts[]`),
+/// delivered to the page as a `shortcut` event naming its `id`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TabShortcut {
+    /// Stable within the tab, e.g. `refresh`.
+    pub id: String,
+    /// Shortcut tokens, e.g. `["mod", "shift", "r"]`: modifiers (`mod`,
+    /// `ctrl`, `alt`, `shift`) and exactly one key; `mod`, `ctrl` or `alt`
+    /// is required.
+    pub keys: Vec<String>,
+    /// What it does, for the shortcuts cheatsheet and the tab's settings.
+    pub description: String,
 }
 
 /// The tab's native backend process (`backend`): one executable per

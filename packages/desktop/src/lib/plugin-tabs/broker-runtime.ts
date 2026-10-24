@@ -15,6 +15,8 @@ export interface PluginIdentity {
   hasCommands: boolean;
   /** Whether tab.json declares a `backend` (`backend.request`). */
   hasBackend: boolean;
+  /** The ids of tab.json's `shortcuts` that can fire (none taken by Cadencr). */
+  shortcuts: readonly string[];
 }
 
 /** Everything a method handler may use; one per broker. */

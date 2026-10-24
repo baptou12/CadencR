@@ -64,6 +64,7 @@ export class CadencrClient {
   private readonly contextChanges = new Emitter<TabContext>();
   private readonly themeChanges = new Emitter<ThemeSnapshot>();
   private readonly visibilityChanges = new Emitter<boolean>();
+  private readonly shortcutPresses = new Emitter<string>();
   private readonly connectionChanges = new Emitter<boolean>();
   private readonly errors = new Emitter<CadencrError>();
 
@@ -138,6 +139,11 @@ export class CadencrClient {
     return this.isVisible;
   }
 
+  /** The ids of the manifest's `shortcuts` that can fire (not taken by Cadencr). */
+  get shortcuts(): readonly string[] {
+    return this.current.shortcuts ?? [];
+  }
+
   get connected(): boolean {
     return this.connection.connected;
   }
@@ -152,6 +158,15 @@ export class CadencrClient {
 
   onVisibilityChange(listener: (visible: boolean) => void): () => void {
     return this.visibilityChanges.on(listener);
+  }
+
+  /**
+   * One of the manifest's `shortcuts` was pressed while the tab had focus;
+   * the listener gets its `id`. Cadencr's own shortcuts always win, so a
+   * declared one that collides with them never fires (see `shortcuts`).
+   */
+  onShortcut(listener: (id: string) => void): () => void {
+    return this.shortcutPresses.on(listener);
   }
 
   /** `false` when the host port is lost, `true` once a new one handshakes. */
@@ -185,6 +200,7 @@ export class CadencrClient {
       this.contextChanges,
       this.themeChanges,
       this.visibilityChanges,
+      this.shortcutPresses,
       this.connectionChanges,
       this.errors,
     ]) {
@@ -246,6 +262,9 @@ export class CadencrClient {
         this.visibilityChanges.emit(this.isVisible);
         return;
       }
+      case "shortcut":
+        this.shortcutPresses.emit((payload as EventMap["shortcut"]).id);
+        return;
       case "stream.event":
       case "stream.resync":
       case "stream.error":

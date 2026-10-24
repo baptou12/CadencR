@@ -54,6 +54,12 @@ pub enum TabIssueCode {
     BackendPlatformUnknown,
     BackendReasoningRequired,
     BackendUnavailable,
+    ShortcutsTooMany,
+    ShortcutIdInvalid,
+    ShortcutIdDuplicate,
+    ShortcutKeysInvalid,
+    ShortcutKeysDuplicate,
+    ShortcutDescriptionInvalid,
 }
 
 impl TabIssueCode {
@@ -101,6 +107,12 @@ impl TabIssueCode {
             Self::BackendPlatformUnknown => "BACKEND_PLATFORM_UNKNOWN",
             Self::BackendReasoningRequired => "BACKEND_REASONING_REQUIRED",
             Self::BackendUnavailable => "BACKEND_UNAVAILABLE",
+            Self::ShortcutsTooMany => "SHORTCUTS_TOO_MANY",
+            Self::ShortcutIdInvalid => "SHORTCUT_ID_INVALID",
+            Self::ShortcutIdDuplicate => "SHORTCUT_ID_DUPLICATE",
+            Self::ShortcutKeysInvalid => "SHORTCUT_KEYS_INVALID",
+            Self::ShortcutKeysDuplicate => "SHORTCUT_KEYS_DUPLICATE",
+            Self::ShortcutDescriptionInvalid => "SHORTCUT_DESCRIPTION_INVALID",
         }
     }
 }
