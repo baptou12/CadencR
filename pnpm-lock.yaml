@@ -205,17 +205,17 @@ importers:
         specifier: 0.8.0
         version: 0.8.0
       '@tanstack/query-sync-storage-persister':
-        specifier: ^5.101.4
-        version: 5.101.4
+        specifier: ^5.104.1
+        version: 5.104.1
       '@tanstack/react-hotkeys':
         specifier: 0.10.0
         version: 0.10.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@tanstack/react-query':
-        specifier: ^5.101.4
-        version: 5.101.4(react@19.2.7)
+        specifier: ^5.104.1
+        version: 5.104.1(react@19.2.7)
       '@tanstack/react-query-persist-client':
-        specifier: ^5.101.4
-        version: 5.101.4(@tanstack/react-query@5.101.4(react@19.2.7))(react@19.2.7)
+        specifier: ^5.104.1
+        version: 5.104.1(@tanstack/react-query@5.104.1(react@19.2.7))(react@19.2.7)
       '@tanstack/react-router':
         specifier: 1.170.16
         version: 1.170.16(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -313,8 +313,8 @@ importers:
         specifier: ^11.11.1
         version: 11.11.1
       idb-keyval:
-        specifier: ^6.2.5
-        version: 6.2.5
+        specifier: ^6.3.0
+        version: 6.3.0
       jsdom:
         specifier: 29.1.1
         version: 29.1.1(@noble/hashes@1.8.0)
@@ -418,8 +418,8 @@ importers:
         specifier: 4.6.6
         version: 4.6.6
       zustand:
-        specifier: ^5.0.14
-        version: 5.0.14(@types/react@19.2.17)(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))
+        specifier: ^5.0.15
+        version: 5.0.15(@types/react@19.2.17)(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))
 
   packages/landing:
     dependencies:
@@ -428,7 +428,7 @@ importers:
         version: 0.9.10(prettier@3.8.4)(typescript@5.9.3)
       '@astrojs/mdx':
         specifier: 7.0.3
-        version: 7.0.3(astro@7.3.8(@types/node@22.19.17)(esbuild@0.28.1)(idb-keyval@6.2.5)(jiti@2.7.0)(sass@1.104.0)(yaml@2.9.1))
+        version: 7.0.3(astro@7.3.8(@types/node@22.19.17)(esbuild@0.28.1)(idb-keyval@6.3.0)(jiti@2.7.0)(sass@1.104.0)(yaml@2.9.1))
       '@astrojs/rss':
         specifier: ^4.0.19
         version: 4.0.19
@@ -446,7 +446,7 @@ importers:
         version: 5.3.0
       astro:
         specifier: 7.3.8
-        version: 7.3.8(@types/node@22.19.17)(esbuild@0.28.1)(idb-keyval@6.2.5)(jiti@2.7.0)(sass@1.104.0)(yaml@2.9.1)
+        version: 7.3.8(@types/node@22.19.17)(esbuild@0.28.1)(idb-keyval@6.3.0)(jiti@2.7.0)(sass@1.104.0)(yaml@2.9.1)
     devDependencies:
       '@cadencr/brand':
         specifier: workspace:*
@@ -4416,14 +4416,14 @@ packages:
     resolution: {integrity: sha512-vqH7X9nb0MTJ/O08++dB5bP9jgj4+BIPOUu/U+6myG86lDsirZSVSobpq5UQpE7nBuk62i8eIYeOhd+OMl/UrA==}
     engines: {node: '>=18'}
 
-  '@tanstack/query-core@5.101.4':
-    resolution: {integrity: sha512-gNwcvOJcRbLWPOLG/2OBm+zM+Yv+MKsXKEOWC57USuZDEsI71hEErQsiEGx5wX9rzWWkfwM0fVSPoiIFSsxfiw==}
+  '@tanstack/query-core@5.104.1':
+    resolution: {integrity: sha512-TiRghcrGkUTE+M4JBxvpPSpBhxvIzQairw+cksrHYGr+2uwC77yW1SY9nYxnYRYOppvucf8rEg6b5byoz4rTpw==}
 
-  '@tanstack/query-persist-client-core@5.101.4':
-    resolution: {integrity: sha512-Bmu+RfWhwYEyYZEwSeKC0gX4+KTkiEB3yO8oz9BfAY/Jfe3ndz9EnYVhihIZPmWIr8NXayF7JuraNQcrXQQCCg==}
+  '@tanstack/query-persist-client-core@5.104.1':
+    resolution: {integrity: sha512-ONiadXqe56iNrw6RESqKILpTIVG9ZMI/DageTQnrBDt/nZ6WiP4G13iIiMwJEsiO12gQ3Gychx8tcFIPw4k25g==}
 
-  '@tanstack/query-sync-storage-persister@5.101.4':
-    resolution: {integrity: sha512-G5RaevDGbq9HCe5DSNQaFZroGgHEjKTGY9e+vya26jphp+hdQaBB5jBVCoPqaR/uP0eSdt+vxwVsp2BwaoFxHw==}
+  '@tanstack/query-sync-storage-persister@5.104.1':
+    resolution: {integrity: sha512-eDsBMNds48+sjXILn0dQKu+uYwfh9tGIB+Rb0cKRdoxD22HHBMzJes5DJOhJVLUhBQbxtoFq+Hpha/Vohh14NQ==}
 
   '@tanstack/react-hotkeys@0.10.0':
     resolution: {integrity: sha512-GwOSndI5j3qBVYTmgP1mYyRTnlxb2MS17cwGlsavSxMQPSnmDf+m3LzMIpRMs+3zzQMjg3cYhHsFYizYlFI2tw==}
@@ -4432,14 +4432,14 @@ packages:
       react: '>=16.8'
       react-dom: '>=16.8'
 
-  '@tanstack/react-query-persist-client@5.101.4':
-    resolution: {integrity: sha512-CY5i7PPKS/5B8OR2zAs9nCbLpgqI4jN8eBhtAxKRMNHyGcQhmyOy4PkkJrAAXT+ecGj++fBJTgQw6OpyCt/2SQ==}
+  '@tanstack/react-query-persist-client@5.104.1':
+    resolution: {integrity: sha512-kU3YaqjkwEUzUUfPF0JVg56d6gJKWHaFVqOlQztwc4C2IT0P5sv/23orrSoQqjxKaUe6Ejw5IIQtA/G12uNmow==}
     peerDependencies:
-      '@tanstack/react-query': ^5.101.4
+      '@tanstack/react-query': ^5.104.1
       react: ^18 || ^19
 
-  '@tanstack/react-query@5.101.4':
-    resolution: {integrity: sha512-yRg2pfOCxIs4ZJW3XYYHU/WgtD04FHSnfHlpRT7h7pR77hwkdRG4wxbKe4aq6P0RvXUTBSQpQeadS1SUYUe+KA==}
+  '@tanstack/react-query@5.104.1':
+    resolution: {integrity: sha512-Zz70EgjahNI7aCz8BZxM3vUGU44ycxEAzMuCUjLeA7SVhhOkg3ZgPjPJPvHjs6Rmky/dtmnu1WzjGHNHmhCoZQ==}
     peerDependencies:
       react: ^18 || ^19
 
@@ -6161,8 +6161,8 @@ packages:
     resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
     engines: {node: '>=0.10.0'}
 
-  idb-keyval@6.2.5:
-    resolution: {integrity: sha512-eKQkTnS0relYsSOYomx8ozIbmdsQCKUdhyuIaQ2DZgKuaxtyQQMkyD/wlnQN32pO3yutN1b1L8uqwcDKaJd7/Q==}
+  idb-keyval@6.3.0:
+    resolution: {integrity: sha512-um+2dgAWmYsu615EXpWVwSmapJhON0G43t3Ka/EVaohzPQXSMqKEqeDK/oIW3Ow+BXaF2PvSc+oBTFp793A5Ow==}
 
   image-blob-reduce@3.0.1:
     resolution: {integrity: sha512-/VmmWgIryG/wcn4TVrV7cC4mlfUC/oyiKIfSg5eVM3Ten/c1c34RJhMYKCWTnoSMHSqXLt3tsrBR4Q2HInvN+Q==}
@@ -8589,8 +8589,8 @@ packages:
       react:
         optional: true
 
-  zustand@5.0.14:
-    resolution: {integrity: sha512-/8tAspM5LMPr28b3fwLYrtdj77ECpfZviaP75CMTnwO8ISyaE4GDIG/9rDDYq/cH9D2Xw2A2RXglLInmVBQB/g==}
+  zustand@5.0.15:
+    resolution: {integrity: sha512-MpSEjRiBkA9crSYeOUH32rJC7SVqAbm0Fqcqge/bUi2PPoLcBWKOsG+C8mevmpr8TwXHBVkChbbJiyvkE+i/3A==}
     engines: {node: '>=12.20.0'}
     peerDependencies:
       '@types/react': '>=18.0.0'
@@ -8779,13 +8779,13 @@ snapshots:
       github-slugger: 2.0.0
       satteri: 0.10.5
 
-  '@astrojs/mdx@7.0.3(astro@7.3.8(@types/node@22.19.17)(esbuild@0.28.1)(idb-keyval@6.2.5)(jiti@2.7.0)(sass@1.104.0)(yaml@2.9.1))':
+  '@astrojs/mdx@7.0.3(astro@7.3.8(@types/node@22.19.17)(esbuild@0.28.1)(idb-keyval@6.3.0)(jiti@2.7.0)(sass@1.104.0)(yaml@2.9.1))':
     dependencies:
       '@astrojs/internal-helpers': 0.10.1
       '@astrojs/markdown-remark': 7.2.1
       '@mdx-js/mdx': 3.1.1
       acorn: 8.16.0
-      astro: 7.3.8(@types/node@22.19.17)(esbuild@0.28.1)(idb-keyval@6.2.5)(jiti@2.7.0)(sass@1.104.0)(yaml@2.9.1)
+      astro: 7.3.8(@types/node@22.19.17)(esbuild@0.28.1)(idb-keyval@6.3.0)(jiti@2.7.0)(sass@1.104.0)(yaml@2.9.1)
       es-module-lexer: 2.1.0
       estree-util-visit: 2.0.0
       hast-util-to-html: 9.0.5
@@ -12262,16 +12262,16 @@ snapshots:
     dependencies:
       '@tanstack/store': 0.11.0
 
-  '@tanstack/query-core@5.101.4': {}
+  '@tanstack/query-core@5.104.1': {}
 
-  '@tanstack/query-persist-client-core@5.101.4':
+  '@tanstack/query-persist-client-core@5.104.1':
     dependencies:
-      '@tanstack/query-core': 5.101.4
+      '@tanstack/query-core': 5.104.1
 
-  '@tanstack/query-sync-storage-persister@5.101.4':
+  '@tanstack/query-sync-storage-persister@5.104.1':
     dependencies:
-      '@tanstack/query-core': 5.101.4
-      '@tanstack/query-persist-client-core': 5.101.4
+      '@tanstack/query-core': 5.104.1
+      '@tanstack/query-persist-client-core': 5.104.1
 
   '@tanstack/react-hotkeys@0.10.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
@@ -12280,15 +12280,15 @@ snapshots:
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
 
-  '@tanstack/react-query-persist-client@5.101.4(@tanstack/react-query@5.101.4(react@19.2.7))(react@19.2.7)':
+  '@tanstack/react-query-persist-client@5.104.1(@tanstack/react-query@5.104.1(react@19.2.7))(react@19.2.7)':
     dependencies:
-      '@tanstack/query-persist-client-core': 5.101.4
-      '@tanstack/react-query': 5.101.4(react@19.2.7)
+      '@tanstack/query-persist-client-core': 5.104.1
+      '@tanstack/react-query': 5.104.1(react@19.2.7)
       react: 19.2.7
 
-  '@tanstack/react-query@5.101.4(react@19.2.7)':
+  '@tanstack/react-query@5.104.1(react@19.2.7)':
     dependencies:
-      '@tanstack/query-core': 5.101.4
+      '@tanstack/query-core': 5.104.1
       react: 19.2.7
 
   '@tanstack/react-router@1.170.16(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
@@ -12957,7 +12957,7 @@ snapshots:
 
   astring@1.9.0: {}
 
-  astro@7.3.8(@types/node@22.19.17)(esbuild@0.28.1)(idb-keyval@6.2.5)(jiti@2.7.0)(sass@1.104.0)(yaml@2.9.1):
+  astro@7.3.8(@types/node@22.19.17)(esbuild@0.28.1)(idb-keyval@6.3.0)(jiti@2.7.0)(sass@1.104.0)(yaml@2.9.1):
     dependencies:
       '@astrojs/compiler-rs': 0.5.1
       '@astrojs/internal-helpers': 0.12.0
@@ -13004,7 +13004,7 @@ snapshots:
       tinyglobby: 0.2.17
       ultrahtml: 1.7.0
       unifont: 0.7.5
-      unstorage: 1.17.5(idb-keyval@6.2.5)
+      unstorage: 1.17.5(idb-keyval@6.3.0)
       verkit: 0.5.0
       vite: 8.3.4(@types/node@22.19.17)(esbuild@0.28.1)(jiti@2.7.0)(sass@1.104.0)(yaml@2.9.1)
       vitefu: 1.1.3(vite@8.3.4(@types/node@22.19.17)(esbuild@0.28.1)(jiti@2.7.0)(sass@1.104.0)(yaml@2.9.1))
@@ -14451,7 +14451,7 @@ snapshots:
     dependencies:
       safer-buffer: 2.1.2
 
-  idb-keyval@6.2.5: {}
+  idb-keyval@6.3.0: {}
 
   image-blob-reduce@3.0.1:
     dependencies:
@@ -16762,7 +16762,7 @@ snapshots:
       picomatch: 4.0.5
       webpack-virtual-modules: 0.6.2
 
-  unstorage@1.17.5(idb-keyval@6.2.5):
+  unstorage@1.17.5(idb-keyval@6.3.0):
     dependencies:
       anymatch: 3.1.3
       chokidar: 5.0.0
@@ -16773,7 +16773,7 @@ snapshots:
       ofetch: 1.5.1
       ufo: 1.6.4
     optionalDependencies:
-      idb-keyval: 6.2.5
+      idb-keyval: 6.3.0
 
   until-async@3.0.2: {}
 
@@ -17162,7 +17162,7 @@ snapshots:
       '@types/react': 19.2.17
       react: 19.2.7
 
-  zustand@5.0.14(@types/react@19.2.17)(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7)):
+  zustand@5.0.15(@types/react@19.2.17)(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7)):
     optionalDependencies:
       '@types/react': 19.2.17
       react: 19.2.7

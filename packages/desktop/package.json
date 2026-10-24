@@ -74,10 +74,10 @@
     "@silurus/ooxml": "^0.88.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/hotkeys": "0.8.0",
-    "@tanstack/query-sync-storage-persister": "^5.101.4",
+    "@tanstack/query-sync-storage-persister": "^5.104.1",
     "@tanstack/react-hotkeys": "0.10.0",
-    "@tanstack/react-query": "^5.101.4",
-    "@tanstack/react-query-persist-client": "^5.101.4",
+    "@tanstack/react-query": "^5.104.1",
+    "@tanstack/react-query-persist-client": "^5.104.1",
     "@tanstack/react-router": "1.170.16",
     "@tanstack/router-vite-plugin": "1.167.18",
     "@testing-library/jest-dom": "^6.9.1",
@@ -110,7 +110,7 @@
     "happy-dom": "21.0.4",
     "hast-util-to-jsx-runtime": "^2.3.6",
     "highlight.js": "^11.11.1",
-    "idb-keyval": "^6.2.5",
+    "idb-keyval": "^6.3.0",
     "jsdom": "29.1.1",
     "jsqr": "^1.4.0",
     "knip": "^6.22.0",
@@ -145,6 +145,6 @@
     "vitest": "4.1.12",
     "vscode-languageserver-protocol": "^3.18.1",
     "zod": "4.6.6",
-    "zustand": "^5.0.14"
+    "zustand": "^5.0.15"
   }
 }
