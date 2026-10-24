@@ -130,6 +130,10 @@ export function registerIpc({ getMainWindow, confirmClose, requestQuit }: IpcOpt
     assertTrustedSender(event, getMainWindow);
     setTrafficLightsCenter(requireMainWindow(getMainWindow), parseTrafficLightsCenter(center));
   });
+  ipcMain.handle("window:is-focused", (event) => {
+    assertTrustedSender(event, getMainWindow);
+    return requireMainWindow(getMainWindow).isFocused();
+  });
   ipcMain.handle("theme:current", (event) => {
     assertTrustedSender(event, getMainWindow);
     return nativeTheme.shouldUseDarkColors ? "dark" : "light";

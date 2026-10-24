@@ -149,6 +149,10 @@ function createWindow(): BrowserWindow {
     pendingQuit = false;
     sendToWindow(win, "app:close-requested");
   });
+  // The window's own focus, which stays put while a guest view (a custom tab,
+  // a browser pane) has it; the renderer's document reports that as a blur.
+  win.on("focus", () => sendToWindow(win, "window:focus-changed", true));
+  win.on("blur", () => sendToWindow(win, "window:focus-changed", false));
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
     // Guests belong to this window's placeholders; the window (and so the

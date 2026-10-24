@@ -232,6 +232,9 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("power:set-remote-host", enabled),
   onPowerSuspend: (cb: () => void): (() => void) => onIpc("power:suspend", cb),
   onPowerResume: (cb: () => void): (() => void) => onIpc("power:resume", cb),
+  isWindowFocused: (): Promise<boolean> => ipcRenderer.invoke("window:is-focused"),
+  onWindowFocusChange: (cb: (focused: boolean) => void): (() => void) =>
+    onIpc("window:focus-changed", cb),
 
   createBrowserTab: (
     url?: string,
