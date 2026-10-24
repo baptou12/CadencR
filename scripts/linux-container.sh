@@ -53,15 +53,24 @@ ensure_image() {
 # Each sync records the files it wrote and deletes those the previous sync
 # wrote that the host no longer has, so a deleted or renamed source file cannot
 # linger. Build outputs (node_modules, target, out) were never synced, so they
-# are never in a manifest and survive.
+# are never in a manifest and survive. `git ls-files -c` still lists tracked
+# files deleted but not staged, which tar would fail on: skip them. Synced files
+# and every directory above them go to `dev` (uid 1000) on each run, whatever
+# the host uid, so pnpm can always write next to them.
 sync_tree() {
   (
     cd "$repo_root"
     git ls-files -co --exclude-standard -z \
+      | while IFS= read -r -d '' file; do
+        if [ -e "$file" ] || [ -L "$file" ]; then printf '%s\0' "$file"; fi
+      done \
       | COPYFILE_DISABLE=1 tar --no-xattrs --null -T - -cf -
   ) | docker run --rm -i --platform "$platform" -v "$src_volume:/src" "$image" bash -euo pipefail -c '
       cd /src
-      tar -xvf - > /tmp/synced
+      tar --no-same-owner -xvf - > /tmp/synced
+      awk -F/ "{ p = \$1; print p; for (i = 2; i < NF; i++) { p = p \"/\" \$i; print p } }" /tmp/synced \
+        | sort -u | cat - /tmp/synced | tr "\n" "\0" | xargs -0 -r chown -h 1000:1000
+      chown 1000:1000 /src
       if [ -f .linux-container-manifest ]; then
         sort -u /tmp/synced > /tmp/new
         sort -u .linux-container-manifest | comm -23 - /tmp/new | while IFS= read -r stale; do
