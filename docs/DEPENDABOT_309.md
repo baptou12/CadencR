@@ -17,10 +17,11 @@ Base du premier lot : `102ea97a134700c1d0a57cd084a6740e5e6524b8`.
 | Lot | Surface | Nombre | Validation ciblée | État |
 | --- | --- | ---: | --- | --- |
 | 1 | Site et polices | 7 | Build statique, contenu Markdown/MDX, sitemap, navigation et polices dans le navigateur. | Fusionné : #310 |
-| 2 | Outils de test et types GPU | 3 | Tests frontend complets, typage du renderer Neovim. | PR #312, CI finale en cours |
+| 2 | Outils de test et types GPU | 3 | Tests frontend complets, typage du renderer Neovim. | Fusionné : #312 |
 | 3 | Distribution Electron | 2 | Build/package local, configuration des mises à jour et artefacts CI. | PR #313, CI en cours |
-| 4 | CSS | 5 | Build desktop/site/tab-kit, rendu clair/sombre et composants. | Validé localement |
-| 5 | Composants UI | 5 | Dialogs, calendrier, redimensionnement, listes longues et notifications. | À traiter |
+| 4 | CSS | 5 | Build desktop/site/tab-kit, rendu clair/sombre et composants. | PR #315 |
+| 5a | Radix | 1 | Dialogs imbriqués, focus, menus, défilement et consommateur tab-kit. | Validé localement |
+| 5b | Composants UI | 4 | Calendrier, redimensionnement, listes longues et notifications. | À traiter |
 | 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | À traiter |
 | 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | À traiter |
 | 8 | React | 4 | Typage, tests complets, StrictMode et interactions dans l'app. | À traiter |
@@ -172,3 +173,17 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - QA app via `pnpm dev` : mesures de couleurs/polices/géométrie identiques en clair et sombre sur body/sidebar/main/bouton ; aucun débordement. Menus, boîte de dialogue de sauvegarde de disposition et éditeur TypeScript exercés dans un projet de test isolé. Les trois diagnostics navigateur connus restent présents ; aucun nouveau diagnostic lié au lot CSS. Le service signale séparément un catalogue OpenCode non parsable pendant la découverte des CLIs locales.
 - QA site : accueil desktop puis navigation vers la documentation en mobile 390 px, aucun débordement ni image cassée, console propre. QA du build consommateur tab-kit : onglets Graph/List, switch activé puis désactivé (translation `0px`), rendu des boutons/cartes/inputs ; seule erreur réseau, favicon absent de l'exemple.
 - Preuves : `/tmp/cadencr-309/css-{web-checks,desktop-build,landing-build,security-lock,dev}.log`, `css-classes-diff.json`, `css-built-diff.json`, `css-class-qa.cjs`, `compare-css.cjs`. Serveurs et onglets de cette QA arrêtés ; données de test conservées.
+
+
+## Lot 5a : Radix isolé
+
+- Le lot UI est scindé : `radix-ui` 1.6.0 → 1.7.0 seul, dans desktop et tab-kit. Il modifie les versions de 55 dépendances directes Radix ; le diff des entrées du lockfile n'ajoute/supprime aucun package hors de la famille Radix.
+- Revue des [notes officielles](https://www.radix-ui.com/primitives/docs/overview/releases) et des [118 commits entre les manifests publiés](https://github.com/radix-ui/primitives/compare/971abc9b5a9b7deb70a40cf89191694518f121e8...d5767dcbc6f5342b77ea00dd1f25673ded92e126). Les notes du site s'arrêtent en juillet ; la comparaison source couvre aussi les changements suivants jusqu'à 1.7.0.
+- Points sensibles : références composées stabilisées sous React 19, focus/scroll des couches modales et non modales imbriquées, fermeture Escape de la couche supérieure, ARIA des Dialogs, événements des contrôles de formulaire, focus des Tabs, ResizeObserver et arbre de modules optimisable. `ScrollArea.Content` est additif ; l'enveloppe implicite utilisée par l'app reste présente. Les exports racine restent compatibles. La nouvelle personnalisation de Slot a été retirée upstream avant cette version.
+- Versions exactement résolues à 1.7.0, publiées depuis plus de 14 jours. Politiques pnpm et correctifs de sécurité inchangés. Aucun changement applicatif nécessaire.
+- 25 tâches web réussies : format, lint, types, Knip, tests, dont 6 625 tests desktop. 33 tests de sécurité du lockfile. Builds desktop et exemple consommateur tab-kit réussis.
+- QA app réelle : dialogue d'action personnalisée + Select imbriqué ; Escape ferme seulement le Select et remet le focus au déclencheur ; checkbox fonctionnelle et dialogue fermable ; références ARIA existantes ; menu contextuel de fichier ; popovers et défilement Radix à 200 px (contenu 877 px / viewport 620 px).
+- QA du consommateur tab-kit compilé : onglets Graph/List par clic et flèche, switch par clic et Espace, focus visible, console propre. Dans l'app, seuls les trois diagnostics navigateur déjà connus subsistent.
+- Observation hors upgrade : Escape dans le dialogue de création de thème quitte aussi Settings. Reproduit avec Radix 1.6.0 dans un checkout témoin du lot CSS, donc préexistant ; le raccourci global `settings-back` reste actif dans les formulaires. À considérer dans le lot raccourcis.
+- Preuves : `/tmp/cadencr-309/radix-{web-checks,build,security,dev,kit-build}.log`, `radix-lock-diff.json`, `radix-compare.json`. QA et témoin arrêtés, onglets fermés et données conservées.
+- Suivi : #312 fusionnée sur `144fbf0d5` après CI, CodeQL et audit verts. #313 cible maintenant main ; #315 attend sa fusion. Le hook du lot CSS a réussi ses 8 contrôles et 31 tâches.
