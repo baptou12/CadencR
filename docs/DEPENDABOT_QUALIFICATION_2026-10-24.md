@@ -215,7 +215,7 @@ l'audit racine qui étaient encore problématiques lors de l'inventaire initial.
   présent pour la compatibilité existante. Cargo a également réaffecté neuf
   liens transitifs Windows à des versions compatibles déjà présentes dans le
   lockfile. Aucun manifeste Rust ni code applicatif modifié.
-- `setup-node` 7.1.0 sur les 15 usages actuels, avec les commentaires actualisés.
+- `setup-node` 7.1.0 sur les 14 usages actuels, avec les commentaires actualisés.
 - CodeQL `init` et `analyze` 4.39.0 au même SHA, et groupe Dependabot commun.
 - Zod 4.6.6 pour l'exemple Port Monitor, construit hors workspace racine.
 
