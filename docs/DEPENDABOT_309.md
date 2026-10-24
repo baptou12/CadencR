@@ -16,8 +16,8 @@ Base du premier lot : `102ea97a134700c1d0a57cd084a6740e5e6524b8`.
 
 | Lot | Surface | Nombre | Validation ciblée | État |
 | --- | --- | ---: | --- | --- |
-| 1 | Site et polices | 7 | Build statique, contenu Markdown/MDX, sitemap, navigation et polices dans le navigateur. | En validation |
-| 2 | Outils de test et types GPU | 3 | Tests frontend complets, typage du renderer Neovim. | À traiter |
+| 1 | Site et polices | 7 | Build statique, contenu Markdown/MDX, sitemap, navigation et polices dans le navigateur. | PR #310, CI en cours |
+| 2 | Outils de test et types GPU | 3 | Tests frontend complets, typage du renderer Neovim. | En validation |
 | 3 | Distribution Electron | 2 | Build/package local, configuration des mises à jour et artefacts CI. | À traiter |
 | 4 | CSS | 5 | Build desktop/site/tab-kit, rendu clair/sombre et composants. | À traiter |
 | 5 | Composants UI | 5 | Dialogs, calendrier, redimensionnement, listes longues et notifications. | À traiter |
@@ -123,8 +123,20 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - 33 tests de sécurité du lockfile réussis.
 - Build Astro : 41 pages et 227 images optimisées. Contrôle HTTP du résultat : 349 réponses 200 non vides (41 pages, 305 assets, sitemap index/enfant et RSS).
 - Sitemap : 40 URLs distinctes, racine canonique `https://cadencr.com/`, page 404 exclue.
-- QA navigateur : accueil et navigation vers la documentation en dev ; article Markdown/MDX en production, desktop 1440 px et mobile 390 px, aucun débordement ni image cassée. Polices Schibsted Grotesk, JetBrains Mono et Figtree effectivement chargées. Console du site sans avertissement ni erreur.
+- QA navigateur : accueil et navigation vers la documentation en dev ; article Markdown en production, desktop 1440 px et mobile 390 px, aucun débordement ni image cassée. Polices Schibsted Grotesk, JetBrains Mono et Figtree effectivement chargées. Console du site sans avertissement ni erreur.
 - Dans l'app de dev, Inter et Figtree se chargent aussi pour les caractères français/latin étendu. Service QA lancé avec une base isolée ; la base de développement habituelle présente toujours l'erreur SQLite préexistante.
 - Avertissements peers préexistants conservés : anciens Radix transitifs avec React 19 et `vitefu` face aux deux branches de Vite du monorepo. Aucun package concerné par ces incompatibilités déclarées n'est ajouté dans ce lot.
-- Vérification GitHub et contrôles du hook en cours. Logs locaux : `/tmp/cadencr-309/`.
+- Hook complet : 8 contrôles réussis, 31 tâches workspace (Rust inclus). [PR #310](https://github.com/merkr-software/CadencR/pull/310), commit `52cd9b419`, CI en cours. Logs locaux : `/tmp/cadencr-309/`.
 
+
+
+## Lot 2 : outils de test et types WebGPU
+
+- [Testing Library React 16.3.2–16.3.3](https://github.com/testing-library/react-testing-library/compare/v16.3.2...v16.3.3) : empêche la réentrance de `act()` lors d'événements imbriqués ; revue du changement source et de son test upstream.
+- [user-event 14.6.1–14.6.7](https://github.com/testing-library/user-event/compare/v14.6.1...v14.6.7) : focus des `summary`, shadow roots et iframes ; Tab après déplacement du focus ; sélection à `maxlength`, répétition clavier, propriétés PointerEvent et alias DataTransfer corrigés.
+- [WebGPU types 0.1.71–0.1.74](https://github.com/gpuweb/types/compare/v0.1.71...v0.1.74) : trois membres ajoutés aux unions de formats/features, aucun code runtime.
+- Toutes les versions ont plus de 14 jours. Le lockfile ne change que ces trois packages et leurs références.
+- Validation : suite web complète avec les assertions existantes, dont CodeMirror, raccourcis, presse-papiers et custom tabs ; typage du renderer WebGPU. Ce lot ne modifie aucune dépendance embarquée au runtime.
+- Validation initiale : 25 tâches web réussies, dont 6 604 tests desktop. Après intégration de `main` (`ccf5e2649`, custom tabs et correctif SQLite) : 25 tâches web réussies à nouveau, dont 6 625 tests desktop dans 829 fichiers. Aucune assertion modifiée, aucun test ignoré ajouté. Les tests CodeMirror et raccourcis passent avec ce lot isolé. Logs : `/tmp/cadencr-309/integration-test-checks.log`.
+
+- Reprise : lot 1 synchronisé avec `main` dans le commit `ccae3ffd0`. Son ancien commit `52cd9b419` a passé CI, CodeQL et audit ; les trois workflows sont relancés sur le nouveau commit.
