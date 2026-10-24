@@ -18,8 +18,8 @@ Base du premier lot : `102ea97a134700c1d0a57cd084a6740e5e6524b8`.
 | --- | --- | ---: | --- | --- |
 | 1 | Site et polices | 7 | Build statique, contenu Markdown/MDX, sitemap, navigation et polices dans le navigateur. | Fusionné : #310 |
 | 2 | Outils de test et types GPU | 3 | Tests frontend complets, typage du renderer Neovim. | PR #312, CI finale en cours |
-| 3 | Distribution Electron | 2 | Build/package local, configuration des mises à jour et artefacts CI. | Validé localement |
-| 4 | CSS | 5 | Build desktop/site/tab-kit, rendu clair/sombre et composants. | À traiter |
+| 3 | Distribution Electron | 2 | Build/package local, configuration des mises à jour et artefacts CI. | PR #313, CI en cours |
+| 4 | CSS | 5 | Build desktop/site/tab-kit, rendu clair/sombre et composants. | Validé localement |
 | 5 | Composants UI | 5 | Dialogs, calendrier, redimensionnement, listes longues et notifications. | À traiter |
 | 6 | État et cache | 5 | Stores, invalidation, persistance et rechargement de session. | À traiter |
 | 7 | Routage | 2 | Navigation directe, précédent/suivant, onglets et routes générées. | À traiter |
@@ -155,3 +155,20 @@ CI de #309 : [run 40077175715](https://github.com/merkr-software/CadencR/actions
 - QA du vrai `GenericDifferentialDownloader` / `NodeHttpExecutor` contre un serveur HTTP local : 10 cas (CRLF/LF × fragments de 1, 2, 3, 7 ou 65 536 octets), reconstruction COPY + deux plages téléchargées, une requête multipart par cas, SHA-512 correct sans fallback complet. Le parseur upstream journalise parfois les octets du délimiteur final comme ignorés ; tous les téléchargements se terminent et sont vérifiés.
 - App via `pnpm dev`, profil et base QA isolés : service sain, Electron connecté, garde updater dev confirmée dans les logs ; onboarding ignoré et réglages accessibles via le navigateur. Console navigateur : trois diagnostics connus (CSP meta, configuration réservée au shell et fermeture initiale WebSocket StrictMode). L'interaction native du bouton de recherche de mise à jour n'a pas été validée : l'automatisation native ne déclenche pas les contrôles de cette fenêtre.
 - Preuves locales : `/tmp/cadencr-309/electron-web-checks.log`, `electron-security-lock.log`, `electron-package.log`, `mac-package-qa.json`, `dmg-verify.log`, `updater-http-qa.cjs`, `updater-http-qa.log`, `integration-dev.log`.
+
+- Lot 3 publié dans [#313](https://github.com/merkr-software/CadencR/pull/313), temporairement empilé sur #312. Hook complet réussi : 8 contrôles et 31 tâches workspace. Le premier essai échouait sur cinq tests de scripts exécutés avec Python système 3.9 ; le même hook réussit avec Python 3.13, sans modification des assertions.
+
+## Lot 4 : CSS
+
+- [Tailwind 4.3.2](https://github.com/tailwindlabs/tailwindcss/releases/tag/v4.3.2) et [4.3.3](https://github.com/tailwindlabs/tailwindcss/releases/tag/v4.3.3) : corrections de détection des sources/HMR, variantes, opacités et valeurs de spacing ; Preflight préserve le focus natif des iframes Firefox et améliore les polices de secours CJK.
+- [tailwind-merge 3.7.0](https://github.com/dcastil/tailwind-merge/releases/tag/tailwind-merge%403.7.0) : classification des couleurs `color()`/`light-dark()`, conflits de padding logique, colonnes, ombres et tailles ; métadonnée additive `themeKey`.
+- [Autoprefixer](https://github.com/postcss/autoprefixer/releases) : revue 10.5.3–10.6.1, gradients, déduplication, performances des media queries, `initial-letter` et grid gaps.
+- [PostCSS](https://github.com/postcss/postcss/releases) : revue 8.5.24–8.5.29, BOM, visiteurs/listes, protection des sourcemaps via symlinks, types, commentaires, propriétés personnalisées et échappement `</style>`.
+- Transitifs revus : [enhanced-resolve 5.21.6–5.26.0](https://github.com/webpack/enhanced-resolve/releases) (cache, restrictions/symlinks, résolution et options URL/package maps) ; [Browserslist 4.28.7–4.29.3](https://github.com/browserslist/browserslist/releases) et données navigateurs. Les nouvelles options expérimentales ne sont pas activées. Déduplication de sourcemap-codec vers la version 1.6.0 déjà présente.
+- Versions résolues exactement conformes à #309 dans desktop, landing et tab-kit. Délai de publication, trust policy, overrides de sécurité et patches conservés.
+- Comparaison des 3 848 chaînes statiques de classes du frontend avec les deux versions de `twMerge` : aucun résultat modifié. Limite : les combinaisons construites dynamiquement sont couvertes par les tests et les interactions, pas par ce relevé statique.
+- Comparaison sémantique des six fichiers CSS compilés : 10 135 clés de déclarations avant/après, cinq différences correspondant au changelog (stack de polices de secours, sélecteur Firefox excluant iframe, deux valeurs de translation `0` devenant `0px`).
+- 25 tâches web réussies, dont 6 625 tests desktop ; 33 tests de sécurité du lockfile réussis. Builds desktop, site (41 pages, 227 images) et exemple consommateur tab-kit réussis.
+- QA app via `pnpm dev` : mesures de couleurs/polices/géométrie identiques en clair et sombre sur body/sidebar/main/bouton ; aucun débordement. Menus, boîte de dialogue de sauvegarde de disposition et éditeur TypeScript exercés dans un projet de test isolé. Les trois diagnostics navigateur connus restent présents ; aucun nouveau diagnostic lié au lot CSS. Le service signale séparément un catalogue OpenCode non parsable pendant la découverte des CLIs locales.
+- QA site : accueil desktop puis navigation vers la documentation en mobile 390 px, aucun débordement ni image cassée, console propre. QA du build consommateur tab-kit : onglets Graph/List, switch activé puis désactivé (translation `0px`), rendu des boutons/cartes/inputs ; seule erreur réseau, favicon absent de l'exemple.
+- Preuves : `/tmp/cadencr-309/css-{web-checks,desktop-build,landing-build,security-lock,dev}.log`, `css-classes-diff.json`, `css-built-diff.json`, `css-class-qa.cjs`, `compare-css.cjs`. Serveurs et onglets de cette QA arrêtés ; données de test conservées.
