@@ -114,8 +114,9 @@ async fn write_agent_request(stdout: &mut DuplexStream, request: Value) {
 
 async fn read_agent_response(stdin: &mut BufReader<DuplexStream>) -> Value {
     let mut line = String::new();
+    // Subprocess-backed requests include process startup and output draining.
     tokio::time::timeout(
-        std::time::Duration::from_millis(500),
+        std::time::Duration::from_secs(5),
         stdin.read_line(&mut line),
     )
     .await
