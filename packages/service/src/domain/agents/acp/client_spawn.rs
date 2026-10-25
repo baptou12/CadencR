@@ -265,7 +265,10 @@ impl HandleDispatchFrom<agent_client_protocol::Agent> for BroadcastHandler {
                 Ok(Handled::Yes)
             }
             Dispatch::Request(request, responder) => {
-                let id = responder.id();
+                // Runtime events retain JSON IDs, including the distinction
+                // between numeric IDs and strings containing the same digits.
+                let id = serde_json::to_value(responder.id())
+                    .map_err(|_| agent_client_protocol::Error::internal_error())?;
                 let (method, params) = request.into_parts();
                 let key = server_request_key(&id);
                 self.server_responders
