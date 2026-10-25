@@ -816,7 +816,7 @@ dependencies = [
 
 [[package]]
 name = "cadencr-cli"
-version = "0.15.1"
+version = "0.15.2"
 dependencies = [
  "bon",
  "cadencr-plugin-core",
