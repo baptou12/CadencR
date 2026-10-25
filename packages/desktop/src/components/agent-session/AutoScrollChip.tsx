@@ -43,7 +43,7 @@ export const AutoScrollChip = memo(function AutoScrollChip({
         className={
           variant === "instrument"
             ? cn(
-                "composer-instrument w-7 justify-center px-0",
+                "composer-instrument composer-instrument-icon",
                 enabled ? "text-[var(--acc-green)]" : "text-muted-foreground",
               )
             : cn(

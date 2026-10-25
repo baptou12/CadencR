@@ -42,8 +42,9 @@ function modelLabelFor(
 
 // Rem CQ so the label tracks text scale (same idea as GitTabToggle).
 const COMPACT_LABELS = "@max-[40rem]:hidden";
-// The composer's instrument row measures its own leading strip, which is
-// narrower than the old meta bar: labels hold until it gets genuinely tight.
+// In the composer these answer to the instrument row they sit in (either of
+// the card's two rows, which share its width): labels hold until the card
+// itself gets genuinely tight.
 const INSTRUMENT_LABELS = "@max-[26rem]:hidden";
 
 interface ModelMetaChipProps {
@@ -103,10 +104,7 @@ export function ModelMetaChip({
   };
 
   return (
-    <div
-      className={variant === "instrument" ? MODEL_INSTRUMENT_GROUP : MODEL_GROUP}
-      data-instrument-group={variant === "instrument" || undefined}
-    >
+    <div className={variant === "instrument" ? MODEL_INSTRUMENT_GROUP : MODEL_GROUP}>
       {onModelChange ? (
         <ShortcutTooltip label="Open model picker" keys={["cmd", "P"]} disabled={open}>
           <RuntimeModelPicker
@@ -365,11 +363,11 @@ function FastModeInstrument({
         )}
       >
         {pending ? (
-          <Loader2Icon className="size-3 animate-spin" aria-hidden="true" />
+          <Loader2Icon className="size-3.5 animate-spin" aria-hidden="true" />
         ) : (
           <ZapIcon
             className={cn(
-              "size-3 shrink-0",
+              "size-3.5 shrink-0",
               enabled && "fill-current text-[var(--acc-yellow)] composer-fast-lit",
             )}
             aria-hidden="true"

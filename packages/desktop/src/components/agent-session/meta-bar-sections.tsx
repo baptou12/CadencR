@@ -138,7 +138,6 @@ export function MetaBarTrailingGroup(props: TrailingGroupProps) {
   const showInfo = props.section !== "instruments";
   return (
     <div
-      data-instrument-group={props.section === "instruments" || undefined}
       className={cn(
         "flex items-center gap-1.5",
         props.section === "instruments" ? "min-w-0 gap-0.5" : "ml-auto",

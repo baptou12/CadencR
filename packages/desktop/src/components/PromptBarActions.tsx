@@ -31,7 +31,7 @@ interface PromptBarActionsProps {
 }
 
 const PRIMARY =
-  "flex h-7 shrink-0 items-center justify-center gap-1.5 bg-primary text-primary-foreground transition-[background-color,opacity] hover:bg-primary/90 disabled:opacity-30";
+  "flex h-(--composer-instrument-size) shrink-0 items-center justify-center gap-1.5 bg-primary text-primary-foreground transition-[background-color,opacity] hover:bg-primary/90 disabled:opacity-30";
 
 /**
  * Trailing run controls of the composer's instrument row.
@@ -75,9 +75,9 @@ export function PromptBarActions({
             data-composer-action
             onClick={onStop}
             aria-label="Stop agent"
-            className="flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-destructive/12 px-2 text-[12px] font-medium text-destructive transition-colors hover:bg-destructive/22"
+            className="flex h-(--composer-instrument-size) shrink-0 items-center gap-1.5 rounded-md bg-destructive/12 px-2 text-[12px] font-medium text-destructive transition-colors hover:bg-destructive/22"
           >
-            <Square className="size-3 fill-current" />
+            <Square className="size-3.5 fill-current" />
             <span className="@max-[30rem]:hidden">Stop</span>
           </button>
         </ShortcutTooltip>
@@ -95,7 +95,7 @@ export function PromptBarActions({
               title={runTitle(isRunning, queuesOnEnter)}
               className={cn(
                 PRIMARY,
-                isRunning ? "px-2 text-[12px] font-medium" : "w-7",
+                isRunning ? "px-2 text-[12px] font-medium" : "w-(--composer-instrument-size)",
                 showMenu ? "rounded-l-md rounded-r-none" : "rounded-md",
               )}
             >

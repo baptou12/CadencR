@@ -1,5 +1,5 @@
 import type { SessionConfigControls } from "./types";
-import { forwardRef, useState } from "react";
+import { forwardRef, useState, type ReactNode } from "react";
 import { AgentTodoList } from "../AgentTodoList";
 import type { WorktreeMode } from "@/lib/worktree-mode";
 import type { TodoItem } from "@/types/agent";
@@ -13,6 +13,8 @@ import type {
 import type { ClaudeCodeProfile } from "@/api/agentRuntime";
 import type { RuntimeSelection } from "@/shared/models";
 import { ModelMetaChip, type Model, type Provider } from "./ModelMetaChip";
+import { useInstrumentPlacement } from "../composer/InstrumentPlacement";
+import type { InstrumentSlot } from "../composer/instrument-layout";
 import { META_BAR_CHIP } from "./meta-bar-chip-styles";
 import {
   MetaBarLeadingChips,
@@ -140,82 +142,119 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     hasTrailingGroup,
   } = useMetaBarDerivedState(props, displayProviderId);
 
-  return (
-    <div className={containerClassName}>
-      <MetaBarLeadingChips
-        section={section}
-        providerId={displayProviderId}
-        permissionMode={props.permissionMode}
-        enabledOptInModes={props.enabledOptInModes}
-        providerModes={props.providerModes}
-        onPermissionModeSet={props.onPermissionModeSet}
-        modeIncompatibleReason={props.modeIncompatibleReason}
-        showAutoScrollChip={input.showAutoScrollChip}
-        autoScrollEnabled={input.autoScrollEnabled}
-        onToggleAutoScroll={input.onToggleAutoScroll}
-        displayMode={displayMode}
-        onPermissionModeToggle={props.onPermissionModeToggle}
-        showWorktreeChip={input.showWorktreeChip}
-        worktreeProjectId={input.worktreeProjectId}
-        worktreeDefaultBranch={input.worktreeDefaultBranch}
-        worktreeProjectPath={input.worktreeProjectPath}
-        worktreeMode={input.worktreeMode}
-        onWorktreeModeChange={input.onWorktreeModeChange}
-        worktreeSelectedBranch={input.worktreeSelectedBranch}
-        onWorktreeBranchChange={input.onWorktreeBranchChange}
-      />
+  // Inside a composer card each instrument group takes its own slot in the
+  // card's instrument rows; elsewhere they share this bar.
+  const placement = useInstrumentPlacement();
+  const placed = section === "instruments" ? placement : null;
+  const place = (slot: InstrumentSlot, node: ReactNode): ReactNode =>
+    placed ? placed(slot, node) : node;
 
-      {shouldShowModel && section !== "utilities" && (
-        <ModelMetaChip
-          variant={section === "instruments" ? "instrument" : "chip"}
-          open={internalModelPickerOpen}
-          onOpenChange={setInternalModelPickerOpen}
-          selection={input.currentSelection}
-          pickerProviders={pickerProviders}
-          canChangeProvider={input.canChangeProvider}
-          onProviderChange={input.onProviderChange}
-          onModelChange={input.onModelChange}
-          currentThinkingEffort={input.currentThinkingEffort}
-          supportedThinkingEfforts={input.supportedThinkingEfforts}
-          onThinkingEffortChange={input.onThinkingEffortChange}
-          supportsFastMode={props.supportsFastMode ?? false}
-          fastMode={props.fastMode ?? false}
-          isFastModePending={props.isFastModePending ?? false}
-          onFastModeChange={props.onFastModeChange}
-          onModelSelected={input.onModelSelected}
-        />
+  const content = (
+    <>
+      {place(
+        "mode",
+        <MetaBarLeadingChips
+          section={section}
+          providerId={displayProviderId}
+          permissionMode={props.permissionMode}
+          enabledOptInModes={props.enabledOptInModes}
+          providerModes={props.providerModes}
+          onPermissionModeSet={props.onPermissionModeSet}
+          modeIncompatibleReason={props.modeIncompatibleReason}
+          showAutoScrollChip={input.showAutoScrollChip}
+          autoScrollEnabled={input.autoScrollEnabled}
+          onToggleAutoScroll={input.onToggleAutoScroll}
+          displayMode={displayMode}
+          onPermissionModeToggle={props.onPermissionModeToggle}
+          showWorktreeChip={input.showWorktreeChip}
+          worktreeProjectId={input.worktreeProjectId}
+          worktreeDefaultBranch={input.worktreeDefaultBranch}
+          worktreeProjectPath={input.worktreeProjectPath}
+          worktreeMode={input.worktreeMode}
+          onWorktreeModeChange={input.onWorktreeModeChange}
+          worktreeSelectedBranch={input.worktreeSelectedBranch}
+          onWorktreeBranchChange={input.onWorktreeBranchChange}
+        />,
       )}
+
+      {shouldShowModel &&
+        section !== "utilities" &&
+        place(
+          "model",
+          <ModelMetaChip
+            variant={section === "instruments" ? "instrument" : "chip"}
+            open={internalModelPickerOpen}
+            onOpenChange={setInternalModelPickerOpen}
+            selection={input.currentSelection}
+            pickerProviders={pickerProviders}
+            canChangeProvider={input.canChangeProvider}
+            onProviderChange={input.onProviderChange}
+            onModelChange={input.onModelChange}
+            currentThinkingEffort={input.currentThinkingEffort}
+            supportedThinkingEfforts={input.supportedThinkingEfforts}
+            onThinkingEffortChange={input.onThinkingEffortChange}
+            supportsFastMode={props.supportsFastMode ?? false}
+            fastMode={props.fastMode ?? false}
+            isFastModePending={props.isFastModePending ?? false}
+            onFastModeChange={props.onFastModeChange}
+            onModelSelected={input.onModelSelected}
+          />,
+        )}
 
       {section !== "instruments" && input.todos && input.todos.length > 0 && (
         <AgentTodoList todos={input.todos} chipClass={META_BAR_CHIP} />
       )}
 
-      {hasTrailingGroup && (
-        <MetaBarTrailingGroup
-          section={section}
-          sessionConfigControls={props.sessionConfigControls}
-          hasProfileSelector={hasProfileSelector}
-          hasAccessMode={hasAccessMode}
-          claudeProfile={input.claudeProfile}
-          claudeProfiles={input.claudeProfiles}
-          claudeProfilesLoading={input.claudeProfilesLoading}
-          claudeProfilesError={input.claudeProfilesError}
-          onClaudeProfileChange={input.onClaudeProfileChange}
-          activeClaudeProfile={props.activeClaudeProfile}
-          accessMode={props.accessMode}
-          accessModeDefault={input.accessModeDefault}
-          isAccessModePending={input.isAccessModePending}
-          onAccessModeChange={input.onAccessModeChange}
-          displayProviderId={displayProviderId}
-          providerAccessModes={input.providerAccessModes}
-          runtimeSessionId={input.runtimeSessionId}
-          featureId={input.featureId}
-          wsSessionId={input.wsSessionId}
-          projectPath={input.projectPath}
-          isRunning={input.isRunning}
-          onPause={input.onPause}
-        />
-      )}
-    </div>
+      {hasTrailingGroup &&
+        place(
+          "access",
+          trailingGroup(props, input, {
+            section,
+            hasProfileSelector,
+            hasAccessMode,
+            displayProviderId,
+          }),
+        )}
+    </>
   );
+  return placed ? content : <div className={containerClassName}>{content}</div>;
 });
+
+/** The access / session-config group (and, outside the composer, the info chip). */
+function trailingGroup(
+  props: MetaBarProps,
+  input: ReturnType<typeof useMetaBarInput>,
+  state: {
+    section: MetaBarSection;
+    hasProfileSelector: boolean;
+    hasAccessMode: boolean;
+    displayProviderId: string | undefined;
+  },
+): ReactNode {
+  return (
+    <MetaBarTrailingGroup
+      section={state.section}
+      sessionConfigControls={props.sessionConfigControls}
+      hasProfileSelector={state.hasProfileSelector}
+      hasAccessMode={state.hasAccessMode}
+      claudeProfile={input.claudeProfile}
+      claudeProfiles={input.claudeProfiles}
+      claudeProfilesLoading={input.claudeProfilesLoading}
+      claudeProfilesError={input.claudeProfilesError}
+      onClaudeProfileChange={input.onClaudeProfileChange}
+      activeClaudeProfile={props.activeClaudeProfile}
+      accessMode={props.accessMode}
+      accessModeDefault={input.accessModeDefault}
+      isAccessModePending={input.isAccessModePending}
+      onAccessModeChange={input.onAccessModeChange}
+      displayProviderId={state.displayProviderId}
+      providerAccessModes={input.providerAccessModes}
+      runtimeSessionId={input.runtimeSessionId}
+      featureId={input.featureId}
+      wsSessionId={input.wsSessionId}
+      projectPath={input.projectPath}
+      isRunning={input.isRunning}
+      onPause={input.onPause}
+    />
+  );
+}

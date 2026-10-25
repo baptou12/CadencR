@@ -31,7 +31,7 @@ export const AssistMenu = memo(function AssistMenu(): ReactElement {
         <button
           type="button"
           aria-label="More composer actions"
-          className="composer-instrument w-7 justify-center px-0 text-muted-foreground"
+          className="composer-instrument composer-instrument-icon text-muted-foreground"
         >
           <MoreHorizontal className="size-3.5" />
         </button>

@@ -23,6 +23,9 @@ import { QueueRail } from "./composer/QueueRail";
 import { RunningSweep } from "./composer/RunningSweep";
 import { StopArmHint } from "./composer/StopArmHint";
 import { useComposerContextValue } from "./composer/useComposerContextValue";
+import { InstrumentPlacementContext } from "./composer/InstrumentPlacement";
+import { InstrumentRow } from "./composer/InstrumentRow";
+import { useInstrumentRows, type PlaceInstrument } from "./composer/useInstrumentRows";
 import {
   useAgentPromptBarController,
   type AgentPromptBarController,
@@ -164,8 +167,9 @@ function PromptComposer({
 }
 
 /**
- * The composer card: launch manifest (first prompt), context tray, the editor,
- * then the instrument row (session controls · meters · run controls).
+ * The composer card: launch manifest (first prompt), session header (only
+ * when one instrument row runs out of room), context tray, the editor, then
+ * the instrument row (`useInstrumentRows`).
  */
 function PromptSurface({
   props,
@@ -176,6 +180,7 @@ function PromptSurface({
 }) {
   const queueCombo = useShortcutLabel("agent-send");
   const { editorActions, sending, state } = controller;
+  const rows = useInstrumentRows();
   const slashCommands = useMemo(
     () => withSideQuestionSkill(props.slashCommandsOverride, props.sessionId),
     [props.slashCommandsOverride, props.sessionId],
@@ -190,8 +195,19 @@ function PromptSurface({
     >
       {controller.isRunning && <RunningSweep />}
       {props.isFirstPrompt && props.launchManifest}
+      <InstrumentRow
+        top
+        hidden={!rows.split}
+        start={rows.zones.topLeft}
+        end={rows.zones.topRight}
+      />
       <ContextTray />
-      <div className="flex min-h-0 flex-1 items-start gap-1.5 px-4 pt-3.5 pb-2">
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 items-start gap-1.5 px-4 pb-2",
+          rows.split ? "pt-2" : "pt-3.5",
+        )}
+      >
         {controller.isShellCommandMode && (
           <ShellCommandModeMarker onClear={editorActions.clearShellCommandMode} />
         )}
@@ -215,20 +231,45 @@ function PromptSurface({
           onPasteLongText={editorActions.handlePasteLongText}
         />
       </div>
-      <div
-        data-composer-instruments
-        className="@container flex shrink-0 items-center gap-1.5 px-2 pb-2"
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-          {props.instrumentStart && <div data-composer-start>{props.instrumentStart}</div>}
-          {props.instrumentLeading}
-        </div>
-        <CompactionHint />
-        <ContextMeter />
-        {props.instrumentTrailing}
-        <HistoryButton />
-        <AssistMenu />
-        <StopArmHint />
+      <InstrumentRow
+        rowRef={rows.rowRef}
+        start={rows.zones.bottomLeft}
+        end={rows.zones.bottomRight}
+      />
+      <ComposerInstruments props={props} controller={controller} place={rows.place} />
+    </div>
+  );
+}
+
+/**
+ * Every instrument of the card, each claiming its slot in the instrument rows.
+ * The session embedder's controls (`instrumentLeading`) claim theirs through
+ * `InstrumentPlacementContext`.
+ */
+function ComposerInstruments({
+  props,
+  controller,
+  place,
+}: {
+  props: AgentPromptBarProps;
+  controller: AgentPromptBarController;
+  place: PlaceInstrument;
+}) {
+  const { sending, state } = controller;
+  return (
+    <>
+      {place("autoscroll", props.instrumentStart)}
+      <InstrumentPlacementContext.Provider value={place}>
+        {props.instrumentLeading}
+      </InstrumentPlacementContext.Provider>
+      {place("compaction", <CompactionHint />)}
+      {place("meter", <ContextMeter />)}
+      {place("todos", props.instrumentTrailing)}
+      {place("history", <HistoryButton />)}
+      {place("assist", <AssistMenu />)}
+      {place("stop-arm", <StopArmHint />)}
+      {place(
+        "actions",
         <PromptBarActions
           onAddFiles={state.attachments.addFiles}
           providerId={props.providerId}
@@ -242,9 +283,9 @@ function PromptSurface({
           schedule={controller.isShellCommandMode ? undefined : sending.scheduleControl}
           onQueue={sending.canQueue ? sending.handleQueue : undefined}
           queuesOnEnter={sending.queuesOnEnter}
-        />
-      </div>
-    </div>
+        />,
+      )}
+    </>
   );
 }
 
@@ -262,10 +303,9 @@ function promptPlaceholder(
     return props.isFirstPrompt ? "Describe the task…" : "Message the agent…";
   }
   if (props.status === "question") return "Answer to resume the agent…";
-  if (controller.sending.queuesOnEnter)
-    return "The agent is working — ↵ queues your message for after this turn";
+  if (controller.sending.queuesOnEnter) return "↵ to queue your message until the agent finishes";
   if (controller.isRunning)
-    return `Steer the agent — ↵ at its next step, ${queueCombo} after this turn`;
+    return `↵ to steer the agent at its next step, ${queueCombo} to queue it after this turn`;
   if (props.isFirstPrompt) return "Describe the task — @ for files, / for commands";
   return `Message the agent — @ files, @@ conversations, ${controller.promptCommandHint}`;
 }

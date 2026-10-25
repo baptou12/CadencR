@@ -57,7 +57,7 @@ export function AccessModePopover({
           }
         >
           <activeMode.icon
-            className={cn("size-3", variant === "instrument" && activeMode.textClass)}
+            className={variant === "instrument" ? cn("size-3.5", activeMode.textClass) : "size-3"}
           />
           {activeCopy?.label ?? activeMode.label}
         </button>

@@ -326,8 +326,12 @@ describe("AgentPromptBar", () => {
     render(<AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />);
     expect(screen.getByRole("textbox")).toHaveAttribute(
       "placeholder",
-      expect.stringMatching(/^Steer the agent/),
+      expect.stringMatching(
+        /^↵ to steer the agent at its next step, .+ to queue it after this turn$/,
+      ),
     );
+    // One verb per key: no dash for the reader to parse.
+    expect(screen.getByRole("textbox").getAttribute("placeholder")).not.toMatch(/[—–]/);
   });
 
   it("keeps steer available beside stop while running on mobile", async () => {

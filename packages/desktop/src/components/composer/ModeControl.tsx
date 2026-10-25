@@ -68,7 +68,6 @@ export const ModeControl = memo(function ModeControl({
           <button
             type="button"
             data-composer-mode
-            data-instrument-group
             data-risk={active.risk}
             key={announcement.flashKey}
             aria-label={`Mode: ${active.label}. ${MODE_RISK_LABEL[active.risk]}. ${active.description}`}
@@ -82,7 +81,7 @@ export const ModeControl = memo(function ModeControl({
             <span className="truncate">{active.label}</span>
             {incompatibleReason && (
               <AlertTriangle
-                className="size-3 shrink-0 text-[var(--acc-yellow)]"
+                className="size-3.5 shrink-0 text-[var(--acc-yellow)]"
                 aria-label={incompatibleReason}
               />
             )}

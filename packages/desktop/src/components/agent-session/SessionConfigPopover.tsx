@@ -49,7 +49,7 @@ export function SessionConfigPopover({
           type="button"
           className={cn(
             variant === "instrument"
-              ? "composer-instrument gap-1.5 text-foreground/85 [&_svg]:size-3"
+              ? "composer-instrument gap-1.5 text-foreground/85 [&_svg]:size-3.5"
               : META_BAR_CHIP,
             error && "text-destructive",
           )}

@@ -42,9 +42,9 @@ export function ImageAttachmentButton({
         onClick={handleClick}
         disabled={disabled}
         aria-label="Attach files"
-        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+        className="composer-instrument composer-instrument-icon text-muted-foreground hover:text-foreground disabled:opacity-50"
       >
-        <Paperclip className="size-4" />
+        <Paperclip className="size-3.5" />
       </button>
     </>
   );

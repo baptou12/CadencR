@@ -43,11 +43,11 @@ export function AutoMessageMenu({
           data-composer-action-compact
           disabled={disabled}
           className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 data-[state=open]:bg-muted data-[state=open]:text-foreground",
+            "flex h-(--composer-instrument-size) w-(--composer-instrument-size) shrink-0 items-center justify-center rounded-md bg-muted/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 data-[state=open]:bg-muted data-[state=open]:text-foreground",
             className,
           )}
         >
-          <ChevronUp className="size-3.5" />
+          <ChevronUp className="size-3" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="end" className="min-w-44">

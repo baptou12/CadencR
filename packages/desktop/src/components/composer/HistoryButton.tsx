@@ -71,7 +71,7 @@ export const HistoryButton = memo(function HistoryButton(): ReactElement | null 
             type="button"
             aria-label="Prompt history and stashed drafts"
             data-composer-secondary
-            className="composer-instrument w-7 justify-center px-0 text-muted-foreground"
+            className="composer-instrument composer-instrument-icon text-muted-foreground"
           >
             <History className="size-3.5" />
           </button>
