@@ -62,6 +62,17 @@ directories; they are observations, not a second executable implementation.
 - `contribution-runtime-retention.test.mjs` tests wrapper state retention and
   exact argument forwarding using an inert subprocess, not a business fallback.
 - Workflow/bootstrap suites test protected orchestration and released CLI trust.
+- `registry-renewal-workflow.test.mjs` checks the unattended renewal workflow
+  statically (daily schedule, no inputs, shared `marketplace-publication` lane,
+  distinct `protected-marketplace-renewal` environment, minimal permissions, secrets
+  only in the key and renewal steps, pinned actions and CLI) and executes
+  `scripts/ci/registry-feeds.sh`: inert/partial gating, URL refusal, request
+  construction, status-checked bounded downloads (fake curl) and the renewal-only guard (any publication, submission file,
+  symlink, schema upgrade, unknown field or foreign repository aborts before the CLI).
+  The CLI is a stub there; the request shape was also accepted by the real pipeline up to its first network call.
+- `registry-expiry-watch.test.mjs` checks the read-only, secret-free daily watch
+  and runs `check-expiry` against signed fixtures with the real Rust CLI: 72-hour
+  boundary, expired, tampered, wrong-key, missing and malformed feeds all fail.
 - `check-metadata-expiry.test.mjs` invokes Rust `registry check-metadata-expiry`:
   relative healthy/default renewal/expired states, explicit warning thresholds,
   catalogs and both policy envelopes, malformed/unsafe/bounded inputs, and exact

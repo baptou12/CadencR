@@ -112,21 +112,7 @@ jobs:
         env:
           CADENCR_REGISTRY_PRIVATE_KEY_PEM: ${{ secrets.CADENCR_REGISTRY_PRIVATE_KEY_PEM }}
           PRIVATE_KEY_ROOT: ${{ runner.temp }}
-        run: |
-          node <<'NODE'
-          const { appendFileSync, chmodSync, mkdtempSync, writeFileSync } = require("node:fs");
-          const { join } = require("node:path");
-          const key = process.env.CADENCR_REGISTRY_PRIVATE_KEY_PEM;
-          if (!key) throw new Error("CADENCR_REGISTRY_PRIVATE_KEY_PEM is required");
-          if (Buffer.byteLength(key, "utf8") > 16 * 1024) {
-            throw new Error("CADENCR_REGISTRY_PRIVATE_KEY_PEM exceeds 16 KiB");
-          }
-          const directory = mkdtempSync(join(process.env.PRIVATE_KEY_ROOT, "marketplace-publisher-secret-"));
-          chmodSync(directory, 0o700);
-          const file = join(directory, "private.pem");
-          appendFileSync(process.env.GITHUB_OUTPUT, `private_key_file=${file}\n`);
-          writeFileSync(file, key, { flag: "wx", mode: 0o600 });
-          NODE
+        run: sh scripts/ci/registry-feeds.sh materialize-key marketplace-publisher-secret-
       - name: Publish reviewed registry request
         env:
           CADENCR_REGISTRY_GITHUB_TOKEN: ${{ secrets.CADENCR_REGISTRY_GITHUB_TOKEN }}
@@ -157,30 +143,7 @@ jobs:
         env:
           PRIVATE_KEY_FILE: ${{ steps.materialize_key.outputs.private_key_file }}
           PRIVATE_KEY_ROOT: ${{ runner.temp }}
-        run: |
-          node <<'NODE'
-          const { lstatSync, unlinkSync } = require("node:fs");
-          const { dirname, relative, resolve, sep } = require("node:path");
-          const root = resolve(process.env.PRIVATE_KEY_ROOT);
-          const file = resolve(process.env.PRIVATE_KEY_FILE);
-          const owned = relative(root, file).split(sep);
-          if (owned.length !== 2 || !/^marketplace-publisher-secret-[^/]+$/.test(owned[0]) || owned[1] !== "private.pem") {
-            throw new Error("refusing to clean a private-key path outside the owned directory");
-          }
-          try {
-            const directoryMetadata = lstatSync(dirname(file));
-            if (directoryMetadata.isSymbolicLink() || !directoryMetadata.isDirectory()) {
-              throw new Error("refusing to clean through an unexpected private-key directory");
-            }
-            const metadata = lstatSync(file);
-            if (metadata.isSymbolicLink() || !metadata.isFile()) {
-              throw new Error("refusing to clean an unexpected private-key path");
-            }
-            unlinkSync(file);
-          } catch (error) {
-            if (error?.code !== "ENOENT") throw error;
-          }
-          NODE
+        run: sh scripts/ci/registry-feeds.sh remove-key marketplace-publisher-secret-
       # Fresh runners reconstruct published provider state only after tag,
       # binding, public provenance and archive verification. No Actions artifact
       # is restored or executed. Reruns retain the original reviewed commit,

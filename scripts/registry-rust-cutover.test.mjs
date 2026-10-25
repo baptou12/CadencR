@@ -19,6 +19,7 @@ test("registry template contains only thin CI shell entrypoints, not a second bu
       .sort(),
     [
       "ci/fetch-released-cli.sh",
+      "ci/registry-feeds.sh",
       "ci/select-publisher-runtime.sh",
       "ci/validate-provider-contribution.sh",
     ],

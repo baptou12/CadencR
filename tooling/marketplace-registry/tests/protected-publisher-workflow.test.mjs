@@ -20,6 +20,10 @@ const exampleUrl = new URL("../examples/workflows/publish-protected-catalog.yml"
 const activeUrl = new URL("../.github/workflows/publish-protected-catalog.yml", import.meta.url);
 const hasExample = existsSync(exampleUrl);
 const source = readFileSync(hasExample ? exampleUrl : activeUrl, "utf8");
+// The key lifecycle is one implementation shared with the renewal workflow.
+const feedsScript = new URL("../scripts/ci/registry-feeds.sh", import.meta.url);
+const feeds = readFileSync(feedsScript, "utf8");
+const publisherPrefix = "marketplace-publisher-secret-";
 
 test("exported protected workflow remains an inert example", () => {
   if (hasExample)
@@ -43,6 +47,13 @@ function inlineNodeScript(stepName) {
 
 function runInline(stepName, env) {
   return spawnSync(process.execPath, ["-e", inlineNodeScript(stepName)], {
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+}
+
+function runKeyHelper(mode, env, prefix = publisherPrefix) {
+  return spawnSync("sh", [feedsScript.pathname, mode, prefix], {
     encoding: "utf8",
     env: { ...process.env, ...env },
   });
@@ -114,17 +125,27 @@ test("privileged command uses repository-bound environment values and reviewed c
 });
 
 test("private key stays outside recoverable state and is cleaned on every outcome", () => {
-  assert.match(source, /writeFileSync\(file, key, \{ flag: "wx", mode: 0o600 \}\)/);
-  assert.match(source, /Buffer\.byteLength\(key, "utf8"\) > 16 \* 1024/);
+  assert.match(feeds, /writeFileSync\(file, key, \{ flag: "wx", mode: 0o600 \}\)/);
+  assert.match(feeds, /Buffer\.byteLength\(key, "utf8"\) > 16 \* 1024/);
+  assert.match(
+    feeds,
+    /appendFileSync\(process\.env\.GITHUB_OUTPUT, `private_key_file=\$\{file\}\\n`\)/,
+  );
+  assert.match(feeds, /unlinkSync\(file\)/);
+  // Both steps call the shared implementation with this workflow's own prefix.
   assert.match(
     source,
-    /appendFileSync\(process\.env\.GITHUB_OUTPUT, `private_key_file=\$\{file\}\\n`\)/,
+    /name: Materialize protected signing key\n(?:.*\n)*?        run: sh scripts\/ci\/registry-feeds\.sh materialize-key marketplace-publisher-secret-\n/,
   );
   assert.match(
     source,
     /name: Remove materialized signing key\n        if: \$\{\{ always\(\) && steps\.materialize_key\.outputs\.private_key_file != '' \}\}/,
   );
-  assert.match(source, /unlinkSync\(file\)/);
+  assert.match(
+    source,
+    /run: sh scripts\/ci\/registry-feeds\.sh remove-key marketplace-publisher-secret-\n/,
+  );
+  assert.doesNotMatch(source, /unlinkSync|writeFileSync\(file, key|mkdtempSync/);
   assert.doesNotMatch(source, /path:.*private\.pem/);
   assert.doesNotMatch(source, /upload-artifact|include-hidden-files/);
 });
@@ -133,26 +154,33 @@ test("materialization and cleanup scripts enforce owned private key lifecycle at
   const root = mkdtempSync(path.join(os.tmpdir(), "publisher-workflow-test-"));
   const output = path.join(root, "github-output");
   writeFileSync(output, "");
-  const created = runInline("Materialize protected signing key", {
+  const created = runKeyHelper("materialize-key", {
     CADENCR_REGISTRY_PRIVATE_KEY_PEM: "test-private-key",
     PRIVATE_KEY_ROOT: root,
     GITHUB_OUTPUT: output,
   });
   assert.equal(created.status, 0, created.stderr);
   const file = readFileSync(output, "utf8").trim().slice("private_key_file=".length);
+  assert.equal(path.basename(path.dirname(file)).startsWith(publisherPrefix), true);
   assert.equal(readFileSync(file, "utf8"), "test-private-key");
   assert.equal(statSync(file).mode & 0o777, 0o600);
 
-  const cleaned = runInline("Remove materialized signing key", {
-    PRIVATE_KEY_FILE: file,
-    PRIVATE_KEY_ROOT: root,
-  });
+  // A directory owned by the other workflow's prefix is not this workflow's to clean.
+  const otherOwned = runKeyHelper(
+    "remove-key",
+    { PRIVATE_KEY_FILE: file, PRIVATE_KEY_ROOT: root },
+    "marketplace-renewal-secret-",
+  );
+  assert.notEqual(otherOwned.status, 0);
+  assert.equal(readFileSync(file, "utf8"), "test-private-key");
+
+  const cleaned = runKeyHelper("remove-key", { PRIVATE_KEY_FILE: file, PRIVATE_KEY_ROOT: root });
   assert.equal(cleaned.status, 0, cleaned.stderr);
   assert.throws(() => statSync(file), { code: "ENOENT" });
 
   const foreign = path.join(root, "private.pem");
   writeFileSync(foreign, "operator-owned");
-  const refused = runInline("Remove materialized signing key", {
+  const refused = runKeyHelper("remove-key", {
     PRIVATE_KEY_FILE: foreign,
     PRIVATE_KEY_ROOT: root,
   });
@@ -164,7 +192,7 @@ test("materialization and cleanup scripts enforce owned private key lifecycle at
   writeFileSync(externalKey, "foreign-through-parent");
   const linkedParent = path.join(root, "marketplace-publisher-secret-linked");
   symlinkSync(external, linkedParent, "dir");
-  const refusedParent = runInline("Remove materialized signing key", {
+  const refusedParent = runKeyHelper("remove-key", {
     PRIVATE_KEY_FILE: path.join(linkedParent, "private.pem"),
     PRIVATE_KEY_ROOT: root,
   });
@@ -173,12 +201,24 @@ test("materialization and cleanup scripts enforce owned private key lifecycle at
 
   const oversizedOutput = path.join(root, "oversized-output");
   writeFileSync(oversizedOutput, "");
-  const oversized = runInline("Materialize protected signing key", {
+  const oversized = runKeyHelper("materialize-key", {
     CADENCR_REGISTRY_PRIVATE_KEY_PEM: "x".repeat(16 * 1024 + 1),
     PRIVATE_KEY_ROOT: root,
     GITHUB_OUTPUT: oversizedOutput,
   });
   assert.notEqual(oversized.status, 0);
+  assert.equal(readFileSync(oversizedOutput, "utf8"), "");
+
+  const badPrefix = runKeyHelper(
+    "materialize-key",
+    {
+      CADENCR_REGISTRY_PRIVATE_KEY_PEM: "k",
+      PRIVATE_KEY_ROOT: root,
+      GITHUB_OUTPUT: oversizedOutput,
+    },
+    "../escape-",
+  );
+  assert.notEqual(badPrefix.status, 0);
   assert.equal(readFileSync(oversizedOutput, "utf8"), "");
 });
 
