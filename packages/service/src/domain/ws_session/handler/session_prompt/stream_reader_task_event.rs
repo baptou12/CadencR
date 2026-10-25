@@ -51,6 +51,7 @@ impl StreamReaderTask {
         };
         self.forward_compaction_state(state, &runtime_event).await;
         track_background_agents(&mut state.live_background_agents, &runtime_event);
+        state.runtime_hold.observe(&runtime_event);
 
         match forward_immediate_event(self, state, &runtime_event).await {
             // `prompt_received` / `commands.updated` / `stream_status` are

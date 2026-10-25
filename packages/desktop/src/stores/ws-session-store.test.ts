@@ -246,6 +246,23 @@ describe("ws-session-store", () => {
     expect(useWsSessionStore.getState().sessions["s1"]).toBeUndefined();
   });
 
+  it("release closes the connection without stopping the runtime", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+    store.release("s1");
+    const actions = ws.sent.map((raw) => JSON.parse(raw).action);
+    expect(actions).not.toContain("destroy");
+    expect(ws.readyState).toBe(MockWebSocket.CLOSED);
+    expect(useWsSessionStore.getState().sessions["s1"]).toBeUndefined();
+  });
+
   it("destroy sends destroy envelope and closes connection", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");

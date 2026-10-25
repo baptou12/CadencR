@@ -19,6 +19,8 @@ mod prompt_send_entry;
 mod prompt_status;
 mod prompt_validation;
 mod prompt_worktree;
+mod runtime_hold;
+pub(super) mod runtime_hold_registry;
 mod runtime_mcp;
 mod stream_diagnostics;
 mod stream_reader;

@@ -24,7 +24,7 @@ pub(super) use access_mode::handle_access_mode_set;
 pub(super) use effort::handle_effort_set;
 pub(super) use fast_mode::handle_fast_mode_set;
 pub(super) use lifecycle::{handle_clear, handle_delete, handle_destroy, handle_interrupt};
-pub(super) use mode::handle_mode_set;
+pub(super) use mode::{arm_claude_bypass_for_respawn, handle_mode_set};
 pub(super) use model::handle_model_set;
 pub(crate) use permission_dispatch::handle_permission_respond;
 pub(super) use power::{handle_resume, handle_retry_worktree_setup, handle_suspend};

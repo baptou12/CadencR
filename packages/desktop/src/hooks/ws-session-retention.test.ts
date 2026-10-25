@@ -6,14 +6,14 @@ import {
 } from "./ws-session-retention";
 
 const mocks = vi.hoisted(() => ({
-  disconnect: vi.fn(),
+  release: vi.fn(),
   sessions: {} as Record<string, { sessionDbId: number | null; serverSessionId: string }>,
   statuses: {} as Record<number, { status: "idle" | "agent" | "question" }>,
 }));
 
 vi.mock("@/stores/ws-session-store", () => ({
   useWsSessionStore: {
-    getState: () => ({ sessions: mocks.sessions, disconnect: mocks.disconnect }),
+    getState: () => ({ sessions: mocks.sessions, release: mocks.release }),
   },
 }));
 
@@ -26,7 +26,7 @@ vi.mock("@/stores/session-status-store", () => ({
 describe("ws-session-retention", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    mocks.disconnect.mockClear();
+    mocks.release.mockClear();
     mocks.sessions = {};
     mocks.statuses = {};
   });
@@ -44,7 +44,7 @@ describe("ws-session-retention", () => {
     release();
     vi.advanceTimersByTime(WS_SESSION_EVICTION_MS);
 
-    expect(mocks.disconnect).toHaveBeenCalledWith("session-1");
+    expect(mocks.release).toHaveBeenCalledWith("session-1");
   });
 
   it("evicts an uninitialized session using the store's empty runtime-id sentinel", () => {
@@ -54,7 +54,7 @@ describe("ws-session-retention", () => {
     release();
     vi.advanceTimersByTime(WS_SESSION_EVICTION_MS);
 
-    expect(mocks.disconnect).toHaveBeenCalledWith("session-1");
+    expect(mocks.release).toHaveBeenCalledWith("session-1");
   });
 
   it("does not evict an active session", () => {
@@ -65,7 +65,7 @@ describe("ws-session-retention", () => {
     release();
     vi.advanceTimersByTime(WS_SESSION_EVICTION_MS * 2);
 
-    expect(mocks.disconnect).not.toHaveBeenCalled();
+    expect(mocks.release).not.toHaveBeenCalled();
   });
 
   it("evicts once a previously active session becomes idle", () => {
@@ -78,7 +78,7 @@ describe("ws-session-retention", () => {
     mocks.statuses[42] = { status: "idle" };
     vi.advanceTimersByTime(WS_SESSION_EVICTION_MS);
 
-    expect(mocks.disconnect).toHaveBeenCalledWith("session-1");
+    expect(mocks.release).toHaveBeenCalledWith("session-1");
   });
 
   it("cancels eviction when a second consumer retains the session", () => {
@@ -90,6 +90,6 @@ describe("ws-session-retention", () => {
     retainWsSession("session-1");
     vi.advanceTimersByTime(WS_SESSION_EVICTION_MS);
 
-    expect(mocks.disconnect).not.toHaveBeenCalled();
+    expect(mocks.release).not.toHaveBeenCalled();
   });
 });

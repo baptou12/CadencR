@@ -25,7 +25,7 @@ pub use event_types::{
     BackgroundAgentSignal, RuntimeAssistantMessage, RuntimeCompactMetadata, RuntimeContentBlock,
     RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeInitEvent,
     RuntimeResultError, RuntimeStreamEvent, RuntimeStreamStatus, RuntimeTurnStartedSource,
-    RuntimeUserContentBlock, RuntimeUserMessage,
+    RuntimeUserContentBlock, RuntimeUserMessage, ScheduledWakeup,
 };
 pub use permission::{
     RuntimeCompactionStrategy, RuntimePermissionDecision, RuntimePermissionOption,
