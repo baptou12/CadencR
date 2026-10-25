@@ -223,7 +223,7 @@ test("materialization and cleanup scripts enforce owned private key lifecycle at
 });
 
 test("raw recovery state is never uploaded or restored", () => {
-  assert.match(source, /timeout-minutes: 30/);
+  assert.match(source, /timeout-minutes: 45/);
   assert.doesNotMatch(source, /actions\/(?:upload|download)-artifact/);
   assert.match(source, /Fresh runners reconstruct published provider state only after tag/);
 });

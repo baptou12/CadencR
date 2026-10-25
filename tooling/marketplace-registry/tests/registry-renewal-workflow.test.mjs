@@ -65,6 +65,8 @@ test("renewal shares the publication concurrency lane and never cancels", () => 
 test("renewal uses its own protected environment, distinct from publication", () => {
   const publication = publisher.jobs.publish.environment;
   assert.equal(workflow.jobs.renew.environment, "protected-marketplace-renewal");
+  // Up to four published files, each waiting out the raw CDN cache (~6 min).
+  assert.equal(workflow.jobs.renew["timeout-minutes"], 60);
   assert.notEqual(workflow.jobs.renew.environment, publication);
   assert.equal(workflow.jobs.gate.environment, undefined, "gate needs no environment");
   assert.match(source, /default branch/);

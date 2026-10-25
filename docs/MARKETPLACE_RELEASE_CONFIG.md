@@ -211,7 +211,10 @@ authenticate (expired is fine) and be strictly older, otherwise the command refu
 required, and `--bootstrap` is refused when the file exists. The update is one
 conditional write of that single path (a concurrent change makes it fail, never
 overwrite), a lost response is reconciled by reading the branch back, and the public
-raw URL is then read without credentials until it serves exactly the candidate.
+raw URL is then read without credentials until it serves exactly the candidate. That
+read tolerates the exact previous body for up to six minutes (360 s), because
+raw.githubusercontent.com caches for up to 300 s; any other body fails at once and an
+exhausted budget fails closed. The authenticated read-back keeps its 30 s window.
 `--receipt` writes a small JSON record of the verified result.
 
 `--renewal` is what the unattended workflow passes: the published policy must carry

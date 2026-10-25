@@ -19,6 +19,18 @@ const PAUSE: Duration = Duration::from_millis(250);
 /// reads end at the deadline first.
 const ATTEMPTS: u32 = 15;
 
+/// The public CDN may serve a cached body for its whole `max-age`: raw
+/// GitHub content answers `Cache-Control: max-age=300`, so a URL fetched in
+/// the last five minutes keeps its previous body for up to ~300 s after the
+/// write. The budget is that window plus margin.
+const PUBLIC_BUDGET: Duration = Duration::from_secs(360);
+/// First pause of a public read-back; it doubles up to eight times this value.
+const PUBLIC_PAUSE: Duration = Duration::from_secs(1);
+/// Reads at most. The pauses above fit 48 back-to-back reads in 360 s, so
+/// this cap ends a run of fast reads (after ~335 s of waiting, still past the
+/// 300 s `max-age`); slow reads end at the deadline first.
+const PUBLIC_ATTEMPTS: u32 = 45;
+
 /// Pacing of one convergence. The clock and the sleep are injectable.
 #[derive(bon::Builder)]
 pub(crate) struct ReadBack {
@@ -38,6 +50,19 @@ impl ReadBack {
             .budget(BUDGET)
             .pause(PAUSE)
             .attempts(ATTEMPTS)
+            .clock(Instant::now)
+            .wait(std::thread::sleep)
+            .build()
+    }
+
+    /// The pacing of a read-back of the PUBLIC stable URL, which sits behind
+    /// a CDN cache of up to five minutes: about six minutes, real time. The
+    /// authenticated API read-back keeps `production()`.
+    pub(crate) fn public_feed() -> Self {
+        Self::builder()
+            .budget(PUBLIC_BUDGET)
+            .pause(PUBLIC_PAUSE)
+            .attempts(PUBLIC_ATTEMPTS)
             .clock(Instant::now)
             .wait(std::thread::sleep)
             .build()
@@ -125,11 +150,24 @@ mod virtual_clock {
         }
 
         pub(crate) fn read_back_capped(&self, attempts: u32) -> ReadBack {
+            self.paced(BUDGET, PAUSE, attempts)
+        }
+
+        /// `ReadBack::public_feed()` on this clock.
+        pub(crate) fn public_read_back(&self) -> ReadBack {
+            self.public_read_back_capped(PUBLIC_ATTEMPTS)
+        }
+
+        pub(crate) fn public_read_back_capped(&self, attempts: u32) -> ReadBack {
+            self.paced(PUBLIC_BUDGET, PUBLIC_PAUSE, attempts)
+        }
+
+        fn paced(&self, budget: Duration, pause: Duration, attempts: u32) -> ReadBack {
             let (base, elapsed, recorded) =
                 (self.base, Rc::clone(&self.waits), Rc::clone(&self.waits));
             ReadBack::builder()
-                .budget(BUDGET)
-                .pause(PAUSE)
+                .budget(budget)
+                .pause(pause)
                 .attempts(attempts)
                 .clock(move || base + elapsed.borrow().iter().sum::<Duration>())
                 .wait(move |pause| recorded.borrow_mut().push(pause))
@@ -145,6 +183,38 @@ mod tests {
     use std::cell::Cell;
 
     use super::*;
+
+    #[test]
+    fn the_authenticated_pacing_is_thirty_seconds_and_the_public_one_outlasts_the_cdn_cache() {
+        let (authenticated, public) = (ReadBack::production(), ReadBack::public_feed());
+        assert_eq!(authenticated.budget, Duration::from_secs(30));
+        assert_eq!(authenticated.attempts, 15);
+        // raw.githubusercontent.com serves `max-age=300`.
+        assert_eq!(public.budget, Duration::from_secs(360));
+        assert_eq!(public.pause, Duration::from_secs(1));
+        assert_eq!(public.attempts, 45);
+    }
+
+    #[test]
+    fn the_public_attempt_cap_binds_before_the_deadline_yet_after_the_max_age() {
+        let clock = VirtualClock::new();
+        let outcome = converge(
+            &clock.public_read_back(),
+            |_| Ok(()),
+            |()| Ok(Verdict::<()>::Stale),
+        );
+        assert!(matches!(outcome, Ok(Converged::Stale(45))));
+        let waits = clock.waits.borrow();
+        assert_eq!(waits.len(), 44);
+        assert_eq!(
+            waits[..5],
+            [1, 2, 4, 8, 8].map(Duration::from_secs),
+            "doubling up to eight seconds"
+        );
+        let waited: Duration = waits.iter().sum();
+        assert!(waited > Duration::from_secs(300), "{waited:?}");
+        assert!(waited < Duration::from_secs(360), "{waited:?}");
+    }
 
     #[test]
     fn a_judge_error_is_terminal_and_a_deadline_cut_after_stale_reads_is_stale() {
