@@ -21,6 +21,15 @@ pub(crate) fn validate_submission(value: &Value, errors: &mut Diagnostics) {
         "submission",
         errors,
     );
+    if let Some(package) = value.get("package") {
+        if let Some(error) = crate::reserved_publisher::package_reserved_publisher_error_for(
+            package,
+            value.pointer("/source/repository"),
+            "submission.package.host.publisher",
+        ) {
+            errors.push(error);
+        }
+    }
     if value.get("schema_version") == Some(&Value::from(2)) {
         validate_schema_two(value, errors);
         return;
@@ -369,5 +378,40 @@ mod tests {
         assert_eq!(utf16_len(&"😀".repeat(8_192)), 16_384);
         assert_eq!(ecmascript_trim("\u{feff}\t text \u{3000}"), "text");
         assert_eq!(ecmascript_trim("\u{0085}"), "\u{0085}");
+    }
+
+    #[test]
+    fn reserved_publisher_requires_an_official_source_repository() {
+        let submission = |publisher: &str, repository: &str| {
+            serde_json::json!({"schema_version": 1, "source": {"repository": repository},
+                "package": {"agent": {"repository": repository}, "host": {"publisher": publisher}}})
+        };
+        let reserved = |value: &Value| {
+            let mut errors = Diagnostics::default();
+            validate_submission(value, &mut errors);
+            errors
+                .into_messages()
+                .into_iter()
+                .filter(|message| message.contains("is reserved for"))
+                .collect::<Vec<_>>()
+        };
+        assert!(reserved(&submission(
+            "cadencr",
+            "https://github.com/merkr-software/pi"
+        ))
+        .is_empty());
+        assert!(reserved(&submission("acme", "https://github.com/acme/pi")).is_empty());
+        for (publisher, repository) in [
+            ("cadencr", "https://github.com/acme/pi"),
+            ("Cadencr", "https://github.com/merkr-software-evil/pi"),
+            ("CADENCR", "https://github.com/merkr-software/pi/extra"),
+        ] {
+            assert_eq!(
+                reserved(&submission(publisher, repository)),
+                vec![format!(
+                    "submission.package.host.publisher {publisher:?} is reserved for merkr-software repositories"
+                )]
+            );
+        }
     }
 }

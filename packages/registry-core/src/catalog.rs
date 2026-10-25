@@ -215,6 +215,37 @@ mod tests {
     }
 
     #[test]
+    fn publication_reserves_the_official_publisher_but_consumption_does_not() {
+        let official = package(
+            "alpha",
+            "1.0.0",
+            "cadencr",
+            "https://github.com/merkr-software/alpha",
+        );
+        prepare(vec![official]).unwrap();
+        let (generated, expires) = window();
+        for (publisher, repository) in [
+            ("cadencr", "https://github.com/acme/alpha"),
+            ("Cadencr", "https://github.com/merkr-software-evil/alpha"),
+            ("CADENCR", "https://github.com/merkr-software/alpha/extra"),
+        ] {
+            let violating = package("alpha", "1.0.0", publisher, repository);
+            let error = prepare(vec![violating.clone()]).unwrap_err().to_string();
+            assert!(
+                error.contains(&format!(
+                    "index.packages[0]: host.publisher {publisher:?} is reserved for merkr-software repositories"
+                )),
+                "{error}"
+            );
+            // A signed catalog the app consumes is never rejected wholesale
+            // for one such entry.
+            let signed = json!({"schema_version": 1, "generated_at": generated,
+                "expires_at": expires, "packages": [violating]});
+            crate::validate_catalog_payload_at(&signed, false, Utc::now()).unwrap();
+        }
+    }
+
+    #[test]
     fn applies_strict_signing_timestamp_policy() {
         let mut generated = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
         let expires = (Utc::now() + Duration::days(1)).to_rfc3339_opts(SecondsFormat::Secs, true);

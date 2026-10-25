@@ -32,6 +32,7 @@ mod package;
 mod pipeline_preflight;
 mod publication_plan;
 mod release_archive;
+mod reserved_publisher;
 pub use release_archive::{parse_github_release_archive_url, GitHubReleaseArchive};
 mod safe_io;
 mod signing;
@@ -251,6 +252,11 @@ fn validate_owners(base: &Tree, candidate: &Tree, errors: &mut Diagnostics) {
         let Some((id, version)) = identity(package) else {
             continue;
         };
+        if let Some(error) =
+            reserved_publisher::package_reserved_publisher_error(package, "host.publisher")
+        {
+            errors.push(format!("packages/{name}: {error}"));
+        }
         let Some(submission) = candidate.submissions.get(name) else {
             errors.push(format!(
                 "packages/{name}: new package versions require submissions/{name}"
@@ -368,5 +374,39 @@ mod tests {
             error.messages().last().unwrap(),
             "additional validation errors omitted"
         );
+    }
+
+    #[test]
+    fn contribution_reserves_the_official_publisher() {
+        let package = |publisher: &str, repository: &str| {
+            json!({"agent": {"id": "pi", "version": "1.0.0", "repository": repository},
+                "host": {"publisher": publisher}})
+        };
+        for (publisher, repository, reserved) in [
+            ("cadencr", "https://github.com/acme/pi", true),
+            ("Cadencr", "https://github.com/merkr-software-evil/pi", true),
+            ("cadencr", "https://github.com/merkr-software/pi", false),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let base = root.path().join("base");
+            let candidate = root.path().join("candidate");
+            std::fs::create_dir_all(base.join("packages")).unwrap();
+            std::fs::create_dir_all(candidate.join("packages")).unwrap();
+            std::fs::write(
+                candidate.join("packages/pi-1.0.0.json"),
+                serde_json::to_vec(&package(publisher, repository)).unwrap(),
+            )
+            .unwrap();
+            let error = validate_contribution(&base, &candidate)
+                .unwrap_err()
+                .to_string();
+            assert_eq!(
+                error.contains(&format!(
+                    "packages/pi-1.0.0.json: host.publisher {publisher:?} is reserved for merkr-software repositories"
+                )),
+                reserved,
+                "{publisher} {repository}: {error}"
+            );
+        }
     }
 }

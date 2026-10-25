@@ -111,6 +111,16 @@ pub(crate) fn validate_index_with(
             }
             validate_package(package, &format!("index.packages[{position}]"), &mut errors);
         }
+        // Publication only: a signed catalog the app consumes is never
+        // rejected wholesale for one entry (see `Rules::Consume`).
+        if rules == Rules::Publish {
+            if let Some(error) = crate::reserved_publisher::package_reserved_publisher_error(
+                package,
+                "host.publisher",
+            ) {
+                errors.push(format!("index.packages[{position}]: {error}"));
+            }
+        }
     }
     if !errors.is_empty() {
         return Err(RegistryError::from_messages(errors.into_messages()));
