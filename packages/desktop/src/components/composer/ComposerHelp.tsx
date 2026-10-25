@@ -1,21 +1,21 @@
 import type { ReactElement } from "react";
-import { useShortcutLabel } from "@/hooks/useShortcutLabel";
-import { formatCompactCombo } from "@/lib/shortcuts/format";
+import { KbdShortcut } from "@/components/KbdShortcut";
+import { useShortcutKeys } from "@/hooks/useShortcutLabel";
 import type { ShortcutId } from "@/lib/shortcuts/registry";
 
 /** A literal trigger, or a registry shortcut shown as currently bound (`twice`: pressed twice). */
-type HelpKey = string | { shortcut: ShortcutId; twice?: boolean };
+type HelpKey = readonly string[] | { shortcut: ShortcutId; twice?: boolean };
 
 const ROWS: ReadonlyArray<readonly [string, HelpKey, string]> = [
-  ["file", "@", "Attach a file or folder"],
-  ["conversation", "@@", "Reference another conversation"],
-  ["command", "/", "Commands and skills"],
-  ["side", "/cadencr:side", "Ask on the side — the agent is not interrupted"],
-  ["shell", "!", "Run a shell command yourself"],
-  ["send", "↵", "Send — or steer the agent while it works"],
+  ["file", ["@"], "Attach a file or folder"],
+  ["conversation", ["@@"], "Reference another conversation"],
+  ["command", ["/"], "Commands and skills"],
+  ["side", ["/cadencr:side"], "Ask on the side — the agent is not interrupted"],
+  ["shell", ["!"], "Run a shell command yourself"],
+  ["send", ["enter"], "Send — or steer the agent while it works"],
   ["queue", { shortcut: "agent-send" }, "Queue for after the agent's turn"],
-  ["newline", formatCompactCombo(["shift", "enter"]), "New line"],
-  ["walk", "↑ ↓", "Walk your prompt history"],
+  ["newline", ["shift", "enter"], "New line"],
+  ["walk", ["up", "down"], "Walk your prompt history"],
   ["search", { shortcut: "prompt-history-search" }, "Search history and stashed drafts"],
   ["stash", { shortcut: "prompt-stash-draft" }, "Stash the draft"],
   ["mode", { shortcut: "agent-permission-mode" }, "Change the autonomy mode"],
@@ -36,9 +36,7 @@ export function ComposerHelp(): ReactElement {
         {ROWS.map(([id, key, label]) => (
           <div key={id} className="contents">
             <dt>
-              <kbd className="rounded border border-border bg-muted/50 px-1.5 py-0.5 font-mono text-[11px]">
-                {typeof key === "string" ? key : <BoundKey {...key} />}
-              </kbd>
+              <HelpKeys value={key} />
             </dt>
             <dd className="text-muted-foreground">{label}</dd>
           </div>
@@ -48,7 +46,17 @@ export function ComposerHelp(): ReactElement {
   );
 }
 
-function BoundKey({ shortcut, twice }: { shortcut: ShortcutId; twice?: boolean }): string {
-  const label = useShortcutLabel(shortcut);
-  return twice ? `${label} ${label}` : label;
+function HelpKeys({ value }: { value: HelpKey }): ReactElement {
+  if ("shortcut" in value) return <BoundKeys {...value} />;
+  return <KbdShortcut keys={[...value]} variant="hint" />;
+}
+
+function BoundKeys({ shortcut, twice }: { shortcut: ShortcutId; twice?: boolean }): ReactElement {
+  const keys = useShortcutKeys(shortcut);
+  return (
+    <span className="inline-flex items-center gap-1">
+      <KbdShortcut keys={keys} variant="hint" />
+      {twice && <KbdShortcut keys={keys} variant="hint" />}
+    </span>
+  );
 }

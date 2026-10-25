@@ -5,6 +5,8 @@ import { MinusIcon, XIcon } from "lucide-react";
 
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { TabsTrigger } from "@/components/ui/tabs";
+import { useShortcutKeys } from "@/hooks/useShortcutLabel";
+import type { ShortcutId } from "@/lib/shortcuts/registry";
 import type { TabKind } from "@/stores/feature-layout-schema";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +23,33 @@ type TabCloseAction = "close" | "dock" | null;
 export function tabCloseAction(def: FeatureTabDef, isRootPane: boolean): TabCloseAction {
   if (def.closable) return "close";
   return isRootPane ? null : "dock";
+}
+
+function BoundTabTooltip({
+  label,
+  shortcutId,
+  children,
+}: {
+  label: string;
+  shortcutId: ShortcutId;
+  children: ReactNode;
+}): ReactNode {
+  const keys = useShortcutKeys(shortcutId);
+  return (
+    <ShortcutTooltip label={label} keys={keys}>
+      {children}
+    </ShortcutTooltip>
+  );
+}
+
+/** Tab tooltip: shows the tab's live registry binding when it has one. */
+function TabTooltip({ def, children }: { def: FeatureTabDef; children: ReactNode }): ReactNode {
+  if (!def.shortcutId) return <ShortcutTooltip label={def.label}>{children}</ShortcutTooltip>;
+  return (
+    <BoundTabTooltip label={def.label} shortcutId={def.shortcutId}>
+      {children}
+    </BoundTabTooltip>
+  );
 }
 
 function TabTriggerBody({ def }: { def: FeatureTabDef }): ReactNode {
@@ -102,7 +131,7 @@ export function DraggableTabTrigger({
       }}
       className="relative inline-flex shrink-0"
     >
-      <ShortcutTooltip label={def.label} keys={def.shortcut}>
+      <TabTooltip def={def}>
         <TabsTrigger
           value={tab}
           data-feature-tab-kind={tab}
@@ -119,7 +148,7 @@ export function DraggableTabTrigger({
         >
           <TabTriggerBody def={def} />
         </TabsTrigger>
-      </ShortcutTooltip>
+      </TabTooltip>
       {closeAction && <TabCloseButton def={def} action={closeAction} onClose={onClose} />}
     </div>
   );
@@ -146,7 +175,7 @@ export function StaticTabTrigger({
   onClose,
 }: StaticTabTriggerProps): ReactNode {
   const trigger = (
-    <ShortcutTooltip label={def.label} keys={def.shortcut}>
+    <TabTooltip def={def}>
       <TabsTrigger
         value={tab}
         data-feature-tab-kind={tab}
@@ -161,7 +190,7 @@ export function StaticTabTrigger({
       >
         <TabTriggerBody def={def} />
       </TabsTrigger>
-    </ShortcutTooltip>
+    </TabTooltip>
   );
   if (!closeAction) return trigger;
   return (

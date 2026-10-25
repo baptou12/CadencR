@@ -1,6 +1,7 @@
 import { SessionConfigPopover, shouldShowSessionConfig } from "./SessionConfigPopover";
 import type { SessionConfigControls } from "./types";
 import { useMemo } from "react";
+import { useShortcutKeys, useShortcutLabel } from "@/hooks/useShortcutLabel";
 import { cn } from "@/lib/utils";
 import { SlidingText } from "@/components/SlidingText";
 import { ShortcutTooltip } from "../ShortcutTooltip";
@@ -217,6 +218,8 @@ interface LeadingChipsProps {
 
 export function MetaBarLeadingChips(props: LeadingChipsProps) {
   const { section } = props;
+  const cycleKeys = useShortcutKeys("agent-permission-mode");
+  const cycleLabel = useShortcutLabel("agent-permission-mode");
   return (
     <>
       {section !== "instruments" && props.showAutoScrollChip && (
@@ -237,11 +240,11 @@ export function MetaBarLeadingChips(props: LeadingChipsProps) {
 
       {/* Mode chip — labels/colors driven by the per-provider catalog. */}
       {section === "all" && props.displayMode && (
-        <ShortcutTooltip label={`${props.displayMode.label} mode`} keys={["shift", "Tab"]}>
+        <ShortcutTooltip label={`${props.displayMode.label} mode`} keys={cycleKeys}>
           <button
             type="button"
             onClick={props.onPermissionModeToggle}
-            title={`${props.displayMode.description} (Shift+Tab to cycle)`}
+            title={`${props.displayMode.description} (${cycleLabel} to cycle)`}
             aria-label={props.displayMode.ariaLabel}
             className={cn(META_BAR_CHIP, props.displayMode.chipClass, "min-w-0")}
           >

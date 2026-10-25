@@ -246,7 +246,7 @@ describe("Sidebar", () => {
     await waitFor(() => {
       expect(screen.getByTitle("Search unavailable while terminal is focused")).toBeInTheDocument();
     });
-    expect(screen.getByText("--")).toBeInTheDocument();
+    expect(screen.getByText("-")).toBeInTheDocument();
 
     outsideButton.focus();
 

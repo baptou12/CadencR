@@ -1,4 +1,5 @@
 import { forwardRef, useId, type ReactNode } from "react";
+import { KbdShortcut } from "@/components/KbdShortcut";
 import { cn } from "@/lib/utils";
 
 /** DOM id of option `index` inside the listbox `listId` (for aria-activedescendant). */
@@ -15,14 +16,14 @@ interface ComposerPopoverProps {
   /** Status row shown instead of options (loading, empty, error). */
   status?: ReactNode;
   /** Keyboard hints in the footer; defaults to navigate · insert · close. */
-  hints?: ReadonlyArray<readonly [key: string, label: string]>;
+  hints?: ReadonlyArray<readonly [keys: readonly string[], label: string]>;
   children?: ReactNode;
 }
 
 const DEFAULT_HINTS = [
-  ["↑↓", "navigate"],
-  ["↵", "insert"],
-  ["esc", "close"],
+  [["up", "down"], "navigate"],
+  [["enter"], "insert"],
+  [["escape"], "close"],
 ] as const;
 
 /**
@@ -67,9 +68,9 @@ export const ComposerPopover = forwardRef<HTMLDivElement, ComposerPopoverProps>(
           aria-hidden
           className="flex shrink-0 items-center gap-3 border-t border-border/60 px-3 py-1.5 text-[11px] text-muted-foreground"
         >
-          {hints.map(([key, hintLabel]) => (
-            <span key={key} className="inline-flex items-center gap-1">
-              <kbd className="font-mono text-[11px] text-foreground/70">{key}</kbd>
+          {hints.map(([keys, hintLabel]) => (
+            <span key={hintLabel} className="inline-flex items-center gap-1">
+              <KbdShortcut keys={[...keys]} variant="hint" />
               {hintLabel}
             </span>
           ))}

@@ -3,8 +3,7 @@ import { AlertTriangleIcon, BotIcon, SearchXIcon } from "lucide-react";
 import { EmptyState } from "@/components/FeaturePrViewParts";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { Button } from "@/components/ui/button";
-import { formatCombo } from "@/lib/shortcuts/format";
-import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
+import { useShortcutKeys } from "@/hooks/useShortcutLabel";
 
 /** The shared empty state, filling the grid area and announced politely
  *  (an error assertively). */
@@ -25,7 +24,7 @@ function Actions({ children }: { children: ReactNode }): ReactElement {
 
 /** Nothing to show yet: say where agents come from and how to start one. */
 export const UnifiedAgentsNoAgents = memo(function UnifiedAgentsNoAgents(): ReactElement {
-  const keys = formatCombo(useResolvedShortcut("agents-new-feature").keys);
+  const keys = useShortcutKeys("agents-new-feature");
   return (
     <GridEmptyState
       icon={<BotIcon className="size-5" aria-hidden />}

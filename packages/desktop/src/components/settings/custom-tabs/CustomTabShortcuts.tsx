@@ -1,5 +1,5 @@
 import type { PluginTabSummary } from "@/api/generated";
-import { KbdShortcut } from "@/components/KbdShortcut";
+import { KbdChord } from "@/components/KbdShortcut";
 import { useResolvedTabShortcuts } from "@/components/plugin-tabs/useTabShortcuts";
 import { formatCombo } from "@/lib/shortcuts/format";
 
@@ -27,7 +27,7 @@ export function CustomTabShortcuts({
             ) : null}
           </div>
           <span className={takenBy ? "shrink-0 opacity-50" : "shrink-0"}>
-            <KbdShortcut keys={formatCombo(shortcut.keys)} variant="modal" />
+            <KbdChord keys={formatCombo(shortcut.keys)} />
           </span>
         </li>
       ))}

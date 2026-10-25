@@ -46,7 +46,7 @@ export const SHORTCUT_SCOPES = [
   {
     id: "command-palette",
     label: "Command palette",
-    hint: "While the command palette (⌘K) is open.",
+    hint: "While the command palette is open.",
   },
   {
     id: "model-picker",

@@ -2,8 +2,9 @@ import { forwardRef, type KeyboardEvent, type ReactElement, type ReactNode } fro
 import { Command as CommandPrimitive } from "cmdk";
 import { AtSignIcon, ChevronRightIcon, HashIcon, SearchIcon } from "lucide-react";
 import type { PaletteScope, PrefixMode } from "@/lib/command-palette/palette-query";
-import { formatCombo } from "@/lib/shortcuts/format";
+import { formatCombo, formatCompactCombo } from "@/lib/shortcuts/format";
 import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
+import { ComboCap } from "./PaletteText";
 
 export const MODE_LABEL: Record<PrefixMode, string> = {
   commands: "Commands",
@@ -43,11 +44,11 @@ function ScopeButton({
       tabIndex={-1}
       className="cp-scope"
       data-scope={scope}
-      title={`${SCOPE_TITLE[scope]} (${formatCombo(keys).join("")} to change)`}
+      title={`${SCOPE_TITLE[scope]} (${formatCompactCombo(keys)} to change)`}
       onClick={onCycle}
     >
       {SCOPE_LABEL[scope]}
-      <kbd className="cp-key">{formatCombo(keys).join("")}</kbd>
+      <ComboCap keys={formatCombo(keys)} />
     </button>
   );
 }

@@ -2,6 +2,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { PROVIDER_IDS } from "@/lib/providers";
+import { formatCompactCombo } from "@/lib/shortcuts/format";
 import { parseThinkingEffort } from "@/shared/thinking-effort";
 import { MetaBar, type MetaBarProps } from "./MetaBar";
 
@@ -117,7 +118,10 @@ describe("MetaBar mode chip", () => {
       name: /Permission mode: Bypass/i,
     });
     expect(chip).toBeInTheDocument();
-    expect(chip).toHaveAttribute("title", expect.stringMatching(/Shift\+Tab/i));
+    expect(chip).toHaveAttribute(
+      "title",
+      expect.stringContaining(`(${formatCompactCombo(["shift", "tab"])} to cycle)`),
+    );
     expect(chip.className).toMatch(/--acc-red/);
     expect(screen.queryByRole("button", { name: /Claude access mode/i })).toBeNull();
   });

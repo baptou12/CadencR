@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { KbdChord } from "@/components/KbdShortcut";
 import { useCustomTabShortcutGroups } from "@/components/plugin-tabs/useCustomTabShortcutGroups";
 import { comboSearchText, formatCombo, PLATFORM_IS_MAC } from "@/lib/shortcuts/format";
 import { SHORTCUTS_BY_SCOPE, type ShortcutKey } from "@/lib/shortcuts/registry";
@@ -119,44 +120,31 @@ export function KeyboardShortcutsModal({
         </div>
 
         <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-border bg-card px-5 py-2 text-[11px] text-muted-foreground">
-          <Combo keys={["Esc"]} /> to close
+          <KbdChord keys={["Esc"]} /> to close
         </footer>
       </DialogContent>
     </Dialog>
   );
 }
 
-function ShortcutRow({ item }: { item: ShortcutItem }) {
+// Memoized: items come from the static registry, so typing in the search box
+// only re-renders rows that appear or disappear, not every key cap.
+const ShortcutRow = memo(function ShortcutRow({ item }: { item: ShortcutItem }) {
   return (
     <li className="flex min-h-[28px] items-center justify-between gap-4 py-1">
       <span className="text-sm text-foreground">{item.description}</span>
       <div className="flex shrink-0 items-center gap-1">
         {item.altKeys && (
           <>
-            <Combo keys={formatCombo(item.altKeys)} />
+            <KbdChord keys={formatCombo(item.altKeys)} />
             <span className="text-[10px] text-muted-foreground">or</span>
           </>
         )}
-        <Combo keys={formatCombo(item.keys)} />
+        <KbdChord keys={formatCombo(item.keys)} />
       </div>
     </li>
   );
-}
-
-/** Plain-text chord rendering — uses pre-formatted strings from `format.ts`
- *  so platform glyphs are honored without `KbdShortcut`'s implicit icon
- *  remapping ("Ctrl" → ⌃ etc.). */
-function Combo({ keys }: { keys: string[] }) {
-  return (
-    <kbd className="inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-1 font-mono text-[11px] font-medium text-foreground shadow-sm">
-      {keys.map((k, i) => (
-        <span key={i} className="leading-none">
-          {k}
-        </span>
-      ))}
-    </kbd>
-  );
-}
+});
 
 function matchesQuery(item: ShortcutItem, q: string): boolean {
   if (item.description.toLowerCase().includes(q)) return true;

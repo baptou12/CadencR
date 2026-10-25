@@ -13,8 +13,7 @@ import { ProjectBadge } from "@/components/ProjectBadge";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { Button } from "@/components/ui/button";
 import { useFeatureAttention } from "@/hooks/useFeatureAttention";
-import { formatCombo } from "@/lib/shortcuts/format";
-import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
+import { useShortcutKeys } from "@/hooks/useShortcutLabel";
 import type { ShortcutId } from "@/lib/shortcuts/registry";
 import { cn } from "@/lib/utils";
 import { useFeatureStatus } from "@/stores/session-status-selectors";
@@ -211,7 +210,7 @@ function ActionTooltip({
   shortcutId: ShortcutId;
   children: ReactNode;
 }): ReactElement {
-  const keys = formatCombo(useResolvedShortcut(shortcutId).keys);
+  const keys = useShortcutKeys(shortcutId);
   return (
     <ShortcutTooltip label={label} keys={keys} alignRight>
       {children}

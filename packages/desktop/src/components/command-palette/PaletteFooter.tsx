@@ -50,11 +50,11 @@ export function PaletteFooter({
   return (
     <footer className="cp-footer">
       <span className="cp-hint">
-        <KeyCaps keys={["↑", "↓"]} />
+        <KeyCaps keys={["up", "down"]} />
         Navigate
       </span>
       <span className="cp-hint">
-        <KeyCaps keys={["↵"]} />
+        <KeyCaps keys={["enter"]} />
         {enterLabel(entry, context)}
       </span>
       {context === "search" && entry && (
@@ -65,7 +65,7 @@ export function PaletteFooter({
       )}
       {context !== "search" && (
         <span className="cp-hint">
-          <KeyCaps keys={["Esc"]} />
+          <KeyCaps keys={["escape"]} />
           Back
         </span>
       )}

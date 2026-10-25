@@ -1,4 +1,6 @@
 import { memo, type ReactElement } from "react";
+import { KbdShortcut } from "@/components/KbdShortcut";
+import { useShortcutKeys } from "@/hooks/useShortcutLabel";
 import { stopArmKeyFor, useStopArmStore } from "@/stores/stop-arm-store";
 import { useComposerContext } from "./ComposerContext";
 
@@ -8,6 +10,7 @@ import { useComposerContext } from "./ComposerContext";
  */
 export const StopArmHint = memo(function StopArmHint(): ReactElement | null {
   const { wsSessionId, featureId, isRunning } = useComposerContext();
+  const stopKeys = useShortcutKeys("agent-stop");
   const armed = useStopArmStore(
     (state) => state.armedKey !== null && state.armedKey === stopArmKeyFor(wsSessionId, featureId),
   );
@@ -18,7 +21,7 @@ export const StopArmHint = memo(function StopArmHint(): ReactElement | null {
       className="composer-stop-arm inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-xs text-destructive"
     >
       Press
-      <kbd className="rounded border border-destructive/40 px-1 font-mono text-[11px]">esc</kbd>
+      <KbdShortcut keys={stopKeys} variant="hint" />
       again to stop
     </span>
   );

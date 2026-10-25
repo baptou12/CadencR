@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { cn } from "@/lib/utils";
 import { KbdShortcut } from "@/components/KbdShortcut";
+import { useShortcutKeys } from "@/hooks/useShortcutLabel";
 import {
   AGENT_OPTION_CARD_BASE,
   AGENT_OPTION_CARD_RESTING,
@@ -29,6 +30,7 @@ function AgentQuestionOptionListComponent({
   onOptionToggle,
   onOtherToggle,
 }: AgentQuestionOptionListProps) {
+  const otherKeys = useShortcutKeys("q-other");
   return (
     <div className="mb-2 flex flex-col gap-1.5">
       {options.map((option, optIdx) => {
@@ -87,7 +89,7 @@ function AgentQuestionOptionListComponent({
       >
         <span className="text-sm font-medium text-foreground">
           <span aria-hidden>
-            <KbdShortcut keys={["cmd", "O"]} variant="square" scope="agent" />
+            <KbdShortcut keys={otherKeys} variant="square" scope="agent" />
           </span>
           Other…
         </span>

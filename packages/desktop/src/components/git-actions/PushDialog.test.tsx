@@ -191,7 +191,7 @@ describe("PushDialog picker affordances", () => {
 
     const group = screen.getByRole("radiogroup", { name: /push mode/i });
     const badges = [...group.querySelectorAll("kbd")].map((k) => k.textContent?.trim());
-    expect(badges).toEqual(["p", "l", "f"]);
+    expect(badges).toEqual(["P", "L", "F"]);
   });
 
   it("shows the exact command each mode will run", async () => {

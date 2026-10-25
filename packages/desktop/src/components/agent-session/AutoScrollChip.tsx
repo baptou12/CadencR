@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { ChevronsDownIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useShortcutKeys } from "@/hooks/useShortcutLabel";
 import { ShortcutTooltip } from "../ShortcutTooltip";
 import { AUTO_SCROLL_ACTIVE_CHIP, META_BAR_CHIP } from "./meta-bar-chip-styles";
 
@@ -24,6 +25,7 @@ export const AutoScrollChip = memo(function AutoScrollChip({
   onToggle,
   variant = "chip",
 }: AutoScrollChipProps) {
+  const autoScrollKeys = useShortcutKeys("agent-autoscroll");
   return (
     <ShortcutTooltip
       label={
@@ -31,7 +33,7 @@ export const AutoScrollChip = memo(function AutoScrollChip({
           ? "Auto-scroll: on — follow new agent output"
           : "Auto-scroll: off — click to follow new agent output"
       }
-      keys={["cmd", "shift", "S"]}
+      keys={autoScrollKeys}
       alignLeft
     >
       <button

@@ -9,6 +9,7 @@ import {
   PlainSpaceAfterFilterTokenPlugin,
   SlashFilterCursorPlugin,
 } from "@/components/UnifiedAgentsFilterPlugins";
+import { KbdShortcut } from "@/components/KbdShortcut";
 import { getUnifiedAgentsFilterEditorText } from "@/components/UnifiedAgentsFilterEditorText";
 import { cn } from "@/lib/utils";
 
@@ -61,8 +62,11 @@ export function FilterEditorShell({
         }
         placeholder={
           <div className="pointer-events-none absolute top-1/2 right-16 left-8 -translate-y-1/2 truncate select-none text-[12.5px] leading-5 text-muted-foreground">
-            Filter agents by name · type <kbd className="font-mono text-foreground/70">/</kbd> for
-            project, time, sort…
+            Filter agents by name · type{" "}
+            <span className="text-foreground/70">
+              <KbdShortcut keys={["/"]} variant="inline-sm" />
+            </span>{" "}
+            for project, time, sort…
           </div>
         }
         ErrorBoundary={LexicalErrorBoundary}

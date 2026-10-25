@@ -24,6 +24,7 @@ import { useFeatureWorktreePath } from "@/hooks/useFeatureWorktreePath";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { KbdShortcut } from "@/components/KbdShortcut";
+import { useShortcutKeys } from "@/hooks/useShortcutLabel";
 import { EditorSidebarLayout } from "./EditorSidebarLayout";
 import EditorSplitTree from "./EditorSplitTree";
 import FileTree from "./FileTree";
@@ -357,6 +358,8 @@ function SidebarHeader({
   onToggle: () => void;
   onOpenFileSearch: () => void;
 }) {
+  const fuzzyKeys = useShortcutKeys("editor-fuzzy");
+  const toggleSidebarKeys = useShortcutKeys("editor-toggle-sidebar");
   return (
     <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border shrink-0">
       <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -375,10 +378,10 @@ function SidebarHeader({
         >
           <Search className="h-3.5 w-3.5 shrink-0" />
           <span className="min-w-0 flex-1 truncate">Search files…</span>
-          <KbdShortcut keys={["cmd", "P"]} size="sm" />
+          <KbdShortcut keys={fuzzyKeys} size="sm" />
         </button>
       </div>
-      <ShortcutTooltip label="Collapse sidebar" keys={["cmd", "E"]} alignRight>
+      <ShortcutTooltip label="Collapse sidebar" keys={toggleSidebarKeys} alignRight>
         <button
           type="button"
           aria-label="Collapse file tree sidebar"

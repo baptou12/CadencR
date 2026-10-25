@@ -9,6 +9,7 @@ import {
   type RuntimeModelPickerProvider,
 } from "@/components/RuntimeModelPicker";
 import { SlidingText } from "@/components/SlidingText";
+import { useShortcutKeys } from "@/hooks/useShortcutLabel";
 import { ThinkingEffortBars } from "@/components/ThinkingEffortBars";
 import {
   nextThinkingEffort,
@@ -95,6 +96,7 @@ export function ModelMetaChip({
       ? currentThinkingEffort
       : undefined;
   const displayedThinkingEffort = selectedThinkingEffort ?? supportedThinkingEfforts[0];
+  const modelPickerKeys = useShortcutKeys("agent-model-picker");
   const isLoading = selection === null;
   const modelLabel = selection ? modelLabelFor(selection, pickerProviders) : "";
 
@@ -106,7 +108,7 @@ export function ModelMetaChip({
   return (
     <div className={variant === "instrument" ? MODEL_INSTRUMENT_GROUP : MODEL_GROUP}>
       {onModelChange ? (
-        <ShortcutTooltip label="Open model picker" keys={["cmd", "P"]} disabled={open}>
+        <ShortcutTooltip label="Open model picker" keys={modelPickerKeys} disabled={open}>
           <RuntimeModelPicker
             open={open}
             onOpenChange={onOpenChange}
@@ -235,12 +237,13 @@ function ThinkingEffortSegment({
   trailingSegment,
   instrument = false,
 }: ThinkingEffortSegmentProps): ReactNode {
+  const thinkingKeys = useShortcutKeys("agent-thinking");
   return (
     <>
       {!instrument && <div className="w-px bg-[var(--chip-violet-soft)]/15" aria-hidden="true" />}
       <ShortcutTooltip
         label={`Thinking effort: ${thinkingEffortLabel(displayedThinkingEffort)}`}
-        keys={["cmd", "T"]}
+        keys={thinkingKeys}
       >
         <button
           type="button"

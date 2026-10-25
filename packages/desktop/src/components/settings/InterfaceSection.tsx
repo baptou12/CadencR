@@ -1,23 +1,15 @@
-import type { ReactNode } from "react";
 import { Keyboard, ZoomIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useZoom } from "@/hooks/useZoom";
 import { useShortcutsHelpStore } from "@/stores/shortcuts-help-store";
-import { formatCombo } from "@/lib/shortcuts/format";
-import { getRegistryShortcut } from "@/lib/shortcuts/resolve";
+import { ResolvedKbdChord } from "@/components/KbdShortcut";
 import { AutoLayoutDefaultSetting } from "./AutoLayoutDefaultSetting";
 import { AgentMessageNavigatorSetting } from "./AgentMessageNavigatorSetting";
 import { IconTile } from "./IconTile";
 import { SettingsCard } from "./SettingsCard";
 import { SettingsRow } from "./SettingsRow";
 import { SettingsSection } from "./SettingsSection";
-
-// Combo is static (registry-derived), so compute its glyphs once at module load.
-const HELP_COMBO = formatCombo(getRegistryShortcut("shortcuts-help").keys).join(" ");
-const ZOOM_IN_COMBO = formatCombo(getRegistryShortcut("zoom-in").keys).join(" ");
-const ZOOM_OUT_COMBO = formatCombo(getRegistryShortcut("zoom-out").keys).join(" ");
-const ZOOM_RESET_COMBO = formatCombo(getRegistryShortcut("zoom-reset").keys).join(" ");
 
 export function InterfaceSection(): React.JSX.Element {
   const { zoomLevel, zoomIn, zoomOut, resetZoom } = useZoom();
@@ -50,9 +42,9 @@ export function InterfaceSection(): React.JSX.Element {
               <>
                 Affects sidebar, editor, terminal, and chrome together.
                 <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <Kbd>{ZOOM_IN_COMBO}</Kbd>
-                  <Kbd>{ZOOM_OUT_COMBO}</Kbd>
-                  <Kbd>{ZOOM_RESET_COMBO}</Kbd>
+                  <ResolvedKbdChord shortcutId="zoom-in" />
+                  <ResolvedKbdChord shortcutId="zoom-out" />
+                  <ResolvedKbdChord shortcutId="zoom-reset" />
                   work everywhere.
                 </span>
               </>
@@ -84,7 +76,7 @@ export function InterfaceSection(): React.JSX.Element {
           description={
             <span className="flex flex-wrap items-center gap-1.5">
               Browse every shortcut, or press
-              <Kbd>{HELP_COMBO}</Kbd>
+              <ResolvedKbdChord shortcutId="shortcuts-help" />
               anywhere.
             </span>
           }
@@ -98,13 +90,5 @@ export function InterfaceSection(): React.JSX.Element {
         {!isMobile && <AutoLayoutDefaultSetting />}
       </SettingsCard>
     </SettingsSection>
-  );
-}
-
-function Kbd({ children }: { children: ReactNode }): React.JSX.Element {
-  return (
-    <kbd className="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded border border-b-2 border-border bg-card px-1.5 font-mono text-[10px] font-medium text-foreground">
-      {children}
-    </kbd>
   );
 }

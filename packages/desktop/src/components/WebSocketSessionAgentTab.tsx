@@ -178,7 +178,7 @@ export function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
     () => ({
       label: "Agent",
       Icon: BotIcon,
-      shortcut: ["cmd", "shift", "A"],
+      shortcutId: "pane-agent",
       content: <AgentTabContent args={args} onSend={onSend} hasAccessModes={hasAccessModes} />,
     }),
     [

@@ -1,6 +1,7 @@
 import { forwardRef, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useShortcutLabel } from "@/hooks/useShortcutLabel";
+import { formatKey } from "@/lib/shortcuts/format";
 import { withSideQuestionSkill } from "@/lib/side-question-skill";
 import { AgentPromptPendingIndicator } from "./AgentPromptPendingIndicator";
 import type { AgentPromptBarHandle, AgentPromptBarProps } from "./agent-prompt-bar-types";
@@ -303,9 +304,13 @@ function promptPlaceholder(
     return props.isFirstPrompt ? "Describe the task…" : "Message the agent…";
   }
   if (props.status === "question") return "Answer to resume the agent…";
-  if (controller.sending.queuesOnEnter) return "↵ to queue your message until the agent finishes";
+  // Plain Enter is wired in the prompt editor, not the registry: format the
+  // token so Linux reads "Enter" where macOS draws the return glyph.
+  const enter = formatKey("enter");
+  if (controller.sending.queuesOnEnter)
+    return `${enter} to queue your message until the agent finishes`;
   if (controller.isRunning)
-    return `↵ to steer the agent at its next step, ${queueCombo} to queue it after this turn`;
+    return `${enter} to steer the agent at its next step, ${queueCombo} to queue it after this turn`;
   if (props.isFirstPrompt) return "Describe the task — @ for files, / for commands";
   return `Message the agent — @ files, @@ conversations, ${controller.promptCommandHint}`;
 }

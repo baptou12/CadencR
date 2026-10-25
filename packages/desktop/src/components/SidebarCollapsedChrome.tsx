@@ -5,12 +5,9 @@ import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useTrafficLightsAnchor } from "@/hooks/useTrafficLightsAnchor";
 import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
-import { formatCompactCombo } from "@/lib/shortcuts/format";
-import { getRegistryShortcut } from "@/lib/shortcuts/resolve";
 import { cn } from "@/lib/utils";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
-
-const TOGGLE_SIDEBAR_COMBO = formatCompactCombo(getRegistryShortcut("toggle-sidebar").keys);
+import { useShortcutLabel } from "@/hooks/useShortcutLabel";
 
 interface SidebarCollapsedChromeProps {
   visible: boolean;
@@ -78,6 +75,7 @@ function MobileMenuButton({ onExpand }: { onExpand: () => void }): ReactElement 
 }
 
 function TitlebarActions({ onExpand }: { onExpand: () => void }): ReactElement {
+  const toggleSidebarCombo = useShortcutLabel("toggle-sidebar");
   const actionButtonSize = HAS_MAC_WINDOW_CONTROLS ? "icon-xs" : "icon";
   const actionButtonClass = cn(
     "text-muted-foreground hover:text-foreground",
@@ -97,7 +95,7 @@ function TitlebarActions({ onExpand }: { onExpand: () => void }): ReactElement {
           variant="ghost"
           size={actionButtonSize}
           className={actionButtonClass}
-          title={`Expand sidebar (${TOGGLE_SIDEBAR_COMBO})`}
+          title={`Expand sidebar (${toggleSidebarCombo})`}
           onClick={onExpand}
         >
           <PanelLeft className="size-4" />

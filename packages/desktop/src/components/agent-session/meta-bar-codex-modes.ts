@@ -40,7 +40,8 @@ function codexPlanDisplayMode(
   const isPlan = permissionMode === "plan";
   const description = isPlan
     ? planMode.description
-    : "Default Codex collaboration mode. Click or press Shift+Tab to enable Plan.";
+    : // The chip's title appends the live cycle shortcut, so no key is named here.
+      "Default Codex collaboration mode. Click to enable Plan.";
   return {
     label: isPlan ? "Plan" : "Default",
     description,

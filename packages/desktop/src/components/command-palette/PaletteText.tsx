@@ -1,6 +1,7 @@
 import { Fragment, type ReactElement, type ReactNode } from "react";
 import type { MatchRange } from "@/lib/command-palette/palette-score";
-import { formatCombo } from "@/lib/shortcuts/format";
+import { KbdKeyContent } from "@/components/kbd-key";
+import { formatCombo, PLATFORM_IS_MAC } from "@/lib/shortcuts/format";
 import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
 import type { ShortcutId } from "@/lib/shortcuts/registry";
 
@@ -79,10 +80,19 @@ export function KeyCaps({ keys }: { keys: readonly string[] }): ReactElement {
   return (
     <span className="cp-keys" aria-hidden>
       {keys.map((key, index) => (
-        <kbd key={`${key}-${index}`} className="cp-key">
-          {key}
-        </kbd>
+        <ComboCap key={`${key}-${index}`} keys={[key]} />
       ))}
     </span>
+  );
+}
+
+/** One cap for a whole combo (`⌥S`); keys render through the shared glyph logic. */
+export function ComboCap({ keys }: { keys: readonly string[] }): ReactElement {
+  return (
+    <kbd className="cp-key">
+      {keys.map((key, index) => (
+        <KbdKeyContent key={`${key}-${index}`} keyName={key} isMac={PLATFORM_IS_MAC} />
+      ))}
+    </kbd>
   );
 }

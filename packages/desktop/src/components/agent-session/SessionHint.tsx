@@ -16,13 +16,13 @@
  * muted prose, card surface with `--border`. No invented tokens.
  */
 import { useState } from "react";
-import { ArrowUpIcon, Keyboard, Lightbulb, RotateCw } from "lucide-react";
+import { Keyboard, Lightbulb, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatKey } from "@/lib/shortcuts/format";
+import { ResolvedKbdChord } from "@/components/KbdShortcut";
 import {
   SHORTCUTS_BY_SCOPE,
   type Shortcut,
-  type ShortcutKey,
+  type ShortcutId,
   type ShortcutScope,
 } from "@/lib/shortcuts/registry";
 import { SESSION_HINT_BEHAVIORS } from "./session-hint-behaviors";
@@ -97,7 +97,8 @@ export function SessionHint() {
       >
         <HintSection icon={<Keyboard className="size-3" aria-hidden />} label="Keyboard shortcut">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-            <KbdChord keys={hint.shortcut.keys} />
+            {/* Hints are drawn from SHORTCUTS_BY_SCOPE, so the id is a registry id. */}
+            <ResolvedKbdChord shortcutId={hint.shortcut.id as ShortcutId} />
             <span className="text-sm font-medium text-foreground">{hint.shortcut.description}</span>
           </div>
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{hint.scope.hint}</p>
@@ -145,32 +146,5 @@ function HintSection({
       </header>
       {children}
     </section>
-  );
-}
-
-/**
- * Renders a chord as a row of small key pills. Each key is its own `<kbd>`
- * (semantically correct per MDN) wrapped in a non-semantic `<span>`, since
- * the chord as a whole isn't itself a single key. `shift` uses the
- * `ArrowUpIcon` to match the in-app convention from `components/KbdShortcut`;
- * everything else passes through the platform-aware `formatKey` (⌘ on macOS,
- * "Ctrl" elsewhere).
- */
-function KbdChord({ keys }: { keys: readonly ShortcutKey[] }) {
-  return (
-    <span className="inline-flex items-center gap-0.5">
-      {keys.map((k, i) => (
-        <kbd
-          key={i}
-          className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border bg-background px-1.5 font-mono text-[11px] font-semibold leading-none text-foreground shadow-sm"
-        >
-          {k === "shift" ? (
-            <ArrowUpIcon className="size-3" strokeWidth={2.25} aria-label="Shift" />
-          ) : (
-            formatKey(k)
-          )}
-        </kbd>
-      ))}
-    </span>
   );
 }

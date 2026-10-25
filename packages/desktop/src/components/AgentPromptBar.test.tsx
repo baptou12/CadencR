@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useStopArmStore } from "@/stores/stop-arm-store";
 import { act, fireEvent, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
+import { formatKey } from "@/lib/shortcuts/format";
 import { AgentPromptBar } from "./AgentPromptBar";
 import type { PromptCommandPolicy } from "@/lib/prompt-command-policy";
 import type { HotkeyCallback } from "@tanstack/hotkeys";
@@ -327,7 +328,10 @@ describe("AgentPromptBar", () => {
     expect(screen.getByRole("textbox")).toHaveAttribute(
       "placeholder",
       expect.stringMatching(
-        /^↵ to steer the agent at its next step, .+ to queue it after this turn$/,
+        // ↵ on macOS, "Enter" on Linux.
+        new RegExp(
+          `^${formatKey("enter")} to steer the agent at its next step, .+ to queue it after this turn$`,
+        ),
       ),
     );
     // One verb per key: no dash for the reader to parse.

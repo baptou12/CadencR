@@ -4,6 +4,7 @@ import { ClipboardCheck, Play, MessageSquare, Send, AlertTriangle, X } from "luc
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { KbdShortcut } from "@/components/KbdShortcut";
+import { useShortcutKeys } from "@/hooks/useShortcutLabel";
 
 interface PlanApprovalBarProps {
   allowedPrompts?: Array<{ tool: string; prompt: string }>;
@@ -76,12 +77,15 @@ function PlanActions({
   onRequestChanges,
   onReject,
 }: PlanActionsProps): ReactElement {
+  const approveKeys = useShortcutKeys("plan-approve");
+  const feedbackKeys = useShortcutKeys("plan-feedback");
+  const rejectKeys = useShortcutKeys("plan-reject");
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button variant="default" size="sm" onClick={onApprove} className="gap-1.5">
         <Play className="size-3.5" />
         {approveLabel ?? "Approve & Execute"}
-        <KbdShortcut keys={["cmd", "Y"]} scope="agent" />
+        <KbdShortcut keys={approveKeys} scope="agent" />
       </Button>
       <Button
         variant="ghost"
@@ -91,7 +95,7 @@ function PlanActions({
       >
         <MessageSquare className="size-3.5" />
         Request Changes
-        <KbdShortcut keys={["cmd", "N"]} scope="agent" />
+        <KbdShortcut keys={feedbackKeys} scope="agent" />
       </Button>
       {onReject && (
         <Button
@@ -102,7 +106,7 @@ function PlanActions({
         >
           <X className="size-3.5" />
           Reject & Stop
-          <KbdShortcut keys={["esc"]} scope="agent" />
+          <KbdShortcut keys={rejectKeys} scope="agent" />
         </Button>
       )}
     </div>
