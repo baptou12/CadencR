@@ -8,6 +8,7 @@ mod gitlab;
 mod http;
 pub mod image_routes;
 mod poller;
+pub mod pr_lookup;
 mod provider;
 mod repository;
 pub mod routes;

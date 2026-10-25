@@ -127,6 +127,11 @@ pub struct ProviderCatalogResponseEntry {
     pub origin: ProviderOrigin,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_capability: Option<ProviderProfileCapability>,
+    /// A prompt sent while the agent works is delivered into the running turn
+    /// and acknowledged (steering). When false the composer queues it for
+    /// after the turn instead of promising a steer it can't confirm.
+    #[serde(default)]
+    pub steering_acknowledged: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

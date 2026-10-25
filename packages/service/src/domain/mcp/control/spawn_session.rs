@@ -40,16 +40,16 @@ pub(super) struct SpawnSessionRequest {
 #[derive(Debug, Serialize)]
 pub(super) struct SpawnSessionResponse {
     #[serde(rename = "featureId")]
-    feature_id: i64,
+    pub(super) feature_id: i64,
     #[serde(rename = "sessionId")]
-    session_id: i64,
+    pub(super) session_id: i64,
     #[serde(rename = "messageId", skip_serializing_if = "Option::is_none")]
     message_id: Option<i64>,
     project: TargetProject,
     #[serde(rename = "crossProject")]
     cross_project: bool,
     #[serde(rename = "dispatchError", skip_serializing_if = "Option::is_none")]
-    dispatch_error: Option<String>,
+    pub(super) dispatch_error: Option<String>,
     follow: SpawnFollowResponse,
 }
 

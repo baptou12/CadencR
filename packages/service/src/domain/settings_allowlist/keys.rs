@@ -209,6 +209,11 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // the stream's right edge). Stored as "true" / "false"; unset means
     // enabled. See packages/desktop/src/lib/agent-message-navigator.ts.
     "agent_message_navigator_enabled",
+    // How the composer's context meter reads, cycled by clicking it. One of
+    // the CONTEXT_METER_DISPLAYS values in
+    // packages/desktop/src/lib/context-meter-display.ts; unset means
+    // "bar_percent". This allowlist only gates the write endpoint.
+    "composer_context_meter_display",
     // Plays the welcome-step intro animation exactly once, on the very first
     // open of the onboarding overlay. Set to "true" by `WelcomeIntro` after
     // the animation completes (or the user clicks to skip).

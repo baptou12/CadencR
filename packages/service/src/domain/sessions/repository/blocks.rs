@@ -218,6 +218,14 @@ pub(super) fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                     &mut root_indices,
                 );
             }
+            "turn_interrupted" => {
+                push_block(
+                    make_simple_block("turn_interrupted", String::new(), msg, id, None, true),
+                    parent_idx,
+                    &mut all,
+                    &mut root_indices,
+                );
+            }
             "clear_divider" => {
                 push_block(
                     make_simple_block("clear_divider", String::new(), msg, id, None, false),

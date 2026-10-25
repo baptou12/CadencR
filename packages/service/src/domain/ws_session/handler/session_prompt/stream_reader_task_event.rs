@@ -362,6 +362,12 @@ impl StreamReaderTask {
         if has_pending_user_input {
             return;
         }
+        // The user's own queued prompts go first: they are what the person
+        // supervising this session asked for next.
+        use crate::domain::prompt_queue::delivery::drain_next_after_turn;
+        if drain_next_after_turn(&self.app_state, self.db_session_id).await {
+            return;
+        }
         if let Err(error) = crate::domain::mcp::control::message_queue::drain_next_queued_message(
             &self.app_state,
             self.feature_id,

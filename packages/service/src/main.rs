@@ -210,6 +210,14 @@ async fn main() -> anyhow::Result<()> {
             if recovered > 0 {
                 info!(recovered, "recovered orphaned message delivery claims");
             }
+            let interrupted_prompts =
+                domain::prompt_queue::store::recover_interrupted_deliveries(&write_pool).await?;
+            if interrupted_prompts > 0 {
+                info!(
+                    interrupted_prompts,
+                    "marked interrupted queued prompts as failed"
+                );
+            }
 
             let auth_token = config.auth_token.ok_or_else(|| {
                 anyhow::anyhow!(

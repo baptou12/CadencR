@@ -124,6 +124,9 @@ pub struct AppState {
     /// Broadcast when a custom tab's `tab.json`, icon or `dist/` changes on
     /// disk. Drives live reload of open tab instances.
     pub plugin_tab_events_tx: broadcast::Sender<crate::domain::plugin_tabs::PluginTabChangedEvent>,
+    /// Broadcast when a session's queued-prompt list changes (bare ping).
+    pub prompt_queue_events_tx:
+        broadcast::Sender<crate::domain::prompt_queue::PromptQueueChangedEvent>,
     /// In-memory plugin tokens of live custom tab instances (never persisted).
     pub plugin_tab_grants: crate::domain::plugin_tabs::grants::GrantStore,
     /// The commands custom tabs ran, for their Activity dialog (memory only).
@@ -283,6 +286,7 @@ impl AppState {
         let (settings_events_tx, _) = broadcast::channel(16);
         let (theme_events_tx, _) = broadcast::channel(16);
         let (plugin_tab_events_tx, _) = broadcast::channel(16);
+        let (prompt_queue_events_tx, _) = broadcast::channel(32);
         let (alacritty_config_events_tx, _) = broadcast::channel(16);
         let (remote_events_tx, _) = broadcast::channel(16);
         let storage_maintenance_events_tx = StorageMaintenanceBroadcaster::new(16);
@@ -315,6 +319,7 @@ impl AppState {
             settings_events_tx,
             theme_events_tx,
             plugin_tab_events_tx,
+            prompt_queue_events_tx,
             plugin_tab_grants: Default::default(),
             plugin_tab_activity: Default::default(),
             plugin_tab_backends: Default::default(),
@@ -378,6 +383,7 @@ impl AppState {
         let (settings_events_tx, _) = broadcast::channel(16);
         let (theme_events_tx, _) = broadcast::channel(16);
         let (plugin_tab_events_tx, _) = broadcast::channel(16);
+        let (prompt_queue_events_tx, _) = broadcast::channel(32);
         let (alacritty_config_events_tx, _) = broadcast::channel(16);
         let (remote_events_tx, _) = broadcast::channel(16);
         let storage_maintenance_events_tx = StorageMaintenanceBroadcaster::new(16);
@@ -404,6 +410,7 @@ impl AppState {
             settings_events_tx,
             theme_events_tx,
             plugin_tab_events_tx,
+            prompt_queue_events_tx,
             plugin_tab_grants: Default::default(),
             plugin_tab_activity: Default::default(),
             plugin_tab_backends: Default::default(),

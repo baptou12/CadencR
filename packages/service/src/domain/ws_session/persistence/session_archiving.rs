@@ -51,6 +51,28 @@ impl WsSessionPersistence {
         .await;
     }
 
+    /// Mark in the transcript that the user stopped the turn, so the
+    /// conversation reads "stopped by you" (with a resume affordance) instead
+    /// of whatever the provider wrote for the aborted tool call — on every
+    /// device and after a reload.
+    pub async fn persist_turn_interrupted_static(pool: &SqlitePool, session_id: i64) {
+        if let Err(error) = Self::insert_message(
+            pool,
+            session_id,
+            "system",
+            "",
+            "turn_interrupted",
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        {
+            tracing::error!(session_id, error = %error, "failed to persist the turn-interrupted marker");
+        }
+    }
+
     pub async fn persist_runtime_session_id_static(
         pool: &SqlitePool,
         session_id: i64,

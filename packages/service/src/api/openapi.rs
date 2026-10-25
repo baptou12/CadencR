@@ -35,6 +35,8 @@ use crate::domain::ports::routes as ports_routes;
 use crate::domain::projects::icon as projects_icon;
 use crate::domain::projects::models as projects_models;
 use crate::domain::projects::routes as projects_routes;
+use crate::domain::prompt_queue::routes as prompt_queue_routes;
+use crate::domain::prompt_queue::store as prompt_queue_store;
 use crate::domain::push::models as push_models;
 use crate::domain::push::routes as push_routes;
 use crate::domain::remote::models as remote_models;
@@ -165,6 +167,12 @@ use crate::domain::ws_session::routes as ws_routes;
         feature_layouts_routes::update_layout_handler,
         feature_layouts_routes::delete_layout_handler,
         feature_layouts_routes::set_default_layout_handler,
+        crate::domain::mcp::control::side_question::ask_session_side_question,
+        prompt_queue_routes::list_session_prompt_queue,
+        prompt_queue_routes::enqueue_session_prompt,
+        prompt_queue_routes::update_session_queued_prompt,
+        prompt_queue_routes::delete_session_queued_prompt,
+        prompt_queue_routes::send_session_queued_prompt_now,
         diff_comments_routes::list_diff_comments_handler,
         diff_comments_routes::create_diff_comment_handler,
         diff_comments_routes::update_diff_comment_handler,
@@ -297,6 +305,12 @@ use crate::domain::ws_session::routes as ws_routes;
         neovim_routes::open_file_route,
     ),
     components(schemas(
+        prompt_queue_store::QueuedPrompt,
+        prompt_queue_store::QueuedPromptStatus,
+        crate::domain::mcp::control::side_question::SideQuestionRequest,
+        crate::domain::mcp::control::side_question::SideQuestionResponse,
+        prompt_queue_routes::QueuePromptRequest,
+        prompt_queue_routes::PromptQueueOkResponse,
         HealthResponse,
         crate::domain::themes::managed::models::SignedMixedCatalog,
         crate::domain::themes::managed::models::MixedCatalogPayload,

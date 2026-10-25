@@ -128,6 +128,15 @@ async fn assert_benign_stop_state(app_state: &AppState, session_id: i64) {
     .await
     .unwrap();
     assert_eq!(state, ("completed".into(), 0, "armed".into()));
+    // The transcript says the user stopped the turn, exactly once.
+    let markers: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM agent_messages WHERE session_id = ? AND message_type = 'turn_interrupted'",
+    )
+    .bind(session_id)
+    .fetch_one(&app_state.write_pool)
+    .await
+    .unwrap();
+    assert_eq!(markers, 1);
 }
 
 #[tokio::test]

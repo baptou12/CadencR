@@ -183,6 +183,10 @@ impl StreamReaderTask {
             return None;
         }
         WsSessionPersistence::mark_completed_static(&self.write_pool, self.db_session_id).await;
+        // Both ways a stopped turn ends (its runtime's interrupted result, or
+        // the runtime closing mid-interrupt) pass here exactly once.
+        WsSessionPersistence::persist_turn_interrupted_static(&self.write_pool, self.db_session_id)
+            .await;
         let has_pending_user_input =
             WsSessionPersistence::get_session_row(&self.write_pool, self.db_session_id)
                 .await

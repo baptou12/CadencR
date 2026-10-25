@@ -44,6 +44,7 @@ pub mod permission_bridge;
 pub mod plugin_tabs;
 pub mod ports;
 pub mod projects;
+pub mod prompt_queue;
 pub mod push;
 pub mod remote;
 pub mod runtime_stream;

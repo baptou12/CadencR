@@ -35,10 +35,12 @@ use crate::domain::features::routes::features_router;
 use crate::domain::git::routes::git_router;
 use crate::domain::imports::routes::imports_router;
 use crate::domain::lsp::lsp_router;
+use crate::domain::mcp::control::side_question::side_question_router;
 use crate::domain::neovim::routes::routes as neovim_routes;
 use crate::domain::neovim::ws::ws_routes as neovim_ws_routes;
 use crate::domain::ports::routes::ports_router;
 use crate::domain::projects::routes::projects_router;
+use crate::domain::prompt_queue::routes::prompt_queue_router;
 use crate::domain::schedules::routes::schedules_router;
 use crate::domain::search::routes::search_routes;
 use crate::domain::sessions::routes::sessions_router;
@@ -231,6 +233,8 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(ports_router())
         .merge(feature_layouts_router())
         .merge(diff_comments_router())
+        .merge(prompt_queue_router())
+        .merge(side_question_router())
         .merge(sessions_router())
         .merge(schedules_router())
         .merge(terminal_router())

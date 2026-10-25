@@ -259,6 +259,12 @@ export type ProviderCatalogResponseEntryAllOfProfileCapability = null | Provider
 export type ProviderCatalogResponseEntryAllOf = {
   origin: ProviderOrigin;
   profile_capability?: ProviderCatalogResponseEntryAllOfProfileCapability;
+  /**
+   * A prompt sent while the agent works is delivered into the running turn
+   * and acknowledged (steering). When false the composer queues it for
+   * after the turn instead of promising a steer it can't confirm.
+   */
+  steering_acknowledged?: boolean;
 };
 
 /**
@@ -4375,6 +4381,10 @@ export interface PromptCommandsResponse {
   prompt_command_policy: PromptCommandPolicyPayload;
 }
 
+export interface PromptQueueOkResponse {
+  ok: boolean;
+}
+
 export type PromptReceiptState = (typeof PromptReceiptState)[keyof typeof PromptReceiptState];
 
 export const PromptReceiptState = {
@@ -4855,6 +4865,34 @@ export interface PutPluginTabConfigurationRequest {
    * left untouched, so a form can omit secrets it did not change.
    */
   values: PutPluginTabConfigurationRequestValues;
+}
+
+export interface QueuePromptRequest {
+  content: string;
+}
+
+/**
+ * Where a queued prompt stands.
+ */
+export type QueuedPromptStatus = (typeof QueuedPromptStatus)[keyof typeof QueuedPromptStatus];
+
+export const QueuedPromptStatus = {
+  pending: "pending",
+  delivering: "delivering",
+  error: "error",
+} as const;
+
+/**
+ * A prompt waiting for the end of the agent's turn.
+ */
+export interface QueuedPrompt {
+  content: string;
+  created_at: string;
+  /** @nullable */
+  error?: string | null;
+  id: number;
+  session_id: number;
+  status: QueuedPromptStatus;
 }
 
 export interface ReadFileResponse {
@@ -5645,6 +5683,16 @@ export interface SettingsFileResponse {
   content: string;
   path: string;
   warnings: SettingWarning[];
+}
+
+export interface SideQuestionRequest {
+  question: string;
+}
+
+export interface SideQuestionResponse {
+  feature_id: number;
+  project_id: number;
+  session_id: number;
 }
 
 export interface StartImportRequest {
@@ -6458,6 +6506,14 @@ export type GetPrCommentsParams = {
    * @nullable
    */
   pr_number?: number | null;
+};
+
+export type LookupFeatureRepoPrParams = {
+  feature_id: number;
+  /**
+   * @minimum 0
+   */
+  pr_number: number;
 };
 
 export type ListStashesParams = {
@@ -19567,6 +19623,118 @@ export function useGetPrComments<
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+export const lookupFeatureRepoPr = (params: LookupFeatureRepoPrParams, signal?: AbortSignal) => {
+  return customInstance<PrSummary>({ url: `/api/git/pr/lookup`, method: "GET", params, signal });
+};
+
+export const getLookupFeatureRepoPrQueryKey = (params?: LookupFeatureRepoPrParams) => {
+  return [`/api/git/pr/lookup`, ...(params ? [params] : [])] as const;
+};
+
+export const getLookupFeatureRepoPrQueryOptions = <
+  TData = Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupFeatureRepoPrParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof lookupFeatureRepoPr>>, TError, TData>
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getLookupFeatureRepoPrQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof lookupFeatureRepoPr>>> = ({ signal }) =>
+    lookupFeatureRepoPr(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type LookupFeatureRepoPrQueryResult = NonNullable<
+  Awaited<ReturnType<typeof lookupFeatureRepoPr>>
+>;
+export type LookupFeatureRepoPrQueryError = ErrorType<unknown>;
+
+export function useLookupFeatureRepoPr<
+  TData = Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupFeatureRepoPrParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof lookupFeatureRepoPr>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+          TError,
+          Awaited<ReturnType<typeof lookupFeatureRepoPr>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useLookupFeatureRepoPr<
+  TData = Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupFeatureRepoPrParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof lookupFeatureRepoPr>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+          TError,
+          Awaited<ReturnType<typeof lookupFeatureRepoPr>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useLookupFeatureRepoPr<
+  TData = Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupFeatureRepoPrParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof lookupFeatureRepoPr>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useLookupFeatureRepoPr<
+  TData = Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupFeatureRepoPrParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof lookupFeatureRepoPr>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getLookupFeatureRepoPrQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 export const push = (pushBody: PushBody, signal?: AbortSignal) => {
   return customInstance<GitSuccessResponse>({
     url: `/api/git/push`,
@@ -29020,6 +29188,427 @@ export const useSaveSessionDraft = <TError = ErrorType<unknown>, TContext = unkn
   return useMutation(getSaveSessionDraftMutationOptions(options), queryClient);
 };
 
+export const listSessionPromptQueue = (sessionId: number, signal?: AbortSignal) => {
+  return customInstance<QueuedPrompt[]>({
+    url: `/api/sessions/${sessionId}/prompt-queue`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getListSessionPromptQueueQueryKey = (sessionId: number) => {
+  return [`/api/sessions/${sessionId}/prompt-queue`] as const;
+};
+
+export const getListSessionPromptQueueQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSessionPromptQueue>>,
+  TError = ErrorType<unknown>,
+>(
+  sessionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSessionPromptQueue>>, TError, TData>
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSessionPromptQueueQueryKey(sessionId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listSessionPromptQueue>>> = ({ signal }) =>
+    listSessionPromptQueue(sessionId, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: sessionId !== null && sessionId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listSessionPromptQueue>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListSessionPromptQueueQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSessionPromptQueue>>
+>;
+export type ListSessionPromptQueueQueryError = ErrorType<unknown>;
+
+export function useListSessionPromptQueue<
+  TData = Awaited<ReturnType<typeof listSessionPromptQueue>>,
+  TError = ErrorType<unknown>,
+>(
+  sessionId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSessionPromptQueue>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSessionPromptQueue>>,
+          TError,
+          Awaited<ReturnType<typeof listSessionPromptQueue>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListSessionPromptQueue<
+  TData = Awaited<ReturnType<typeof listSessionPromptQueue>>,
+  TError = ErrorType<unknown>,
+>(
+  sessionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSessionPromptQueue>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSessionPromptQueue>>,
+          TError,
+          Awaited<ReturnType<typeof listSessionPromptQueue>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListSessionPromptQueue<
+  TData = Awaited<ReturnType<typeof listSessionPromptQueue>>,
+  TError = ErrorType<unknown>,
+>(
+  sessionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSessionPromptQueue>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useListSessionPromptQueue<
+  TData = Awaited<ReturnType<typeof listSessionPromptQueue>>,
+  TError = ErrorType<unknown>,
+>(
+  sessionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSessionPromptQueue>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListSessionPromptQueueQueryOptions(sessionId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const enqueueSessionPrompt = (
+  sessionId: number,
+  queuePromptRequest: QueuePromptRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<QueuedPrompt>({
+    url: `/api/sessions/${sessionId}/prompt-queue`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: queuePromptRequest,
+    signal,
+  });
+};
+
+export const getEnqueueSessionPromptMutationKey = () => ["enqueueSessionPrompt"] as const;
+
+export const getEnqueueSessionPromptMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof enqueueSessionPrompt>>,
+    TError,
+    EnqueueSessionPromptMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof enqueueSessionPrompt>>,
+  TError,
+  EnqueueSessionPromptMutationVariables,
+  TContext
+> => {
+  const mutationKey = getEnqueueSessionPromptMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof enqueueSessionPrompt>>,
+    EnqueueSessionPromptMutationVariables
+  > = (props) => {
+    const { sessionId, data } = props ?? {};
+
+    return enqueueSessionPrompt(sessionId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type EnqueueSessionPromptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof enqueueSessionPrompt>>
+>;
+export type EnqueueSessionPromptMutationBody = QueuePromptRequest;
+export type EnqueueSessionPromptMutationError = ErrorType<unknown>;
+export type EnqueueSessionPromptMutationVariables = { sessionId: number; data: QueuePromptRequest };
+
+export const useEnqueueSessionPrompt = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof enqueueSessionPrompt>>,
+      TError,
+      EnqueueSessionPromptMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof enqueueSessionPrompt>>,
+  TError,
+  EnqueueSessionPromptMutationVariables,
+  TContext
+> => {
+  return useMutation(getEnqueueSessionPromptMutationOptions(options), queryClient);
+};
+
+export const deleteSessionQueuedPrompt = (sessionId: number, id: number, signal?: AbortSignal) => {
+  return customInstance<PromptQueueOkResponse>({
+    url: `/api/sessions/${sessionId}/prompt-queue/${id}`,
+    method: "DELETE",
+    signal,
+  });
+};
+
+export const getDeleteSessionQueuedPromptMutationKey = () => ["deleteSessionQueuedPrompt"] as const;
+
+export const getDeleteSessionQueuedPromptMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSessionQueuedPrompt>>,
+    TError,
+    DeleteSessionQueuedPromptMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSessionQueuedPrompt>>,
+  TError,
+  DeleteSessionQueuedPromptMutationVariables,
+  TContext
+> => {
+  const mutationKey = getDeleteSessionQueuedPromptMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSessionQueuedPrompt>>,
+    DeleteSessionQueuedPromptMutationVariables
+  > = (props) => {
+    const { sessionId, id } = props ?? {};
+
+    return deleteSessionQueuedPrompt(sessionId, id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSessionQueuedPromptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSessionQueuedPrompt>>
+>;
+
+export type DeleteSessionQueuedPromptMutationError = ErrorType<unknown>;
+export type DeleteSessionQueuedPromptMutationVariables = { sessionId: number; id: number };
+
+export const useDeleteSessionQueuedPrompt = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteSessionQueuedPrompt>>,
+      TError,
+      DeleteSessionQueuedPromptMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSessionQueuedPrompt>>,
+  TError,
+  DeleteSessionQueuedPromptMutationVariables,
+  TContext
+> => {
+  return useMutation(getDeleteSessionQueuedPromptMutationOptions(options), queryClient);
+};
+
+export const updateSessionQueuedPrompt = (
+  sessionId: number,
+  id: number,
+  queuePromptRequest: QueuePromptRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<QueuedPrompt>({
+    url: `/api/sessions/${sessionId}/prompt-queue/${id}`,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    data: queuePromptRequest,
+    signal,
+  });
+};
+
+export const getUpdateSessionQueuedPromptMutationKey = () => ["updateSessionQueuedPrompt"] as const;
+
+export const getUpdateSessionQueuedPromptMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSessionQueuedPrompt>>,
+    TError,
+    UpdateSessionQueuedPromptMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSessionQueuedPrompt>>,
+  TError,
+  UpdateSessionQueuedPromptMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateSessionQueuedPromptMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSessionQueuedPrompt>>,
+    UpdateSessionQueuedPromptMutationVariables
+  > = (props) => {
+    const { sessionId, id, data } = props ?? {};
+
+    return updateSessionQueuedPrompt(sessionId, id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSessionQueuedPromptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSessionQueuedPrompt>>
+>;
+export type UpdateSessionQueuedPromptMutationBody = QueuePromptRequest;
+export type UpdateSessionQueuedPromptMutationError = ErrorType<unknown>;
+export type UpdateSessionQueuedPromptMutationVariables = {
+  sessionId: number;
+  id: number;
+  data: QueuePromptRequest;
+};
+
+export const useUpdateSessionQueuedPrompt = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSessionQueuedPrompt>>,
+      TError,
+      UpdateSessionQueuedPromptMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSessionQueuedPrompt>>,
+  TError,
+  UpdateSessionQueuedPromptMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateSessionQueuedPromptMutationOptions(options), queryClient);
+};
+
+export const sendSessionQueuedPromptNow = (sessionId: number, id: number, signal?: AbortSignal) => {
+  return customInstance<PromptQueueOkResponse>({
+    url: `/api/sessions/${sessionId}/prompt-queue/${id}/send`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getSendSessionQueuedPromptNowMutationKey = () =>
+  ["sendSessionQueuedPromptNow"] as const;
+
+export const getSendSessionQueuedPromptNowMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendSessionQueuedPromptNow>>,
+    TError,
+    SendSessionQueuedPromptNowMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendSessionQueuedPromptNow>>,
+  TError,
+  SendSessionQueuedPromptNowMutationVariables,
+  TContext
+> => {
+  const mutationKey = getSendSessionQueuedPromptNowMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendSessionQueuedPromptNow>>,
+    SendSessionQueuedPromptNowMutationVariables
+  > = (props) => {
+    const { sessionId, id } = props ?? {};
+
+    return sendSessionQueuedPromptNow(sessionId, id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendSessionQueuedPromptNowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendSessionQueuedPromptNow>>
+>;
+
+export type SendSessionQueuedPromptNowMutationError = ErrorType<unknown>;
+export type SendSessionQueuedPromptNowMutationVariables = { sessionId: number; id: number };
+
+export const useSendSessionQueuedPromptNow = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof sendSessionQueuedPromptNow>>,
+      TError,
+      SendSessionQueuedPromptNowMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof sendSessionQueuedPromptNow>>,
+  TError,
+  SendSessionQueuedPromptNowMutationVariables,
+  TContext
+> => {
+  return useMutation(getSendSessionQueuedPromptNowMutationOptions(options), queryClient);
+};
+
 export const listSessionPrompts = (sessionId: number, signal?: AbortSignal) => {
   return customInstance<SessionPromptsResponse>({
     url: `/api/sessions/${sessionId}/prompts`,
@@ -29130,6 +29719,86 @@ export function useListSessionPrompts<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+export const askSessionSideQuestion = (
+  sessionId: number,
+  sideQuestionRequest: SideQuestionRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SideQuestionResponse>({
+    url: `/api/sessions/${sessionId}/side-question`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: sideQuestionRequest,
+    signal,
+  });
+};
+
+export const getAskSessionSideQuestionMutationKey = () => ["askSessionSideQuestion"] as const;
+
+export const getAskSessionSideQuestionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof askSessionSideQuestion>>,
+    TError,
+    AskSessionSideQuestionMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof askSessionSideQuestion>>,
+  TError,
+  AskSessionSideQuestionMutationVariables,
+  TContext
+> => {
+  const mutationKey = getAskSessionSideQuestionMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof askSessionSideQuestion>>,
+    AskSessionSideQuestionMutationVariables
+  > = (props) => {
+    const { sessionId, data } = props ?? {};
+
+    return askSessionSideQuestion(sessionId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AskSessionSideQuestionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof askSessionSideQuestion>>
+>;
+export type AskSessionSideQuestionMutationBody = SideQuestionRequest;
+export type AskSessionSideQuestionMutationError = ErrorType<unknown>;
+export type AskSessionSideQuestionMutationVariables = {
+  sessionId: number;
+  data: SideQuestionRequest;
+};
+
+export const useAskSessionSideQuestion = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof askSessionSideQuestion>>,
+      TError,
+      AskSessionSideQuestionMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof askSessionSideQuestion>>,
+  TError,
+  AskSessionSideQuestionMutationVariables,
+  TContext
+> => {
+  return useMutation(getAskSessionSideQuestionMutationOptions(options), queryClient);
+};
 
 export const runArchivedCleanup = (signal?: AbortSignal) => {
   return customInstance<ArchivedCleanupRunResponse>({

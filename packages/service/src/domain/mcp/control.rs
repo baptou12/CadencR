@@ -30,6 +30,7 @@ mod send_message;
 mod send_message_modes;
 mod settings;
 mod settings_policy;
+pub mod side_question;
 mod spawn_follow;
 mod spawn_persist;
 mod spawn_resolve;
