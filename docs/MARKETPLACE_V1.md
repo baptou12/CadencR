@@ -252,10 +252,16 @@ that work; an optional official tab must not hold up the initial four plugins.
       inert fixture distribution and Linux runner checks do not qualify macOS
       binaries, managed archive installation or Electron behavior.
 - [x] Review/promote the three monorepo pins atomically to `0.14.2`.
-- [ ] Deliver the reviewed matching public registry pin and workflow contract
-      (stable `cli/vX.Y.Z` tag fetch parity). Re-run trusted-base populated CI,
-      including a native-backend tab and unchanged provider/theme/UI-only-tab
-      cases.
+- [x] Deliver the reviewed matching public registry pin and workflow contract
+      (stable `cli/vX.Y.Z` tag fetch parity), registry `main` `17c4798`. Re-run
+      trusted-base populated CI, including a native-backend tab and unchanged
+      provider/theme/UI-only-tab cases. QA PRs #9–#12 (closed unmerged): the
+      positive four-kind case ([40189074028](https://github.com/merkr-software/cadencr-registry/actions/runs/40189074028))
+      and tampered candidate tooling/pin ([40189081349](https://github.com/merkr-software/cadencr-registry/actions/runs/40189081349))
+      pass with index construction; a native target missing its executable
+      digest ([40189075882](https://github.com/merkr-software/cadencr-registry/actions/runs/40189075882))
+      and an unknown platform key ([40189078759](https://github.com/merkr-software/cadencr-registry/actions/runs/40189078759))
+      fail as expected. Linux runner only; native archives are metadata here.
 
 #### Wave 3 qualification checkpoint — 2026-10-18
 
