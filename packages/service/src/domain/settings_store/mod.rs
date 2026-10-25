@@ -29,7 +29,6 @@ pub mod file;
 pub mod generation;
 pub mod lock;
 pub mod migrate;
-pub mod notch_default;
 pub mod paths;
 pub mod registry;
 pub mod store;
