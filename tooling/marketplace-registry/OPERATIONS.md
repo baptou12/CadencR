@@ -8,11 +8,11 @@ signing, tags, feed advancement, production pins or remote writes require review
 targets/inputs and protected operator authority; preparation alone is insufficient.
 Examples are syntax, not actual keys, destinations or assigned owners. No scheduler
 is deployed here. Earlier distributed CLI qualification is dated evidence, not
-production deployment. The locally selected `0.13.1-dev.39306959010.1` includes
+production deployment. The locally selected `0.14.2` includes
 standalone Rust diagnostics and the bounded discovery-convergence correction.
 Its exact distributed executable passed first-pass renewal, unchanged replays,
 fresh-runner recovery and three-kind publication checks; see the
-[current qualification record](../../docs/MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-21.md).
+[current qualification record](../../docs/qa/MARKETPLACE_STABLE_CLI_2026_10_25.md).
 The historical renewal failure remains failed and its exact cause unknown.
 
 | Required record before activation | Accountable role / evidence                                                                |
@@ -94,7 +94,7 @@ isolated environment, and retain real acknowledgment evidence as an activation g
 ### Source-only discovery convergence correction
 
 This historical heading is retained for existing links. The correction is now
-included in qualified `0.13.1-dev.39306959010.1`; it is no longer source-only.
+included in qualified `0.14.2`; it is no longer source-only.
 A deterministic regression reproduces the failure class: after discovery advances, its stable
 public URL serves the exact previous signed catalog before serving the candidate.
 This does not establish which response caused the historical hosted error.
