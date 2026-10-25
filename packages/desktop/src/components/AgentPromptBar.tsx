@@ -1,9 +1,10 @@
-import { forwardRef } from "react";
+import { forwardRef, useMemo } from "react";
 import { cn } from "@/lib/utils";
+import { useShortcutLabel } from "@/hooks/useShortcutLabel";
+import { withSideQuestionSkill } from "@/lib/side-question-skill";
 import { AgentPromptPendingIndicator } from "./AgentPromptPendingIndicator";
 import type { AgentPromptBarHandle, AgentPromptBarProps } from "./agent-prompt-bar-types";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
-import { ImageAttachmentPreview } from "./ImageAttachmentPreview";
 import { PlanApprovalBar } from "./PlanApprovalBar";
 import { PromptBarActions } from "./PromptBarActions";
 import { PromptEditor } from "./prompt-editor/PromptEditor";
@@ -11,6 +12,17 @@ import { ReferencedWorktreeTip } from "./ReferencedWorktreeTip";
 import { ShellCommandModeMarker } from "./ShellCommandModeMarker";
 import { SplitSendActions } from "./SplitSendActions";
 import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
+import { AssistMenu } from "./composer/AssistMenu";
+import { CompactionHint } from "./composer/CompactionHint";
+import { ComposerHelp } from "./composer/ComposerHelp";
+import { ComposerContextProvider, ComposerDraftProvider } from "./composer/ComposerContext";
+import { ContextMeter } from "./composer/ContextMeter";
+import { ContextTray } from "./composer/ContextTray";
+import { HistoryButton } from "./composer/HistoryButton";
+import { QueueRail } from "./composer/QueueRail";
+import { RunningSweep } from "./composer/RunningSweep";
+import { StopArmHint } from "./composer/StopArmHint";
+import { useComposerContextValue } from "./composer/useComposerContextValue";
 import {
   useAgentPromptBarController,
   type AgentPromptBarController,
@@ -105,47 +117,56 @@ function PromptComposer({
   controller: AgentPromptBarController;
 }) {
   const { state } = controller;
+  const composerContext = useComposerContextValue(props, controller);
   return (
-    <div
-      ref={state.wrapperRef}
-      data-agent-prompt-bar="true"
-      hidden={controller.special.hasSpecialState}
-      aria-hidden={controller.special.hasSpecialState}
-      className={cn(
-        "flex min-h-0 flex-col px-3 pb-4",
-        props.noTopPadding ? "pt-0" : "pt-3",
-        "group-data-[agent-dragover]/agent-section:ring-2 group-data-[agent-dragover]/agent-section:ring-inset group-data-[agent-dragover]/agent-section:ring-primary/50",
-      )}
-      {...state.attachments.dragHandlers}
-    >
-      {state.attachments.attachments.length > 0 && (
-        <ImageAttachmentPreview
-          attachments={state.attachments.attachments}
-          onRemove={state.attachments.removeAttachment}
-          className="mb-2"
-        />
-      )}
-      {props.referencedWorktreeSelection && props.projectId != null ? (
-        <ReferencedWorktreeTip
-          prompt={state.text}
-          projectId={props.projectId}
-          selection={props.referencedWorktreeSelection}
-          agentTabActive={props.agentTabActive ?? true}
-          shortcutsDisabled={props.disableShortcuts ?? false}
-        />
-      ) : null}
-      <PromptSurface props={props} controller={controller} />
-      {props.splitSendActions && !controller.isRunning && !controller.isShellCommandMode && (
-        <SplitSendActions
-          actions={props.splitSendActions}
-          disabled={!controller.sending.canSend}
-          onAction={controller.sending.handleSplitAction}
-        />
-      )}
-    </div>
+    <ComposerContextProvider value={composerContext}>
+      <ComposerDraftProvider value={state.text}>
+        <div
+          ref={state.wrapperRef}
+          data-agent-prompt-bar="true"
+          hidden={controller.special.hasSpecialState}
+          aria-hidden={controller.special.hasSpecialState}
+          className={cn(
+            "flex min-h-0 flex-col px-3 pb-4",
+            props.noTopPadding ? "pt-0" : "pt-3",
+            "group-data-[agent-dragover]/agent-section:ring-2 group-data-[agent-dragover]/agent-section:ring-inset group-data-[agent-dragover]/agent-section:ring-primary/50",
+          )}
+          {...state.attachments.dragHandlers}
+        >
+          <QueueRail />
+          {props.referencedWorktreeSelection && props.projectId != null ? (
+            <ReferencedWorktreeTip
+              prompt={state.text}
+              projectId={props.projectId}
+              selection={props.referencedWorktreeSelection}
+              agentTabActive={props.agentTabActive ?? true}
+              shortcutsDisabled={props.disableShortcuts ?? false}
+            />
+          ) : null}
+          {state.text === "?" && (
+            // A lone "?" asks how the composer works: answer in place.
+            <div className="mx-2 rounded-t-lg border border-b-0 border-border/70 bg-popover">
+              <ComposerHelp />
+            </div>
+          )}
+          <PromptSurface props={props} controller={controller} />
+          {props.splitSendActions && !controller.isRunning && !controller.isShellCommandMode && (
+            <SplitSendActions
+              actions={props.splitSendActions}
+              disabled={!controller.sending.canSend}
+              onAction={controller.sending.handleSplitAction}
+            />
+          )}
+        </div>
+      </ComposerDraftProvider>
+    </ComposerContextProvider>
   );
 }
 
+/**
+ * The composer card: launch manifest (first prompt), context tray, the editor,
+ * then the instrument row (session controls · meters · run controls).
+ */
 function PromptSurface({
   props,
   controller,
@@ -153,53 +174,98 @@ function PromptSurface({
   props: AgentPromptBarProps;
   controller: AgentPromptBarController;
 }) {
+  const queueCombo = useShortcutLabel("agent-send");
   const { editorActions, sending, state } = controller;
+  const slashCommands = useMemo(
+    () => withSideQuestionSkill(props.slashCommandsOverride, props.sessionId),
+    [props.slashCommandsOverride, props.sessionId],
+  );
   return (
     <div
+      data-composer-card
       data-shell-command-mode={controller.isShellCommandMode || undefined}
-      className="glass-surface flex max-h-[calc(var(--app-vh,100dvh)*0.4)] min-h-0 items-center gap-1.5 rounded-lg border border-transparent bg-muted/40 py-4 pl-4 pr-2.5 transition-colors focus-within:bg-muted/55"
+      data-running={controller.isRunning || undefined}
+      className="glass-surface flex max-h-[calc(var(--app-vh,100dvh)*0.4)] min-h-0 flex-col rounded-lg border border-transparent bg-muted/40 transition-colors focus-within:bg-muted/55"
       onClick={editorActions.handleSurfaceClick}
     >
-      {controller.isShellCommandMode && (
-        <ShellCommandModeMarker onClear={editorActions.clearShellCommandMode} />
-      )}
-      <PromptEditor
-        ref={state.editorRef}
-        onChange={editorActions.handleEditorChange}
-        onEnterSend={sending.handleEnterSend}
-        onArrowUp={editorActions.handleArrowUp}
-        onArrowDown={editorActions.handleArrowDown}
-        disabled={props.disabled || sending.sending}
-        placeholder={
-          sending.sending
-            ? "Sending…"
-            : props.status === "question"
-              ? "Send a message to resume…"
-              : `Send a message… (@ files, @@ conversations, ${controller.promptCommandHint})`
-        }
-        className="min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 text-sm leading-[22px] shadow-none focus:border-0 focus:ring-0"
-        mentionProjectId={props.projectId}
-        mentionFeatureId={props.featureId}
-        slashCommands={props.slashCommandsOverride}
-        slashCommandsLoading={props.slashCommandsLoading}
-        promptCommandPolicy={controller.promptCommandPolicy}
-        onPasteImages={state.attachments.addFiles}
-      />
-      <PromptBarActions
-        onAddFiles={state.attachments.addFiles}
-        providerId={props.providerId}
-        inputsDisabled={!!props.disabled || sending.sending || controller.isShellCommandMode}
-        isRunning={controller.isRunning}
-        onStop={props.onStop}
-        onSend={sending.handleSend}
-        canSend={sending.canSend}
-        sending={sending.sending}
-        showSendButton={
-          (controller.isShellCommandMode || !props.splitSendActions) &&
-          (!controller.isRunning || state.isMobile)
-        }
-        schedule={controller.isShellCommandMode ? undefined : sending.scheduleControl}
-      />
+      {controller.isRunning && <RunningSweep />}
+      {props.isFirstPrompt && props.launchManifest}
+      <ContextTray />
+      <div className="flex min-h-0 flex-1 items-start gap-1.5 px-4 pt-3.5 pb-2">
+        {controller.isShellCommandMode && (
+          <ShellCommandModeMarker onClear={editorActions.clearShellCommandMode} />
+        )}
+        <PromptEditor
+          ref={state.editorRef}
+          onChange={editorActions.handleEditorChange}
+          onEnterSend={sending.handleEnterSend}
+          onModEnterSend={sending.handleModEnterSend}
+          onArrowUp={editorActions.handleArrowUp}
+          onArrowDown={editorActions.handleArrowDown}
+          isBrowsingHistory={editorActions.isBrowsingHistory}
+          disabled={props.disabled || sending.sending}
+          placeholder={promptPlaceholder(props, controller, queueCombo)}
+          className="min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 text-sm leading-[22px] shadow-none focus:border-0 focus:ring-0"
+          mentionProjectId={props.projectId}
+          mentionFeatureId={props.featureId}
+          slashCommands={slashCommands}
+          slashCommandsLoading={props.slashCommandsLoading}
+          promptCommandPolicy={controller.promptCommandPolicy}
+          onPasteImages={state.attachments.addFiles}
+          onPasteLongText={editorActions.handlePasteLongText}
+        />
+      </div>
+      <div
+        data-composer-instruments
+        className="@container flex shrink-0 items-center gap-1.5 px-2 pb-2"
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+          {props.instrumentStart && <div data-composer-start>{props.instrumentStart}</div>}
+          {props.instrumentLeading}
+        </div>
+        <CompactionHint />
+        <ContextMeter />
+        {props.instrumentTrailing}
+        <HistoryButton />
+        <AssistMenu />
+        <StopArmHint />
+        <PromptBarActions
+          onAddFiles={state.attachments.addFiles}
+          providerId={props.providerId}
+          inputsDisabled={!!props.disabled || sending.sending || controller.isShellCommandMode}
+          isRunning={controller.isRunning}
+          onStop={props.onStop}
+          onSend={sending.handleSend}
+          canSend={sending.canSend}
+          sending={sending.sending}
+          showSendButton={controller.isShellCommandMode || !props.splitSendActions}
+          schedule={controller.isShellCommandMode ? undefined : sending.scheduleControl}
+          onQueue={sending.canQueue ? sending.handleQueue : undefined}
+          queuesOnEnter={sending.queuesOnEnter}
+        />
+      </div>
     </div>
   );
+}
+
+/** The placeholder states what Enter will do right now (phones have no keys to cite). */
+function promptPlaceholder(
+  props: AgentPromptBarProps,
+  controller: AgentPromptBarController,
+  queueCombo: string,
+) {
+  if (controller.sending.sending) return "Sending…";
+  if (controller.state.isMobile) {
+    if (props.status === "question") return "Answer to resume…";
+    if (controller.isRunning)
+      return controller.sending.queuesOnEnter ? "Queue a message…" : "Steer the agent…";
+    return props.isFirstPrompt ? "Describe the task…" : "Message the agent…";
+  }
+  if (props.status === "question") return "Answer to resume the agent…";
+  if (controller.sending.queuesOnEnter)
+    return "The agent is working — ↵ queues your message for after this turn";
+  if (controller.isRunning)
+    return `Steer the agent — ↵ at its next step, ${queueCombo} after this turn`;
+  if (props.isFirstPrompt) return "Describe the task — @ for files, / for commands";
+  return `Message the agent — @ files, @@ conversations, ${controller.promptCommandHint}`;
 }

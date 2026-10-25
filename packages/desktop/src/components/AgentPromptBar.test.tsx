@@ -1,5 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef, useState, type ForwardedRef } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useStopArmStore } from "@/stores/stop-arm-store";
 import { act, fireEvent, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { AgentPromptBar } from "./AgentPromptBar";
@@ -187,6 +188,7 @@ describe("AgentPromptBar", () => {
   const onStop = vi.fn();
 
   beforeEach(() => {
+    useStopArmStore.getState().disarm();
     onSend.mockClear();
     onStop.mockClear();
     isMobileMock.mockReturnValue(false);
@@ -203,7 +205,7 @@ describe("AgentPromptBar", () => {
 
     expect(screen.getByRole("textbox")).toHaveAttribute(
       "placeholder",
-      "Send a message… (@ files, @@ conversations, / commands)",
+      "Message the agent — @ files, @@ conversations, / commands",
     );
   });
 
@@ -219,7 +221,7 @@ describe("AgentPromptBar", () => {
 
     expect(screen.getByRole("textbox")).toHaveAttribute(
       "placeholder",
-      "Send a message… (@ files, @@ conversations, / commands, $ skills, ! shell)",
+      "Message the agent — @ files, @@ conversations, / commands, $ skills, ! shell",
     );
   });
 
@@ -312,19 +314,29 @@ describe("AgentPromptBar", () => {
     expect(buttons.length).toBeGreaterThan(0);
   });
 
-  it("shows stop instead of send while running on desktop", () => {
+  it("turns Send into Steer beside a labelled Stop while running", () => {
     render(<AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />);
-    expect(screen.getByLabelText("Stop agent")).toBeInTheDocument();
+    expect(screen.getByLabelText("Stop agent")).toHaveTextContent("Stop");
     expect(screen.queryByLabelText("Send message")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Steer the agent with this message")).toBeDisabled();
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
-  it("keeps send available beside stop while running on mobile", async () => {
+  it("states what Enter does while the agent works", () => {
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />);
+    expect(screen.getByRole("textbox")).toHaveAttribute(
+      "placeholder",
+      expect.stringMatching(/^Steer the agent/),
+    );
+  });
+
+  it("keeps steer available beside stop while running on mobile", async () => {
     isMobileMock.mockReturnValue(true);
     const user = userEvent.setup();
     render(<AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />);
 
     expect(screen.getByLabelText("Stop agent")).toBeInTheDocument();
-    const sendButton = screen.getByLabelText("Send message");
+    const sendButton = screen.getByLabelText("Steer the agent with this message");
     expect(sendButton).toBeDisabled();
 
     await user.type(screen.getByRole("textbox"), "Follow up");
@@ -500,14 +512,29 @@ describe("AgentPromptBar", () => {
     }
   });
 
-  it("escape calls onStop when focus is inside the prompt bar", () => {
+  it("a second escape inside the arm window stops the agent; one press only arms", () => {
     render(<AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />);
-    // Focus the textbox (inside the wrapper)
     screen.getByRole("textbox").focus();
     const entry = hotkeyHandlers.get("Escape");
     expect(entry).toBeDefined();
+    act(() => entry!.handler({ preventDefault: vi.fn() }));
+    expect(onStop).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent(/press\s*esc\s*again to stop/i);
     entry!.handler({ preventDefault: vi.fn() });
-    expect(onStop).toHaveBeenCalled();
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("escape never stops while a composer popover owns it", () => {
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />);
+    const textbox = screen.getByRole("textbox");
+    const popover = document.createElement("div");
+    popover.setAttribute("data-composer-popover", "");
+    textbox.closest("[data-agent-prompt-bar]")!.appendChild(popover);
+    textbox.focus();
+    const entry = hotkeyHandlers.get("Escape")!;
+    entry.handler({ preventDefault: vi.fn() });
+    entry.handler({ preventDefault: vi.fn() });
+    expect(onStop).not.toHaveBeenCalled();
   });
 
   it("escape does not call onStop when focus is outside the prompt bar", () => {
@@ -544,7 +571,7 @@ describe("AgentPromptBar", () => {
     rerender(<AgentPromptBar {...props} agentTabActive={false} />);
     callHotkey("Mod+P");
     callHotkey("Shift+Tab");
-    callHotkey("Mod+Enter");
+    callHotkey("Mod+Shift+Enter");
     expect(onOpenModelPicker).toHaveBeenCalledTimes(1); // still 1, not 2
     expect(onPermissionModeToggle).not.toHaveBeenCalled();
     expect(onToggleMaximize).not.toHaveBeenCalled();
@@ -555,6 +582,7 @@ describe("AgentPromptBar", () => {
       <AgentPromptBar onSend={onSend} onStop={onStop} status="agent" agentTabActive={false} />,
     );
     screen.getByRole("textbox").focus();
+    hotkeyHandlers.get("Escape")!.handler({ preventDefault: vi.fn() });
     hotkeyHandlers.get("Escape")!.handler({ preventDefault: vi.fn() });
     expect(onStop).toHaveBeenCalled();
   });

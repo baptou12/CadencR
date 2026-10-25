@@ -2,15 +2,22 @@
  * Keyboard shortcuts for `AgentPromptBar`, extracted to keep that file within
  * its line-count budget. Behaviour is unchanged: each binding no-ops when its
  * handler is absent, and the bindings are scoped to the `agent` group (except
- * stop, which is global but gated on focus being inside the bar).
+ * stop, which is global but gated on focus being inside the bar, and needs a
+ * second Esc inside `STOP_ARM_WINDOW_MS` — see `stop-arm-store`).
  */
 import { type RefObject } from "react";
 import { useScopedShortcut, useShortcut } from "@/hooks/useShortcut";
+import { useStopArmStore } from "@/stores/stop-arm-store";
+
+/** An open typeahead/popover inside the composer owns Esc (it closes first). */
+const COMPOSER_POPOVER_SELECTOR = "[data-composer-popover]";
 
 interface UseAgentPromptShortcutsParams {
   agentTabActive: boolean;
   isRunning: boolean;
   wrapperRef: RefObject<HTMLDivElement | null>;
+  /** Identifies this composer for the two-press stop gesture. */
+  stopArmKey: string;
   onOpenModelPicker?: () => void;
   onToggleMaximize?: () => void;
   onPermissionModeToggle?: () => void;
@@ -22,6 +29,7 @@ export function useAgentPromptShortcuts({
   agentTabActive,
   isRunning,
   wrapperRef,
+  stopArmKey,
   onOpenModelPicker,
   onToggleMaximize,
   onPermissionModeToggle,
@@ -72,12 +80,20 @@ export function useAgentPromptShortcuts({
   useShortcut(
     "agent-stop",
     (e) => {
-      if (!isRunning) return;
-      if (!wrapperRef.current?.contains(document.activeElement)) return;
+      if (!isRunning || e.defaultPrevented) return;
+      const wrapper = wrapperRef.current;
+      if (!wrapper?.contains(document.activeElement)) return;
+      if (wrapper.querySelector(COMPOSER_POPOVER_SELECTOR)) return;
       e.preventDefault();
-      onStop();
+      const { armedKey, arm, disarm } = useStopArmStore.getState();
+      if (armedKey === stopArmKey) {
+        disarm();
+        onStop();
+      } else {
+        arm(stopArmKey);
+      }
     },
     { enableOnFormTags: true, enableOnContentEditable: true },
-    [isRunning, onStop],
+    [isRunning, onStop, stopArmKey],
   );
 }

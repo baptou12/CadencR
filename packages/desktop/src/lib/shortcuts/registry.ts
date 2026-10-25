@@ -23,10 +23,9 @@ export type { ShortcutScope, ShortcutScopeId } from "./scopes";
 export type { ShortcutId } from "./entries";
 
 /**
- * Duplicate-id check. Combo collisions within a scope (e.g. ⌘⏎ for both
- * `agent-send` and `agent-maximize`) are tolerated — they're deliberate
- * focus-dependent dual purposes — but two entries sharing an `id` would
- * make the resolver pick whichever appears first. Dev-only so a bad PR
+ * Duplicate-id check. Combo collisions within a scope are tolerated when
+ * they're deliberate state-dependent dual purposes, but two entries sharing
+ * an `id` would make the resolver pick whichever appears first. Dev-only so a bad PR
  * fails CI rather than shipping silent ambiguity; tree-shaken in prod.
  */
 if (import.meta.env.DEV) {

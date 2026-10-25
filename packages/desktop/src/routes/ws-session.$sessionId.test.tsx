@@ -539,9 +539,10 @@ describe("WsSessionPage route", () => {
       await onSend("hello", undefined, "bedrock");
     });
 
+    // No saved project preference: a first prompt isolates in its own worktree.
     expect(mocks.mockDeliverPrompt).toHaveBeenCalledWith("hello", {
       attachments: undefined,
-      branchSetup: undefined,
+      branchSetup: { kind: "worktree" },
       claudeProfile: "bedrock",
     });
   });

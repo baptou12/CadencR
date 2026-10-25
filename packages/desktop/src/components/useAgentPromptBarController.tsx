@@ -9,6 +9,10 @@ import {
 } from "react";
 import { useAgentPromptShortcuts } from "@/hooks/useAgentPromptShortcuts";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { stopArmKeyFor } from "@/stores/stop-arm-store";
+import { lineCountLabel } from "@/lib/add-to-prompt";
+import { setComposerDraft } from "./agent-prompt-draft-restore";
+import { composerKeyFor, useComposerContextStore } from "@/stores/composer-context-store";
 import { usePromptAttachments } from "@/hooks/usePromptAttachments";
 import { usePromptDraft } from "@/hooks/usePromptDraft";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
@@ -27,6 +31,8 @@ import { useAgentPromptSend } from "./agent-prompt-send";
 import { shouldFocusPromptFromSurfaceClick } from "./agent-prompt-focus";
 import type { PromptEditorHandle } from "./prompt-editor/PromptEditor";
 import { useDeferredAgentPrompts } from "./useDeferredAgentPrompts";
+import { useQueueSend } from "./composer/useQueueSend";
+import { useContextualSend } from "./composer/useContextualSend";
 
 function usePromptState(props: AgentPromptBarProps) {
   const editorRef = useRef<PromptEditorHandle>(null);
@@ -144,19 +150,25 @@ function usePromptSending(
     interactedRef: state.interactedRef,
     sendInFlightRef: state.sendInFlightRef,
   });
+  const contextual = useContextualSend(props.featureId, props.sessionId);
   const hasSendableContent = isShellCommandMode
     ? state.text.slice(1).trim().length > 0 && state.attachments.attachments.length === 0
-    : state.text.trim().length > 0 || state.attachments.attachments.length > 0;
+    : state.text.trim().length > 0 ||
+      state.attachments.attachments.length > 0 ||
+      contextual.contextItemCount > 0;
   const canSend =
     hasSendableContent && !props.disabled && !send.sending && !special.permissionDeferred;
   const handleSend = useCallback((): void => {
-    if (canSend) void send.runSend(props.onSend, state.textRef.current.trim());
-  }, [canSend, props.onSend, send.runSend, state.textRef]);
+    if (!canSend) return;
+    const run = isShellCommandMode ? props.onSend : contextual.withContext(props.onSend);
+    void send.runSend(run, state.textRef.current.trim());
+  }, [canSend, contextual, isShellCommandMode, props.onSend, send.runSend, state.textRef]);
   const handleSplitAction = useCallback(
     (action: SplitSendAction): void => {
-      if (canSend) void send.runSend(action.onClick, state.textRef.current.trim());
+      if (canSend)
+        void send.runSend(contextual.withContext(action.onClick), state.textRef.current.trim());
     },
-    [canSend, send.runSend, state.textRef],
+    [canSend, contextual, send.runSend, state.textRef],
   );
   const scheduleControl = usePromptScheduleControl({
     onScheduleRequest: props.onScheduleRequest,
@@ -178,14 +190,56 @@ function usePromptSending(
     }
     return true;
   }, [canSend, handleSend, handleSplitAction, isShellCommandMode, props.splitSendActions]);
+  const queue = useQueueSend({
+    sessionId: props.sessionId,
+    isRunning: props.status === "agent",
+    canSend,
+    isShellCommandMode,
+    attachmentCount: state.attachments.attachments.length,
+    textRef: state.textRef,
+    runSend: send.runSend,
+    withContext: contextual.withContext,
+    handleEnterSend,
+  });
+  const enter = useEnterOrQueue(props, state, queue, handleEnterSend);
   return {
     canSend,
-    handleEnterSend,
+    canQueue: queue.canQueue,
+    queuesOnEnter: enter.queuesOnEnter,
+    handleQueue: queue.handleQueue,
+    handleModEnterSend: queue.handleModEnterSend,
+    handleEnterSend: enter.handleEnterOrQueue,
     handleSend,
     handleSplitAction,
     scheduleControl,
     sending: send.sending,
   };
+}
+
+/**
+ * A provider that can't take a prompt mid-turn gets it after the turn: Enter
+ * queues rather than promising a steer nobody will acknowledge. Images can't
+ * wait in the queue, so a prompt carrying them is sent.
+ */
+function useEnterOrQueue(
+  props: AgentPromptBarProps,
+  state: PromptState,
+  queue: { canQueue: boolean; handleQueue: () => void },
+  handleEnterSend: () => boolean,
+) {
+  const queuesOnEnter =
+    props.status === "agent" &&
+    props.steeringAcknowledged === false &&
+    state.attachments.attachments.length === 0;
+  const { canQueue, handleQueue } = queue;
+  const handleEnterOrQueue = useCallback((): boolean => {
+    if (queuesOnEnter && canQueue) {
+      handleQueue();
+      return true;
+    }
+    return handleEnterSend();
+  }, [canQueue, handleEnterSend, handleQueue, queuesOnEnter]);
+  return { queuesOnEnter, handleEnterOrQueue };
 }
 
 function usePromptEditorActions(props: AgentPromptBarProps, state: PromptState) {
@@ -216,10 +270,21 @@ function usePromptEditorActions(props: AgentPromptBarProps, state: PromptState) 
       state.setText,
     ],
   );
+  const lastRecalledRef = useRef<string | null>(null);
+  const historyIndexRef = useRef(state.history.historyIndex);
+  historyIndexRef.current = state.history.historyIndex;
+  const isBrowsingHistory = useCallback(
+    (): boolean =>
+      historyIndexRef.current >= 0 && state.textRef.current === lastRecalledRef.current,
+    [state.textRef],
+  );
   const handleArrowUp = useCallback((): string | null => {
     if (!props.projectId || !props.wsSessionId) return null;
     const result = state.history.navigateUp(state.textRef.current);
-    if (result !== null) state.navigatingHistoryRef.current = true;
+    if (result !== null) {
+      state.navigatingHistoryRef.current = true;
+      lastRecalledRef.current = result;
+    }
     return result;
   }, [
     props.projectId,
@@ -231,7 +296,10 @@ function usePromptEditorActions(props: AgentPromptBarProps, state: PromptState) 
   const handleArrowDown = useCallback((): string | null => {
     if (!props.projectId || !props.wsSessionId || state.history.historyIndex < 0) return null;
     const result = state.history.navigateDown();
-    if (result !== null) state.navigatingHistoryRef.current = true;
+    if (result !== null) {
+      state.navigatingHistoryRef.current = true;
+      lastRecalledRef.current = result;
+    }
     return result;
   }, [
     props.projectId,
@@ -240,6 +308,17 @@ function usePromptEditorActions(props: AgentPromptBarProps, state: PromptState) 
     state.history.navigateDown,
     state.navigatingHistoryRef,
   ]);
+  const handlePasteLongText = useCallback(
+    (text: string): void => {
+      useComposerContextStore.getState().add(composerKeyFor(props.featureId), {
+        kind: "pasted",
+        label: "Pasted text",
+        detail: lineCountLabel(text),
+        content: text,
+      });
+    },
+    [props.featureId],
+  );
   const handleSurfaceClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>): void => {
       if (shouldFocusPromptFromSurfaceClick(event.target)) state.editorRef.current?.focus();
@@ -251,7 +330,9 @@ function usePromptEditorActions(props: AgentPromptBarProps, state: PromptState) 
     handleArrowDown,
     handleArrowUp,
     handleEditorChange,
+    handlePasteLongText,
     handleSurfaceClick,
+    isBrowsingHistory,
   };
 }
 
@@ -269,16 +350,8 @@ export function useAgentPromptBarController(
     ref,
     () => ({
       focusInput: () => state.editorRef.current?.focus(),
-      setDraft: (value: string): void => {
-        state.restoringDraftRef.current = true;
-        state.setText(value);
-        state.editorRef.current?.setText(value, true);
-        state.interactedRef.current = true;
-        state.draft.saveDraft(value);
-        queueMicrotask(() => {
-          state.restoringDraftRef.current = false;
-        });
-      },
+      setDraft: (value: string): void =>
+        setComposerDraft({ ...state, saveDraft: state.draft.saveDraft }, value),
     }),
     [
       state.draft.saveDraft,
@@ -292,6 +365,7 @@ export function useAgentPromptBarController(
     agentTabActive: props.agentTabActive ?? true,
     isRunning: props.status === "agent",
     wrapperRef: state.wrapperRef,
+    stopArmKey: stopArmKeyFor(props.wsSessionId, props.featureId),
     onOpenModelPicker: props.onOpenModelPicker,
     onToggleMaximize: props.onToggleMaximize,
     onPermissionModeToggle: props.onPermissionModeToggle,

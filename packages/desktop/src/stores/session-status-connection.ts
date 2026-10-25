@@ -69,6 +69,8 @@ function handleAppWsOpen(connection: AppWsConnection): void {
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.theme_events", {})));
   // Custom tab folders changed on disk: refetch the list, reload live tabs.
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.plugin_tab_events", {})));
+  // Prompts queued for after a turn: delivery happens server-side at turn end.
+  ws.send(JSON.stringify(createEnvelope("app", "subscribe.prompt_queue_events", {})));
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.alacritty_config_events", {})));
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.storage_maintenance_events", {})));
   connection.unsubscribeForgeVisibility = subscribeForgeStatus(ws);

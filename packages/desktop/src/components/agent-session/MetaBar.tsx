@@ -104,13 +104,19 @@ export interface MetaBarProps {
    */
   variant?: "session" | "standalone";
   /**
-   * When `true`, the auto-scroll, todos, session-info, and worktree chips are
-   * omitted because the parent renders them in a separate `MetaBarSecondary`
-   * strip below the prompt (used when the container is too narrow to fit them
-   * inline with the model picker / mode chips).
+   * Which half of the bar to render. The session composer renders the
+   * `instruments` (autonomy, model, access, session config) inside its card
+   * and the `utilities` (auto-scroll, todos, info) on a quiet strip above it;
+   * `all` keeps the original single row.
    */
-  secondaryBelow?: boolean;
+  section?: MetaBarSection;
+  /** Jump straight to a mode (the instrument mode menu). */
+  onPermissionModeSet?: (mode: PermissionMode) => void;
+  /** Why the active mode won't hold with the current model, if it won't. */
+  modeIncompatibleReason?: string | null;
 }
+
+export type MetaBarSection = "all" | "instruments" | "utilities";
 
 export interface MetaBarHandle {
   openModelPicker: () => void;
@@ -122,7 +128,8 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
   const displayProviderId = input.currentSelection?.providerId;
 
   useMetaBarForwardRef(ref, setInternalModelPickerOpen);
-  const containerClassName = useMetaBarContainerClassName(props.variant ?? "session");
+  const section = props.section ?? "all";
+  const containerClassName = useMetaBarContainerClassName(props.variant ?? "session", section);
 
   const {
     pickerProviders,
@@ -136,8 +143,14 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
   return (
     <div className={containerClassName}>
       <MetaBarLeadingChips
+        section={section}
+        providerId={displayProviderId}
+        permissionMode={props.permissionMode}
+        enabledOptInModes={props.enabledOptInModes}
+        providerModes={props.providerModes}
+        onPermissionModeSet={props.onPermissionModeSet}
+        modeIncompatibleReason={props.modeIncompatibleReason}
         showAutoScrollChip={input.showAutoScrollChip}
-        secondaryBelow={input.secondaryBelow}
         autoScrollEnabled={input.autoScrollEnabled}
         onToggleAutoScroll={input.onToggleAutoScroll}
         displayMode={displayMode}
@@ -152,8 +165,9 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
         onWorktreeBranchChange={input.onWorktreeBranchChange}
       />
 
-      {shouldShowModel && (
+      {shouldShowModel && section !== "utilities" && (
         <ModelMetaChip
+          variant={section === "instruments" ? "instrument" : "chip"}
           open={internalModelPickerOpen}
           onOpenChange={setInternalModelPickerOpen}
           selection={input.currentSelection}
@@ -172,16 +186,16 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
         />
       )}
 
-      {!input.secondaryBelow && input.todos && input.todos.length > 0 && (
+      {section !== "instruments" && input.todos && input.todos.length > 0 && (
         <AgentTodoList todos={input.todos} chipClass={META_BAR_CHIP} />
       )}
 
       {hasTrailingGroup && (
         <MetaBarTrailingGroup
+          section={section}
           sessionConfigControls={props.sessionConfigControls}
           hasProfileSelector={hasProfileSelector}
           hasAccessMode={hasAccessMode}
-          secondaryBelow={input.secondaryBelow}
           claudeProfile={input.claudeProfile}
           claudeProfiles={input.claudeProfiles}
           claudeProfilesLoading={input.claudeProfilesLoading}

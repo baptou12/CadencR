@@ -69,6 +69,7 @@ function AgentTabContent({
         featureId={featureId}
         projectId={projectId}
         wsSessionId={sessionId}
+        sessionId={controls.ws.sessionDbId ?? undefined}
         blocks={controls.ws.blocks}
         rootBlocks={controls.ws.rootBlocks}
         toolResultMap={controls.ws.toolResultMap}
@@ -104,6 +105,9 @@ function AgentTabContent({
         onAccessModeChange={hasAccessModes ? controls.handleAccessModeChange : undefined}
         agentCatalog={controls.agentCatalog}
         onPermissionModeToggle={controls.handlePermissionModeToggle}
+        onPermissionModeSet={controls.handlePermissionModeSet}
+        modelSupportsAutoMode={controls.modelSupportsAutoMode}
+        steeringAcknowledged={controls.steeringAcknowledged}
         pendingPlanApproval={controls.ws.pendingPlanApproval}
         onPlanApprove={controls.ws.approvePlan}
         onPlanRequestChanges={controls.ws.requestPlanChanges}

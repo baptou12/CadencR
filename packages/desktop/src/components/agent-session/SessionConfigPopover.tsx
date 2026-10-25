@@ -26,6 +26,8 @@ interface SessionConfigPopoverProps {
   pendingId: string | null;
   onRefresh: () => void;
   onChange: (configId: string, value: RuntimeSessionConfigValue) => void;
+  /** `instrument`: the composer card's instrument row (no chip chrome). */
+  variant?: "chip" | "instrument";
 }
 
 export function SessionConfigPopover({
@@ -36,6 +38,7 @@ export function SessionConfigPopover({
   pendingId,
   onRefresh,
   onChange,
+  variant = "chip",
 }: SessionConfigPopoverProps): React.JSX.Element | null {
   if (!shouldShowSessionConfig(config, loading, supported, error)) return null;
   const options = additionalSessionConfigOptions(config);
@@ -44,7 +47,12 @@ export function SessionConfigPopover({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className={cn(META_BAR_CHIP, error && "text-destructive")}
+          className={cn(
+            variant === "instrument"
+              ? "composer-instrument gap-1.5 text-foreground/85 [&_svg]:size-3"
+              : META_BAR_CHIP,
+            error && "text-destructive",
+          )}
           aria-label="Session configuration"
           title="Configuration negotiated with this ACP provider"
         >

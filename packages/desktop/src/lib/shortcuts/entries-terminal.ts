@@ -78,4 +78,13 @@ export const TERMINAL_SHORTCUTS = [
     description: "Paste",
     scope: "terminal",
   },
+  {
+    // Ctrl+Shift+Enter off macOS too: no shell assigns it, and it matches the
+    // Editor's binding for the same action.
+    id: "terminal-add-selection-to-prompt",
+    keys: ["mod", "shift", "enter"],
+    description: "Add selection to the agent prompt",
+    scope: "terminal",
+    aliases: ["context", "agent", "prompt"],
+  },
 ] as const satisfies readonly Shortcut[];

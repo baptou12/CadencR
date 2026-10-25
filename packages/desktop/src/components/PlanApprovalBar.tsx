@@ -34,6 +34,8 @@ function FeedbackEditor({
         value={feedback}
         onChange={(event) => onFeedbackChange(event.target.value)}
         onKeyDown={(event) => {
+          // An IME's confirming Enter belongs to the composition, not to send.
+          if (event.nativeEvent.isComposing) return;
           if (event.key === "Enter" && !event.shiftKey && feedback.trim()) {
             event.preventDefault();
             onSend();
@@ -178,7 +180,9 @@ export function PlanApprovalBar({
       onReject!();
     },
     "agent",
-    { enabled: !!onReject },
+    // While the feedback field is open, Esc only closes the field (it is a
+    // capture-phase binding, so it would otherwise win over the textarea).
+    { enabled: !!onReject && !showFeedback },
   );
 
   const handleSendFeedback = () => {
@@ -203,13 +207,11 @@ export function PlanApprovalBar({
           feedback={feedback}
           onFeedbackChange={setFeedback}
           onSend={handleSendFeedback}
+          // Backing out of the feedback field never rejects the plan: Esc
+          // means "close this", and rejecting stays an explicit button.
           onCancel={() => {
-            if (onReject) {
-              onReject();
-            } else {
-              setShowFeedback(false);
-              setFeedback(initialFeedback ?? "");
-            }
+            setShowFeedback(false);
+            setFeedback(initialFeedback ?? "");
           }}
         />
       ) : (

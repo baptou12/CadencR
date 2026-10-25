@@ -23,6 +23,7 @@ const SEGMENT_BOUNDARY_TYPES = new Set<AgentBlockData["type"]>([
   "turn_summary",
   "compact_divider",
   "clear_divider",
+  "turn_interrupted",
   "error",
 ]);
 

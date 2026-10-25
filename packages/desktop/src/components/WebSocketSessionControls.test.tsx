@@ -34,6 +34,7 @@ vi.mock("@/hooks/useAccessModeSetting", () => ({
 vi.mock("@/components/WebSocketSessionPermissionMode", () => ({
   EMPTY_PROVIDER_MODES: [],
   usePermissionModeToggle: () => vi.fn(),
+  usePermissionModeSet: () => vi.fn(),
 }));
 
 import { useSessionControls } from "./WebSocketSessionControls";

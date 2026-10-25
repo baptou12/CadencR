@@ -44,10 +44,13 @@ function randomItem<T>(items: readonly T[]): T {
  * trust randomness. Picking a scope first and then a shortcut from its
  * `items` keeps `(shortcut, scope)` consistent without an extra `.find()`.
  */
+/** The empty state sits above the composer: teach the keys that drive it. */
+const COMPOSER_SCOPES = SHORTCUTS_BY_SCOPE.filter((group) => group.scope.id === "agent");
+
 function pickHint(prev?: Hint): Hint {
   const eligibleGroups = prev
-    ? SHORTCUTS_BY_SCOPE.filter((g) => g.items.length > 1 || g.items[0].id !== prev.shortcut.id)
-    : SHORTCUTS_BY_SCOPE;
+    ? COMPOSER_SCOPES.filter((g) => g.items.length > 1 || g.items[0].id !== prev.shortcut.id)
+    : COMPOSER_SCOPES;
   const group = randomItem(eligibleGroups);
   const candidates = prev ? group.items.filter((s) => s.id !== prev.shortcut.id) : group.items;
   // `candidates` is guaranteed non-empty by the `eligibleGroups` filter above.

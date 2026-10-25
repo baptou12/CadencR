@@ -13,6 +13,7 @@ export type BlockType =
   | "tool_summary"
   | "compact_divider"
   | "clear_divider"
+  | "turn_interrupted"
   | "error";
 
 export interface AgentBlockData {

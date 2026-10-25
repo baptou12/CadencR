@@ -280,8 +280,18 @@ const APP_SHORTCUTS = [
     scope: "agent",
     aliases: ["search", "find"],
   },
-  { id: "agent-send", keys: ["mod", "enter"], description: "Send message", scope: "agent" },
-  { id: "agent-maximize", keys: ["mod", "enter"], description: "Maximize agent", scope: "agent" },
+  {
+    id: "agent-send",
+    keys: ["mod", "enter"],
+    description: "Send message (queue it while the agent works)",
+    scope: "agent",
+  },
+  {
+    id: "agent-maximize",
+    keys: ["mod", "shift", "enter"],
+    description: "Maximize agent",
+    scope: "agent",
+  },
   {
     id: "agent-collapse",
     keys: ["mod", "shift", "z"],
@@ -340,7 +350,29 @@ const APP_SHORTCUTS = [
     scope: "agent",
     aliases: ["worktree", "branch"],
   },
-  { id: "agent-stop", keys: ["escape"], description: "Stop running agent", scope: "agent" },
+  {
+    // Literal Control on every platform, like a shell's reverse search.
+    id: "prompt-history-search",
+    keys: ["ctrl", "r"],
+    description: "Search prompt history and stashed drafts",
+    scope: "agent",
+    aliases: ["history", "recall"],
+  },
+  {
+    id: "prompt-stash-draft",
+    keys: ["ctrl", "s"],
+    description: "Stash the draft (bring it back from history search)",
+    scope: "agent",
+    aliases: ["stash", "draft"],
+  },
+  {
+    // Two presses: the first arms stop and shows a hint, the second (within
+    // `STOP_ARM_WINDOW_MS`) stops. A lone Esc only ever closes/backs out.
+    id: "agent-stop",
+    keys: ["escape"],
+    description: "Stop running agent (press twice)",
+    scope: "agent",
+  },
 
   // ─── Plan approval ───────────────────────────────────────────────────
   { id: "plan-approve", keys: ["mod", "y"], description: "Approve plan", scope: "plan-approval" },

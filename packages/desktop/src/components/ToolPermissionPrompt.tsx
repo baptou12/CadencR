@@ -234,7 +234,7 @@ function DenyFeedbackInput({
         value={feedback}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") onSubmit();
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) onSubmit();
         }}
         placeholder="Reason for denying (optional)..."
         className="h-8 border-border/50 bg-muted/40 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"

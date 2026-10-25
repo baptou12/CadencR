@@ -213,6 +213,9 @@ describe("AgentSession auto-scroll", () => {
     );
 
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+    // It opens the composer's instrument row, ahead of the mode control.
+    const row = getAutoScrollButton().closest("[data-composer-instruments]");
+    expect(row?.querySelector("button")).toBe(getAutoScrollButton());
 
     const scroller = getScroller();
     stubGeometry(scroller, 1000, 400);
@@ -476,8 +479,9 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Session info" }));
-    await user.click(screen.getByLabelText("Profile"));
+    // Session details live in the composer's "…" menu (no chip above the card).
+    await user.click(screen.getByRole("button", { name: "More composer actions" }));
+    await user.click(await screen.findByLabelText("Profile"));
     await user.click(screen.getByRole("option", { name: /bedrock/i }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Hi there" } });
     await user.click(screen.getByLabelText("Send message"));

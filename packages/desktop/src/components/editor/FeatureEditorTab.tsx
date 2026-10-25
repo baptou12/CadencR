@@ -8,6 +8,7 @@ import {
   useImperativeHandle,
 } from "react";
 import type { EditorView } from "@codemirror/view";
+import { useAddSelectionToPrompt } from "./useAddSelectionToPrompt";
 import { useScopedGlobalShortcutById, useScopedShortcut } from "@/hooks/useShortcut";
 import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { useEditorState } from "@/hooks/useEditorState";
@@ -79,9 +80,19 @@ function useEditorFocusState(featureId: number, activePaneId: string, isEditorFo
     },
     [activePaneId, isEditorFocused, shouldRestoreEditorFocus],
   );
+  const getActiveView = useCallback(
+    () => editorViewsRef.current.get(activePaneId) ?? null,
+    [activePaneId],
+  );
   return useMemo(
-    () => ({ focusActiveEditor, handleEditorViewChange, rootRef, shouldRestoreEditorFocus }),
-    [focusActiveEditor, handleEditorViewChange, shouldRestoreEditorFocus],
+    () => ({
+      focusActiveEditor,
+      getActiveView,
+      handleEditorViewChange,
+      rootRef,
+      shouldRestoreEditorFocus,
+    }),
+    [focusActiveEditor, getActiveView, handleEditorViewChange, shouldRestoreEditorFocus],
   );
 }
 
@@ -227,6 +238,15 @@ const FeatureEditorTab = memo(
       handleToggleSidebar,
       isEditorFocused,
       navigatePane,
+    });
+    const activeFilePath = editor.panes[editor.activePaneId]?.activeFilePath ?? null;
+    useAddSelectionToPrompt({
+      featureId: props.featureId,
+      enabled: isEditorFocused && !!activeFilePath,
+      getActive: () => {
+        const view = focus.getActiveView();
+        return view && activeFilePath ? { view, filePath: activeFilePath } : null;
+      },
     });
     useFeatureEditorEffects({
       focus,

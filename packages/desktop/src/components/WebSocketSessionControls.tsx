@@ -34,6 +34,7 @@ import type { AccessMode } from "@/types/access-mode";
 import { useAccessModeSetting } from "@/hooks/useAccessModeSetting";
 import {
   EMPTY_PROVIDER_MODES,
+  usePermissionModeSet,
   usePermissionModeToggle,
 } from "@/components/WebSocketSessionPermissionMode";
 import type { ClaudeProfileSelection } from "@/components/agent-session/useClaudeProfileSelection";
@@ -56,6 +57,10 @@ interface RuntimeSelectionControls {
   enabledOptInModes: PermissionMode[];
   providerModes: readonly RuntimeProviderModeOption[];
   providerAccessModes: readonly RuntimeProviderAccessModeOption[];
+  /** Whether the session's model can hold an `auto`-risk mode (unknown: undefined). */
+  modelSupportsAutoMode: boolean | undefined;
+  /** Mid-turn prompts reach the running turn and are acknowledged. */
+  steeringAcknowledged: boolean;
 }
 
 interface AccessControls {
@@ -72,6 +77,7 @@ export interface SessionControls
   setSelectedBranch: Dispatch<SetStateAction<string | null>>;
   initializedRef: RefObject<string | null>;
   handlePermissionModeToggle: () => void;
+  handlePermissionModeSet: (mode: PermissionMode) => void;
   claudeProfile: ClaudeProfileSelection;
   supportsProfiles: boolean;
   supportsConfigInheritance: boolean;
@@ -79,11 +85,13 @@ export interface SessionControls
 }
 
 function useWorktreePreference(projectId: number): WorktreePreferenceControls {
-  const [worktreeMode, setWorktreeModeState] = useState<WorktreeMode>("on_branch");
+  // Isolation is the default: until the project's saved preference loads (or
+  // when it has none), a new conversation works in its own worktree.
+  const [worktreeMode, setWorktreeModeState] = useState<WorktreeMode>("from_branch_worktree");
   const seededProjectRef = useRef<number | null>(null);
   const { data: projectSettingsData } = useGetProjectSettings(projectId);
   const setProjectSetting = useSetProjectSetting();
-  const projectDefault = defaultWorktreeModeFromSettings(projectSettingsData, "skip");
+  const projectDefault = defaultWorktreeModeFromSettings(projectSettingsData, "new");
   // Seed the picker from the project's saved default once settings load — once
   // per project so a later settle doesn't clobber an explicit choice.
   useEffect(() => {
@@ -145,8 +153,13 @@ function useRuntimeSelection(
   const enabledOptInModes = useEnabledOptInModes(activeProviderId);
   const providerModes = activeProvider?.modes ?? EMPTY_PROVIDER_MODES;
   const providerAccessModes = activeProvider?.access_modes ?? EMPTY_PROVIDER_ACCESS_MODES;
+  const modelSupportsAutoMode = activeSessionModel?.supports_auto_mode ?? undefined;
+  // Unknown (catalog still loading) keeps today's behavior: Enter steers.
+  const steeringAcknowledged = activeProvider?.steering_acknowledged ?? true;
   return useMemo(
     () => ({
+      modelSupportsAutoMode,
+      steeringAcknowledged,
       agentCatalog,
       resolvedProviderId,
       resolvedModelId,
@@ -160,6 +173,8 @@ function useRuntimeSelection(
       activeProviderId,
       agentCatalog,
       enabledOptInModes,
+      modelSupportsAutoMode,
+      steeringAcknowledged,
       providerModes,
       providerAccessModes,
       resolvedModelId,
@@ -288,6 +303,7 @@ export function useSessionControls(
     runtime.enabledOptInModes,
     runtime.providerModes,
   );
+  const handlePermissionModeSet = usePermissionModeSet(sessionId);
   return useMemo<SessionControls>(
     () => ({
       ...worktree,
@@ -296,6 +312,7 @@ export function useSessionControls(
       initializedRef,
       ...runtime,
       handlePermissionModeToggle,
+      handlePermissionModeSet,
       claudeProfile,
       supportsProfiles,
       supportsConfigInheritance,
@@ -306,6 +323,7 @@ export function useSessionControls(
       claudeProfile,
       access,
       effectiveCwd,
+      handlePermissionModeSet,
       handlePermissionModeToggle,
       initializedRef,
       runtime,

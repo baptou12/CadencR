@@ -1,4 +1,4 @@
-import { ClipboardList, ShieldOff, Sparkles, Zap, type LucideIcon } from "lucide-react";
+import { ClipboardList, Shield, ShieldCheck, ShieldOff, type LucideIcon } from "lucide-react";
 import { PROVIDER_IDS } from "@/lib/providers";
 import { findProviderMode, type ProviderMode } from "@/lib/provider-modes";
 import type { PermissionMode } from "@/types/permission-mode";
@@ -60,6 +60,8 @@ export interface AccessModeDefinition {
   icon: LucideIcon;
 }
 
+// Access modes are a sandbox axis, so they share the shield family — and never
+// reuse a mode or Fast icon: the composer shows them side by side.
 export const ACCESS_MODE_DEFINITIONS: AccessModeDefinition[] = [
   {
     id: "default",
@@ -70,7 +72,7 @@ export const ACCESS_MODE_DEFINITIONS: AccessModeDefinition[] = [
     chipClass:
       "bg-[var(--chip-blue-bg)]/15 text-[var(--chip-blue-fg)] hover:bg-[var(--chip-blue-bg)]/25",
     textClass: "text-[var(--chip-blue-fg)]",
-    icon: Zap,
+    icon: Shield,
   },
   {
     id: "fullAccess",
@@ -90,7 +92,7 @@ export const ACCESS_MODE_DEFINITIONS: AccessModeDefinition[] = [
       "Keeps the workspace-write sandbox, but lets Codex automatically review approval requests instead of routing each one to you.",
     chipClass: "bg-[var(--acc-yellow)]/15 text-[var(--acc-yellow)] hover:bg-[var(--acc-yellow)]/25",
     textClass: "text-[var(--acc-yellow)]",
-    icon: Sparkles,
+    icon: ShieldCheck,
   },
 ];
 

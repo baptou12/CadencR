@@ -10,7 +10,9 @@ import { WorktreeChip } from "./WorktreeChip";
 import type { ClaudeCodeProfile, RuntimeProviderAccessModeOption } from "@/api/agentRuntime";
 import { findProviderMode, getVisibleModes } from "@/lib/provider-modes";
 import type { AccessMode } from "@/types/access-mode";
-import type { MetaBarProps } from "./MetaBar";
+import type { MetaBarProps, MetaBarSection } from "./MetaBar";
+import type { PermissionMode } from "@/types/permission-mode";
+import { ModeControl } from "../composer/ModeControl";
 import { META_BAR_CHIP } from "./meta-bar-chip-styles";
 import { AccessModePopover } from "./AccessModePopover";
 import { getDisplayMode } from "./meta-bar-codex-modes";
@@ -33,7 +35,6 @@ type MetaBarDerivedStateInput = Pick<
   | "showClaudeProfileSelector"
   | "claudeProfile"
   | "onClaudeProfileChange"
-  | "secondaryBelow"
   | "runtimeSessionId"
   | "onPause"
 >;
@@ -58,7 +59,6 @@ export function useMetaBarDerivedState(
     showClaudeProfileSelector = false,
     claudeProfile,
     onClaudeProfileChange,
-    secondaryBelow = false,
     runtimeSessionId,
     onPause,
   } = props;
@@ -93,7 +93,7 @@ export function useMetaBarDerivedState(
   const hasTrailingGroup =
     hasProfileSelector ||
     hasAccessMode ||
-    !!(!secondaryBelow && runtimeSessionId && onPause) ||
+    !!(runtimeSessionId && onPause) ||
     !!props.sessionConfigControls;
 
   return {
@@ -108,10 +108,10 @@ export function useMetaBarDerivedState(
 }
 
 interface TrailingGroupProps {
+  section: MetaBarSection;
   sessionConfigControls?: SessionConfigControls;
   hasProfileSelector: boolean;
   hasAccessMode: boolean;
-  secondaryBelow: boolean;
   claudeProfile?: string;
   claudeProfiles: ClaudeCodeProfile[];
   claudeProfilesLoading: boolean;
@@ -134,53 +134,74 @@ interface TrailingGroupProps {
 
 export function MetaBarTrailingGroup(props: TrailingGroupProps) {
   const config = props.sessionConfigControls;
+  const showControls = props.section !== "utilities";
+  const showInfo = props.section !== "instruments";
   return (
-    <div className="ml-auto flex items-center gap-1.5">
-      {/* Provider access chip — separate from collaboration mode; no keyboard shortcut. */}
-      {props.accessMode && props.onAccessModeChange && props.providerAccessModes.length > 0 && (
-        <AccessModePopover
-          mode={props.accessMode}
-          selectedMode={props.accessModeDefault}
-          isPending={props.isAccessModePending}
-          onChange={props.onAccessModeChange}
-          providerId={props.displayProviderId}
-          options={props.providerAccessModes}
-        />
+    <div
+      data-instrument-group={props.section === "instruments" || undefined}
+      className={cn(
+        "flex items-center gap-1.5",
+        props.section === "instruments" ? "min-w-0 gap-0.5" : "ml-auto",
       )}
+    >
+      {/* Provider access chip — separate from collaboration mode; no keyboard shortcut. */}
+      {showControls &&
+        props.accessMode &&
+        props.onAccessModeChange &&
+        props.providerAccessModes.length > 0 && (
+          <AccessModePopover
+            mode={props.accessMode}
+            selectedMode={props.accessModeDefault}
+            isPending={props.isAccessModePending}
+            onChange={props.onAccessModeChange}
+            providerId={props.displayProviderId}
+            options={props.providerAccessModes}
+            variant={props.section === "instruments" ? "instrument" : "chip"}
+          />
+        )}
 
-      {config &&
+      {showControls &&
+        config &&
         shouldShowSessionConfig(config.config, config.loading, config.supported, config.error) && (
-          <SessionConfigPopover {...config} />
+          <SessionConfigPopover
+            {...config}
+            variant={props.section === "instruments" ? "instrument" : "chip"}
+          />
         )}
 
       {/* Session info */}
-      {!props.secondaryBelow &&
-        (props.hasProfileSelector || (props.runtimeSessionId && props.onPause)) && (
-          <SessionInfoChip
-            runtimeProvider={props.displayProviderId}
-            runtimeSessionId={props.runtimeSessionId}
-            featureId={props.featureId}
-            wsSessionId={props.wsSessionId}
-            projectPath={props.projectPath}
-            isRunning={props.isRunning}
-            onPause={props.onPause}
-            chipClass={META_BAR_CHIP}
-            claudeProfile={props.claudeProfile}
-            claudeProfiles={props.claudeProfiles}
-            claudeProfilesLoading={props.claudeProfilesLoading}
-            claudeProfilesError={props.claudeProfilesError}
-            onClaudeProfileChange={props.onClaudeProfileChange}
-            activeClaudeProfile={props.activeClaudeProfile}
-            showProfileSelector={props.hasProfileSelector}
-          />
-        )}
+      {showInfo && (props.hasProfileSelector || (props.runtimeSessionId && props.onPause)) && (
+        <SessionInfoChip
+          runtimeProvider={props.displayProviderId}
+          runtimeSessionId={props.runtimeSessionId}
+          featureId={props.featureId}
+          wsSessionId={props.wsSessionId}
+          projectPath={props.projectPath}
+          isRunning={props.isRunning}
+          onPause={props.onPause}
+          chipClass={META_BAR_CHIP}
+          claudeProfile={props.claudeProfile}
+          claudeProfiles={props.claudeProfiles}
+          claudeProfilesLoading={props.claudeProfilesLoading}
+          claudeProfilesError={props.claudeProfilesError}
+          onClaudeProfileChange={props.onClaudeProfileChange}
+          activeClaudeProfile={props.activeClaudeProfile}
+          showProfileSelector={props.hasProfileSelector}
+        />
+      )}
     </div>
   );
 }
 
 interface LeadingChipsProps {
+  section: MetaBarSection;
+  providerId?: string;
+  permissionMode?: PermissionMode;
+  enabledOptInModes?: PermissionMode[];
+  providerModes?: MetaBarProps["providerModes"];
+  onPermissionModeSet?: (mode: PermissionMode) => void;
+  modeIncompatibleReason?: string | null;
   showAutoScrollChip: boolean;
-  secondaryBelow: boolean;
   autoScrollEnabled: boolean;
   onToggleAutoScroll: () => void;
   displayMode: ReturnType<typeof getDisplayMode>;
@@ -196,14 +217,27 @@ interface LeadingChipsProps {
 }
 
 export function MetaBarLeadingChips(props: LeadingChipsProps) {
+  const { section } = props;
   return (
     <>
-      {props.showAutoScrollChip && !props.secondaryBelow && (
+      {section !== "instruments" && props.showAutoScrollChip && (
         <AutoScrollChip enabled={props.autoScrollEnabled} onToggle={props.onToggleAutoScroll} />
       )}
 
+      {section === "instruments" && (
+        <ModeControl
+          providerId={props.providerId}
+          permissionMode={props.permissionMode}
+          enabledOptInModes={props.enabledOptInModes}
+          providerModes={props.providerModes}
+          onToggle={props.onPermissionModeToggle}
+          onSelect={props.onPermissionModeSet}
+          incompatibleReason={props.modeIncompatibleReason}
+        />
+      )}
+
       {/* Mode chip — labels/colors driven by the per-provider catalog. */}
-      {props.displayMode && (
+      {section === "all" && props.displayMode && (
         <ShortcutTooltip label={`${props.displayMode.label} mode`} keys={["shift", "Tab"]}>
           <button
             type="button"
@@ -218,9 +252,9 @@ export function MetaBarLeadingChips(props: LeadingChipsProps) {
         </ShortcutTooltip>
       )}
 
-      {/* Worktree chip — inline when wide; on narrow widths it drops to the
-          `MetaBarSecondary` strip below the prompt (`secondaryBelow`). */}
-      {props.showWorktreeChip && !props.secondaryBelow && (
+      {/* Worktree chip — the single-row bar only; the composer moves branch and
+          worktree choice into its launch manifest. */}
+      {section === "all" && props.showWorktreeChip && (
         <WorktreeChip
           worktreeProjectId={props.worktreeProjectId}
           worktreeDefaultBranch={props.worktreeDefaultBranch}

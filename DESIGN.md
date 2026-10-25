@@ -340,7 +340,7 @@ The brand direction was re-validated in July 2026 through the in-product palette
 - **Wordmark.** `CADENCR` in Figtree, weight 800, uppercase, tracked ~0.05em — unchanged (`--font-brand` already renders this).
 - **Dark handoff.** Ground `#131416`, darker rail `#090A0C`, Raised `#1A1B1D`, Ink `#EFF0F2`, Soft `#A7A9AD`, Muted `#6E7176`, Hairline `#34373A`, Emerald `#2DB47D` (primary). Neutral surfaces carry no visible green cast; the primary supplies life.
 - **Light handoff.** Ground `#FAFAFB`, darker rail `#EFF0F2`, Raised `#FFFFFF`, Ink `#222429`, Soft `#60636A`, Muted `#95989F`, Hairline `#D7DADD`, Emerald Deep `#087653` (primary). Light-mode functional colors are deliberately deeper and more vibrant than muted pastel tints.
-- **Functional handoff.** Tool colors are semantic and independent of primary: file-change counters and diff status stay green `#8BCF67` / `#3D7D14`, while `Edit` / `Write` / `ApplyPatch` headings use copper `#F09A5B` / `#A84F00`; deletion `#EC707B` / `#D12D49`, thinking `#52BFD0` / `#007F9B`, warning `#E2B64D` / `#966C00`, generic tool `#6D9BEC` / `#1D5ED8`, syntax `#DE7CA7` / `#B52B70` (dark / light). Bash remains terminal-neutral. Thinking supporting text is `#C1D2D5` / `#2F454B`. Model and permission-mode controls retain their established violet/fuchsia/blue identities through `--chip-*`; they do not inherit brand emerald.
+- **Functional handoff.** Tool colors are semantic and independent of primary: file-change counters and diff status stay green `#8BCF67` / `#3D7D14`, while `Edit` / `Write` / `ApplyPatch` headings use copper `#F09A5B` / `#A84F00`; deletion `#EC707B` / `#D12D49`, thinking `#52BFD0` / `#007F9B`, warning `#E2B64D` / `#966C00`, generic tool `#6D9BEC` / `#1D5ED8`, syntax `#DE7CA7` / `#B52B70` (dark / light). Bash remains terminal-neutral. Thinking supporting text is `#C1D2D5` / `#2F454B`. Outside the composer, model controls retain their violet identity through `--chip-violet-*`; inside it they are neutral instruments (Composer › Instrument row). Permission modes keep each provider's own color (`tone` in `lib/provider-modes.ts`, the hue users know from that CLI). Neither inherits brand emerald.
 - **Landing typography** (not a desktop mandate): Schibsted Grotesk for display/body, JetBrains Mono for annotations. Desktop UI stays Inter until the new theme work decides otherwise.
 
 Full spec: `packages/landing/DESIGN.md`.
@@ -521,20 +521,36 @@ Supported text hunks offer `Accept Current branch` and `Accept Incoming branch` 
 - **Structure:** `.cds-topbar > [.feat-title, .cds-top-actions]`.
 - **Tokens:** `--background`, `--border`.
 
-### PromptBar
+### Composer (PromptBar)
 
-The agent input. Lives in the root pane only — never duplicate it in a floating pane.
+The instrument the user plays all day — not a chat box. It answers four questions at a glance: what the agent will receive, where it will write, how much it may do on its own, and what Enter does right now. Lives in the root pane only — never duplicate it in a floating pane. Code: `components/AgentPromptBar.tsx`, `components/composer/`, `composer.css`; the CadencR pair adds its material in `theme-cadencr-material.css`.
 
-- **Structure:** `.cds-prompt-wrap > .cds-prompt-bar > [textarea, .cds-prompt-actions]` followed by `.cds-context-bar`.
-- **States:** Default (muted bg, transparent border) → focus-within (card bg, primary border, primary-glow ring). Send button disables when textarea is empty.
-- **Tokens:** `--muted` (default bg), `--card` (focus bg), `--primary` (focused border + send button bg), `--primary-glow` (focus ring), `--on-primary` (send icon).
+- **Anatomy, top to bottom.** **Queue rail** (prompts queued for after the turn, stacked on the card's top edge: send now · edit · remove; a failed delivery stays with its reason) → **card**: launch manifest (first prompt only) · context tray · editor · instrument row.
+- **Launch manifest.** One editable sentence before the first prompt: "Runs in [New worktree] from [main] · branch `feature/…` named from your prompt". The two tokens are the branch/worktree pickers in their `manifest` variant (no chip chrome, worktree modes keep `--chip-worktree-fg` ink). Isolation is the default for a new conversation; "Project folder" is a legitimate choice and carries no warning. Disabled worktree modes explain why.
+- **Context tray.** Everything sent beyond the text, as removable chips (`--muted` wash, hairline `--border`): images and files with their names, long pastes (≥40 lines or ≥4 000 chars become a chip), editor selections and terminal output (⌘⇧↵ / Ctrl+Shift+Enter in those panes), review comments, a pull request. Suggestions (pending review comments, a PR link of this repo) are dashed chips with an explicit Attach.
+- **Instrument row.** No chips: every control is a plain `composer-instrument` (neutral ink, a 7% `--foreground` wash on hover/open), and color lives only in icons — the mode in its provider tone, the provider's own model icon, a lit `--acc-yellow` bolt for Fast, the access mode's icon. Hairlines (`--border`, 14px) separate the groups: auto-scroll │ mode │ model · effort · fast │ access / session config — auto-scroll opens the row, on the transcript's side, and stays on narrow cards. Trailing: compaction hint, context meter, todos, history, ⋯ menu, attach, run controls. Nothing floats above the card. No icon appears twice in the row: Fast owns the bolt, access modes the shield family (Default `Shield`, Auto Review `ShieldCheck`, Full Access `ShieldOff`), a Default/Build mode the hammer, and auto-scroll double chevrons (`ChevronsDown` — an arrow onto a line reads as "download"). Below 30rem the mode keeps its icon and the context bar hides (a bar-only meter stays); below 26rem effort/Fast drop their labels; below 24rem secondary instruments (history) step aside.
+- **⋯ menu.** One level: a click shows the session details directly (provider, MCP servers, profile, session id, launch command, sync from CLI — what the old Info chip held), with a "Keys & syntax" footer that swaps the panel to the composer's grammar (and back). Before a session exists it opens on the keys.
+- **Ask on the side.** The virtual skill `/cadencr:side <question>` (Cadencr logo in the slash menu, never MCP-gated): the composer routes it to a new read-only conversation instead of the agent, so a running agent is neither interrupted nor shown it.
+- **Context meter.** Clicking cycles how it reads — bar + %, %, used / window, tokens left, bar only — a global setting (`composer_context_meter_display`). Hover card: "Context window" with the percentage large in the gauge tone (green → yellow → orange → red at 50/80/90%), a 20-cell gauge, Used / Free / Window, a one-line verdict, a note once compacted, and which reading is shown.
+- **Run controls.** Idle: Send (+ chevron: schedule). Running: a labelled square **Stop** (never a pause glyph) and **Steer** — or **Queue** when the provider can't take mid-turn prompts (`steering_acknowledged`). Esc never stops on one press: the first arms (`Press esc again to stop`), the second stops; an open popover always owns Esc.
+- **States.** Focus-within: border `--composer-focus-border` (a whisper of emerald, like a focused pane — no glow). Running: a thin `--primary` reflection crosses the card's top edge left to right, then rests (1px, 28% of the edge, 75% opacity with a 6px halo, 4.5s cycle — the crossing takes 55% of it; the track stops short of the rounded corners and fades at both ends). It reads at a glance and is forgotten while reading; under reduced motion it rests, faint, at the edge's middle). The placeholder states what Enter does now ("Describe the task…", "Steer the agent — ↵ at its next step, ⌘↵ after this turn", phone variants cite no keys).
+- **Popovers.** `@`, `@@` and `/` share one shell (`ComposerPopover`): it rises from the card's top edge at the card's width, groups options under quiet 11px labels, states its keys in a footer, and is a `listbox` the editor points at with `aria-activedescendant`. Only the highlighted command slides its long description.
+- **Transcript markers it drives.** "Stopped by you · Resume" (persisted `turn_interrupted`) and plain-language errors with Continue / Switch model on the turn that just ended, raw text under Details.
+- **Tokens:** `--card`/`--border` (card), `--composer-focus-border`, `--composer-radius` (`--radius` + 2px), `--primary` (send, running sweep), mode `tone` (provider colors), `--chip-worktree-*` (manifest), `--acc-yellow` (Fast, warnings), `--acc-orange` (compaction hint).
 
-### ActionBar
+### Mode risk scale
 
-Five chips above the prompt: Auto-scroll · Autonomy · Model · Thinking effort · Errors. The error chip is `success`-styled when count is 0, `danger` when nonzero.
+Each mode declares a provider-neutral `risk` in `lib/provider-modes.ts`; the mode menu shows it as a gloss, while label and icon keep the provider's own color (`tone`), so the composer never contradicts what the user knows from the CLI.
 
-- **States:** chip default, chip.on (toggled), chip.success/warn/primary/ghost.
-- **Tokens:** `--border`, `--accent` (hover), `--chip-violet-*` (model and Auto-Accept controls), `--primary`/`--primary-glow` (.on), `--acc-green`/`--acc-orange` (status chip variants).
+| Risk     | Meaning                      |
+| -------- | ---------------------------- |
+| `read`   | Read-only (Plan, Ask)        |
+| `ask`    | Asks before acting (Default) |
+| `edits`  | Edits without asking         |
+| `auto`   | Acts on its own              |
+| `bypass` | No guardrails                |
+
+The amber of "action required" is never used for a mode. Mode changes — menu, click or Shift+Tab — flash the control and are announced in an `aria-live` region; a mode the model can't hold shows a `--acc-yellow` warning with the reason.
 
 ### Worktree row
 
