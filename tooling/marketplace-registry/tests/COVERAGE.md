@@ -79,6 +79,19 @@ directories; they are observations, not a second executable implementation.
   independent in both directions and that any failure still fails the job. Real renewal and
   publication behavior is covered by `cli/tests/policy.rs` and
   `registry-core/src/policy_renewal.rs`, `registry-publisher/src/policy_publish/`.
+- `policy-bootstrap-workflow.test.mjs` checks the dispatch-only
+  `bootstrap-revocation-policies` workflow statically (single `confirm` input,
+  default-branch gating, secret-free preflight, reviewed
+  `protected-marketplace-publisher` environment, shared `marketplace-publication`
+  lane, pinned checkout/actions/CLI selector, key and token only in their steps, key
+  removal under `always()`) and executes `registry-feeds.sh bootstrap-check` and
+  `bootstrap-policies` with a fake CLI: exact confirmation and URL/branch refusals,
+  per-kind empty payloads (no `kind` for the provider policy, 13-day window), the
+  `fetch-policy`/`sign-*`/`verify-*`/`publish-policy --bootstrap` argv, token absent
+  from signing and verification, skip of an already published policy, every policy
+  attempted after a failure, and an old pinned CLI named. The payloads were also
+  signed and verified once with the real CLI; the publication itself is covered by
+  `registry-publisher/src/policy_publish/`.
 - `registry-expiry-watch.test.mjs` checks the read-only, secret-free daily watch
   and runs `check-expiry` against signed fixtures with the real Rust CLI: 72-hour
   boundary, expired, tampered, wrong-key, missing and malformed feeds all fail, and the
