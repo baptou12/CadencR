@@ -1,8 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { CodeIcon, EyeIcon, Loader2Icon, AlertTriangleIcon } from "lucide-react";
+import { Loader2Icon, AlertTriangleIcon } from "lucide-react";
 import { CodeBlockShell } from "@/components/CodeBlockShell";
 import { MermaidDiagramView } from "@/components/MermaidDiagramView";
-import { highlightCode } from "@/components/markdown/highlight-cache";
+import { SourceToggle } from "@/components/visuals/SourceToggle";
+import { VisualSource } from "@/components/visuals/VisualChrome";
 import { useTheme } from "@/hooks/useTheme";
 import { apiErrorMessage } from "@/lib/api-errors";
 import {
@@ -15,14 +16,6 @@ import { openMermaidFullscreen } from "@/stores/mermaid-fullscreen-store";
 
 /** Per-instance id prefix, so no two copies of a diagram share ids. */
 let instanceCounter = 0;
-
-function DiagramSource({ code }: { code: string }) {
-  return (
-    <pre className="overflow-x-auto p-3 text-xs leading-relaxed">
-      <code className="hljs">{highlightCode("text", code) ?? code}</code>
-    </pre>
-  );
-}
 
 /** A beautiful-mermaid SVG, inline and (on demand) full screen under separate ids. */
 function BeautifulDiagram({ svg }: { svg: string }) {
@@ -86,7 +79,7 @@ function MermaidFallbackDiagram({ code }: { code: string }) {
         <AlertTriangleIcon className="size-3 shrink-0" />
         <span>Could not render diagram: {current.message}</span>
       </div>
-      <DiagramSource code={code} />
+      <VisualSource code={code} language="text" />
     </>
   );
 }
@@ -104,28 +97,15 @@ const MermaidDiagram = memo(function MermaidDiagram({ code }: MermaidDiagramProp
       language="mermaid"
       code={code}
       leadingActions={
-        <button
-          type="button"
-          onClick={() => setView((v) => (v === "diagram" ? "source" : "diagram"))}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-foreground/70 hover:bg-accent hover:text-foreground transition-colors"
-          title={view === "diagram" ? "View source" : "View diagram"}
-        >
-          {view === "diagram" ? (
-            <>
-              <CodeIcon className="size-3" />
-              <span>Source</span>
-            </>
-          ) : (
-            <>
-              <EyeIcon className="size-3" />
-              <span>Diagram</span>
-            </>
-          )}
-        </button>
+        <SourceToggle
+          showingSource={view === "source"}
+          renderedLabel="Diagram"
+          onToggle={() => setView((v) => (v === "diagram" ? "source" : "diagram"))}
+        />
       }
     >
       {view === "source" ? (
-        <DiagramSource code={code} />
+        <VisualSource code={code} language="text" />
       ) : beautifulSvg !== null ? (
         <BeautifulDiagram svg={beautifulSvg} />
       ) : (

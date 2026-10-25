@@ -1,6 +1,8 @@
 import type { IncomingMessage } from "node:http";
 import type { Plugin, ProxyOptions } from "vite";
 
+import { VISUAL_FRAME_PATH } from "../src/shared/visual-frame";
+
 export function isDevServiceRequest(
   headers: IncomingMessage["headers"],
   rendererOrigin: string,
@@ -57,7 +59,14 @@ export function devServiceProxy(
     },
   };
   return {
-    proxy: { "/api": proxy, "/ws": proxy, "/health": proxy },
+    proxy: {
+      "/api": proxy,
+      "/ws": proxy,
+      "/health": proxy,
+      // The visual sandbox shell is public and carries no credential: a plain
+      // pass-through, so a browser renderer frames it from its own origin.
+      [VISUAL_FRAME_PATH]: { target: serviceOrigin, changeOrigin: true, followRedirects: false },
+    },
     plugin: {
       name: "cadencr-dev-service-proxy",
       configureServer(server) {

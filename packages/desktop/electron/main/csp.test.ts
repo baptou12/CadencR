@@ -14,6 +14,15 @@ describe("rendererCsp", () => {
     expect(csp).toContain("object-src 'none'");
   });
 
+  it("frames only the service's HTTP origins (the visual sandbox shell)", () => {
+    const frameSrc = (csp: string) => csp.split("; ").find((line) => line.startsWith("frame-src"));
+
+    expect(frameSrc(rendererCsp(true))).toBe("frame-src http://127.0.0.1:5004");
+    const development = frameSrc(rendererCsp(false));
+    expect(development).toContain("http://127.0.0.1:5005");
+    expect(development).not.toContain("ws:");
+  });
+
   it("allows Vite dev endpoints only for development", () => {
     const csp = rendererCsp(false);
 

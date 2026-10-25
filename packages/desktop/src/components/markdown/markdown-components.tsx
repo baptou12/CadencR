@@ -6,8 +6,53 @@ import type { HastNode } from "@/components/markdown/agent-file-href-sanitize";
 import { highlightCode } from "@/components/markdown/highlight-cache";
 import { MarkdownLink } from "@/components/markdown/markdown-link";
 import { LargeCodeBlock, isLargeCodeBlock } from "@/components/markdown/LargeCodeBlock";
+import { VisualLoading } from "@/components/visuals/VisualStatus";
 
+/** `load`, started at most once: its promise is shared by every caller. */
+function once<T>(load: () => Promise<T>): () => Promise<T> {
+  let started: Promise<T> | null = null;
+  return () => (started ??= load());
+}
+
+const loadVegaLiteChart = once(() => import("@/components/visuals/VegaLiteChart"));
+const loadHtmlVisual = once(() => import("@/components/visuals/HtmlVisual"));
 const MermaidDiagram = lazy(() => import("@/components/MermaidDiagram"));
+const VegaLiteChart = lazy(loadVegaLiteChart);
+const HtmlVisual = lazy(loadHtmlVisual);
+
+/**
+ * Fences rendered as visuals once complete (the `/cadencr:visualize` skill
+ * documents the last two). While streaming, a diagram shows as code,
+ * highlighted as the language it is written in. A chart or visual instead
+ * holds its place with a loader (`drafting`) — its source means little to
+ * read and the rendered result replaces it — and fetches its renderer
+ * meanwhile, so the result can paint as soon as the reply settles.
+ */
+const RENDERED_FENCES = {
+  mermaid: {
+    highlight: "text",
+    Component: MermaidDiagram,
+    loading: "Loading diagram…",
+    drafting: null,
+  },
+  "vega-lite": {
+    highlight: "json",
+    Component: VegaLiteChart,
+    loading: "Loading chart renderer…",
+    drafting: { label: "Writing chart…", preload: loadVegaLiteChart },
+  },
+  "cadencr-html": {
+    highlight: "html",
+    Component: HtmlVisual,
+    loading: "Loading visual…",
+    drafting: { label: "Writing visual…", preload: loadHtmlVisual },
+  },
+} as const;
+type RenderedFence = keyof typeof RENDERED_FENCES;
+
+function isRenderedFence(language: string): language is RenderedFence {
+  return Object.hasOwn(RENDERED_FENCES, language);
+}
 const SHELL_LANGUAGES = new Set(["bash", "sh", "zsh", "shell", "console", "terminal"]);
 
 function extractText(children: ReactNode): string {
@@ -48,10 +93,31 @@ function isFenceClosed(
   return lastLine !== undefined && /^\s{0,3}(```|~~~)/.test(lastLine);
 }
 
-function MermaidFallback({ code }: { code: string }): ReactElement {
+type FencePosition = { start?: { line?: number }; end?: { line?: number } };
+
+/**
+ * Lines written so far, from the fence's source position: counting them in
+ * the text would rebuild the whole fence on every streamed delta. Includes the
+ * closing line once written.
+ */
+function writtenLines(position: FencePosition | undefined): string {
+  const lines = Math.max((position?.end?.line ?? 0) - (position?.start?.line ?? 0), 0);
+  return lines === 1 ? "1 line" : `${lines} lines`;
+}
+
+/** Shown while a fence's renderer loads: bare for charts and visuals, in a code block for diagrams. */
+function VisualFallback({
+  language,
+  code,
+}: {
+  language: RenderedFence;
+  code: string;
+}): ReactElement {
+  const { drafting, loading } = RENDERED_FENCES[language];
+  if (drafting) return <VisualLoading label={loading} />;
   return (
-    <CodeBlockShell language="mermaid" code={code}>
-      <div className="p-3 text-xs text-muted-foreground">Loading diagram…</div>
+    <CodeBlockShell language={language} code={code}>
+      <div className="p-3 text-xs text-muted-foreground">{loading}</div>
     </CodeBlockShell>
   );
 }
@@ -72,18 +138,27 @@ function buildCodeComponent({
   cacheHighlights = isSettled,
 }: MarkdownComponentOptions): NonNullable<Components["code"]> {
   return ({ className, children, node, ...props }) => {
-    const match = /language-(\w+)/.exec(className || "");
+    const match = /language-([\w-]+)/.exec(className || "");
     const isBlock = node?.position && node.position.start.line !== node.position.end.line;
     if (match || isBlock) {
       const lang = match?.[1] ?? "text";
+      const fence = isRenderedFence(lang) ? lang : null;
+      // A settled reply with an unclosed fence was cut off: its code is all there is.
+      const drafting = fence && !isSettled ? RENDERED_FENCES[fence].drafting : null;
+      if (drafting) {
+        void drafting.preload();
+        return <VisualLoading label={drafting.label} detail={writtenLines(node?.position)} />;
+      }
       const code = extractText(children).replace(/\n$/, "");
-      if (lang === "mermaid" && isSettled && isFenceClosed(contentRef.current, node)) {
+      if (fence && isSettled && isFenceClosed(contentRef.current, node)) {
+        const { Component } = RENDERED_FENCES[fence];
         return (
-          <Suspense fallback={<MermaidFallback code={code} />}>
-            <MermaidDiagram code={code} />
+          <Suspense fallback={<VisualFallback language={fence} code={code} />}>
+            <Component code={code} />
           </Suspense>
         );
       }
+      const highlightLanguage = fence ? RENDERED_FENCES[fence].highlight : lang;
       const showTerminalButton = SHELL_LANGUAGES.has(lang) && !!sendToTerminal;
       if (isLargeCodeBlock(code)) {
         return (
@@ -96,7 +171,8 @@ function buildCodeComponent({
           />
         );
       }
-      const highlighted = highlightCode(lang, code, { cache: cacheHighlights }) ?? children;
+      const highlighted =
+        highlightCode(highlightLanguage, code, { cache: cacheHighlights }) ?? children;
       return (
         <CodeBlockShell
           language={lang}

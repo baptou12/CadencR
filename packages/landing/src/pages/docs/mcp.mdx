@@ -241,6 +241,8 @@ Invoke them with `/` or `$`; for example, `/cadencr:review unstaged` and `$caden
 | `cadencr:parallelize` | Turns independent subtasks into concurrent sessions, each in an isolated worktree, and consolidates their returned results.                                        | `/cadencr:parallelize frontend tests; Rust tests; docs audit` |
 | `cadencr:handoff`     | Creates or messages a successor with a self-contained brief and records an explicit handoff relationship.                                                          | `$cadencr:handoff continue in a fresh Codex session`          |
 
+`/cadencr:visualize` is also a CadencR skill, but it needs neither MCP server: it asks for an inline chart or visual (see [Prompt](../prompting/#ask-for-a-chart-or-a-visual)).
+
 These are different from provider-native commands such as `/compact`, and from project skills such as `/qa`, `$qa`, `/finish-job`, or `$finish-job`. Native commands and project skills come from the active provider and repository; `cadencr:*` commands are supplied by CadencR itself and specifically orchestrate CadencR sessions.
 
 ## Safety and good prompting

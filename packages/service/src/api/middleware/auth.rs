@@ -1,6 +1,7 @@
 use super::response::{misdirected, unauthorized};
 use crate::app_state::AppState;
 use crate::domain::plugin_tabs::principal::{self, PLUGIN_TOKEN_HEADER};
+use crate::domain::visual_frame::VISUAL_FRAME_PATH;
 use crate::error::AppError;
 use crate::shared::security::constant_time_str_eq;
 use axum::{
@@ -22,6 +23,12 @@ pub async fn auth_middleware(
 ) -> Response {
     if !is_allowed_host(&request, state.port) {
         return misdirected();
+    }
+
+    // The static visual sandbox shell loads in an iframe, which cannot present
+    // the token; the Host check above still applies.
+    if request.uri().path() == VISUAL_FRAME_PATH {
+        return next.run(request).await;
     }
 
     // Only known WebSocket routes authenticate inside their upgrade handler.

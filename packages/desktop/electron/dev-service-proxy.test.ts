@@ -43,10 +43,20 @@ describe("development browser service proxy", () => {
 
   it("keeps bearer injection server-only and disables authenticated redirects", () => {
     const { proxy } = devServiceProxy(origin, "http://127.0.0.1:5106", "secret");
-    for (const route of Object.values(proxy)) {
+    for (const path of ["/api", "/ws", "/health"]) {
+      const route = proxy[path];
       expect(route.followRedirects).toBe(false);
       expect(route.headers).toBeUndefined();
       expect(route.ws).toBe(true);
     }
+  });
+
+  it("passes the public visual sandbox shell through without the bearer", () => {
+    const { proxy } = devServiceProxy(origin, "http://127.0.0.1:5106", "secret");
+    const route = proxy["/visual-frame"];
+    expect(route.target).toBe("http://127.0.0.1:5106");
+    expect(route.configure).toBeUndefined();
+    expect(route.headers).toBeUndefined();
+    expect(route.followRedirects).toBe(false);
   });
 });

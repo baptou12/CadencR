@@ -42,6 +42,20 @@ An `@@` reference gives the agent a route to the selected history through Worksp
 
 Claude slash commands can appear within a prompt. OpenCode slash commands are anchored at its start. Codex skill references use `$`. CadencR's virtual `cadencr:*` skills accept either `/` or `$` and expand at send time; see [MCP & orchestration](../mcp/).
 
+## Ask for a chart or a visual
+
+`/cadencr:visualize` followed by what you want to see asks the agent to draw it in the conversation, with any provider:
+
+```text
+/cadencr:visualize test duration per package over the last 10 CI runs
+```
+
+- **Data charts** come back as a Vega-Lite spec and render as a native chart in the current theme, light or dark. They redraw when you switch themes and fit the conversation width.
+- **Diagrams, interactive explainers, mockups and dashboards** come back as HTML. Each one runs in a sandboxed frame styled with the theme, with D3 and Chart.js bundled.
+- **Source** in a block's header shows the spec or HTML behind it, and **Copy** copies it.
+
+Visuals run offline: they can't reach the network, CadencR's API or your browser storage, and they can't navigate away. A blocked request or a script error appears as a message above the visual. Mermaid diagrams keep working as before.
+
 ## Run a shell command with `!`
 
 Start the prompt with `!` to enter shell mode on supported providers:

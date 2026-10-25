@@ -57,6 +57,11 @@ export function rendererCsp(
     );
   }
   const connectSrc = `connect-src 'self' data: ${[...new Set(connectUrls)].join(" ")}`;
+  // The service's sandboxed visual shell (`/visual-frame`) is the only frame
+  // the renderer embeds; its own CSP sandboxes whatever it renders, and this
+  // directive also refuses any navigation of the frame to another origin.
+  const frameUrls = connectUrls.filter((url) => url.startsWith("http"));
+  const frameSrc = `frame-src ${[...new Set(frameUrls)].join(" ")}`;
   return [
     "default-src 'self'",
     scriptSrc,
@@ -67,6 +72,7 @@ export function rendererCsp(
     // from `blob:` URLs the library mints itself; `script-src` stays strict.
     "worker-src 'self' blob:",
     connectSrc,
+    frameSrc,
     "object-src 'none'",
     "base-uri 'none'",
     "frame-ancestors 'none'",

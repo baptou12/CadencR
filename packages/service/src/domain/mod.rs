@@ -58,6 +58,7 @@ pub mod settings_store;
 pub mod terminal;
 pub mod themes;
 pub mod usage_stats;
+pub mod visual_frame;
 pub mod workflow;
 pub mod workspace;
 pub mod ws_session;

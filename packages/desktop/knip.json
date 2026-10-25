@@ -15,7 +15,8 @@
   ],
   "ignoreDependencies": [
     "autoprefixer",
-    "postcss"
+    "postcss",
+    "visual-lib"
   ],
   "tags": [
     "+@public"

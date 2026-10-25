@@ -29,6 +29,32 @@ const excalidrawFontsDir = path.join(
 
 const pdfjsDir = path.dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"));
 
+/**
+ * `visual-lib:<name>`: the prebuilt bundle of a library HTML visuals inline as
+ * text (`src/lib/visuals/visual-assets.ts`), served as a virtual module whose
+ * default export is the source. Not an alias with `?raw`: the packages don't
+ * export these files, and Vite's dependency optimizer pre-bundles an aliased
+ * `node_modules` path and breaks the `?raw` query.
+ */
+function visualLibrariesPlugin(): Plugin {
+  const require = createRequire(import.meta.url);
+  const files: Record<string, string> = {
+    "visual-lib:d3": path.resolve(path.dirname(require.resolve("d3")), "../dist/d3.min.js"),
+    "visual-lib:chart.js": path.join(path.dirname(require.resolve("chart.js")), "chart.umd.min.js"),
+  };
+  return {
+    name: "cadencr-visual-libraries",
+    enforce: "pre",
+    resolveId: (id) => (id in files ? `\0${id}` : null),
+    load(id) {
+      const file = id.startsWith("\0") ? files[id.slice(1)] : undefined;
+      if (!file) return null;
+      this.addWatchFile(file);
+      return `export default ${JSON.stringify(fs.readFileSync(file, "utf8"))};`;
+    },
+  };
+}
+
 /** MIME types for the static assets served below; anything else gets none. */
 const STATIC_ASSET_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
@@ -224,6 +250,7 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [
         serviceProxy.plugin,
+        visualLibrariesPlugin(),
         react(),
         tailwindcss(),
         staticAssetDirsPlugin(STATIC_ASSET_DIRS),

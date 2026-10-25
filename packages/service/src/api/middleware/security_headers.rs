@@ -57,10 +57,19 @@ pub async fn remote_security_headers_middleware(request: Request, next: Next) ->
             .get(header::HOST)
             .and_then(|value| value.to_str().ok()),
     );
+    // The visual sandbox shell is framed by the SPA and carries its own,
+    // stricter sandboxing CSP (`domain::visual_frame`); the SPA policy's
+    // `frame-ancestors 'none'` and X-Frame-Options would refuse the frame.
+    let framed = request.uri().path() == crate::domain::visual_frame::VISUAL_FRAME_PATH;
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
-    if let Ok(value) = HeaderValue::from_str(&csp) {
-        headers.insert(header::CONTENT_SECURITY_POLICY, value);
+    if !framed {
+        if let Ok(value) = HeaderValue::from_str(&csp) {
+            headers.insert(header::CONTENT_SECURITY_POLICY, value);
+        }
+        // CSP `frame-ancestors 'none'` already blocks framing; X-Frame-Options is the
+        // legacy-browser belt to that suspenders.
+        headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     }
     headers.insert(
         header::X_CONTENT_TYPE_OPTIONS,
@@ -70,9 +79,6 @@ pub async fn remote_security_headers_middleware(request: Request, next: Next) ->
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),
     );
-    // CSP `frame-ancestors 'none'` already blocks framing; X-Frame-Options is the
-    // legacy-browser belt to that suspenders.
-    headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     headers.insert(
         HeaderName::from_static("permissions-policy"),
         HeaderValue::from_static(PERMISSIONS_POLICY),
@@ -92,6 +98,7 @@ mod tests {
     fn app() -> Router {
         Router::new()
             .route("/", get(|| async { "ok" }))
+            .merge(crate::domain::visual_frame::router())
             .layer(axum::middleware::from_fn(
                 remote_security_headers_middleware,
             ))
@@ -132,6 +139,30 @@ mod tests {
         );
         assert_eq!(headers.get(header::X_FRAME_OPTIONS).unwrap(), "DENY");
         assert!(headers.get("permissions-policy").is_some());
+    }
+
+    #[tokio::test]
+    async fn leaves_the_visual_frame_its_own_sandboxing_csp() {
+        let resp = app()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri(crate::domain::visual_frame::VISUAL_FRAME_PATH)
+                    .header(header::HOST, "192.168.1.5:5006")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let headers = resp.headers();
+        assert_eq!(
+            headers.get(header::CONTENT_SECURITY_POLICY).unwrap(),
+            crate::domain::visual_frame::CONTENT_SECURITY_POLICY
+        );
+        assert!(headers.get(header::X_FRAME_OPTIONS).is_none());
+        assert_eq!(
+            headers.get(header::X_CONTENT_TYPE_OPTIONS).unwrap(),
+            "nosniff"
+        );
     }
 
     #[tokio::test]
