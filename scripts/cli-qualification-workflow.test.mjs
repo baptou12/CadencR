@@ -89,7 +89,7 @@ test("three-kind offline job has no write authority and exports evidence only", 
   for (const step of steps.filter((step) => step.uses)) assert.match(step.uses, /@[a-f0-9]{40}$/);
 });
 
-test("reviewed CLI selection is atomic across repository consumers without author publication authority", () => {
+test("reviewed CLI selection is atomic across repository consumers and bound by the author policy", () => {
   const selected = readFileSync(new URL("./cli-qualification.env", import.meta.url), "utf8")
     .split("\n")
     .filter((line) => line && !line.startsWith("#"));
@@ -114,5 +114,15 @@ test("reviewed CLI selection is atomic across repository consumers without autho
   const policy = JSON.parse(
     readFileSync(new URL("./official-plugin-author-policy.json", import.meta.url), "utf8"),
   );
-  assert.equal(policy.publication, "PENDING");
+  // Publication approval binds the exact selected author pin and its qualification.
+  const sha256 = (path) =>
+    createHash("sha256").update(readFileSync(new URL(path, import.meta.url))).digest("hex");
+  assert.equal(policy.publication, "APPROVED");
+  assert.equal(policy.author_cli_version, version);
+  assert.equal(policy.author_cli_sha256, selected[1].split("=")[1]);
+  assert.equal(policy.author_cli_pin_sha256, sha256("./official-plugin-author-cli.env"));
+  assert.equal(
+    policy.author_cli_qualification_sha256,
+    sha256("./official-plugin-author-qualification.json"),
+  );
 });

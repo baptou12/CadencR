@@ -11,7 +11,7 @@ template contains a daily renewal workflow and a daily expiry watch (see
 [Automatic renewal and expiry watch](#automatic-catalog-and-policy-renewal-and-expiry-watch));
 neither is deployed, scheduled or configured in any live repository, and both stay
 inert until their repository variables exist. Earlier distributed CLI qualification is dated evidence, not
-production deployment. The locally selected `0.14.2` includes
+production deployment. The locally selected `0.15.2` includes
 standalone Rust diagnostics and the bounded discovery-convergence correction.
 Its exact distributed executable passed first-pass renewal, unchanged replays,
 fresh-runner recovery and three-kind publication checks; see the
@@ -257,7 +257,7 @@ dispatched `bootstrap-revocation-policies` workflow above.
 ### Source-only discovery convergence correction
 
 This historical heading is retained for existing links. The correction is now
-included in qualified `0.14.2`; it is no longer source-only.
+included in qualified `0.15.2`; it is no longer source-only.
 A deterministic regression reproduces the failure class: after discovery advances, its stable
 public URL serves the exact previous signed catalog before serving the candidate.
 This does not establish which response caused the historical hosted error.

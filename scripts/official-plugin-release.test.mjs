@@ -168,10 +168,10 @@ test("reviewed source mappings copy interpreted modules without running author b
   assert.match(f.run().stderr, /extra source content/);
 });
 
-test("checked-in official policy hashes match actual sources without granting publication or tab approval", () => {
+test("checked-in official policy hashes match actual sources and approve no tab", () => {
   const policy = JSON.parse(readFileSync("plugins/release-policy.json"));
   assert.equal(policy.schema_version, 2);
-  assert.equal(policy.publication, "PENDING");
+  assert.equal(policy.publication, "APPROVED");
   assert.deepEqual(Object.keys(policy.plugins).sort(), [
     "provider-pi",
     "theme-ember",
