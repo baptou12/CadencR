@@ -23,6 +23,7 @@ impl StreamReaderState {
             last_provider_reconcile: Instant::now(),
             turn_state: StreamTurnState::new(),
             live_background_agents: HashSet::new(),
+            runtime_hold: Default::default(),
             message_seq: 0,
             received_prompt_message_uuids: Vec::new(),
             diagnostics: super::stream_diagnostics::StreamDiagnostics::new(),

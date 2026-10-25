@@ -22,6 +22,9 @@ import { notifyRateLimited, WS_RATE_LIMIT_RETRY_MS } from "@/lib/ws-reconnect";
 // LAST_USED_MODEL_SAVE_FAILED: the prompt itself went through; only
 // remembering its model for the next new conversation failed.
 const TOAST_ERROR_CODES = new Set(["MODE_NOT_SUPPORTED", "LAST_USED_MODEL_SAVE_FAILED"]);
+// RUNTIME_CHANGE_DEFERRED: not a failure — the prompt went through, but a
+// setting that needs a fresh runtime waits for the agent's background work.
+const TOAST_INFO_CODES = new Set(["RUNTIME_CHANGE_DEFERRED"]);
 const COMPACT_PRE_START_ERROR_CODES = new Set([
   "COMPACT_REJECTED",
   "SDK_SPAWN_ERROR",
@@ -39,6 +42,12 @@ export function handleError(ctx: StoreAccessors, sessionId: string, payload: unk
 
   if (p?.code && TOAST_ERROR_CODES.has(p.code) && p.message) {
     toast.error(p.message);
+    return;
+  }
+
+  if (p?.code && TOAST_INFO_CODES.has(p.code)) {
+    // Keyed by code so a repeat (one per prompt while it waits) replaces it.
+    toast.info(p.message, { id: p.code });
     return;
   }
 

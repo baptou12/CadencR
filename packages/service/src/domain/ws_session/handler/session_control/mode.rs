@@ -7,12 +7,15 @@ use super::super::helpers::{
     parse_permission_mode, parse_session_id, persist_and_close_query, provider_supports_mode,
     send_error,
 };
-use super::super::types::{QueryState, SdkSessions, WsSender};
+use super::super::types::{QueryState, SdkHandle, SdkSessions, WsSender};
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{
     RuntimeError, RuntimePermissionMode, RuntimeSessionHandle, RuntimeSpawnConfig,
 };
 use crate::domain::agents::permission_modes::permission_mode_wire;
+use crate::domain::ws_session::handler::session_prompt::runtime_hold_registry::{
+    notify_change_deferred, runtime_is_held,
+};
 
 /// Handle session.mode.set: change the permission mode and persist to DB.
 pub(crate) async fn handle_mode_set(
@@ -75,16 +78,19 @@ pub(crate) async fn handle_mode_set(
         QueryState::Pending(_) => None,
         QueryState::Active { query, .. } => Some(query.clone()),
     };
-    if let Some(query) = active_query {
-        if let Err(payload) =
-            apply_active_permission_mode(handle, query, db_session_id, new_mode, app_state).await
+    let applied = if let Some(query) = active_query {
+        match apply_active_permission_mode(handle, query, db_session_id, new_mode, app_state).await
         {
-            send_mode_set_error(sender, &envelope.id, payload);
-            return;
+            Ok(applied) => applied,
+            Err(payload) => {
+                send_mode_set_error(sender, &envelope.id, payload);
+                return;
+            }
         }
     } else {
         queue_pending_permission_mode(handle, new_mode);
-    }
+        ModeApplied::Live
+    };
     drop(sessions);
 
     // Persist to DB
@@ -105,6 +111,18 @@ pub(crate) async fn handle_mode_set(
         ModeChangedPayload { mode: payload.mode },
     )
     .await;
+    if matches!(applied, ModeApplied::Deferred) {
+        notify_change_deferred(sender, &envelope.id, &["permission mode"]);
+    }
+}
+
+/// How an active session took a permission-mode change.
+enum ModeApplied {
+    /// The live runtime switched (or was re-armed for the next prompt).
+    Live,
+    /// Enabling it needs a respawn, which would kill background work the
+    /// runtime still owes the agent; the next free prompt applies it.
+    Deferred,
 }
 
 fn parse_mode_set_payload(envelope: &WsEnvelope, sender: &WsSender) -> Option<ModeSetPayload> {
@@ -150,10 +168,22 @@ async fn apply_active_permission_mode(
     db_session_id: i64,
     new_mode: RuntimePermissionMode,
     app_state: &AppState,
-) -> Result<(), SessionErrorPayload> {
+) -> Result<ModeApplied, SessionErrorPayload> {
     if should_rearm_claude_bypass(handle, &new_mode, &app_state.read_pool).await {
+        if runtime_is_held(db_session_id, &query) {
+            // Re-arming closes the runtime, killing its background tasks and
+            // pending wake-up. Record the mode; the prompt-time respawn arms
+            // bypass once the runtime is free (`arm_claude_bypass_for_respawn`).
+            info!(
+                db_session_id,
+                "runtime owes a resume; deferring bypass re-arm"
+            );
+            handle.desired_permission_mode = Some(new_mode.clone());
+            handle.config.permission_mode = Some(new_mode);
+            return Ok(ModeApplied::Deferred);
+        }
         rearm_claude_bypass_session(handle, query, db_session_id, new_mode, app_state).await;
-        return Ok(());
+        return Ok(ModeApplied::Live);
     }
 
     let q = query.read().await;
@@ -167,7 +197,22 @@ async fn apply_active_permission_mode(
     // short-circuit (post_plan_mode.rs) reads stale state and
     // may skip the post-plan-approval transition.
     handle.spawned_permission_mode = Some(new_mode);
-    Ok(())
+    Ok(ModeApplied::Live)
+}
+
+/// Allow bypass on the next spawn when a deferred bypass re-arm is pending
+/// (see [`apply_active_permission_mode`]). Called right before every
+/// prompt-time respawn.
+pub(in crate::domain::ws_session::handler) async fn arm_claude_bypass_for_respawn(
+    handle: &mut SdkHandle,
+    pool: &sqlx::SqlitePool,
+) {
+    let Some(mode) = handle.desired_permission_mode.clone() else {
+        return;
+    };
+    if should_rearm_claude_bypass(handle, &mode, pool).await {
+        handle.config.allow_bypass_permissions = true;
+    }
 }
 
 async fn should_rearm_claude_bypass(

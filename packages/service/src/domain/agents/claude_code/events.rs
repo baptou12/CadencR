@@ -11,6 +11,7 @@ use token_usage::claude_token_usage;
 
 pub(super) fn normalize_event(msg: claude_agent_sdk_rs::SdkMessage) -> RuntimeEvent {
     let background_agent = super::background_agents::background_agent_signal(&msg);
+    let background_tasks = super::background_agents::background_task_count(&msg);
     let token_usage = claude_token_usage(&msg);
     let provider_message_id = match &msg {
         claude_agent_sdk_rs::SdkMessage::Assistant { message, .. } => Some(message.id.clone()),
@@ -29,11 +30,14 @@ pub(super) fn normalize_event(msg: claude_agent_sdk_rs::SdkMessage) -> RuntimeEv
 
     let (kind, result_error) = classify_message(msg);
 
-    RuntimeEvent::new(metadata, kind)
+    let event = RuntimeEvent::new(metadata, kind)
         .with_background_agent(background_agent)
+        .with_background_task_count(background_tasks)
         .with_result_error(result_error)
         .with_token_usage(token_usage)
-        .with_provider_message_id(provider_message_id)
+        .with_provider_message_id(provider_message_id);
+    let scheduled_wakeup = super::scheduled_wakeup::scheduled_wakeup(&event);
+    event.with_scheduled_wakeup(scheduled_wakeup)
 }
 
 #[cfg(test)]

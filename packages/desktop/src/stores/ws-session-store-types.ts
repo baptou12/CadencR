@@ -59,7 +59,14 @@ export interface WsSessionStore {
   forkNavigation: ForkNavigation | null;
 
   connect: (sessionId: string) => void;
+  /** Close the session's socket and stop its agent runtime. */
   disconnect: (sessionId: string) => void;
+  /**
+   * Close the session's socket but leave its agent runtime to the backend,
+   * which stops it once it is idle with no background task still running
+   * (a stopped runtime kills the task and the agent never resumes).
+   */
+  release: (sessionId: string) => void;
 
   send: (sessionId: string, envelope: WsEnvelope) => void;
   initSession: (sessionId: string, config: SessionConfig) => void;

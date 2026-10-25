@@ -5,7 +5,7 @@ use super::event_types::{
     BackgroundAgentSignal, RuntimeAssistantMessage, RuntimeCompactMetadata, RuntimeEvent,
     RuntimeEventKind, RuntimeEventMetadata, RuntimeInitEvent, RuntimeProviderError,
     RuntimeResultError, RuntimeStreamEvent, RuntimeStreamStatus, RuntimeTurnStartedSource,
-    RuntimeUserMessage,
+    RuntimeUserMessage, ScheduledWakeup,
 };
 use super::permission::RuntimeSlashCommand;
 
@@ -38,6 +38,8 @@ impl RuntimeEvent {
             metadata,
             kind,
             background_agent: None,
+            background_tasks: None,
+            scheduled_wakeup: None,
             result_error: None,
             token_usage: None,
             provider_message_id: None,
@@ -54,6 +56,28 @@ impl RuntimeEvent {
 
     pub fn background_agent_signal(&self) -> Option<&BackgroundAgentSignal> {
         self.background_agent.as_ref()
+    }
+
+    /// Attach a snapshot of how many background tasks the runtime still runs.
+    /// Used by adapters whose provider reports them (today only Claude Code).
+    pub fn with_background_task_count(mut self, live: Option<usize>) -> Self {
+        self.background_tasks = live;
+        self
+    }
+
+    pub fn background_task_count(&self) -> Option<usize> {
+        self.background_tasks
+    }
+
+    /// Attach an agent-scheduled wake-up. Used by adapters whose runtime can
+    /// re-invoke the agent on a timer (today only Claude Code).
+    pub fn with_scheduled_wakeup(mut self, wakeup: Option<ScheduledWakeup>) -> Self {
+        self.scheduled_wakeup = wakeup;
+        self
+    }
+
+    pub fn scheduled_wakeup(&self) -> Option<&ScheduledWakeup> {
+        self.scheduled_wakeup.as_ref()
     }
 
     /// Attach failure detail to a turn-ending `Result`. Used by adapters whose

@@ -12,29 +12,6 @@ fn bg(signal: BackgroundAgentSignal) -> RuntimeEvent {
         .with_background_agent(Some(signal))
 }
 
-fn result() -> RuntimeEvent {
-    RuntimeEvent::new(RuntimeEventMetadata::default(), RuntimeEventKind::Result)
-}
-
-async fn insert_running_session(app_state: &AppState, db_session_id: i64, feature_id: i64) {
-    sqlx::query(
-        "INSERT INTO agent_sessions (id, feature_id, agent_type, status) VALUES (?, ?, 'session', 'running')",
-    )
-    .bind(db_session_id)
-    .bind(feature_id)
-    .execute(&app_state.write_pool)
-    .await
-    .unwrap();
-}
-
-async fn db_status(app_state: &AppState, db_session_id: i64) -> String {
-    sqlx::query_scalar("SELECT status FROM agent_sessions WHERE id = ?")
-        .bind(db_session_id)
-        .fetch_one(&app_state.write_pool)
-        .await
-        .unwrap()
-}
-
 /// Drain until the reader closes the stream, returning every `ended` reason
 /// seen along the way. A `turn_complete` reason is what flips the frontend turn
 /// lifecycle to `terminal` (stopping the header timer); issue #58 requires it to
@@ -75,7 +52,7 @@ async fn result_keeps_session_running_while_background_agent_alive() {
         })))
         .await
         .unwrap();
-    msg_tx.send(Ok(result())).await.unwrap();
+    msg_tx.send(Ok(result_event())).await.unwrap();
     drop(msg_tx);
 
     spawn_test_stream_reader(
@@ -135,7 +112,7 @@ async fn result_goes_idle_once_the_background_agent_finishes() {
         bg(BackgroundAgentSignal::Finished {
             agent_id: "task-1".into(),
         }),
-        result(),
+        result_event(),
     ] {
         msg_tx.send(Ok(event)).await.unwrap();
     }

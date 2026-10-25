@@ -22,5 +22,6 @@ mod prompt;
 mod provider;
 mod stream_reader;
 mod stream_reader_background_agents;
+mod stream_reader_background_tasks;
 mod stream_reader_interruption;
 mod stream_reader_mcp;
