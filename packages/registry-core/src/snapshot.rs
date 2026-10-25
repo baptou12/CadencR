@@ -16,7 +16,7 @@ use io::{parse_document, read_file, validate_inputs};
 use output::{assemble_snapshot, digest};
 
 const CATALOG_LIMIT: u64 = crate::MAX_CATALOG_BYTES as u64;
-const KEY_LIMIT: u64 = 16 * 1024;
+use crate::safe_io::KEY_LIMIT;
 
 #[derive(Clone, Copy, Debug)]
 pub enum PreviousCatalog<'a> {

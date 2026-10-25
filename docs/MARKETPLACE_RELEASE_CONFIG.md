@@ -37,9 +37,10 @@ variable. This is not a public activation switch.
 Use the [operator runbook](../tooling/marketplace-registry/OPERATIONS.md)
 for renewal, failure alerts, revocation and rotation preparation. No real owner,
 alert destination or production trust root is provisioned by this repository.
-The registry template also carries an automatic, renewal-only catalog workflow
-(daily, renewing when due) and a read-only expiry watch (daily); see
-[Automatic catalog renewal and expiry watch](../tooling/marketplace-registry/OPERATIONS.md#automatic-catalog-renewal-and-expiry-watch).
+The registry template also carries an automatic, renewal-only workflow for the
+catalog and the three revocation policies (daily, renewing when due) and a read-only
+expiry watch (daily); see
+[Automatic catalog and policy renewal and expiry watch](../tooling/marketplace-registry/OPERATIONS.md#automatic-catalog-and-policy-renewal-and-expiry-watch).
 They are template files, not deployed, and inert until configured as described below.
 
 ## Activation gate
@@ -118,8 +119,11 @@ an error.
 
 The signing key and publication token are secrets of the protected
 `protected-marketplace-renewal` environment (distinct from the reviewed
-`protected-marketplace-publisher` environment). Only the catalog is renewed
-automatically; the revocation policies still need the manual procedures here.
+`protected-marketplace-publisher` environment). The catalog and the three
+revocation policies (provider, theme, custom tab) are renewed automatically while
+their entries are unchanged; changing a policy's entries and the first publication
+of a policy remain manual procedures here. All three policy URLs are required by
+the renewal as well as the watch.
 
 ## Current operational gaps
 
@@ -147,8 +151,9 @@ represented as public activation.
    ```
 
 3. A protected maintainer publishes the exact verified bytes to the reviewed
-   theme policy feed. The CLI commands above sign/verify locally; they do not
-   publish it, schedule renewal, assign ownership or authorize a remote write.
+   theme policy feed with `cadencr registry publish-policy --kind theme` (see
+   [Policy publication and renewal](#policy-publication-and-renewal)). The
+   sign/verify commands above work locally and publish nothing.
 4. Verify the policy on a supported packaged client. Matching identity, version
    or digest prevents installation, preview, activation, update and duplication;
    confirmed removal remains available. Stale, missing, corrupt or replayed policy
@@ -159,6 +164,62 @@ reject older generations and same-time conflicts. Never extend validity by
 replacing timestamps without a new signature or reinterpret a provider blocklist
 as a theme policy. An incident owner must decide whether an entire identity,
 version range or specific digest is blocked; automation does not make that decision.
+
+## Policy publication and renewal
+
+The provider, theme and custom tab policies share one command family. The provider
+policy is the closed document `{schema_version, generated_at, expires_at, entries}`
+(no `kind`; entries `provider_id`, optional `version_requirement`, optional lowercase
+`archive_sha256`, `reason`, sorted and unique, no explicit `null`), signed with the same key:
+
+```sh
+cadencr registry sign-provider-blocklist --payload reviewed-provider-policy.json \
+  --private-key /protected/signing.pem --key-id reviewed-key-id \
+  --output new-signed-provider-policy.json
+cadencr registry verify-provider-blocklist --index new-signed-provider-policy.json \
+  --public-key reviewed-public.pem --key-id reviewed-key-id
+```
+
+Each policy lives at one fixed path on the discovery branch: provider
+`managed-blocklist.json`, theme `managed-theme-blocklist.json`, tab
+`managed-tab-blocklist.json` (the `*_BLOCKLIST_URL` pins above point at them).
+
+**Renew** (the routine, automated case): same entries, strictly newer generation, later
+expiry inside the 14-day maximum. The current policy must authenticate with the pinned
+public key; an expired one is accepted if it is correctly signed. The result is verified
+again before it is written, and the command refuses a kind that does not match the
+document, a signing key other than the pinned one, and an existing output file.
+
+```sh
+cadencr registry renew-policy --kind provider|theme|tab --current current-signed.json \
+  --public-key reviewed-public.pem --key-id reviewed-key-id \
+  --private-key /protected/signing.pem --expires-at 2026-11-08T00:00:00Z \
+  --output renewed-signed.json
+```
+
+**Publish** (token in `CADENCR_REGISTRY_GITHUB_TOKEN`, never on the command line):
+
+```sh
+cadencr registry publish-policy --kind provider|theme|tab --signed renewed-signed.json \
+  --repository <owner>/<repository> --discovery-branch marketplace-v2 \
+  --public-key reviewed-public.pem --key-id reviewed-key-id [--bootstrap | --renewal] [--receipt receipt.json]
+```
+
+The candidate must be current and authenticate; the policy already on the branch must
+authenticate (expired is fine) and be strictly older, otherwise the command refuses
+(no rollback, no same-time replacement). With no file on the branch, `--bootstrap` is
+required, and `--bootstrap` is refused when the file exists. The update is one
+conditional write of that single path (a concurrent change makes it fail, never
+overwrite), a lost response is reconciled by reading the branch back, and the public
+raw URL is then read without credentials until it serves exactly the candidate.
+`--receipt` writes a small JSON record of the verified result.
+
+`--renewal` is what the unattended workflow passes: the published policy must carry
+exactly the candidate's entries (only the window may differ), otherwise the command
+refuses, so a renewal built from a stale baseline cannot drop a revocation published
+since. `cadencr registry fetch-policy` reads the branch head through the authenticated
+API (not the CDN) for the baseline. The provider policy must fit the 1 MiB the desktop
+service downloads in total, so its signed payload is capped slightly below that.
 
 ## Root-authorized trust generations
 
@@ -348,8 +409,9 @@ A stolen or lost laptop with an unlocked Keychain is a suspected compromise.
   offline with a visible diagnostic. New remote preview/install/update fails with
   `MANAGED_THEME_POLICY_OFFLINE` until an online policy check succeeds.
 - Missing, invalid, expired or revoked policy fails closed for theme usage;
-  confirmed removal remains available. Feed renewal and incident ownership are
-  still release-owner operational responsibilities.
+  confirmed removal remains available. Renewal of an unchanged policy is automated
+  by the registry's renewal workflow (about every five days, with 13-day windows);
+  incident ownership and entry changes remain release-owner responsibilities.
 
 ## Custom tab revocation
 

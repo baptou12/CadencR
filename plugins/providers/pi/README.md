@@ -165,17 +165,17 @@ and registry submission remain separate steps.
 The launcher requires Node on PATH and a separately installed Pi CLI. The audited
 Pi version is `0.85.1`; fixture tests do not establish live upstream compatibility.
 Do not advertise a platform until its extracted payload passes host conformance.
-The current shebang launcher is POSIX-oriented; Windows requires a separately
-verified launcher. No runtime dependencies or credentials are bundled.
+The `#!/usr/bin/env node` launcher is POSIX-portable (macOS and Linux); Windows
+requires a separately verified launcher. No runtime dependencies or credentials are bundled.
 
 `pnpm --filter @cadencr/pi-provider smoke` starts real Pi for prompt-free discovery/session checks. Live and
 resume QA additionally send billable prompts and require explicit opt-in.
 
 The candidate pins Pi `0.85.1` because its installed protocol sources were
-reviewed. Historical extracted-payload checks on macOS arm64 exercised actual Pi
-against an isolated loopback model and the local-descriptor generic host. They
-qualify that recorded protocol scope, not a newer archive, x86_64, managed
-installation, external-model authentication or every feature in the mapping. JSONL frames are limited to 16 MiB of UTF-8
+reviewed. Extracted-payload checks exercised actual Pi against an isolated loopback
+model (and, historically on macOS arm64, the local-descriptor generic host). They
+qualify that recorded protocol scope on the recorded OS and architecture only, not
+managed installation, external-model authentication or every feature in the mapping. JSONL frames are limited to 16 MiB of UTF-8
 bytes per frame, accommodating substantial base64 image inputs while bounding
 unterminated input. Larger image frames must be resized or rejected.
 
@@ -202,10 +202,10 @@ node plugins/providers/pi/scripts/prepare-candidate.mjs \
   --directory /absolute/existing-parent/new-candidate
 ```
 
-- Every option is required. Only explicit `darwin-aarch64` or `darwin-x86_64`
-  **candidate** targets are accepted; preparation itself does not qualify either.
-  Historical arm64 protocol evidence is recorded separately; x86_64 is unqualified.
-  Linux remains a CI host, not an application target. Windows is not prepared.
+- Every option is required. Only an explicit `darwin-aarch64`, `darwin-x86_64`,
+  `linux-aarch64` or `linux-x86_64` **candidate** target is accepted; preparation
+  itself qualifies none of them (see `scripts/qualify-native.mjs` and the evidence
+  table above). Windows is not prepared.
 - `external-node-pi` preserves the current launcher, Node range and separately
   installed Pi `0.85.1` prerequisites; it does not select or approve a future
   native/self-contained distribution policy.
@@ -307,21 +307,60 @@ external runtime requirements and per-target evidence boundaries. Preparation
 verifies those digests and prerequisites against committed Git blobs. It is a
 review aid, not an approval or a replacement for canonical CLI validation.
 
-| Item            | Reviewed source fact                                                                        | Boundary                                                                                |
-| --------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Connector       | Package and retained `LICENSE` declare Apache-2.0; runtime has no npm dependencies          | License-file presence is not an authorship/legal attestation                            |
-| Artwork         | Original `icon.svg` uses a rounded rectangle, orthogonal connector and three circular nodes | Created during source maintenance; Apache-2.0; not upstream Pi branding                 |
-| Runtime         | External Node.js `>=22.19.0 <23.0.0` and Pi `0.85.1`                                        | Neither runtime, credentials nor model access is bundled                                |
-| macOS arm64     | Recorded extracted candidate passed native loopback and local-descriptor protocol checks    | Exact historical source/archive are in the manifest; managed admission remains separate |
-| macOS x86_64    | Explicit portable preparation target                                                        | No native x86_64 execution is recorded                                                  |
-| Linux / Windows | Not prepared application targets                                                            | Linux CI does not imply application support; Windows needs a verified launcher          |
+| Item         | Reviewed source fact                                                                        | Boundary                                                                               |
+| ------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Connector    | Package and retained `LICENSE` declare Apache-2.0; runtime has no npm dependencies          | License-file presence is not an authorship/legal attestation                           |
+| Artwork      | Original `icon.svg` uses a rounded rectangle, orthogonal connector and three circular nodes | Created during source maintenance; Apache-2.0; not upstream Pi branding                |
+| Runtime      | External Node.js `>=22.19.0 <23.0.0` and Pi `0.85.1`                                        | Neither runtime, credentials nor model access is bundled                               |
+| macOS arm64  | Native loopback qualified on a real Apple Silicon Mac (extracted archive, actual Pi)        | Declared in the template; managed admission remains separate                           |
+| Linux arm64  | Native loopback qualified in an arm64 Linux container on a native arm64 kernel (actual Pi)  | Declared in the template; container evidence is not a bare-metal or packaged-app check |
+| macOS x86_64 | Prepared; hosted-runner qualification pending                                               | Not declared until the hosted workflow passes on an Intel macOS runner                 |
+| Linux x86_64 | Prepared; hosted-runner qualification pending                                               | Not declared until the hosted workflow passes on an x86_64 Linux runner                |
+| Windows      | Not prepared                                                                                | Needs a verified launcher                                                              |
+
+Evidence, exact commands and digests are in
+[`docs/qa/MARKETPLACE_PI_PLATFORMS_2026_10_25.md`](../../../docs/qa/MARKETPLACE_PI_PLATFORMS_2026_10_25.md).
+The payload is the same bytes for every target (a JavaScript connector run by the
+host's own Node), so a target is declared only after its own OS and architecture ran
+the native loopback test: `scripts/qualify-native.mjs` refuses a run unless this Node
+build's platform and architecture equal the target (and, as extra guards, macOS is not
+translating the process under Rosetta and the Linux `uname -m` matches), and
+`--environment hosted` additionally requires the GitHub runner variables for that
+target. These are guards against operator mistakes, not attestations; the manually
+dispatched
+`pi-provider-qualification` workflow produces the remaining runner evidence.
+
+To qualify the machine you are on (Node `>=22.19.0 <23.0.0`, Pi `0.85.1` installed, the
+reviewed `cadencr` CLI checksum known; no credentials or network model are used):
+
+```sh
+node plugins/providers/pi/scripts/qualification-input.mjs \
+  --target <this-machine-target> --output /absolute/new/input.json
+node plugins/providers/pi/scripts/prepare-candidate.mjs \
+  --source-commit <full-clean-HEAD-commit> --candidate-target <this-machine-target> \
+  --runtime external-node-pi --package /absolute/new/input.json \
+  --cli /absolute/reviewed/cadencr --cli-sha256 <sha256> --directory /absolute/new/candidate
+node plugins/providers/pi/scripts/qualify-native.mjs \
+  --target <this-machine-target> --archive /absolute/new/candidate/pi-0.4.0-<target>.tar.gz \
+  --pi "$(command -v pi)" --environment local|container|hosted \
+  --evidence /absolute/new/evidence.json
+```
+
+The evidence file records the extracted payload digests, versions, host OS/arch and
+loopback result without local paths, and the scratch directory is removed after a
+pass (kept and named after a failure). `container` evidence (a Linux container on a
+Mac) is recorded as such and never as hosted or bare-metal evidence.
 
 [`package-template.json`](package-template.json) fixes the discriminated provider
 kind, Pi identity, source repository, Apache declaration, executable and assets.
-Only the arm64 candidate is included in that source-owned template. Its publisher,
-minimum app version and archive destination are deliberately `PENDING`, so it is
-**not a valid publishable package**. The release preparer supplies a source-tag-bound
-archive URL only after a reviewed release policy selects the target/payload.
+Only targets whose native loopback qualification passed (`darwin-aarch64` and
+`linux-aarch64` today) appear in that source-owned template's `distribution.binary`;
+the marketplace filters packages by the user's platform, so there is no fixed matrix.
+Its publisher is the official `cadencr` publisher and its first compatible desktop is
+`0.15.0`. The archive URL and digest stay `PENDING` placeholders and publication stays
+closed, so it is **not yet a published package**. The release preparer supplies a
+source-tag-bound archive URL only after a reviewed release policy selects the
+target/payload.
 
 The local candidate command still accepts the inner legacy `{agent, host}` object,
 not the discriminated template wrapper. An operator must explicitly select one

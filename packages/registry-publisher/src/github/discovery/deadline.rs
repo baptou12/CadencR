@@ -1,9 +1,12 @@
 use super::*;
 
 impl GitHubClient {
-    pub(super) fn read_discovery(
+    /// The blob of `file` on `branch`, resolved through the branch's commit
+    /// tree so every request is pinned to one commit.
+    pub(super) fn read_discovery_file(
         &self,
         branch: &str,
+        file: &str,
         deadline: Option<Instant>,
     ) -> Result<Option<DiscoveryHead>, PublisherError> {
         validate_discovery_branch(branch)?;
@@ -21,7 +24,7 @@ impl GitHubClient {
             &format!("/repos/{}/git/trees/{tree_sha}", self.repository),
             deadline,
         )?;
-        let Some(entry) = tree.validate(&tree_sha)? else {
+        let Some(entry) = tree.validate(&tree_sha, file)? else {
             return Ok(None);
         };
         // Contents responses omit base64 data above 1 MiB; pin the Git blob
@@ -31,16 +34,16 @@ impl GitHubClient {
                 &format!("/repos/{}/git/blobs/{}", self.repository, entry.sha),
                 deadline,
             )?;
-            return blob.validate(&entry).map(Some);
+            return blob.validate(&entry, file).map(Some);
         }
         let content: RawContent = self.request.get_with_deadline(
             &format!(
-                "/repos/{}/contents/{DISCOVERY_FILENAME}?ref={commit_sha}",
+                "/repos/{}/contents/{file}?ref={commit_sha}",
                 self.repository
             ),
             deadline,
         )?;
-        content.validate(&entry).map(Some)
+        content.validate(&entry, file).map(Some)
     }
 }
 

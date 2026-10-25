@@ -88,6 +88,8 @@ pub(crate) enum RegistryCommand {
     Diagnostics(crate::metadata::MetadataCommand),
     #[command(flatten)]
     TabBackend(TabBackendCommand),
+    #[command(flatten)]
+    Policy(crate::policy::PolicyCommand),
     /// Validate a candidate contribution relative to a base registry.
     Validate {
         #[arg(long)]
@@ -215,28 +217,6 @@ pub(crate) enum RegistryCommand {
         root_key_id: String,
         #[arg(long, default_value_t = 1)]
         minimum_generation: u64,
-    },
-    /// Sign a domain-bound theme revocation policy.
-    SignThemeBlocklist {
-        #[arg(long)]
-        payload: PathBuf,
-        #[arg(long)]
-        private_key: PathBuf,
-        #[arg(long)]
-        key_id: String,
-        #[arg(long)]
-        output: PathBuf,
-    },
-    /// Verify a domain-bound signed theme revocation policy.
-    VerifyThemeBlocklist {
-        #[arg(long)]
-        index: PathBuf,
-        #[arg(long)]
-        public_key: PathBuf,
-        #[arg(long)]
-        key_id: String,
-        #[arg(long)]
-        allow_expired: bool,
     },
     /// Join a validated canonical payload and detached signature document.
     AssembleSignedIndex {

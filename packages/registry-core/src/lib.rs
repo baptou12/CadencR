@@ -30,9 +30,16 @@ pub use marketplace_types::{
 mod json;
 mod package;
 mod pipeline_preflight;
+mod policy;
+pub use policy::{authenticate_policy, AuthenticatedPolicy, PolicyKind};
+mod policy_renewal;
+pub use policy_renewal::{renew_policy, RenewPolicyRequest};
+mod provider_blocklist;
 mod publication_plan;
 mod release_archive;
 mod reserved_publisher;
+#[cfg(test)]
+mod test_keys;
 pub use release_archive::{parse_github_release_archive_url, GitHubReleaseArchive};
 mod safe_io;
 mod signing;
@@ -85,8 +92,8 @@ pub use catalog::{
     PreparedSigningPayload,
 };
 pub use discovery::{
-    assess_discovery_head, discovery_url, validate_discovery_branch, DISCOVERY_FILENAME,
-    MAX_DISCOVERY_BYTES,
+    assess_discovery_head, discovery_object_url, discovery_url, validate_discovery_branch,
+    DISCOVERY_FILENAME, MAX_DISCOVERY_BYTES,
 };
 pub use error::RegistryError;
 pub use index::build_index;
@@ -318,10 +325,7 @@ fn validate_collisions(candidate: &Tree, errors: &mut Diagnostics) {
     }
 }
 
-pub use signing::{
-    sign_tab_blocklist, sign_theme_blocklist, verify_signed_tab_blocklist,
-    verify_signed_theme_blocklist,
-};
+pub use signing::{sign_policy, verify_policy};
 
 #[cfg(test)]
 mod tests {

@@ -11,14 +11,11 @@ use crate::index::{validate_fresh_window, validate_index};
 use crate::json::{canonical_json_bytes, parse_json};
 use crate::marketplace::Rules;
 use crate::package::valid_identifier;
-use crate::safe_io::read_bounded_regular;
+use crate::safe_io::{read_bounded_regular, KEY_LIMIT};
 use crate::PreparedSigningPayload;
 
 mod blocklist;
-pub use blocklist::{
-    sign_tab_blocklist, sign_theme_blocklist, verify_signed_tab_blocklist,
-    verify_signed_theme_blocklist,
-};
+pub use blocklist::{sign_policy, verify_policy};
 mod envelope;
 mod payload;
 pub(crate) use envelope::{read_signing_key, sign_canonical_payload};
@@ -27,7 +24,6 @@ pub use payload::validate_signing_key_id;
 pub(crate) use payload::validate_signing_payload;
 
 const DOCUMENT_LIMIT: u64 = crate::MAX_CATALOG_BYTES as u64;
-const KEY_LIMIT: u64 = 16 * 1024;
 
 pub fn sign_index(
     payload_file: &Path,
@@ -250,7 +246,7 @@ fn decode_signature(signature: &Map<String, Value>) -> Result<Signature, Registr
     Signature::from_slice(&bytes).map_err(|_| signature_encoding_error())
 }
 
-fn reject_unknown(
+pub(crate) fn reject_unknown(
     object: &Map<String, Value>,
     allowed: &[&str],
     label: &str,
@@ -269,7 +265,7 @@ fn read_json(path: &Path, limit: u64, label: &str) -> Result<Value, RegistryErro
     parse_json(&bytes).map_err(|_| RegistryError::single(format!("{label} must be valid JSON")))
 }
 
-fn read_file(path: &Path, limit: u64, label: &str) -> Result<Vec<u8>, RegistryError> {
+pub(crate) fn read_file(path: &Path, limit: u64, label: &str) -> Result<Vec<u8>, RegistryError> {
     read_bounded_regular(path, limit)
         .map_err(|error| RegistryError::single(format!("cannot read {label}: {error}")))
 }

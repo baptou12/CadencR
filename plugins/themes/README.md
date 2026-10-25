@@ -125,10 +125,11 @@ license/source facts are not a legal attestation of authorship or human approval
 
 The discriminated templates in [`package-templates`](package-templates/) fix the
 known `theme` kind, identity/version, descriptions, source repository, license and
-`document_version: 1`. Publisher, minimum app version and public archive URL remain
-explicit `PENDING` values rather than invented authority or compatibility. These
-are intentionally invalid publication inputs until reviewed and completed; release
-preparation derives immutable source-tag-bound archive URLs from approved policy.
+`document_version: 1`. The publisher is the official `cadencr` publisher and the
+first compatible desktop is `0.15.0` (release-owner decisions, 2026-10-25). The public
+archive URL and digest remain explicit `PENDING` placeholders rather than invented
+values; release preparation derives immutable source-tag-bound archive URLs from
+approved policy, and publication itself stays closed.
 
 Templates, readiness data, README and LICENSE remain outside the distribution
 folders. Each archive must still contain only `theme.json`; the root license is

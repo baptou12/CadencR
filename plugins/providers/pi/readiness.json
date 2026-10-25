@@ -29,12 +29,22 @@
   "targets": {
     "darwin-aarch64": {
       "preparation": "external-node-pi-candidate",
-      "evidence": "historical-native-protocol-and-local-descriptor",
+      "evidence": "native-loopback-qualified-local",
       "managed_installation": "not-qualified"
     },
     "darwin-x86_64": {
       "preparation": "external-node-pi-candidate",
-      "evidence": "not-qualified",
+      "evidence": "pending-hosted-run",
+      "managed_installation": "not-qualified"
+    },
+    "linux-aarch64": {
+      "preparation": "external-node-pi-candidate",
+      "evidence": "native-loopback-qualified-container",
+      "managed_installation": "not-qualified"
+    },
+    "linux-x86_64": {
+      "preparation": "external-node-pi-candidate",
+      "evidence": "pending-hosted-run",
       "managed_installation": "not-qualified"
     }
   },
@@ -51,7 +61,7 @@
     "record": "plugins/providers/pi/README.md",
     "authority": "historical-local-source-record-not-verified-upstream"
   },
-  "not_prepared_targets": ["linux-aarch64", "linux-x86_64", "windows-aarch64", "windows-x86_64"],
+  "not_prepared_targets": ["windows-aarch64", "windows-x86_64"],
   "working_tree_protocol_evidence": {
     "date": "2026-10-23",
     "target": "darwin-aarch64",
@@ -67,5 +77,34 @@
     "uses_personal_credentials": false,
     "managed_installation": "not-qualified",
     "exact_committed_candidate": "pending"
+  },
+  "native_loopback_qualification": {
+    "date": "2026-10-25",
+    "report": "docs/qa/MARKETPLACE_PI_PLATFORMS_2026_10_25.md",
+    "source_identity": "uncommitted-working-tree-snapshot-bound-by-executable-payload-digest",
+    "executable_payload_sha256sums_digest": "2a3728dacebd01f1c9e8fd725ac1fb114a08e0939b0010efb8ef22e614e1e485",
+    "executable_payload_scope": "bin/* lines of the packager SHA256SUMS (src/ built by scripts/build.mjs); README, LICENSE and icon are covered by their own readiness digests or are documentation",
+    "runtime": {
+      "node": "22.19.0",
+      "pi": "0.85.1"
+    },
+    "method": "canonical-cli-pack-extract-native-loopback-on-host-os-and-arch",
+    "payload_identical_across_targets": true,
+    "passed": {
+      "darwin-aarch64": {
+        "environment": "local",
+        "host": "apple-silicon-macos-27.0.1"
+      },
+      "linux-aarch64": {
+        "environment": "container",
+        "host": "debian-12-container-in-docker-desktop-linuxkit-vm",
+        "kernel": "6.12.76-linuxkit",
+        "cpu_execution": "native-arm64-linux-kernel-not-emulated",
+        "hosted_arm64_runner_evidence": "pending"
+      }
+    },
+    "pending_hosted_run": ["darwin-x86_64", "linux-x86_64"],
+    "uses_personal_credentials": false,
+    "managed_installation": "not-qualified"
   }
 }

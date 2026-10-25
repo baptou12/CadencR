@@ -6,7 +6,7 @@ use sha1::{Digest as _, Sha1};
 use super::super::validation::error;
 use super::DiscoveryHead;
 use crate::PublisherError;
-use cadencr_registry_core::{DISCOVERY_FILENAME, MAX_DISCOVERY_BYTES};
+use cadencr_registry_core::MAX_DISCOVERY_BYTES;
 
 #[derive(Deserialize)]
 struct RawObject {
@@ -71,7 +71,11 @@ pub(super) struct RawTreeEntry {
 }
 
 impl RawTree {
-    pub(super) fn validate(self, expected: &str) -> Result<Option<RawTreeEntry>, PublisherError> {
+    pub(super) fn validate(
+        self,
+        expected: &str,
+        file: &str,
+    ) -> Result<Option<RawTreeEntry>, PublisherError> {
         if self.sha != expected || self.truncated {
             return Err(error("GitHub discovery tree response is malformed"));
         }
@@ -80,7 +84,7 @@ impl RawTree {
                 .as_object()
                 .and_then(|object| object.get("path"))
                 .and_then(serde_json::Value::as_str)
-                == Some(DISCOVERY_FILENAME)
+                == Some(file)
         });
         let Some(entry_value) = matches.next() else {
             return Ok(None);
@@ -110,17 +114,21 @@ pub(super) struct RawBlob {
 }
 
 impl RawBlob {
-    pub(super) fn validate(self, expected: &RawTreeEntry) -> Result<DiscoveryHead, PublisherError> {
+    pub(super) fn validate(
+        self,
+        expected: &RawTreeEntry,
+        file: &str,
+    ) -> Result<DiscoveryHead, PublisherError> {
         RawContent {
             kind: "file".into(),
-            path: DISCOVERY_FILENAME.into(),
-            name: DISCOVERY_FILENAME.into(),
+            path: file.into(),
+            name: file.into(),
             encoding: self.encoding,
             sha: self.sha,
             size: self.size,
             content: self.content,
         }
-        .validate(expected)
+        .validate(expected, file)
     }
 }
 
@@ -140,10 +148,11 @@ impl RawContent {
     pub(super) fn validate(
         &self,
         expected: &RawTreeEntry,
+        file: &str,
     ) -> Result<DiscoveryHead, PublisherError> {
         if self.kind != "file"
-            || self.path != DISCOVERY_FILENAME
-            || self.name != DISCOVERY_FILENAME
+            || self.path != file
+            || self.name != file
             || self.encoding != "base64"
             || !valid_sha(&self.sha)
             || self.sha != expected.sha
@@ -185,6 +194,7 @@ pub(super) fn valid_sha(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadencr_registry_core::DISCOVERY_FILENAME;
 
     fn blob(bytes: &[u8]) -> String {
         let mut hash = Sha1::new();
@@ -218,12 +228,18 @@ mod tests {
     fn content_requires_canonical_base64_and_matching_git_blob() {
         let bytes = b"catalog\n";
         let expected = entry(bytes);
-        assert_eq!(content(bytes).validate(&expected).unwrap().bytes, bytes);
+        assert_eq!(
+            content(bytes)
+                .validate(&expected, DISCOVERY_FILENAME)
+                .unwrap()
+                .bytes,
+            bytes
+        );
         assert!(RawContent {
             content: "YQ===\n".into(),
             ..content(bytes)
         }
-        .validate(&expected)
+        .validate(&expected, DISCOVERY_FILENAME)
         .is_err());
     }
 
@@ -269,7 +285,7 @@ mod tests {
                 tree: vec![valid.clone(), valid.clone()],
             },
         ] {
-            assert!(tree.validate(&sha).is_err());
+            assert!(tree.validate(&sha, DISCOVERY_FILENAME).is_err());
         }
         for (mode, kind, size) in [
             ("120000", "blob", 0),
@@ -282,7 +298,7 @@ mod tests {
                 truncated: false,
                 tree: vec![value]
             }
-            .validate(&sha)
+            .validate(&sha, DISCOVERY_FILENAME)
             .is_err());
         }
         let invalid_sha = serde_json::json!({"path":DISCOVERY_FILENAME,"mode":"100644","type":"blob","sha":"A".repeat(40),"size":0});
@@ -291,7 +307,7 @@ mod tests {
             truncated: false,
             tree: vec![invalid_sha]
         }
-        .validate(&sha)
+        .validate(&sha, DISCOVERY_FILENAME)
         .is_err());
         for mode in ["100644", "100755"] {
             let value = serde_json::json!({"path":DISCOVERY_FILENAME,"mode":mode,"type":"blob","sha":sha,"size":0});
@@ -300,7 +316,7 @@ mod tests {
                 truncated: false,
                 tree: vec![value]
             }
-            .validate(&sha)
+            .validate(&sha, DISCOVERY_FILENAME)
             .unwrap()
             .is_some());
         }
@@ -336,7 +352,7 @@ mod tests {
                 ..content(bytes)
             },
         ] {
-            assert!(invalid.validate(&expected).is_err());
+            assert!(invalid.validate(&expected, DISCOVERY_FILENAME).is_err());
         }
         for encoded in ["YR==", "YQ==\r", "Y Q==", "YQ"] {
             assert!(
@@ -344,7 +360,7 @@ mod tests {
                     content: encoded.into(),
                     ..content(bytes)
                 }
-                .validate(&expected)
+                .validate(&expected, DISCOVERY_FILENAME)
                 .is_err(),
                 "{encoded:?}"
             );
@@ -353,12 +369,12 @@ mod tests {
             content: "Y\nQ==\n".into(),
             ..content(bytes)
         }
-        .validate(&expected)
+        .validate(&expected, DISCOVERY_FILENAME)
         .is_ok());
         let non_utf8 = [0xff];
         assert_eq!(
             content(&non_utf8)
-                .validate(&entry(&non_utf8))
+                .validate(&entry(&non_utf8), DISCOVERY_FILENAME)
                 .unwrap()
                 .bytes,
             non_utf8
@@ -366,7 +382,7 @@ mod tests {
         let boundary = vec![b'x'; MAX_DISCOVERY_BYTES];
         assert_eq!(
             content(&boundary)
-                .validate(&entry(&boundary))
+                .validate(&entry(&boundary), DISCOVERY_FILENAME)
                 .unwrap()
                 .bytes
                 .len(),
@@ -379,7 +395,7 @@ mod tests {
             ..entry(bytes)
         };
         assert!(wrong_hash
-            .validate(&metadata)
+            .validate(&metadata, DISCOVERY_FILENAME)
             .unwrap_err()
             .to_string()
             .contains("blob hash"));

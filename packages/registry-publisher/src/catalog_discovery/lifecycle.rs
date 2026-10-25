@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::github::discovery::{DiscoveryClient, DiscoveryHead, SetDiscoveryRequest};
+use crate::github::discovery::{write, DiscoveryClient, DiscoveryHead, SetDiscoveryRequest};
 use crate::github::ReleaseClient;
 use crate::{Downloader, PublisherError};
 
@@ -195,20 +195,20 @@ fn set_or_reconcile(
     branch: &str,
     original: Option<&DiscoveryHead>,
 ) -> Result<DiscoveryHead, PublisherError> {
-    let request = SetDiscoveryRequest::builder()
-        .branch(branch)
-        .bytes(snapshot.canonical_envelope())
-        .maybe_expected_sha(original.map(|head| head.sha.as_str()))
-        .build();
-    match client.set_discovery(request) {
-        Ok(()) => client
-            .get_discovery(branch)?
-            .ok_or_else(|| PublisherError::new("discovery does not contain the candidate")),
-        Err(primary) => match client.get_discovery(branch)? {
-            Some(winner) if winner.bytes == snapshot.canonical_envelope() => Ok(winner),
-            _ => Err(primary),
+    write::set_or_reconcile(
+        snapshot.canonical_envelope(),
+        "discovery",
+        || {
+            client.set_discovery(
+                SetDiscoveryRequest::builder()
+                    .branch(branch)
+                    .bytes(snapshot.canonical_envelope())
+                    .maybe_expected_sha(original.map(|head| head.sha.as_str()))
+                    .build(),
+            )
         },
-    }
+        || client.get_discovery(branch),
+    )
 }
 
 #[cfg(test)]

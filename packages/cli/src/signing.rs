@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use cadencr_registry_core::PolicyKind;
+
 use crate::{operation_error, output, Diagnostic};
 
 pub(crate) fn sign(
@@ -63,35 +65,15 @@ pub(crate) fn catalog(args: &crate::args::SignCatalogArgs) -> Result<Option<Stri
     )))
 }
 
-/// The revocation feed a blocklist command signs or verifies.
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum BlocklistKind {
-    Theme,
-    Tab,
-}
-
-impl BlocklistKind {
-    fn name(self) -> &'static str {
-        match self {
-            BlocklistKind::Theme => "theme",
-            BlocklistKind::Tab => "tab",
-        }
-    }
-}
-
 pub(crate) fn sign_blocklist(
-    kind: BlocklistKind,
+    kind: PolicyKind,
     payload: &Path,
     private_key: &Path,
     key_id: &str,
     destination: &Path,
 ) -> Result<Option<String>, Diagnostic> {
     output::validate_new_output(destination)?;
-    let sign = match kind {
-        BlocklistKind::Theme => cadencr_registry_core::sign_theme_blocklist,
-        BlocklistKind::Tab => cadencr_registry_core::sign_tab_blocklist,
-    };
-    let bytes = sign(payload, private_key, key_id)
+    let bytes = cadencr_registry_core::sign_policy(kind, payload, private_key, key_id)
         .map_err(|error| operation_error("REGISTRY_SIGNING_FAILED", error))?;
     output::write_bytes(&bytes, Some(destination))?;
     Ok(Some(format!(
@@ -102,17 +84,13 @@ pub(crate) fn sign_blocklist(
 }
 
 pub(crate) fn verify_blocklist(
-    kind: BlocklistKind,
+    kind: PolicyKind,
     index: &Path,
     public_key: &Path,
     key_id: &str,
     allow_expired: bool,
 ) -> Result<Option<String>, Diagnostic> {
-    let verify = match kind {
-        BlocklistKind::Theme => cadencr_registry_core::verify_signed_theme_blocklist,
-        BlocklistKind::Tab => cadencr_registry_core::verify_signed_tab_blocklist,
-    };
-    verify(index, public_key, key_id, allow_expired)
+    cadencr_registry_core::verify_policy(kind, index, public_key, key_id, allow_expired)
         .map_err(|error| operation_error("REGISTRY_VERIFICATION_FAILED", error))?;
     Ok(Some(format!(
         "verified signed {} blocklist: {}",

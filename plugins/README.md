@@ -67,13 +67,13 @@ repository; the marketplace stays hidden until a later activation decision.
 
 ## Source/package readiness
 
-| Source | Machine-readable facts                                                                                                                                  | Source-owned package inputs                                                                                                                              |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pi     | [`providers/pi/readiness.json`](providers/pi/readiness.json): license/artwork digests, external runtimes, scoped arm64 evidence and unqualified targets | [`package-template.json`](providers/pi/package-template.json): fixed provider identity/assets; unresolved publisher, compatibility floor and destination |
-| Themes | [`themes/readiness.json`](themes/readiness.json): exact source/license/archive digests and visual-evidence boundary                                     | [`package-templates`](themes/package-templates/): three fixed identities and document version; unresolved publication inputs                             |
+| Source | Machine-readable facts                                                                                                                               | Source-owned package inputs                                                                                                                                                                  |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pi     | [`providers/pi/readiness.json`](providers/pi/readiness.json): license/artwork digests, external runtimes, per-target native loopback evidence states | [`package-template.json`](providers/pi/package-template.json): fixed provider identity/assets, publisher `cadencr`, `min_app_version` `0.15.0`; archive URL/digest and publication `PENDING` |
+| Themes | [`themes/readiness.json`](themes/readiness.json): exact source/license/archive digests and visual-evidence boundary                                  | [`package-templates`](themes/package-templates/): three fixed identities and document version, publisher `cadencr`, `min_app_version` `0.15.0`; archive `PENDING`                            |
 
 These documents distinguish source facts and historical qualification from
 current-artifact approval. They neither bundle Node/Pi nor invent artwork rights,
-a production publisher, compatibility version, signing authority or publication.
+signing authority or publication.
 The shared canonical CLI remains responsible for schema/archive validation;
 trusted release jobs consume reviewed Git data, not candidate build scripts.

@@ -57,12 +57,21 @@ receipt, **not** a substitute for registry-consumable package metadata. CLI logs
 local paths, environment and private scratch are excluded. Namespaced source-tag
 URLs are canonical encoded GitHub Release URLs validated by shared Rust rules.
 
-The source templates record known identity/license/runtime facts, while genuine
-undecided publisher/minimum-app-version fields remain `PENDING`. Thus source
-mapping is operational and inert fixtures exercise all kinds, but current
-production templates intentionally fail Rust publication validation until those
-separate decisions are made. Do not invent compatibility versions to make a job
-pass. Likewise, this change cannot promote a binary that lacks these CLI rules.
+The source templates record known identity/license/runtime facts. The release
+owner decided the official publisher (`cadencr`) and the first compatible desktop
+(`min_app_version` `0.15.0`) on 2026-10-25; both are now in every template. Archive
+URLs and digests remain `PENDING` placeholders (the preparer derives the real values
+from the tag) and `publication` remains `PENDING`, so a production job still cannot
+publish until that separate gate is approved. Do not invent compatibility versions
+to make a job pass. Likewise, this change cannot promote a binary that lacks these
+CLI rules.
+
+There is no fixed platform matrix. A provider template declares in
+`distribution.binary` only the OS/architecture targets it really supports, and the
+marketplace filters by the user's platform. For Pi, `payloads` in `release-policy.json`
+and the template's `distribution.binary` must name the same targets, and a target is
+added only after its own native loopback qualification passed (see the
+[Pi platform evidence](../docs/qa/MARKETPLACE_PI_PLATFORMS_2026_10_25.md)).
 
 ## Closed publication gate
 

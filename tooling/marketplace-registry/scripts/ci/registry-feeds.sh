@@ -1,13 +1,15 @@
 #!/bin/sh
-# Trusted exact-commit CI helper for the unattended catalog renewal, the
-# read-only expiry watch and the signing-key lifecycle of the reviewed
-# publisher. It contains orchestration and guards only: signing, verification
-# and publication are done by the pinned released Rust CLI.
+# Trusted exact-commit CI helper for the unattended catalog and revocation
+# policy renewal, the read-only expiry watch and the signing-key lifecycle of
+# the reviewed publisher. It contains orchestration and guards only: signing,
+# verification and publication are done by the pinned released Rust CLI.
 #
 #   gate <renewal|watch>             inert-until-configured check (no secrets)
-#   fetch <dir> <catalog|all>        bounded, redirect-free public downloads
+#   fetch <dir> <catalog|policies|all>  bounded, redirect-free public downloads
 #   prepare <snapshot> <request>     build the renewal-only request (no secrets)
 #   publish <request> <state>        re-assert renewal-only, then publish
+#   prepare-policies <snapshot> <work>  plan which revocation policies are due (no secrets)
+#   renew-policies <work>            renew and publish each planned policy
 #   materialize-key <prefix>         write the signing key to an owned 0700 directory
 #   remove-key <prefix>              delete it again (shared with the reviewed publisher)
 #   check-expiry <snapshot>          expiry + signature checks (watch)
@@ -17,9 +19,48 @@ set -eu
 mode=${1:?mode is required}
 FEED_PREFIX="https://raw.githubusercontent.com/"
 MAX_FEED_BYTES=33554432
+# Renewal policy, defined once for every mode and every embedded script.
+# Renew when at most 8 days (192 hours) of validity remain; the new window is
+# 13 days, one day inside the 14-day maximum of the catalog and the policies.
+RENEW_WITHIN_HOURS=192
+WINDOW_DAYS=13
+# The revocation policy feeds as kind:URL variable:file on the discovery
+# branch, in this order. The catalog is managed-index.json.
+POLICY_FEEDS="provider:CADENCR_REGISTRY_PROVIDER_BLOCKLIST_URL:managed-blocklist.json theme:CADENCR_REGISTRY_THEME_BLOCKLIST_URL:managed-theme-blocklist.json tab:CADENCR_REGISTRY_TAB_BLOCKLIST_URL:managed-tab-blocklist.json"
+CATALOG_FILE=managed-index.json
+export RENEW_WITHIN_HOURS WINDOW_DAYS POLICY_FEEDS CATALOG_FILE
 
 fail() { echo "::error::$*" >&2; exit 1; }
 have() { [ -n "$(printenv "$1" || true)" ]; }
+
+# Split one POLICY_FEEDS entry into $kind, $var and $file.
+split_feed() {
+  kind=${1%%:*}; rest=${1#*:}; var=${rest%%:*}; file=${rest#*:}
+}
+
+# What every embedded script shares: the renewal policy above, the feed table,
+# canonical timestamps and the shape of a raw feed URL.
+js_common() {
+  cat <<'JS'
+const RENEW_WITHIN_HOURS = Number(process.env.RENEW_WITHIN_HOURS);
+const WINDOW_DAYS = Number(process.env.WINDOW_DAYS);
+const CATALOG_FILE = process.env.CATALOG_FILE;
+const FEEDS = process.env.POLICY_FEEDS.split(" ").map((entry) => {
+  const [kind, variable, file] = entry.split(":");
+  return { kind, variable, file };
+});
+const BRANCH = "[A-Za-z0-9][A-Za-z0-9_-]{0,63}";
+const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const iso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+// [url, "owner/repo", branch] of a raw refs/heads/<branch>/<file> URL, or null.
+const feedUrl = (value, file) => new RegExp(
+  `^https://raw\\.githubusercontent\\.com/([^/]+/[^/]+)/refs/heads/(${BRANCH})/${file.replace(/\./g, "\\.")}$`,
+).exec(value ?? "");
+JS
+}
+
+# Run the script on stdin after the shared prelude, in one scope.
+node_script() { { js_common; cat; } | node; }
 
 fetch_feed() { # url destination
   case "$1" in
@@ -49,10 +90,13 @@ case "$mode" in
 gate)
   purpose=${2:?gate purpose is required}
   case "$purpose" in
-    renewal) required="CADENCR_REGISTRY_CATALOG_URL CADENCR_REGISTRY_KEY_ID CADENCR_REGISTRY_PUBLIC_KEY_PEM" ;;
-    watch) required="CADENCR_REGISTRY_CATALOG_URL CADENCR_REGISTRY_PROVIDER_BLOCKLIST_URL CADENCR_REGISTRY_THEME_BLOCKLIST_URL CADENCR_REGISTRY_TAB_BLOCKLIST_URL CADENCR_REGISTRY_KEY_ID CADENCR_REGISTRY_PUBLIC_KEY_PEM" ;;
+    renewal|watch) ;;
     *) fail "unknown gate purpose: $purpose" ;;
   esac
+  # Both purposes need every feed plus the pinned key.
+  required="CADENCR_REGISTRY_CATALOG_URL"
+  for feed in $POLICY_FEEDS; do split_feed "$feed"; required="$required $var"; done
+  required="$required CADENCR_REGISTRY_KEY_ID CADENCR_REGISTRY_PUBLIC_KEY_PEM"
   if ! have CADENCR_REGISTRY_CATALOG_URL; then
     echo "::notice title=Registry $purpose is not configured::CADENCR_REGISTRY_CATALOG_URL is unset, so this job is inert. Set the repository variables listed in OPERATIONS.md to activate it."
     echo "configured=false" >> "$GITHUB_OUTPUT"
@@ -73,16 +117,18 @@ gate)
 fetch)
   dir=${2:?snapshot directory is required}
   scope=${3:?scope is required}
+  case "$scope" in catalog|policies|all) ;; *) fail "unknown fetch scope: $scope" ;; esac
   mkdir -m 700 "$dir"
-  fetch_feed "$CADENCR_REGISTRY_CATALOG_URL" "$dir/managed-index.json"
   case "$scope" in
-    catalog) ;;
-    all)
-      fetch_feed "$CADENCR_REGISTRY_PROVIDER_BLOCKLIST_URL" "$dir/managed-blocklist.json"
-      fetch_feed "$CADENCR_REGISTRY_THEME_BLOCKLIST_URL" "$dir/managed-theme-blocklist.json"
-      fetch_feed "$CADENCR_REGISTRY_TAB_BLOCKLIST_URL" "$dir/managed-tab-blocklist.json"
+    catalog|all) fetch_feed "$CADENCR_REGISTRY_CATALOG_URL" "$dir/$CATALOG_FILE" ;;
+  esac
+  case "$scope" in
+    policies|all)
+      for feed in $POLICY_FEEDS; do
+        split_feed "$feed"
+        fetch_feed "$(printenv "$var" || true)" "$dir/$file"
+      done
       ;;
-    *) fail "unknown fetch scope: $scope" ;;
   esac
   ;;
 
@@ -90,26 +136,19 @@ prepare)
   SNAPSHOT_DIR=${2:?snapshot directory is required}
   REQUEST_DIR=${3:?request directory is required}
   export SNAPSHOT_DIR REQUEST_DIR
-  node <<'NODE'
+  node_script <<'NODE'
   const { appendFileSync, lstatSync, mkdirSync, readFileSync, writeFileSync } = require("node:fs");
   const { join } = require("node:path");
   const env = process.env;
   const fail = (message) => { throw new Error(message); };
-  // Renew when the current baseline has at most 8 days left; the new window is
-  // 13 days, one day inside the catalog's 14-day publication maximum.
-  const RENEW_WITHIN_HOURS = 8 * 24;
-  const WINDOW_DAYS = 13;
-  const timestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
-  const iso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
   const repository = env.GITHUB_REPOSITORY ?? fail("GITHUB_REPOSITORY is required");
-  const url = /^https:\/\/raw\.githubusercontent\.com\/([^/]+\/[^/]+)\/refs\/heads\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/managed-index\.json$/
-    .exec(env.CADENCR_REGISTRY_CATALOG_URL ?? "");
+  const url = feedUrl(env.CADENCR_REGISTRY_CATALOG_URL, CATALOG_FILE);
   if (!url) fail("CADENCR_REGISTRY_CATALOG_URL must be this repository's raw refs/heads/<branch>/managed-index.json");
   if (url[1].toLowerCase() !== repository.toLowerCase()) fail("catalog URL names a different repository");
   const branch = url[2];
 
-  const file = join(env.SNAPSHOT_DIR, "managed-index.json");
+  const file = join(env.SNAPSHOT_DIR, CATALOG_FILE);
   const metadata = lstatSync(file);
   if (metadata.isSymbolicLink() || !metadata.isFile() || metadata.size > 32 * 1024 * 1024) {
     fail("downloaded catalog must be a bounded regular file");
@@ -122,7 +161,7 @@ prepare)
   const schema = signed.schema_version;
   if (schema !== 1 && schema !== 2) fail("downloaded catalog has an unsupported schema version");
   if ((schema === 2) !== (branch === "marketplace-v2")) fail("catalog schema does not match its discovery branch");
-  if (![signed.generated_at, signed.expires_at].every((v) => timestamp.test(v ?? ""))) {
+  if (![signed.generated_at, signed.expires_at].every((v) => TIMESTAMP.test(v ?? ""))) {
     fail("downloaded catalog has non-canonical timestamps");
   }
   const now = Math.floor(Date.now() / 1000) * 1000;
@@ -236,6 +275,135 @@ publish)
 NODE
   ;;
 
+prepare-policies)
+  # Plan only, no secrets: decide from the downloaded public bytes which of the
+  # three revocation policies are due. Timestamps only schedule; the released CLI
+  # authenticates each baseline against the pinned public key before signing.
+  # Every policy lives on the catalog's own discovery branch of this repository.
+  SNAPSHOT_DIR=${2:?snapshot directory is required}
+  POLICY_DIR=${3:?policy work directory is required}
+  export SNAPSHOT_DIR POLICY_DIR
+  node_script <<'NODE'
+  const { appendFileSync, lstatSync, mkdirSync, readFileSync, writeFileSync } = require("node:fs");
+  const { join } = require("node:path");
+  const env = process.env;
+  const fail = (message) => { throw new Error(message); };
+  const MAX_POLICY_BYTES = 1024 * 1024 + 1024;
+  const repository = env.GITHUB_REPOSITORY ?? fail("GITHUB_REPOSITORY is required");
+  const catalog = feedUrl(env.CADENCR_REGISTRY_CATALOG_URL, CATALOG_FILE)
+    ?? fail("CADENCR_REGISTRY_CATALOG_URL must be this repository's raw refs/heads/<branch>/managed-index.json");
+  if (catalog[1].toLowerCase() !== repository.toLowerCase()) fail("catalog URL names a different repository");
+  const now = Math.floor(Date.now() / 1000) * 1000;
+  const due = [];
+  for (const { kind, variable, file } of FEEDS) {
+    const url = feedUrl(env[variable], file)
+      ?? fail(`${variable} must be this repository's raw refs/heads/<branch>/${file}`);
+    if (url[1].toLowerCase() !== repository.toLowerCase()) fail(`${variable} names a different repository`);
+    if (url[2] !== catalog[2]) fail(`${variable} must name the catalog's discovery branch ${catalog[2]}`);
+    const path = join(env.SNAPSHOT_DIR, file);
+    const metadata = lstatSync(path);
+    if (metadata.isSymbolicLink() || !metadata.isFile() || metadata.size > MAX_POLICY_BYTES) {
+      fail(`downloaded ${kind} policy must be a bounded regular file`);
+    }
+    const signed = JSON.parse(readFileSync(path, "utf8"))?.signed;
+    if (!signed || typeof signed !== "object") fail(`downloaded ${kind} policy has no signed payload`);
+    if (![signed.generated_at, signed.expires_at].every((v) => TIMESTAMP.test(v ?? ""))) {
+      fail(`downloaded ${kind} policy has non-canonical timestamps`);
+    }
+    const remaining = (Date.parse(signed.expires_at) - now) / 3600000;
+    if (remaining > RENEW_WITHIN_HOURS) {
+      console.log(`::notice title=Policy renewal not needed::${kind} policy has ${remaining.toFixed(1)} hours of validity left (renewal starts at ${RENEW_WITHIN_HOURS}).`);
+      continue;
+    }
+    if (now <= Date.parse(signed.generated_at)) fail(`current ${kind} policy generation is not older than now; refusing`);
+    due.push({ kind, file, branch: url[2] });
+    console.log(`${kind} policy is due: ${remaining.toFixed(1)} hours left.`);
+  }
+  if (due.length === 0) {
+    appendFileSync(env.GITHUB_OUTPUT, "needed=false\n");
+    process.exit(0);
+  }
+  mkdirSync(env.POLICY_DIR, { recursive: false, mode: 0o700 });
+  const pem = env.CADENCR_REGISTRY_PUBLIC_KEY_PEM;
+  writeFileSync(join(env.POLICY_DIR, "public.pem"), pem.endsWith("\n") ? pem : pem + "\n", { flag: "wx", mode: 0o600 });
+  writeFileSync(join(env.POLICY_DIR, "plan.json"), JSON.stringify({ policies: due }, null, 2) + "\n", { flag: "wx", mode: 0o600 });
+  appendFileSync(env.GITHUB_OUTPUT, "needed=true\n");
+NODE
+  ;;
+
+renew-policies)
+  # Holds the signing key and publication token. Re-asserts the plan, then for
+  # each due policy: reads the baseline through the authenticated API (the CDN
+  # that scheduled the renewal can lag), renews it with the token stripped from
+  # the signer's environment, and publishes it in renewal mode, which refuses
+  # unless the branch still holds exactly the renewed entries. A policy is never
+  # bootstrapped here and never rolled back: the CLI refuses both. Policies are
+  # independent; every failure is reported and the step fails at the end.
+  POLICY_DIR=${2:?policy work directory is required}
+  export POLICY_DIR
+  node_script <<'NODE'
+  const { spawnSync } = require("node:child_process");
+  const { lstatSync, readFileSync, readdirSync } = require("node:fs");
+  const { join } = require("node:path");
+  const env = process.env;
+  const fail = (message) => { throw new Error(`policy renewal guard: ${message}`); };
+  const files = Object.fromEntries(FEEDS.map(({ kind, file }) => [kind, file]));
+  for (const name of ["VERIFIED_CLI", "PRIVATE_KEY_FILE", "GITHUB_REPOSITORY", "CADENCR_REGISTRY_KEY_ID", "CADENCR_REGISTRY_GITHUB_TOKEN"]) {
+    if (!env[name]) fail(`${name} is required`);
+  }
+  const catalog = feedUrl(env.CADENCR_REGISTRY_CATALOG_URL, CATALOG_FILE)
+    ?? fail("CADENCR_REGISTRY_CATALOG_URL must be this repository's raw refs/heads/<branch>/managed-index.json");
+  // An older pinned CLI cannot renew policies; say so instead of failing obscurely.
+  const help = (command) => spawnSync(env.VERIFIED_CLI, ["registry", command, "--help"], { encoding: "utf8", timeout: 30000 });
+  for (const [command, flag] of [["fetch-policy"], ["renew-policy"], ["publish-policy", "--renewal"]]) {
+    const result = help(command);
+    const lacks = result.error || result.status !== 0 ? command
+      : flag && !result.stdout.includes(flag) ? `${command} ${flag}` : "";
+    if (lacks) fail(`the pinned released CLI lacks registry ${lacks}; update ci/released-cli.env to a release that includes it`);
+  }
+  for (const name of readdirSync(env.POLICY_DIR)) {
+    if (name !== "plan.json" && name !== "public.pem") fail(`unexpected input ${JSON.stringify(name)}`);
+    const metadata = lstatSync(join(env.POLICY_DIR, name));
+    if (metadata.isSymbolicLink() || !metadata.isFile() || metadata.size > 64 * 1024) fail(`${name} must be a bounded regular file`);
+  }
+  const plan = JSON.parse(readFileSync(join(env.POLICY_DIR, "plan.json"), "utf8"));
+  if (JSON.stringify(Object.keys(plan)) !== '["policies"]' || !Array.isArray(plan.policies) || plan.policies.length < 1 || plan.policies.length > FEEDS.length) {
+    fail("unexpected plan shape");
+  }
+  const seen = new Set();
+  for (const entry of plan.policies) {
+    if (JSON.stringify(Object.keys(entry)) !== '["kind","file","branch"]'
+      || files[entry.kind] !== entry.file || seen.has(entry.kind)
+      || entry.branch !== catalog[2]) fail("unexpected plan entry");
+    seen.add(entry.kind);
+  }
+  const failures = [];
+  // The signer never needs the publication token.
+  const { CADENCR_REGISTRY_GITHUB_TOKEN: _token, ...tokenless } = env;
+  const cli = (args, environment = env) => spawnSync(env.VERIFIED_CLI, ["registry", ...args], { stdio: "inherit", env: environment });
+  const succeeded = (result) => !result.error && result.status === 0;
+  for (const { kind, branch } of plan.policies) {
+    const baseline = join(env.POLICY_DIR, `${kind}-baseline.json`);
+    const renewed = join(env.POLICY_DIR, `${kind}-renewed.json`);
+    const keys = ["--public-key", join(env.POLICY_DIR, "public.pem"), "--key-id", env.CADENCR_REGISTRY_KEY_ID];
+    const expires = iso(Math.floor(Date.now() / 1000) * 1000 + WINDOW_DAYS * 24 * 3600 * 1000);
+    console.log(`::group::Renew ${kind} policy`);
+    const ok = succeeded(cli(["fetch-policy", "--kind", kind, "--repository", env.GITHUB_REPOSITORY,
+        "--discovery-branch", branch, "--output", baseline]))
+      && succeeded(cli(["renew-policy", "--kind", kind, "--current", baseline, ...keys,
+        "--private-key", env.PRIVATE_KEY_FILE, "--expires-at", expires, "--output", renewed], tokenless))
+      && succeeded(cli(["publish-policy", "--kind", kind, "--signed", renewed, "--repository", env.GITHUB_REPOSITORY,
+        "--discovery-branch", branch, ...keys, "--renewal", "--receipt", join(env.POLICY_DIR, `${kind}-receipt.json`)]));
+    console.log("::endgroup::");
+    if (!ok) {
+      console.log(`::error title=Policy renewal failed::the ${kind} policy could not be renewed and published`);
+      failures.push(kind);
+    }
+  }
+  if (failures.length > 0) throw new Error(`policy renewal failed for: ${failures.join(", ")}`);
+NODE
+  ;;
+
 materialize-key)
   # The directory prefix names the workflow that owns the key (for example
   # marketplace-publisher-secret- or marketplace-renewal-secret-).
@@ -293,14 +461,18 @@ check-expiry)
   mkdir "$KEY_DIR"
   printf '%s\n' "$CADENCR_REGISTRY_PUBLIC_KEY_PEM" > "$KEY_DIR/public.pem"
   # Timestamp diagnostic: exit 1 at or below 72 hours, when expired or malformed.
-  for name in managed-index.json managed-blocklist.json managed-theme-blocklist.json managed-tab-blocklist.json; do
+  policy_files=
+  for feed in $POLICY_FEEDS; do split_feed "$feed"; policy_files="$policy_files $file"; done
+  for name in "$CATALOG_FILE" $policy_files; do
     echo "== expiry: $name"
     "$VERIFIED_CLI" registry check-metadata-expiry --warning-hours 72 "$dir/$name" \
       || { echo "::error title=Registry metadata needs renewal::$name expires within 72 hours, is expired, or is unreadable"; status=1; }
   done
-  # The timestamp diagnostic is unauthenticated, so also verify signatures where
-  # the released CLI offers a verifier (the provider policy has none yet).
-  for pair in verify-index:managed-index.json verify-theme-blocklist:managed-theme-blocklist.json verify-tab-blocklist:managed-tab-blocklist.json; do
+  # The timestamp diagnostic is unauthenticated, so also verify every feed's
+  # signature and domain with the released CLI.
+  pairs="verify-index:$CATALOG_FILE"
+  for feed in $POLICY_FEEDS; do split_feed "$feed"; pairs="$pairs verify-$kind-blocklist:$file"; done
+  for pair in $pairs; do
     command=${pair%%:*}; name=${pair#*:}
     echo "== signature: $name"
     "$VERIFIED_CLI" registry "$command" --index "$dir/$name" --public-key "$KEY_DIR/public.pem" \

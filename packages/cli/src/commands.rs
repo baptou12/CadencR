@@ -1,4 +1,3 @@
-use std::io::Write as _;
 use std::path::Path;
 
 use serde_json::json;
@@ -65,6 +64,7 @@ fn run_registry(command: &RegistryCommand) -> Result<Option<String>, Diagnostic>
     match command {
         RegistryCommand::Diagnostics(command) => crate::metadata::run(command),
         RegistryCommand::TabBackend(command) => crate::tab_backend::run(command),
+        RegistryCommand::Policy(command) => crate::policy::run(command),
         RegistryCommand::Validate { base, candidate } => validate_registry(base, candidate),
         RegistryCommand::BuildIndex {
             schema_version,
@@ -139,30 +139,6 @@ fn run_registry(command: &RegistryCommand) -> Result<Option<String>, Diagnostic>
             root_key_id,
             minimum_generation,
         } => crate::trust::verify(manifest, root_public_key, root_key_id, *minimum_generation),
-        RegistryCommand::SignThemeBlocklist {
-            payload,
-            private_key,
-            key_id,
-            output,
-        } => signing::sign_blocklist(
-            signing::BlocklistKind::Theme,
-            payload,
-            private_key,
-            key_id,
-            output,
-        ),
-        RegistryCommand::VerifyThemeBlocklist {
-            index,
-            public_key,
-            key_id,
-            allow_expired,
-        } => signing::verify_blocklist(
-            signing::BlocklistKind::Theme,
-            index,
-            public_key,
-            key_id,
-            *allow_expired,
-        ),
         RegistryCommand::AssembleSignedIndex {
             payload,
             signature,
@@ -231,13 +207,7 @@ fn plan_publication(
 ) -> Result<Option<String>, Diagnostic> {
     let plan = cadencr_registry_core::create_publication_plan_from_file(submission, repository)
         .map_err(|error| operation_error("PUBLICATION_PLAN_FAILED", error))?;
-    let mut bytes = serde_json::to_vec_pretty(&plan)
-        .map_err(|error| operation_error("PUBLICATION_PLAN_FAILED", error))?;
-    bytes.push(b'\n');
-    output::publish(destination, |temporary| {
-        temporary.write_all(&bytes)?;
-        temporary.flush()
-    })?;
+    output::write_json_file(&plan, destination, "PUBLICATION_PLAN_FAILED")?;
     Ok(Some(format!("publication plan: {}", destination.display())))
 }
 

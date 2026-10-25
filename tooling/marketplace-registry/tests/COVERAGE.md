@@ -70,9 +70,19 @@ directories; they are observations, not a second executable implementation.
   construction, status-checked bounded downloads (fake curl) and the renewal-only guard (any publication, submission file,
   symlink, schema upgrade, unknown field or foreign repository aborts before the CLI).
   The CLI is a stub there; the request shape was also accepted by the real pipeline up to its first network call.
+  The same suite covers the revocation policy renewal: per-policy 8-day planning
+  (independent, expired included), URL/domain refusals (a policy must sit on the
+  catalog's own branch), the plan guard and the `fetch-policy`/`renew-policy`/
+  `publish-policy --renewal` call sequence (no bootstrap, baseline read through
+  the API, token absent from the signing call, every due policy attempted after a
+  failure). A step-condition simulation proves the catalog and policy stages are
+  independent in both directions and that any failure still fails the job. Real renewal and
+  publication behavior is covered by `cli/tests/policy.rs` and
+  `registry-core/src/policy_renewal.rs`, `registry-publisher/src/policy_publish/`.
 - `registry-expiry-watch.test.mjs` checks the read-only, secret-free daily watch
   and runs `check-expiry` against signed fixtures with the real Rust CLI: 72-hour
-  boundary, expired, tampered, wrong-key, missing and malformed feeds all fail.
+  boundary, expired, tampered, wrong-key, missing and malformed feeds all fail, and the
+  provider policy is verified for signature and domain like the other feeds.
 - `check-metadata-expiry.test.mjs` invokes Rust `registry check-metadata-expiry`:
   relative healthy/default renewal/expired states, explicit warning thresholds,
   catalogs and both policy envelopes, malformed/unsafe/bounded inputs, and exact

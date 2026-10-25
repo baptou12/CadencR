@@ -3,9 +3,10 @@
 use std::path::{Path, PathBuf};
 
 use cadencr_plugin_core::tab::TabPlatform;
+use cadencr_registry_core::PolicyKind;
 use clap::Subcommand;
 
-use crate::signing::{sign_blocklist, verify_blocklist, BlocklistKind};
+use crate::signing::{sign_blocklist, verify_blocklist};
 use crate::{operation_error, output, Diagnostic};
 
 #[derive(Debug, Subcommand)]
@@ -59,19 +60,13 @@ pub(crate) fn run(command: &TabBackendCommand) -> Result<Option<String>, Diagnos
             private_key,
             key_id,
             output,
-        } => sign_blocklist(BlocklistKind::Tab, payload, private_key, key_id, output),
+        } => sign_blocklist(PolicyKind::Tab, payload, private_key, key_id, output),
         TabBackendCommand::VerifyTabBlocklist {
             index,
             public_key,
             key_id,
             allow_expired,
-        } => verify_blocklist(
-            BlocklistKind::Tab,
-            index,
-            public_key,
-            key_id,
-            *allow_expired,
-        ),
+        } => verify_blocklist(PolicyKind::Tab, index, public_key, key_id, *allow_expired),
     }
 }
 

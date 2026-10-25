@@ -17,6 +17,7 @@ cadencr-registry-core = { path = "../registry-core" }
 cadencr-registry-publisher = { path = "../registry-publisher" }
 cadencr-tab-backend = { path = "../tab-backend-sdk-rs", features = ["conformance"] }
 clap = { version = "4", features = ["derive"] }
+serde = "1"
 serde_json = "1"
 tempfile = "3"
 tokio = { version = "1", features = ["rt", "net", "time"] }
