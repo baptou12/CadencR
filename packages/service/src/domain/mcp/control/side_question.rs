@@ -5,6 +5,10 @@
 //! directory, in Plan (read-only) mode, seeded with an excerpt of the source
 //! conversation — through the same spawn pipeline as `project_spawn_session`,
 //! so provider, model and profile follow the source session.
+//!
+//! The side conversation is born archived: it is temporary, read inline under
+//! the source conversation, and joins the sidebar only when the user keeps it
+//! as a thread (un-archiving it).
 
 use axum::extract::{Json, Path, State};
 use axum::routing::post;
@@ -16,15 +20,18 @@ use super::spawn_follow::SpawnFollowOptions;
 use super::spawn_resolve::SpawnBranch;
 use super::spawn_session::{spawn_session_handler, SpawnSessionRequest};
 use crate::app_state::AppState;
+use crate::domain::feature_events::FeatureEventAction;
+use crate::domain::features::models::FeatureStatus;
+use crate::domain::features::service::update_status;
 use crate::domain::git::repository::get_project_path;
 use crate::domain::git::service::resolve_feature_branch;
 use crate::domain::workflow::worktree::resolve_live_worktree;
 use crate::domain::ws_session::persistence::{SessionRow, WsSessionPersistence};
 use crate::error::AppError;
 
-/// Recent turns copied into the side conversation (oldest dropped first).
-const EXCERPT_MESSAGES: i64 = 16;
-const EXCERPT_MESSAGE_CHARS: usize = 900;
+mod excerpt;
+use excerpt::{clip, conversation_excerpt};
+
 const MAX_QUESTION_CHARS: usize = 8_000;
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -37,52 +44,6 @@ pub struct SideQuestionResponse {
     pub feature_id: i64,
     pub session_id: i64,
     pub project_id: i64,
-}
-
-#[derive(sqlx::FromRow)]
-struct ExcerptRow {
-    role: String,
-    content: String,
-}
-
-fn clip(text: &str, max: usize) -> String {
-    let trimmed = text.trim();
-    if trimmed.chars().count() <= max {
-        return trimmed.to_string();
-    }
-    let clipped: String = trimmed.chars().take(max).collect();
-    format!("{clipped}…")
-}
-
-/// The source conversation's latest user prompts and agent replies, oldest
-/// first, as `User:` / `Agent:` lines.
-async fn conversation_excerpt(
-    pool: &sqlx::SqlitePool,
-    session_id: i64,
-) -> Result<String, AppError> {
-    let mut rows: Vec<ExcerptRow> = sqlx::query_as(
-        "SELECT role, substr(content, 1, ?) AS content FROM agent_messages
-         WHERE session_id = ?
-           AND ((role = 'user' AND message_type = 'user_message')
-             OR (role = 'assistant' AND message_type = 'text'))
-           AND TRIM(content) <> ''
-         ORDER BY id DESC LIMIT ?",
-    )
-    // Clipped in SQL (with headroom for the trim): a reply can be tens of KB.
-    .bind(EXCERPT_MESSAGE_CHARS as i64 * 2)
-    .bind(session_id)
-    .bind(EXCERPT_MESSAGES)
-    .fetch_all(pool)
-    .await?;
-    rows.reverse();
-    Ok(rows
-        .iter()
-        .map(|row| {
-            let who = if row.role == "user" { "User" } else { "Agent" };
-            format!("{who}: {}", clip(&row.content, EXCERPT_MESSAGE_CHARS))
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n"))
 }
 
 /// Same files as the source: its live worktree, on the branch actually checked
@@ -150,6 +111,7 @@ fn side_request(
         await_result: None,
         target_project_id: None,
         target_project_path: None,
+        start_archived: true,
     }
 }
 
@@ -180,15 +142,23 @@ pub async fn ask_session_side_question(
     let excerpt = conversation_excerpt(&state.read_pool, session_id).await?;
     let branch = source_branch(&state.read_pool, &source).await?;
     let Json(spawned) = spawn_session_handler(
-        State(state),
+        State(state.clone()),
         Json(side_request(&row, question, &excerpt, branch)),
     )
     .await?;
     // The conversation exists but the question never reached its agent:
-    // saying "sent" would leave the user waiting on nothing.
+    // saying "sent" would leave the user waiting on nothing. It leaves the
+    // archive so the user can find it and retry there.
     if let Some(error) = spawned.dispatch_error {
+        update_status(&state.write_pool, spawned.feature_id, FeatureStatus::Active).await?;
+        state.feature_events_tx.emit(
+            spawned.feature_id,
+            Some(source.project_id),
+            FeatureEventAction::Updated,
+        );
         return Err(AppError::Internal(format!(
-            "The side conversation was created but the question was not delivered: {error}"
+            "The side conversation was created (listed in the sidebar) but the question \
+             was not delivered: {error}"
         )));
     }
     Ok(Json(SideQuestionResponse {
@@ -219,12 +189,6 @@ mod tests {
         assert!(brief.contains("Agent: on it"));
         assert!(brief.ends_with("Which file holds the bug?"));
         assert!(side_brief("", "q").contains("no messages yet"));
-    }
-
-    #[test]
-    fn clip_keeps_short_text_and_marks_cuts() {
-        assert_eq!(clip("  hello ", 10), "hello");
-        assert_eq!(clip("abcdef", 3), "abc…");
     }
 
     fn source_row() -> SessionRow {
@@ -266,5 +230,11 @@ mod tests {
         assert_eq!(request.model.as_deref(), Some("claude-opus-4-8"));
         assert_eq!(request.thinking_level.as_deref(), Some("high"));
         assert_eq!(request.source_session_id, 7);
+    }
+
+    #[test]
+    fn side_conversation_is_temporary_until_kept() {
+        let request = side_request(&source_row(), "q", "", SpawnBranch::default());
+        assert!(request.start_archived);
     }
 }

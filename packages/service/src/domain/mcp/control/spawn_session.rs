@@ -11,7 +11,8 @@ use super::spawn_resolve::{
 };
 use crate::app_state::AppState;
 use crate::domain::feature_events::FeatureEventAction;
-use crate::domain::features::service::create_feature_with_worktree;
+use crate::domain::features::models::FeatureStatus;
+use crate::domain::features::service::{create_feature_with_worktree, update_status};
 use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt;
 use crate::domain::ws_session::handler::session_prompt::publish_user_message;
 use crate::error::AppError;
@@ -35,6 +36,10 @@ pub(super) struct SpawnSessionRequest {
     pub(super) await_result: Option<bool>,
     pub(super) target_project_id: Option<i64>,
     pub(super) target_project_path: Option<String>,
+    /// Born archived: a temporary conversation (a side question) that stays
+    /// out of the sidebar until the user keeps it. Never set over the wire.
+    #[serde(skip)]
+    pub(super) start_archived: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -138,6 +143,11 @@ async fn spawn_into_target(
         base_branch,
     )
     .await?;
+    // Archived before anything announces the feature, so no sidebar ever
+    // lists it in between.
+    if body.start_archived {
+        update_status(&state.write_pool, created.id, FeatureStatus::Archived).await?;
+    }
 
     let session_id = insert_spawned_session(
         state,
