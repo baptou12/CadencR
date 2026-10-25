@@ -141,13 +141,19 @@ fn whole(time: DateTime<Utc>) -> DateTime<Utc> {
 /// Pacing for a clock that reads `now` throughout; read-back waits cost no
 /// time.
 pub(super) fn timing_at(now: DateTime<Utc>) -> Timing {
-    timing_with(now, VirtualClock::new().read_back())
+    let clock = VirtualClock::new();
+    timing_with(now, clock.read_back(), clock.public_read_back())
 }
 
-pub(super) fn timing_with(now: DateTime<Utc>, read_back: ReadBack) -> Timing {
+pub(super) fn timing_with(
+    now: DateTime<Utc>,
+    read_back: ReadBack,
+    public_read: ReadBack,
+) -> Timing {
     Timing::builder()
         .now(move || now)
         .read_back(read_back)
+        .public_read(public_read)
         .build()
 }
 

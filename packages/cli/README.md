@@ -217,7 +217,9 @@ current and authenticate; local checks run before the token is read. The policy
 already on the branch must authenticate and be strictly older (no rollback);
 when the file does not exist `--bootstrap` is required, and it is refused when
 the file exists. The update is a single conditional write, followed by a public
-read-back with the catalog's bounded convergence rules; `--receipt` writes a
+read-back with the catalog's bounded convergence rules (up to six minutes, since
+the raw CDN may serve the previous body for its 300-second cache lifetime; any
+other body fails at once); `--receipt` writes a
 small JSON record. `--renewal` (exclusive with `--bootstrap`) additionally
 requires the published policy to carry exactly the candidate's entries, so a
 renewal made from a stale baseline can never drop a newer revocation. Failures

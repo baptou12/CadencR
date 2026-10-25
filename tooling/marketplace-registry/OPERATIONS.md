@@ -133,8 +133,8 @@ five minutes). For each due policy the pinned released CLI runs
   discovery branch to authenticate and be strictly older (a rollback or a same-time
   replacement is refused), makes one conditional update of that single fixed path,
   and then reads the public raw URL back without credentials with the catalog's
-  bounded convergence rules (at most 30 seconds, only the exact previous body may
-  be waited out). The very first publication of a policy needs an explicit
+  bounded convergence rules (at most six minutes, because raw.githubusercontent.com
+  caches for up to 300 seconds; only the exact previous body may be waited out). The very first publication of a policy needs an explicit
   `--bootstrap`, which the workflow never passes: bootstrap each policy by hand
   once (see the runbook) before enabling renewal. The workflow always passes
   `--renewal`: the entries on the branch at the moment of publication must be
@@ -228,10 +228,17 @@ This does not establish which response caused the historical hosted error.
 
 - Keep the canonical stable discovery URL and request cache revalidation; a
   commit-pinned alternate URL is not proof that the configured feed is current.
-- Allow at most four public reads in a shared 30-second convergence window,
-  including inter-read authenticated head checks and backoff. Each HTTP request
+- Allow the public reads a shared convergence window, including inter-read
+  authenticated head checks and backoff. The window is 30 seconds for the
+  authenticated API read-back but six minutes (360 s; pauses of 1 s doubling to
+  8 s, at most 45 reads) for the public stable URL, because
+  raw.githubusercontent.com answers `Cache-Control: max-age=300` and may keep
+  serving the previous body for five minutes after the write. Each HTTP request
   receives only the remaining budget, including response-body reads. This is not
-  a 30-second bound on the complete publication command or its other validations.
+  a bound on the complete publication command or its other validations; a
+  renewal publishing the catalog and three policies may spend about six minutes
+  per file waiting, so the workflow jobs allow 60 (renewal) and 45 (publisher)
+  minutes.
 - Only fully read bytes matching the reviewed predecessor's exact SHA-256 may
   trigger another read. Bootstrap has no predecessor allowance. The observation
   remains bounded by the discovery size limit; only the exact candidate size and

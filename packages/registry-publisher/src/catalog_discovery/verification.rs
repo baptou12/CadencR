@@ -267,6 +267,46 @@ mod tests {
     }
 
     #[test]
+    fn the_raw_read_back_outwaits_a_five_minute_cdn_cache_then_fails_closed() {
+        use super::super::fixture::Sequence;
+        for (stale, converges) in [(40, true), (1000, false)] {
+            let (value, _) = super::super::fixture::setup_baseline();
+            let previous = std::fs::read(value.directory.join("previous.json")).unwrap();
+            value.client.set_discovery_head(previous.clone());
+            let mut bodies = vec![previous; stale];
+            bodies.push(value.snapshot.canonical_envelope().into());
+            let raw = Sequence {
+                bodies,
+                calls: Cell::new(0),
+            };
+            let result = super::super::lifecycle::advance_with(
+                &value.snapshot,
+                &value.manifest,
+                &value.directory,
+                "main",
+                &value.client,
+                &value.downloader,
+                &raw,
+            );
+            if converges {
+                result.unwrap();
+                assert_eq!(raw.calls.get(), 41);
+            } else {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    "public discovery: convergence read budget exhausted"
+                );
+                assert_eq!(raw.calls.get(), 45, "the public attempt cap");
+                assert!(!value
+                    .directory
+                    .join(super::super::receipt::RECEIPT)
+                    .exists());
+            }
+            assert_eq!(value.client.discovery_counts().1, 1);
+        }
+    }
+
+    #[test]
     fn only_previous_bytes_can_delay_verification_and_never_skip_guards() {
         use super::super::fixture::Sequence;
         for mode in "tamper bootstrap drift late_drift expiry expiry_after".split_whitespace() {
@@ -321,6 +361,7 @@ mod tests {
                     .discovery_downloader(&raw)
                     .freshness(&fresh)
                     .pacing(&crate::convergence::ReadBack::production())
+                    .public_pacing(&crate::convergence::VirtualClock::new().public_read_back())
                     .call()
                     .is_err(),
                 "{mode}"

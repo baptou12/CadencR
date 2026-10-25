@@ -73,7 +73,9 @@ jobs:
     # publish a package. The workflow cannot provision that protection itself.
     environment: protected-marketplace-renewal
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Publishes up to four files (the catalog and three policies); each public
+    # read-back may wait out the raw CDN's 300 s cache, about six minutes each.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -6,7 +6,7 @@ use super::lifecycle::{advance_with, advance_with_freshness};
 use super::DiscoveryReceipt;
 use crate::catalog_publish::fixture::Client;
 use crate::catalog_publish::fixture::FlowFixture;
-use crate::convergence::ReadBack;
+use crate::convergence::{ReadBack, VirtualClock};
 use crate::{DownloadRequest, Downloader, PublisherError};
 
 #[derive(Clone, Copy)]
@@ -141,6 +141,7 @@ pub(super) fn run_paced(
         .discovery_downloader(raw)
         .freshness(&fresh)
         .pacing(pacing)
+        .public_pacing(&VirtualClock::new().public_read_back())
         .call()
 }
 

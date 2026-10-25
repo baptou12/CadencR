@@ -34,6 +34,7 @@ pub(super) fn advance_with(
         .discovery_downloader(discovery_downloader)
         .freshness(&freshness)
         .pacing(&crate::convergence::VirtualClock::new().read_back())
+        .public_pacing(&crate::convergence::VirtualClock::new().public_read_back())
         .call()
 }
 
@@ -57,6 +58,7 @@ pub(crate) fn advance_preflighted(
         .discovery_downloader(discovery_downloader)
         .freshness(&freshness)
         .pacing(&ReadBack::production())
+        .public_pacing(&ReadBack::public_feed())
         .call()
 }
 
@@ -72,6 +74,7 @@ pub(super) fn advance_with_freshness(
     discovery_downloader: &impl crate::download::DiscoveryReader,
     freshness: &impl Fn() -> Result<(), PublisherError>,
     pacing: &ReadBack,
+    public_pacing: &ReadBack,
 ) -> Result<DiscoveryReceipt, PublisherError> {
     preflight(snapshot, manifest, directory, branch)?;
     advance_preflighted_with_freshness()
@@ -84,6 +87,7 @@ pub(super) fn advance_with_freshness(
         .discovery_downloader(discovery_downloader)
         .freshness(freshness)
         .pacing(pacing)
+        .public_pacing(public_pacing)
         .call()
 }
 
@@ -98,6 +102,7 @@ fn advance_preflighted_with_freshness(
     discovery_downloader: &impl crate::download::DiscoveryReader,
     freshness: &impl Fn() -> Result<(), PublisherError>,
     pacing: &ReadBack,
+    public_pacing: &ReadBack,
 ) -> Result<DiscoveryReceipt, PublisherError> {
     let lock = crate::fs::OwnedLock::acquire(&directory.join(LOCK))?;
     let result = advance_locked()
@@ -110,6 +115,7 @@ fn advance_preflighted_with_freshness(
         .discovery_downloader(discovery_downloader)
         .freshness(freshness)
         .pacing(pacing)
+        .public_pacing(public_pacing)
         .call();
     match result {
         Ok(value) => {
@@ -131,6 +137,7 @@ fn advance_locked(
     discovery_downloader: &impl crate::download::DiscoveryReader,
     freshness: &impl Fn() -> Result<(), PublisherError>,
     pacing: &ReadBack,
+    public_pacing: &ReadBack,
 ) -> Result<DiscoveryReceipt, PublisherError> {
     let catalog = crate::catalog_publish::read_receipt(directory, snapshot)?
         .ok_or_else(|| PublisherError::new("catalog publication receipt is required"))?;
@@ -175,7 +182,7 @@ fn advance_locked(
             freshness()?;
             Ok(())
         })
-        .pacing(pacing)
+        .pacing(public_pacing)
         .call()?;
     let after_raw = client.get_discovery(branch)?;
     require_candidate(snapshot, after_raw.as_ref())?;
@@ -331,6 +338,7 @@ mod tests {
                 .discovery_downloader(&raw)
                 .freshness(&fresh)
                 .pacing(&crate::convergence::VirtualClock::new().read_back())
+                .public_pacing(&crate::convergence::VirtualClock::new().public_read_back())
                 .call()
                 .is_err());
             assert_eq!(value.client.discovery_counts().1, sets);

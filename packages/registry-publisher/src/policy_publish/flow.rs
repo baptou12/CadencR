@@ -16,6 +16,9 @@ pub(super) struct Timing {
     #[builder(with = |now: impl Fn() -> DateTime<Utc> + 'static| Box::new(now))]
     pub(super) now: Box<dyn Fn() -> DateTime<Utc>>,
     pub(super) read_back: ReadBack,
+    /// Pacing of the read-back of the public stable URL, which sits behind a
+    /// CDN cache.
+    pub(super) public_read: ReadBack,
 }
 
 impl Timing {
@@ -23,6 +26,7 @@ impl Timing {
         Self::builder()
             .now(Utc::now)
             .read_back(ReadBack::production())
+            .public_read(ReadBack::public_feed())
             .build()
     }
 }
@@ -225,7 +229,7 @@ fn verify_public(
         .directory(scratch.path())
         .downloader(reader)
         .revalidate(&revalidate)
-        .pacing(&timing.read_back)
+        .pacing(&timing.public_read)
         .call()
 }
 
@@ -630,6 +634,76 @@ mod tests {
         assert!(message.contains("unrecognized content digest"), "{message}");
     }
 
+    /// Publish an update whose public URL serves `stale` previous bodies
+    /// before the candidate, on public pacing `public` of `clock`.
+    fn publish_behind_cdn(
+        stale: usize,
+        clock: &VirtualClock,
+        public: ReadBack,
+    ) -> (Result<PolicyReceipt, PublisherError>, Duration) {
+        let work = Workspace::new();
+        let published = work.signed(PolicyKind::Theme, 2 * HOUR, WINDOW, "old");
+        let candidate = work.signed(PolicyKind::Theme, HOUR, WINDOW, "new");
+        let prepared = work.prepared(PolicyKind::Theme, &candidate, false).unwrap();
+        let github = MockGitHub::with_head(Some(&published));
+        let mut bodies = vec![published; stale];
+        bodies.push(candidate);
+        let timing = timing_with(work.start, clock.read_back(), public);
+        let result = publish(&prepared, &github, &ScriptedFeed::new(bodies), &timing);
+        let waited = clock.waits.borrow().iter().sum();
+        (result, waited)
+    }
+
+    #[test]
+    fn the_public_read_back_outwaits_a_five_minute_cdn_cache_of_the_previous_body() {
+        // About forty reads at the doubling-to-eight-seconds pacing is just
+        // past the 300 s `max-age` of raw.githubusercontent.com.
+        let clock = VirtualClock::new();
+        let (result, waited) = publish_behind_cdn(40, &clock, clock.public_read_back());
+        assert_eq!(result.unwrap().outcome, PolicyOutcome::Advanced);
+        assert!(waited >= Duration::from_secs(300), "{waited:?}");
+        assert!(waited <= Duration::from_secs(360), "{waited:?}");
+    }
+
+    #[test]
+    fn a_public_body_that_stays_previous_fails_closed_within_the_public_budget() {
+        // The attempt cap ends a run of fast reads, still past the max-age.
+        let clock = VirtualClock::new();
+        let (result, waited) = publish_behind_cdn(1000, &clock, clock.public_read_back());
+        assert!(error_of(result).contains("convergence read budget exhausted"));
+        assert!(waited > Duration::from_secs(300), "{waited:?}");
+        assert!(waited <= Duration::from_secs(360), "{waited:?}");
+        // Without the cap the 360 s deadline ends it, never later.
+        let clock = VirtualClock::new();
+        let (result, waited) =
+            publish_behind_cdn(1000, &clock, clock.public_read_back_capped(1000));
+        assert!(error_of(result).contains("convergence read budget exhausted"));
+        assert!(waited > Duration::from_secs(340), "{waited:?}");
+        assert!(waited <= Duration::from_secs(360), "{waited:?}");
+        // A candidate arriving after the deadline is too late.
+        let clock = VirtualClock::new();
+        let (result, _) = publish_behind_cdn(100, &clock, clock.public_read_back_capped(1000));
+        assert!(error_of(result).contains("convergence read budget exhausted"));
+    }
+
+    #[test]
+    fn the_authenticated_read_back_stays_at_thirty_seconds() {
+        let clock = VirtualClock::new();
+        // Reads that stay stale on the API side give up inside 30 s even
+        // though the public pacing would have allowed six minutes.
+        let (work, github, prepared, _) = lagging(None, u64::MAX);
+        let timing = timing_with(work.start, clock.read_back(), clock.public_read_back());
+        assert!(error_of(publish(
+            &prepared,
+            &github,
+            &ScriptedFeed::new(vec![]),
+            &timing
+        ))
+        .contains("stale pre-write state"));
+        let waited: Duration = clock.waits.borrow().iter().sum();
+        assert!(waited <= Duration::from_secs(30), "{waited:?}");
+    }
+
     #[test]
     fn candidates_must_authenticate_be_current_and_target_a_valid_branch() {
         let work = Workspace::new();
@@ -685,7 +759,7 @@ mod tests {
 
     /// Timing whose read-back waits are recorded by `clock`.
     fn timed(work: &Workspace, clock: &VirtualClock) -> Timing {
-        timing_with(work.start, clock.read_back())
+        timing_with(work.start, clock.read_back(), clock.public_read_back())
     }
 
     #[test]
@@ -743,7 +817,11 @@ mod tests {
         let published = work.signed(PolicyKind::Theme, 2 * HOUR, WINDOW, "old");
         let (_, github, prepared, _) = lagging(Some(&published), u64::MAX);
         let clock = VirtualClock::new();
-        let timing = timing_with(work.start, clock.read_back_capped(3));
+        let timing = timing_with(
+            work.start,
+            clock.read_back_capped(3),
+            clock.public_read_back(),
+        );
         let message = error_of(publish(
             &prepared,
             &github,
