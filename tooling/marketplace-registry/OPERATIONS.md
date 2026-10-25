@@ -11,7 +11,7 @@ template contains a daily renewal workflow and a daily expiry watch (see
 [Automatic renewal and expiry watch](#automatic-catalog-and-policy-renewal-and-expiry-watch));
 neither is deployed, scheduled or configured in any live repository, and both stay
 inert until their repository variables exist. Earlier distributed CLI qualification is dated evidence, not
-production deployment. The locally selected `0.14.2` includes
+production deployment. The locally selected `0.15.2` includes
 standalone Rust diagnostics and the bounded discovery-convergence correction.
 Its exact distributed executable passed first-pass renewal, unchanged replays,
 fresh-runner recovery and three-kind publication checks; see the
@@ -85,6 +85,7 @@ authorized operator, and a real alert path has been exercised.
 | ------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------ |
 | `renew-protected-catalog` | Daily, plus manual | Environment `protected-marketplace-renewal`; can only re-sign the catalog and renew the three policies |
 | `watch-registry-expiry`   | Daily, plus manual | `contents: read`, no environment, no secrets                                                           |
+| `bootstrap-revocation-policies` | Manual only | Reviewed environment `protected-marketplace-publisher`; publishes the three missing policies, empty, once |
 
 **Renewal-only by construction.** `scripts/ci/registry-feeds.sh` downloads the
 current published catalog from this repository's own discovery URL (HTTPS on
@@ -135,8 +136,8 @@ five minutes). For each due policy the pinned released CLI runs
   and then reads the public raw URL back without credentials with the catalog's
   bounded convergence rules (at most six minutes, because raw.githubusercontent.com
   caches for up to 300 seconds; only the exact previous body may be waited out). The very first publication of a policy needs an explicit
-  `--bootstrap`, which the workflow never passes: bootstrap each policy by hand
-  once (see the runbook) before enabling renewal. The workflow always passes
+  `--bootstrap`, which this workflow never passes: publish each policy once with
+  `bootstrap-revocation-policies` (below) before enabling renewal. The workflow always passes
   `--renewal`: the entries on the branch at the moment of publication must be
   identical to the renewed ones, so a revocation an operator published after the
   baseline was read is never silently dropped; such a run fails and the next
@@ -182,7 +183,8 @@ thing the key can do through this path is re-sign the authenticated baseline.
 - Revocation policy **entries** are never changed automatically: a renewal keeps them
   identical, and any addition, edit or removal is a reviewed payload signed with
   `sign-*-blocklist` and published with `publish-policy`. The first publication of
-  each policy (`publish-policy --bootstrap`) is also manual.
+  each policy is a dispatched, reviewed run of `bootstrap-revocation-policies`, never
+  part of the schedule.
 - GitHub disables scheduled workflows in a public repository after 60 days without
   repository activity and emails only the person who last edited the cron line.
   Subscribe the real owner and backup to failed-run notifications and keep the
@@ -190,12 +192,46 @@ thing the key can do through this path is re-sign the authenticated baseline.
 - Neither workflow proves live delivery: exercise a failing watch run and an
   acknowledged alert before relying on them.
 
+## First publication of the revocation policies
+
+The online signing key exists only as the secret `CADENCR_REGISTRY_PRIVATE_KEY_PEM`
+of the GitHub environments, so no operator can sign the first publication of a
+policy locally. The manual workflow `bootstrap-revocation-policies` does it, using
+the same pinned released CLI and key handling as the reviewed publisher:
+
+- **Gating.** Dispatch only from the default branch. A secret-free preflight job
+  checks the input and the configuration first; the publishing job then waits for
+  the required reviewers of environment `protected-marketplace-publisher` (not the
+  renewal environment). It shares the `marketplace-publication` lane, never
+  cancelled, with `contents: read` and an exact-commit checkout.
+- **Input.** One required `confirm` input that must read exactly
+  `bootstrap-empty-policies`. The repository variables `CADENCR_REGISTRY_KEY_ID`
+  and `CADENCR_REGISTRY_PUBLIC_KEY_PEM` must be set; the three
+  `CADENCR_REGISTRY_*_BLOCKLIST_URL` variables are optional here, but any that is
+  set must be this repository's raw `refs/heads/marketplace-v2/<policy file>`.
+- **What it publishes.** For each of provider, theme and custom tab, in that order:
+  an empty policy (`entries: []`; the provider policy has no `kind`, the others
+  carry theirs) with `generated_at` now and a 13-day window, the same horizon the
+  renewal uses. The helper (`registry-feeds.sh bootstrap-policies`) signs it with
+  `sign-*-blocklist` without the publication token in the signer's environment,
+  checks it with `verify-*-blocklist` against the pinned public key, and runs
+  `publish-policy --bootstrap`, which reads the public feed back (up to about six
+  minutes per file, hence the 30-minute timeout).
+- **Idempotent.** A policy that `fetch-policy` can already read from the branch is
+  skipped with a notice, never re-signed or replaced, and `--bootstrap` itself
+  refuses an existing policy. If a run fails after publishing only some policies,
+  dispatch it again: it publishes just the missing ones.
+- **Afterwards.** Set the three policy URL variables, then let the daily renewal
+  and the expiry watch take over. Policy entries are still added only through the
+  reviewed manual signing and `publish-policy` described below.
+
 ## Renewal runbook
 
 The renewal workflow above performs steps 1–4 for the catalog and for each due
 revocation policy (unchanged entries only), when configured; the manual procedure
-remains the recovery path, the only path for policy entry changes and bootstrap, and
-the fallback when a renewal run fails repeatedly.
+remains the recovery path, the only path for policy entry changes, and the fallback
+when a renewal run fails repeatedly. The first publication of each policy is the
+dispatched `bootstrap-revocation-policies` workflow above.
 
 1. Renewal owner authenticates and archives exact current catalog and both policy
    envelopes, trust generation, feed heads and immutable publication receipts.
@@ -221,7 +257,7 @@ the fallback when a renewal run fails repeatedly.
 ### Source-only discovery convergence correction
 
 This historical heading is retained for existing links. The correction is now
-included in qualified `0.14.2`; it is no longer source-only.
+included in qualified `0.15.2`; it is no longer source-only.
 A deterministic regression reproduces the failure class: after discovery advances, its stable
 public URL serves the exact previous signed catalog before serving the candidate.
 This does not establish which response caused the historical hosted error.

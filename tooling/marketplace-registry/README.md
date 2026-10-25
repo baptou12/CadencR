@@ -18,7 +18,7 @@ and production trust/feed configuration are unchanged by this migration.
 
 | Runtime contract                                                                             | Local selection / delivery status                                                                                           |
 | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Contribution validation, schema-2 index building and protected publication                   | `ci/released-cli.env` locally selects qualified `0.14.2`                                                                    |
+| Contribution validation, schema-2 index building and protected publication                   | `ci/released-cli.env` locally selects qualified `0.15.2`                                                                    |
 | `validate-metadata`, `validate-submission`, `check-metadata-expiry` and full template checks | Included in the exact qualified release; see [October 25 qualification](../../docs/qa/MARKETPLACE_STABLE_CLI_2026_10_25.md) |
 | Bootstrap, CI cutover and production adoption                                                | Review preparation only; fresh payload approvals, bootstrap merge and hosted checks remain pending                          |
 
@@ -57,7 +57,7 @@ entries. Use the [Rust CLI contract](../../packages/cli/README.md) for all kinds
 ```sh
 cadencr registry validate --base /reviewed/base --candidate /reviewed/candidate
 
-# Use the locally selected qualified CLI 0.14.2.
+# Use the locally selected qualified CLI 0.15.2.
 cadencr registry validate-metadata /reviewed/package.json
 cadencr registry validate-submission /reviewed/submission.json
 ```

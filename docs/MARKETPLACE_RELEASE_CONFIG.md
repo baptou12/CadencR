@@ -121,9 +121,12 @@ The signing key and publication token are secrets of the protected
 `protected-marketplace-renewal` environment (distinct from the reviewed
 `protected-marketplace-publisher` environment). The catalog and the three
 revocation policies (provider, theme, custom tab) are renewed automatically while
-their entries are unchanged; changing a policy's entries and the first publication
-of a policy remain manual procedures here. All three policy URLs are required by
-the renewal as well as the watch.
+their entries are unchanged. The first publication of the three policies (empty) is
+the dispatched, reviewed `bootstrap-revocation-policies` workflow in the
+`protected-marketplace-publisher` environment, which holds the only copy of the
+signing key; changing a policy's entries remains a reviewed, manual procedure. The
+policy URLs are not needed for the bootstrap, but all three are required by the
+renewal as well as the watch.
 
 ## Current operational gaps
 
@@ -208,7 +211,9 @@ cadencr registry publish-policy --kind provider|theme|tab --signed renewed-signe
 The candidate must be current and authenticate; the policy already on the branch must
 authenticate (expired is fine) and be strictly older, otherwise the command refuses
 (no rollback, no same-time replacement). With no file on the branch, `--bootstrap` is
-required, and `--bootstrap` is refused when the file exists. The update is one
+required, and `--bootstrap` is refused when the file exists (with the online key held
+only as an environment secret, use the `bootstrap-revocation-policies` workflow for
+the first publication). The update is one
 conditional write of that single path (a concurrent change makes it fail, never
 overwrite), a lost response is reconciled by reading the branch back, and the public
 raw URL is then read without credentials until it serves exactly the candidate. That

@@ -10,6 +10,8 @@
 #   publish <request> <state>        re-assert renewal-only, then publish
 #   prepare-policies <snapshot> <work>  plan which revocation policies are due (no secrets)
 #   renew-policies <work>            renew and publish each planned policy
+#   bootstrap-check                  confirmation + configuration check of the first policy publication (no secrets)
+#   bootstrap-policies <work>        sign and bootstrap-publish each missing, EMPTY revocation policy
 #   materialize-key <prefix>         write the signing key to an owned 0700 directory
 #   remove-key <prefix>              delete it again (shared with the reviewed publisher)
 #   check-expiry <snapshot>          expiry + signature checks (watch)
@@ -59,8 +61,34 @@ const feedUrl = (value, file) => new RegExp(
 JS
 }
 
+# The shared guard of the first publication of the revocation policies: the
+# operator's confirmation, the pinned public identity and, when configured, the
+# three policy URLs, which must name this repository's fixed discovery branch.
+js_bootstrap() {
+  cat <<'JS'
+const CONFIRMATION = "bootstrap-empty-policies";
+const BOOTSTRAP_BRANCH = "marketplace-v2";
+function bootstrapGuard(env) {
+  const fail = (message) => { throw new Error(`policy bootstrap guard: ${message}`); };
+  if (env.CONFIRM_BOOTSTRAP !== CONFIRMATION) fail(`the confirmation input must be exactly ${CONFIRMATION}`);
+  for (const name of ["GITHUB_REPOSITORY", "CADENCR_REGISTRY_KEY_ID", "CADENCR_REGISTRY_PUBLIC_KEY_PEM"]) {
+    if (!env[name]) fail(`${name} is required`);
+  }
+  // The policy URLs are optional here (the catalog may not exist yet), but a
+  // configured one must be this repository's own file on the fixed branch.
+  for (const { variable, file } of FEEDS) {
+    if (!env[variable]) continue;
+    const url = feedUrl(env[variable], file) ?? fail(`${variable} must be this repository's raw refs/heads/${BOOTSTRAP_BRANCH}/${file}`);
+    if (url[1].toLowerCase() !== env.GITHUB_REPOSITORY.toLowerCase()) fail(`${variable} names a different repository`);
+    if (url[2] !== BOOTSTRAP_BRANCH) fail(`${variable} must name the discovery branch ${BOOTSTRAP_BRANCH}`);
+  }
+}
+JS
+}
+
 # Run the script on stdin after the shared prelude, in one scope.
 node_script() { { js_common; cat; } | node; }
+node_bootstrap_script() { { js_common; js_bootstrap; cat; } | node; }
 
 fetch_feed() { # url destination
   case "$1" in
@@ -401,6 +429,99 @@ renew-policies)
     }
   }
   if (failures.length > 0) throw new Error(`policy renewal failed for: ${failures.join(", ")}`);
+NODE
+  ;;
+
+bootstrap-check)
+  # No secrets: refuse a wrong confirmation or configuration before the
+  # reviewed environment is ever asked for approval.
+  node_bootstrap_script <<'NODE'
+  bootstrapGuard(process.env);
+NODE
+  ;;
+
+bootstrap-policies)
+  # Holds the signing key and publication token. The FIRST publication of the
+  # three revocation policies, each EMPTY (no entries), signed here with the
+  # pinned online key and published with `--bootstrap`. A policy already on the
+  # branch is skipped, never replaced: the release CLI also refuses `--bootstrap`
+  # when the file exists, so a failed or ambiguous existence check cannot
+  # overwrite anything. Entries are never set here; the same validity window as a
+  # renewal. Policies are independent; every failure is reported and the step
+  # fails at the end, so a rerun finishes the missing ones.
+  POLICY_DIR=${2:?policy work directory is required}
+  export POLICY_DIR
+  node_bootstrap_script <<'NODE'
+  const { spawnSync } = require("node:child_process");
+  const { mkdirSync, writeFileSync } = require("node:fs");
+  const { join } = require("node:path");
+  const env = process.env;
+  const fail = (message) => { throw new Error(`policy bootstrap guard: ${message}`); };
+  bootstrapGuard(env);
+  for (const name of ["VERIFIED_CLI", "PRIVATE_KEY_FILE", "CADENCR_REGISTRY_GITHUB_TOKEN"]) {
+    if (!env[name]) fail(`${name} is required`);
+  }
+  // An older pinned CLI cannot bootstrap policies; say so instead of failing obscurely.
+  const help = (command) => spawnSync(env.VERIFIED_CLI, ["registry", command, "--help"], { encoding: "utf8", timeout: 30000 });
+  const needed = [["fetch-policy"], ["publish-policy", "--bootstrap"]];
+  for (const { kind } of FEEDS) needed.push([`sign-${kind}-blocklist`], [`verify-${kind}-blocklist`]);
+  for (const [command, flag] of needed) {
+    const result = help(command);
+    const lacks = result.error || result.status !== 0 ? command
+      : flag && !result.stdout.includes(flag) ? `${command} ${flag}` : "";
+    if (lacks) fail(`the pinned released CLI lacks registry ${lacks}; update ci/released-cli.env to a release that includes it`);
+  }
+  mkdirSync(env.POLICY_DIR, { recursive: false, mode: 0o700 });
+  const publicKey = join(env.POLICY_DIR, "public.pem");
+  const pem = env.CADENCR_REGISTRY_PUBLIC_KEY_PEM;
+  writeFileSync(publicKey, pem.endsWith("\n") ? pem : pem + "\n", { flag: "wx", mode: 0o600 });
+  // The signer and the verifier never need the publication token.
+  const { CADENCR_REGISTRY_GITHUB_TOKEN: _token, ...tokenless } = env;
+  const cli = (args, options = {}) => spawnSync(env.VERIFIED_CLI, ["registry", ...args], { stdio: "inherit", ...options });
+  const succeeded = (result) => !result.error && result.status === 0;
+  const keys = ["--public-key", publicKey, "--key-id", env.CADENCR_REGISTRY_KEY_ID];
+  const target = ["--repository", env.GITHUB_REPOSITORY, "--discovery-branch", BOOTSTRAP_BRANCH];
+  const failures = [];
+  for (const { kind } of FEEDS) {
+    const published = join(env.POLICY_DIR, `${kind}-published.json`);
+    const payload = join(env.POLICY_DIR, `${kind}-payload.json`);
+    const signed = join(env.POLICY_DIR, `${kind}-signed.json`);
+    console.log(`::group::Bootstrap ${kind} policy`);
+    // Read through the authenticated API, not the CDN. Success means a policy
+    // is already published; failure means absent or unreadable, and the
+    // bootstrap below is then the authority (it refuses an existing policy).
+    const existing = cli(["fetch-policy", "--kind", kind, ...target, "--output", published],
+      { stdio: ["ignore", "inherit", "pipe"], encoding: "utf8" });
+    let ok;
+    if (succeeded(existing)) {
+      console.log(`::notice title=Policy already published::the ${kind} policy already exists on ${BOOTSTRAP_BRANCH}; it is left as is.`);
+      ok = true;
+    } else {
+      const reason = String(existing.stderr ?? "").split("\n")[0].replace(/[^\x20-\x7e]/g, " ").slice(0, 200);
+      console.log(`::notice title=Bootstrapping policy::the ${kind} policy was not readable on ${BOOTSTRAP_BRANCH}${reason ? ` (${reason})` : ""}; publishing it with --bootstrap, which refuses an existing policy.`);
+      const now = Math.floor(Date.now() / 1000) * 1000;
+      // The provider policy has no `kind`; the theme and tab policies carry theirs.
+      const document = {
+        schema_version: 1,
+        ...(kind === "provider" ? {} : { kind: `${kind}-blocklist` }),
+        generated_at: iso(now),
+        expires_at: iso(now + WINDOW_DAYS * 24 * 3600 * 1000),
+        entries: [],
+      };
+      writeFileSync(payload, JSON.stringify(document, null, 2) + "\n", { flag: "wx", mode: 0o600 });
+      ok = succeeded(cli([`sign-${kind}-blocklist`, "--payload", payload, "--private-key", env.PRIVATE_KEY_FILE,
+          "--key-id", env.CADENCR_REGISTRY_KEY_ID, "--output", signed], { env: tokenless }))
+        && succeeded(cli([`verify-${kind}-blocklist`, "--index", signed, ...keys], { env: tokenless }))
+        && succeeded(cli(["publish-policy", "--kind", kind, "--signed", signed, ...target, ...keys, "--bootstrap",
+          "--receipt", join(env.POLICY_DIR, `${kind}-receipt.json`)]));
+    }
+    console.log("::endgroup::");
+    if (!ok) {
+      console.log(`::error title=Policy bootstrap failed::the ${kind} policy could not be signed and published`);
+      failures.push(kind);
+    }
+  }
+  if (failures.length > 0) throw new Error(`policy bootstrap failed for: ${failures.join(", ")}`);
 NODE
   ;;
 

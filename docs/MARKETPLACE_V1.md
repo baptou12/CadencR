@@ -54,9 +54,9 @@ The remaining work follows the waves below.
 - Explicit current governance: only `rle-mino` may push `main`; no teams/apps,
   `enforce_admins: true`, no mandatory reviews or CI checks. CI remains advisory.
   This supersedes earlier policy requirements, not package-integrity gates.
-- Monorepo registry, author and qualification pins select stable `0.14.2`;
-  see the [0.14.2 evidence](qa/MARKETPLACE_STABLE_CLI_2026_10_25.md). The
-  deployed registry pin follows separately (wave 3).
+- Monorepo registry, author and qualification pins select stable `0.15.2`;
+  see the [0.15.2 evidence](qa/MARKETPLACE_STABLE_CLI_0152_2026_10_25.md). The
+  deployed registry pin follows separately (wave 4).
   No official Graphite, Ember, Fjord or Pi release, production signing/feed
   publication or desktop activation follows from SDK/CLI publication.
 
@@ -252,6 +252,13 @@ that work; an optional official tab must not hold up the initial four plugins.
       inert fixture distribution and Linux runner checks do not qualify macOS
       binaries, managed archive installation or Electron behavior.
 - [x] Review/promote the three monorepo pins atomically to `0.14.2`.
+- [x] Release and qualify the policy-lifecycle CLI. `0.15.0` failed gate 13 (one
+      post-write authenticated read) and `0.15.1` passed only after preserved
+      read-back failures and a manual wait out of the raw CDN's 300 s cache. Stable `0.15.2` (source
+      `07a41cbcacbcf7bdcfddb514313cbe9d146c101b`, ELF SHA-256 `f4a71987…98fc4031`,
+      release run 40237643528) passed all 13 gates with no manual CDN wait; see the
+      [0.15.2 evidence](qa/MARKETPLACE_STABLE_CLI_0152_2026_10_25.md). The three
+      monorepo pins and the official author policy now select it.
 - [x] Deliver the reviewed matching public registry pin and workflow contract
       (stable `cli/vX.Y.Z` tag fetch parity), registry `main` `17c4798`. Re-run
       trusted-base populated CI, including a native-backend tab and unchanged
