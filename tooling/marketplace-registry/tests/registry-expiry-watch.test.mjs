@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, sign as signBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -152,6 +152,31 @@ function signedSnapshot(t, remaining = {}) {
   const snapshot = path.join(root, "snapshot");
   mkdirSync(snapshot);
   const sign = (command, payload, name) => {
+    // The signer refuses stale payloads, so an expired feed is signed by hand.
+    if (Date.parse(payload.expires_at) <= Date.now()) {
+      const canonical = (value) =>
+        Array.isArray(value)
+          ? `[${value.map(canonical).join(",")}]`
+          : value && typeof value === "object"
+            ? `{${Object.keys(value)
+                .sort()
+                .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
+                .join(",")}}`
+            : JSON.stringify(value);
+      const value = signBytes(null, Buffer.from(canonical(payload)), keys.privateKey);
+      writeFileSync(
+        path.join(snapshot, name),
+        JSON.stringify({
+          signed: payload,
+          signature: {
+            algorithm: "ed25519",
+            key_id: "registry-key-1",
+            value: value.toString("base64"),
+          },
+        }),
+      );
+      return;
+    }
     const input = path.join(root, `${name}.payload.json`);
     writeFileSync(input, JSON.stringify(payload));
     const result = runRegistry([
@@ -197,15 +222,12 @@ function signedSnapshot(t, remaining = {}) {
     { schema_version: 1, kind: "tab-blocklist", entries: [], ...window(remaining.tab ?? 200) },
     "managed-tab-blocklist.json",
   );
-  // The released CLI has no provider-policy signer or verifier; only its window is read.
-  writeFileSync(
-    path.join(snapshot, "managed-blocklist.json"),
-    JSON.stringify({
-      signed: { ...window(remaining.provider ?? 200), entries: [] },
-      signature: {},
-    }),
+  sign(
+    "sign-provider-blocklist",
+    { schema_version: 1, entries: [], ...window(remaining.provider ?? 200) },
+    "managed-blocklist.json",
   );
-  return { root, snapshot, publicKey };
+  return { root, snapshot, publicKey, keys };
 }
 
 function check({ root, snapshot, publicKey }) {
@@ -264,4 +286,39 @@ test("check-expiry fails on a tampered, mis-keyed, missing or unreadable feed", 
   const garbage = signedSnapshot(t);
   writeFileSync(path.join(garbage.snapshot, "managed-blocklist.json"), "not json");
   assert.notEqual(check(garbage).status, 0);
+});
+
+test("check-expiry verifies the provider policy's signature and domain, not just its window", (t) => {
+  const tampered = signedSnapshot(t);
+  const file = path.join(tampered.snapshot, "managed-blocklist.json");
+  writeFileSync(
+    file,
+    readFileSync(file, "utf8").replace(
+      '"entries":[]',
+      '"entries":[{"provider_id":"x","reason":"y"}]',
+    ),
+  );
+  const bad = check(tampered);
+  assert.notEqual(bad.status, 0);
+  assert.match(bad.stdout, /managed-blocklist\.json did not verify/);
+
+  // A correctly signed theme policy is not a provider policy.
+  const swapped = signedSnapshot(t);
+  writeFileSync(
+    path.join(swapped.snapshot, "managed-blocklist.json"),
+    readFileSync(path.join(swapped.snapshot, "managed-theme-blocklist.json")),
+  );
+  const wrongDomain = check(swapped);
+  assert.notEqual(wrongDomain.status, 0);
+  assert.match(wrongDomain.stdout, /managed-blocklist\.json did not verify/);
+
+  // The provider policy signed by a different key does not verify with the pinned one.
+  const foreign = signedSnapshot(t);
+  assert.notEqual(
+    check({
+      ...foreign,
+      publicKey: generateKeyPairSync("ed25519").publicKey.export({ format: "pem", type: "spki" }),
+    }).status,
+    0,
+  );
 });

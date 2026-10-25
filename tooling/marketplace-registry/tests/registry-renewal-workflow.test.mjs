@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
+  readdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -82,7 +84,11 @@ test("permissions are minimal and secrets appear only in the key and publish ste
   );
   assert.deepEqual(
     holders.map((step) => step.name),
-    ["Materialize protected signing key", "Renew the signed catalog"],
+    [
+      "Materialize protected signing key",
+      "Renew the signed catalog",
+      "Renew the revocation policies",
+    ],
   );
   const lifecycle = workflow.jobs.renew.steps.filter((s) =>
     /(?:materialize|remove)-key/.test(s.run ?? ""),
@@ -95,7 +101,8 @@ test("permissions are minimal and secrets appear only in the key and publish ste
     ],
   );
   assert.equal([...source.matchAll(/secrets\.CADENCR_REGISTRY_PRIVATE_KEY_PEM/g)].length, 1);
-  assert.equal([...source.matchAll(/secrets\.CADENCR_REGISTRY_GITHUB_TOKEN/g)].length, 1);
+  // The token feeds the catalog step and the policy step, nothing else.
+  assert.equal([...source.matchAll(/secrets\.CADENCR_REGISTRY_GITHUB_TOKEN/g)].length, 2);
   const names = workflow.jobs.renew.steps.map((step) => step.name ?? step.uses);
   assert.ok(
     names.indexOf("Select verified publisher runtime") <
@@ -105,17 +112,130 @@ test("permissions are minimal and secrets appear only in the key and publish ste
     names.indexOf("Build renewal-only request") <
       names.indexOf("Materialize protected signing key"),
   );
+  // Policies are planned (no secrets) before the key exists, renewed after the catalog.
+  assert.ok(
+    names.indexOf("Plan revocation policy renewals") <
+      names.indexOf("Materialize protected signing key"),
+  );
+  assert.ok(
+    names.indexOf("Renew the signed catalog") < names.indexOf("Renew the revocation policies"),
+  );
+  assert.ok(
+    names.indexOf("Renew the revocation policies") <
+      names.indexOf("Remove materialized signing key"),
+  );
 });
 
 test("renewal is inert until configured and fails loudly afterwards", () => {
   assert.equal(workflow.jobs.renew.needs, "gate");
   assert.equal(workflow.jobs.renew.if.includes("needs.gate.outputs.configured == 'true'"), true);
   assert.match(workflow.jobs.gate.steps.at(-1).run, /registry-feeds\.sh gate renewal/);
-  for (const step of workflow.jobs.renew.steps.slice(-3)) {
-    if (step.name === "Remove materialized signing key") continue;
-    assert.equal(step.if, "steps.request.outputs.needed == 'true'");
-  }
+  const steps = Object.fromEntries(workflow.jobs.renew.steps.map((step) => [step.name, step]));
+  const runs = "!cancelled()";
+  assert.equal(
+    steps["Materialize protected signing key"].if,
+    `\${{ ${runs} && steps.publisher_runtime.outcome == 'success' && (steps.request.outputs.needed == 'true' || steps.policies.outputs.needed == 'true') }}`,
+  );
+  assert.equal(
+    steps["Renew the signed catalog"].if,
+    `\${{ ${runs} && steps.request.outputs.needed == 'true' && steps.materialize_key.outputs.private_key_file != '' }}`,
+  );
+  assert.equal(
+    steps["Renew the revocation policies"].if,
+    `\${{ ${runs} && steps.policies.outputs.needed == 'true' && steps.materialize_key.outputs.private_key_file != '' }}`,
+  );
   assert.equal(JSON.stringify(workflow).includes("continue-on-error"), false);
+});
+
+// Evaluate a step `if` the way Actions does for the subset the workflow uses:
+// status functions, step outcomes, step outputs, ==, !=, &&, || and !.
+function simulateRenewJob(failing, { needed = true } = {}) {
+  const outcomes = {};
+  const outputs = {};
+  const ran = [];
+  let failed = false;
+  for (const step of workflow.jobs.renew.steps) {
+    const label = step.name ?? step.uses;
+    const condition = step.if === undefined ? undefined : String(step.if);
+    const hasStatus = /\b(?:always|cancelled|failure|success)\(\)/.test(condition ?? "");
+    let run = true;
+    if (condition !== undefined) {
+      const expression = condition
+        .replace(/^\$\{\{\s*|\s*\}\}$/g, "")
+        .replace(/always\(\)/g, "true")
+        .replace(/!cancelled\(\)/g, "true")
+        .replace(/steps\.(\w+)\.outcome/g, (_, id) => JSON.stringify(outcomes[id] ?? ""))
+        .replace(/steps\.(\w+)\.outputs\.(\w+)/g, (_, id, name) =>
+          JSON.stringify(outputs[id]?.[name] ?? ""),
+        )
+        .replace(/==/g, "===")
+        .replace(/!=/g, "!==");
+      run = Function(`return (${expression});`)();
+    }
+    if (!hasStatus && failed) run = false;
+    const outcome = !run ? "skipped" : failing.has(label) ? "failure" : "success";
+    if (step.id) outcomes[step.id] = outcome;
+    if (run) ran.push(label);
+    if (outcome === "failure") failed = true;
+    if (outcome === "success" && needed) {
+      if (step.id === "request" || step.id === "policies") outputs[step.id] = { needed: "true" };
+      if (step.id === "materialize_key") outputs[step.id] = { private_key_file: "/tmp/key.pem" };
+    }
+  }
+  return { ran, failed };
+}
+
+test("catalog and policy renewal are independent in both directions, and any failure fails the job", () => {
+  const renewCatalog = "Renew the signed catalog";
+  const renewPolicies = "Renew the revocation policies";
+  const policyStages = [
+    "Download the current published revocation policies",
+    "Plan revocation policy renewals",
+    renewPolicies,
+  ];
+  const catalogStages = [
+    "Download the current published catalog",
+    "Build renewal-only request",
+    renewCatalog,
+  ];
+  const cleanup = "Remove materialized signing key";
+
+  const healthy = simulateRenewJob(new Set());
+  assert.equal(healthy.failed, false);
+  for (const name of [...catalogStages, ...policyStages, cleanup])
+    assert.ok(healthy.ran.includes(name), name);
+
+  // Nothing due: no key is ever materialized.
+  const idle = simulateRenewJob(new Set(), { needed: false });
+  assert.equal(idle.ran.includes("Materialize protected signing key"), false);
+
+  // A failure anywhere in the policy stages (e.g. a 404 on an un-bootstrapped
+  // policy) still renews the catalog, and fails the job.
+  for (const failing of policyStages) {
+    const result = simulateRenewJob(new Set([failing]));
+    assert.equal(result.failed, true, failing);
+    for (const name of catalogStages)
+      assert.ok(result.ran.includes(name), `${name} after ${failing}`);
+    assert.ok(result.ran.includes(cleanup), failing);
+  }
+  // ... and the reverse: a catalog failure at any stage still renews the policies.
+  for (const failing of catalogStages) {
+    const result = simulateRenewJob(new Set([failing]));
+    assert.equal(result.failed, true, failing);
+    for (const name of policyStages)
+      assert.ok(result.ran.includes(name), `${name} after ${failing}`);
+    assert.ok(result.ran.includes(cleanup), failing);
+  }
+  // Without the verified CLI nothing is renewed or signed, but the key is never left behind.
+  const noRuntime = simulateRenewJob(new Set(["Select verified publisher runtime"]));
+  assert.equal(noRuntime.failed, true);
+  for (const name of ["Materialize protected signing key", renewCatalog, renewPolicies]) {
+    assert.equal(noRuntime.ran.includes(name), false, name);
+  }
+  // The stage conditions name only their own prerequisites.
+  const condition = (name) => String(workflow.jobs.renew.steps.find((s) => s.name === name).if);
+  for (const name of catalogStages.slice(1)) assert.doesNotMatch(condition(name), /polic/, name);
+  for (const name of policyStages) assert.doesNotMatch(condition(name), /request|catalog/, name);
 });
 
 test("renewal pins the checkout and the exact released CLI through the trusted selector", () => {
@@ -139,6 +259,11 @@ test("renewal pins the checkout and the exact released CLI through the trusted s
 test("the only publishing command is the guarded renewal helper, never a reviewed request", () => {
   const publish = workflow.jobs.renew.steps.find((s) => s.name === "Renew the signed catalog");
   assert.match(publish.run, /registry-feeds\.sh publish/);
+  const policies = workflow.jobs.renew.steps.find(
+    (s) => s.name === "Renew the revocation policies",
+  );
+  assert.match(policies.run, /registry-feeds\.sh renew-policies/);
+  assert.equal(policies.env.VERIFIED_CLI, "${{ steps.publisher_runtime.outputs.cli_file }}");
   assert.doesNotMatch(source, /publish-registry|confirm-request-sha256|publication-request\.json/);
   const request = workflow.jobs.renew.steps.find((s) => s.name === "Build renewal-only request");
   assert.match(request.run, /registry-feeds\.sh prepare/);
@@ -172,8 +297,21 @@ const pem =
   "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAplaceholderplaceholderplaceholder0=\n-----END PUBLIC KEY-----";
 const url = (branch = "marketplace-v2", repository = "acme/registry") =>
   `https://raw.githubusercontent.com/${repository}/refs/heads/${branch}/managed-index.json`;
+const policyFiles = {
+  provider: "managed-blocklist.json",
+  theme: "managed-theme-blocklist.json",
+  tab: "managed-tab-blocklist.json",
+};
+const policyUrl = (kind, branch = "marketplace-v2", repository = "acme/registry") =>
+  `https://raw.githubusercontent.com/${repository}/refs/heads/${branch}/${policyFiles[kind]}`;
+const policyVars = () => ({
+  CADENCR_REGISTRY_PROVIDER_BLOCKLIST_URL: policyUrl("provider"),
+  CADENCR_REGISTRY_THEME_BLOCKLIST_URL: policyUrl("theme"),
+  CADENCR_REGISTRY_TAB_BLOCKLIST_URL: policyUrl("tab"),
+});
 const renewalVars = (extra = {}) => ({
   CADENCR_REGISTRY_CATALOG_URL: url(),
+  ...policyVars(),
   CADENCR_REGISTRY_KEY_ID: "registry-key-1",
   CADENCR_REGISTRY_PUBLIC_KEY_PEM: pem,
   ...extra,
@@ -186,7 +324,13 @@ test("gate: unset is a notice and configured=false; partial configuration is an 
   assert.match(inert.stdout, /::notice title=Registry renewal is not configured::/);
   assert.equal(readFileSync(output, "utf8"), "configured=false\n");
 
-  for (const missing of ["CADENCR_REGISTRY_KEY_ID", "CADENCR_REGISTRY_PUBLIC_KEY_PEM"]) {
+  for (const missing of [
+    "CADENCR_REGISTRY_KEY_ID",
+    "CADENCR_REGISTRY_PUBLIC_KEY_PEM",
+    "CADENCR_REGISTRY_PROVIDER_BLOCKLIST_URL",
+    "CADENCR_REGISTRY_THEME_BLOCKLIST_URL",
+    "CADENCR_REGISTRY_TAB_BLOCKLIST_URL",
+  ]) {
     const { output: out } = sandbox(t);
     const vars = renewalVars();
     delete vars[missing];
@@ -502,7 +646,7 @@ test("signing key materialization and cleanup are owned, private and refuse fore
 
 // ---- bounded, status-checked downloads (fake curl) -------------------------
 
-function fakeCurl(t, behavior) {
+function fakeCurl(t, behavior, scope = "catalog") {
   const { root } = sandbox(t);
   const bin = path.join(root, "bin");
   mkdirSync(bin);
@@ -521,19 +665,25 @@ process.stdout.write(String(behavior.status));
   );
   chmodSync(path.join(bin, "curl"), 0o700);
   const snapshot = path.join(root, "snapshot");
-  const result = helper(["fetch", snapshot, "catalog"], {
+  const result = helper(["fetch", snapshot, scope], {
     PATH: `${bin}${path.delimiter}${process.env.PATH}`,
     CURL_ARGS: record,
     CURL_BEHAVIOR: JSON.stringify(behavior),
     CADENCR_REGISTRY_CATALOG_URL: url(),
+    ...policyVars(),
   });
-  return { result, record, file: path.join(snapshot, "managed-index.json") };
+  return { result, record, snapshot, file: path.join(snapshot, "managed-index.json") };
 }
 
 test("fetch accepts only HTTP 200 with a bounded body and never follows redirects", (t) => {
   const ok = fakeCurl(t, { status: 200, bytes: 10 });
   assert.equal(ok.result.status, 0, ok.result.stderr);
   assert.equal(statSync(ok.file).size, 10);
+  assert.deepEqual(
+    readdirSync(ok.snapshot),
+    ["managed-index.json"],
+    "catalog scope fetches only the catalog",
+  );
   const args = JSON.parse(readFileSync(ok.record, "utf8"));
   assert.ok(args.includes("--fail"));
   assert.ok(!args.includes("--location") && !args.includes("-L"));
@@ -565,4 +715,374 @@ test("fetch accepts only HTTP 200 with a bounded body and never follows redirect
   const empty = fakeCurl(t, { status: 200, bytes: 0 });
   assert.notEqual(empty.result.status, 0);
   assert.match(empty.result.stderr, /empty download/);
+});
+
+test("fetch scopes: policies downloads exactly the three revocation feeds, unknown scopes fail first", (t) => {
+  const policies = fakeCurl(t, { status: 200, bytes: 10 }, "policies");
+  assert.equal(policies.result.status, 0, policies.result.stderr);
+  assert.deepEqual(readdirSync(policies.snapshot).sort(), Object.values(policyFiles).sort());
+  const all = fakeCurl(t, { status: 200, bytes: 10 }, "all");
+  assert.equal(all.result.status, 0, all.result.stderr);
+  assert.equal(readdirSync(all.snapshot).length, 4);
+  const unknown = fakeCurl(t, { status: 200, bytes: 10 }, "everything");
+  assert.notEqual(unknown.result.status, 0);
+  assert.match(unknown.result.stderr, /unknown fetch scope/);
+  assert.throws(
+    () => statSync(unknown.snapshot),
+    { code: "ENOENT" },
+    "no directory for a bad scope",
+  );
+  const foreign = helper(["fetch", path.join(sandbox(t).root, "snapshot"), "policies"], {
+    ...policyVars(),
+    CADENCR_REGISTRY_PROVIDER_BLOCKLIST_URL: "https://example.com/managed-blocklist.json",
+  });
+  assert.notEqual(foreign.status, 0);
+  assert.match(foreign.stderr, /feed URL/);
+});
+
+// ---- revocation policy renewal --------------------------------------------
+
+const policy = (remainingHours, extra = {}) =>
+  JSON.stringify({
+    signed: {
+      schema_version: 1,
+      generated_at: stamp(remainingHours - 24 * 13),
+      expires_at: stamp(remainingHours),
+      entries: [],
+      ...extra,
+    },
+    signature: {},
+  });
+
+function planPolicies(t, remaining, env = {}, mutate = () => {}) {
+  const { root, output } = sandbox(t);
+  const snapshot = path.join(root, "snapshot");
+  mkdirSync(snapshot);
+  for (const [kind, file] of Object.entries(policyFiles)) {
+    writeFileSync(path.join(snapshot, file), policy(remaining[kind] ?? 12 * 24));
+  }
+  mutate(snapshot);
+  const work = path.join(root, "work");
+  const result = helper(["prepare-policies", snapshot, work], {
+    GITHUB_REPOSITORY: "acme/registry",
+    GITHUB_OUTPUT: output,
+    CADENCR_REGISTRY_CATALOG_URL: url(),
+    CADENCR_REGISTRY_PUBLIC_KEY_PEM: pem,
+    ...policyVars(),
+    ...env,
+  });
+  return {
+    result,
+    work,
+    snapshot,
+    root,
+    output: readFileSync(output, "utf8"),
+    logs: result.stdout,
+  };
+}
+
+test("prepare-policies skips healthy policies and writes nothing", (t) => {
+  const healthy = planPolicies(t, {});
+  assert.equal(healthy.result.status, 0, healthy.result.stderr);
+  assert.equal(healthy.output, "needed=false\n");
+  assert.throws(() => statSync(healthy.work), { code: "ENOENT" });
+  // Exactly the threshold (8 days) is due; one hour more is not.
+  assert.equal(planPolicies(t, { theme: 8 * 24 + 1 }).output, "needed=false\n");
+  assert.equal(planPolicies(t, { theme: 8 * 24 }).output, "needed=true\n");
+});
+
+test("prepare-policies plans each due policy independently, expired ones included", (t) => {
+  for (const [remaining, expected] of [
+    [{ provider: 60 }, ["provider"]],
+    [{ theme: 100 }, ["theme"]],
+    [{ tab: -5 }, ["tab"]],
+    [{ provider: 10, theme: -1, tab: 190 }, ["provider", "theme", "tab"]],
+  ]) {
+    const plan = planPolicies(t, remaining);
+    assert.equal(plan.result.status, 0, plan.result.stderr);
+    assert.equal(plan.output, "needed=true\n");
+    const written = JSON.parse(readFileSync(path.join(plan.work, "plan.json"), "utf8"));
+    assert.deepEqual(
+      written.policies.map((entry) => entry.kind),
+      expected,
+    );
+    for (const entry of written.policies) {
+      assert.deepEqual(entry, {
+        kind: entry.kind,
+        file: policyFiles[entry.kind],
+        branch: "marketplace-v2",
+      });
+    }
+    assert.equal(statSync(path.join(plan.work, "plan.json")).mode & 0o777, 0o600);
+    assert.match(readFileSync(path.join(plan.work, "public.pem"), "utf8"), /BEGIN PUBLIC KEY/);
+  }
+  // Every policy lives on the catalog's own branch.
+  for (const kind of Object.keys(policyFiles)) {
+    const other = planPolicies(
+      t,
+      { [kind]: 10 },
+      { [`CADENCR_REGISTRY_${kind.toUpperCase()}_BLOCKLIST_URL`]: policyUrl(kind, "main") },
+    );
+    assert.notEqual(other.result.status, 0, `${kind} on main`);
+    assert.match(other.result.stderr, /must name the catalog's discovery branch marketplace-v2/);
+    assert.equal(other.output, "", kind);
+    assert.throws(() => statSync(other.work), { code: "ENOENT" });
+  }
+  // On a catalog branch other than marketplace-v2 all policies follow it.
+  const moved = planPolicies(
+    t,
+    { provider: 10 },
+    {
+      CADENCR_REGISTRY_CATALOG_URL: url("release-2"),
+      CADENCR_REGISTRY_PROVIDER_BLOCKLIST_URL: policyUrl("provider", "release-2"),
+      CADENCR_REGISTRY_THEME_BLOCKLIST_URL: policyUrl("theme", "release-2"),
+      CADENCR_REGISTRY_TAB_BLOCKLIST_URL: policyUrl("tab", "release-2"),
+    },
+  );
+  assert.equal(moved.result.status, 0, moved.result.stderr);
+  assert.equal(
+    JSON.parse(readFileSync(path.join(moved.work, "plan.json"), "utf8")).policies[0].branch,
+    "release-2",
+  );
+});
+
+test("prepare-policies refuses foreign, mis-named, malformed or future policies", (t) => {
+  const cases = {
+    "a foreign repository": [
+      {},
+      {
+        CADENCR_REGISTRY_THEME_BLOCKLIST_URL: policyUrl("theme", "marketplace-v2", "evil/registry"),
+      },
+    ],
+    "another file name": [{}, { CADENCR_REGISTRY_TAB_BLOCKLIST_URL: policyUrl("theme") }],
+    "a query string": [
+      {},
+      { CADENCR_REGISTRY_PROVIDER_BLOCKLIST_URL: `${policyUrl("provider")}?x=1` },
+    ],
+    "a nested branch": [
+      {},
+      { CADENCR_REGISTRY_PROVIDER_BLOCKLIST_URL: policyUrl("provider", "a/b") },
+    ],
+    "a future generation": [
+      { theme: 60 },
+      {},
+      (d) =>
+        writeFileSync(path.join(d, policyFiles.theme), policy(60, { generated_at: stamp(48) })),
+    ],
+    "noncanonical time": [
+      { theme: 60 },
+      {},
+      (d) =>
+        writeFileSync(
+          path.join(d, policyFiles.theme),
+          policy(60, { expires_at: "2099-01-01T00:00:00.000Z" }),
+        ),
+    ],
+    "no signed payload": [{}, {}, (d) => writeFileSync(path.join(d, policyFiles.tab), "{}")],
+    "malformed json": [{}, {}, (d) => writeFileSync(path.join(d, policyFiles.provider), "{")],
+    "a missing file": [{}, {}, (d) => rmSync(path.join(d, policyFiles.tab))],
+    "a symlinked file": [
+      {},
+      {},
+      (d) => {
+        rmSync(path.join(d, policyFiles.tab));
+        symlinkSync("/etc/hosts", path.join(d, policyFiles.tab));
+      },
+    ],
+  };
+  for (const [label, [remaining, env, mutate]] of Object.entries(cases)) {
+    const plan = planPolicies(t, remaining, env, mutate);
+    assert.notEqual(plan.result.status, 0, label);
+    assert.equal(plan.output, "", label);
+    assert.throws(() => statSync(plan.work), { code: "ENOENT" }, label);
+  }
+});
+
+function renewPolicies(t, remaining, { mutatePlan = () => {}, cliBehavior = {}, env = {} } = {}) {
+  const plan = planPolicies(t, remaining);
+  assert.equal(plan.result.status, 0, plan.result.stderr);
+  mutatePlan(plan.work);
+  const cli = path.join(plan.root, "cadencr");
+  const record = path.join(plan.root, "calls.jsonl");
+  writeFileSync(
+    cli,
+    `#!${process.execPath}
+const fs = require("node:fs");
+const [, ...args] = process.argv.slice(2);
+const behavior = JSON.parse(process.env.CLI_BEHAVIOR);
+if (args.includes("--help")) {
+  if (behavior.lacks === args[0]) process.exit(2);
+  // The usage of publish-policy names its renewal mode unless the CLI is older.
+  process.stdout.write(args[0] === "publish-policy" && behavior.lacks !== "--renewal" ? "--renewal\\n" : "usage\\n");
+  process.exit(0);
+}
+fs.appendFileSync(process.env.CALLS, JSON.stringify({ args, token: process.env.CADENCR_REGISTRY_GITHUB_TOKEN }) + "\\n");
+const kind = args[args.indexOf("--kind") + 1];
+if (behavior.fail === args[0] + ":" + kind) process.exit(1);
+if (["fetch-policy", "renew-policy"].includes(args[0])) fs.writeFileSync(args[args.indexOf("--output") + 1], "{}");
+if (args[0] === "publish-policy" && args.includes("--receipt")) fs.writeFileSync(args[args.indexOf("--receipt") + 1], "{}");
+`,
+  );
+  chmodSync(cli, 0o700);
+  const result = helper(["renew-policies", plan.work], {
+    GITHUB_REPOSITORY: "acme/registry",
+    CADENCR_REGISTRY_CATALOG_URL: url(),
+    CADENCR_REGISTRY_KEY_ID: "registry-key-1",
+    CADENCR_REGISTRY_GITHUB_TOKEN: "test-token-value",
+    PRIVATE_KEY_FILE: "/separate/key.pem",
+    VERIFIED_CLI: cli,
+    CALLS: record,
+    CLI_BEHAVIOR: JSON.stringify(cliBehavior),
+    ...env,
+  });
+  // No file means the CLI never ran.
+  const calls = existsSync(record)
+    ? readFileSync(record, "utf8")
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => JSON.parse(l))
+    : [];
+  return { result, plan, calls };
+}
+
+test("renew-policies fetches, renews then publishes each due policy with fixed arguments", (t) => {
+  const run = renewPolicies(t, { provider: 10, theme: -3 });
+  assert.equal(run.result.status, 0, run.result.stderr);
+  assert.deepEqual(
+    run.calls.map((call) => call.args.slice(0, 3)),
+    [
+      ["fetch-policy", "--kind", "provider"],
+      ["renew-policy", "--kind", "provider"],
+      ["publish-policy", "--kind", "provider"],
+      ["fetch-policy", "--kind", "theme"],
+      ["renew-policy", "--kind", "theme"],
+      ["publish-policy", "--kind", "theme"],
+    ],
+  );
+  const [fetch, renew, publish] = run.calls;
+  const flag = (call, name) => call.args[call.args.indexOf(name) + 1];
+  // The baseline is the branch head read through the API, never the lagging CDN copy.
+  assert.equal(flag(fetch, "--repository"), "acme/registry");
+  assert.equal(flag(fetch, "--discovery-branch"), "marketplace-v2");
+  assert.equal(flag(fetch, "--output"), path.join(run.plan.work, "provider-baseline.json"));
+  assert.equal(flag(renew, "--current"), flag(fetch, "--output"));
+  assert.ok(!renew.args.includes(path.join(run.plan.snapshot, "managed-blocklist.json")));
+  assert.equal(flag(renew, "--private-key"), "/separate/key.pem");
+  assert.equal(flag(renew, "--key-id"), "registry-key-1");
+  assert.equal(flag(renew, "--public-key"), path.join(run.plan.work, "public.pem"));
+  const window = Date.parse(flag(renew, "--expires-at")) - Date.now();
+  assert.ok(
+    window > 12.99 * 24 * 3600 * 1000 && window <= 13 * 24 * 3600 * 1000,
+    "a 13 day window",
+  );
+  assert.equal(flag(publish, "--signed"), flag(renew, "--output"));
+  assert.equal(flag(publish, "--repository"), "acme/registry");
+  assert.equal(flag(publish, "--discovery-branch"), "marketplace-v2");
+  // A renewal never bootstraps and never replaces entries.
+  assert.ok(publish.args.includes("--renewal"));
+  for (const call of run.calls) {
+    assert.ok(!call.args.includes("--bootstrap"));
+    assert.equal(call.args.join(" ").includes("test-token-value"), false);
+  }
+  // The token reaches only the CLI calls that talk to GitHub, through the
+  // environment; the signing call never sees it.
+  assert.equal(fetch.token, "test-token-value");
+  assert.equal(renew.token, undefined);
+  assert.equal(publish.token, "test-token-value");
+});
+
+test("renew-policies runs every due policy even after one fails, then fails the step", (t) => {
+  for (const fail of [
+    "fetch-policy:provider",
+    "renew-policy:provider",
+    "publish-policy:provider",
+  ]) {
+    const run = renewPolicies(t, { provider: 10, theme: 10, tab: 10 }, { cliBehavior: { fail } });
+    assert.notEqual(run.result.status, 0, fail);
+    assert.match(run.result.stderr, /policy renewal failed for: provider/);
+    assert.match(run.result.stdout, /::error title=Policy renewal failed::the provider policy/);
+    const done = run.calls.map((call) => `${call.args[0]}:${call.args[2]}`);
+    assert.ok(done.includes("renew-policy:theme") && done.includes("publish-policy:theme"), fail);
+    assert.ok(done.includes("renew-policy:tab") && done.includes("publish-policy:tab"), fail);
+    assert.equal(
+      done.includes("renew-policy:provider"),
+      fail !== "fetch-policy:provider",
+      "no renewal without its baseline",
+    );
+    assert.equal(
+      done.includes("publish-policy:provider"),
+      fail === "publish-policy:provider",
+      "no publish after a failed baseline or renewal",
+    );
+  }
+});
+
+test("renew-policies fails closed on a tampered plan or work directory before running the CLI", (t) => {
+  const editPlan = (change) => (work) => {
+    const file = path.join(work, "plan.json");
+    const value = JSON.parse(readFileSync(file, "utf8"));
+    change(value);
+    writeFileSync(file, JSON.stringify(value));
+  };
+  const cases = {
+    "a mismatched file": editPlan((p) => {
+      p.policies[0].file = "managed-index.json";
+    }),
+    "another kind's file": editPlan((p) => {
+      p.policies[0].file = policyFiles.theme;
+    }),
+    "an unknown kind": editPlan((p) => {
+      p.policies[0].kind = "catalog";
+    }),
+    "a hostile branch": editPlan((p) => {
+      p.policies[0].branch = "main;rm";
+    }),
+    "a branch other than the catalog's": editPlan((p) => {
+      p.policies[0].branch = "main";
+    }),
+    "an extra field": editPlan((p) => {
+      p.policies[0].bootstrap = true;
+    }),
+    "an empty plan": editPlan((p) => {
+      p.policies = [];
+    }),
+    "a duplicate kind": editPlan((p) => {
+      p.policies.push({ ...p.policies[0] });
+    }),
+    "an extra top-level field": editPlan((p) => {
+      p.extra = 1;
+    }),
+    "a smuggled file": (work) => writeFileSync(path.join(work, "provider-renewed.json"), "{}"),
+  };
+  for (const [label, mutatePlan] of Object.entries(cases)) {
+    const run = renewPolicies(t, { provider: 10 }, { mutatePlan });
+    assert.notEqual(run.result.status, 0, label);
+    assert.match(run.result.stderr, /policy renewal guard/, label);
+    assert.deepEqual(run.calls, [], `${label} must not reach the CLI`);
+  }
+  const noToken = renewPolicies(
+    t,
+    { provider: 10 },
+    { env: { CADENCR_REGISTRY_GITHUB_TOKEN: "" } },
+  );
+  assert.notEqual(noToken.result.status, 0);
+  assert.match(noToken.result.stderr, /CADENCR_REGISTRY_GITHUB_TOKEN is required/);
+});
+
+test("renew-policies names an old pinned CLI instead of failing obscurely", (t) => {
+  for (const [lacks, missing] of [
+    ["fetch-policy", "fetch-policy"],
+    ["renew-policy", "renew-policy"],
+    ["publish-policy", "publish-policy"],
+    ["--renewal", "publish-policy --renewal"],
+  ]) {
+    const run = renewPolicies(t, { provider: 10 }, { cliBehavior: { lacks } });
+    assert.notEqual(run.result.status, 0, lacks);
+    assert.match(
+      run.result.stderr,
+      new RegExp(`lacks registry ${missing}; update ci/released-cli\\.env`),
+    );
+    assert.deepEqual(run.calls, []);
+  }
 });

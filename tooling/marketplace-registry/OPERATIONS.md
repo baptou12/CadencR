@@ -8,7 +8,7 @@ signing, tags, feed advancement, production pins or remote writes require review
 targets/inputs and protected operator authority; preparation alone is insufficient.
 Examples are syntax, not actual keys, destinations or assigned owners. This
 template contains a daily renewal workflow and a daily expiry watch (see
-[Automatic renewal and expiry watch](#automatic-catalog-renewal-and-expiry-watch));
+[Automatic renewal and expiry watch](#automatic-catalog-and-policy-renewal-and-expiry-watch));
 neither is deployed, scheduled or configured in any live repository, and both stay
 inert until their repository variables exist. Earlier distributed CLI qualification is dated evidence, not
 production deployment. The locally selected `0.14.2` includes
@@ -74,17 +74,17 @@ No workflow/schedule or synthetic alert test here establishes live alert deliver
 Exercise expiry, corrupt signature, unavailable feed and missing-run alerts in an
 isolated environment, and retain real acknowledgment evidence as an activation gate.
 
-## Automatic catalog renewal and expiry watch
+## Automatic catalog and policy renewal and expiry watch
 
 Two workflows automate the routine part of the renewal runbook below. Both are
 **template files, not yet deployed**: nothing renews or alerts until the registry
 repository exists, the variables and environment below are configured by an
 authorized operator, and a real alert path has been exercised.
 
-| Workflow                  | Schedule           | Authority                                                                 |
-| ------------------------- | ------------------ | ------------------------------------------------------------------------- |
-| `renew-protected-catalog` | Daily, plus manual | Environment `protected-marketplace-renewal`; can only re-sign the catalog |
-| `watch-registry-expiry`   | Daily, plus manual | `contents: read`, no environment, no secrets                              |
+| Workflow                  | Schedule           | Authority                                                                                              |
+| ------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------ |
+| `renew-protected-catalog` | Daily, plus manual | Environment `protected-marketplace-renewal`; can only re-sign the catalog and renew the three policies |
+| `watch-registry-expiry`   | Daily, plus manual | `contents: read`, no environment, no secrets                                                           |
 
 **Renewal-only by construction.** `scripts/ci/registry-feeds.sh` downloads the
 current published catalog from this repository's own discovery URL (HTTPS on
@@ -113,18 +113,59 @@ is queued behind a running job supersedes that pending publication, which must t
 be re-dispatched. Separate groups would avoid this but would allow a renewal and a
 publication to sign concurrently.
 
+**Revocation policies.** After the catalog step, the same job renews each of the
+three signed revocation policies (provider `managed-blocklist.json`, theme
+`managed-theme-blocklist.json`, custom tab `managed-tab-blocklist.json`) whose
+remaining validity is 8 days or less, each independently and with the same 13-day
+window. The public CDN only schedules the renewal (it can lag the branch by about
+five minutes). For each due policy the pinned released CLI runs
+`registry fetch-policy` (the branch head through the authenticated GitHub API),
+`registry renew-policy` and then `registry publish-policy --renewal`:
+
+- `renew-policy` authenticates the fetched policy with the pinned public key
+  (an already expired policy is accepted if, and only if, it is correctly signed),
+  keeps its entries byte-for-byte identical, sets `generated_at` to now (it must be
+  strictly newer) and a later `expires_at` inside the 14-day maximum, signs, and
+  verifies the result again before writing it. It never reinterprets one domain as
+  another: a provider policy has no `kind`, the theme and tab policies carry theirs.
+  The signing call runs without the publication token in its environment.
+- `publish-policy` verifies the candidate, requires the policy already on the
+  discovery branch to authenticate and be strictly older (a rollback or a same-time
+  replacement is refused), makes one conditional update of that single fixed path,
+  and then reads the public raw URL back without credentials with the catalog's
+  bounded convergence rules (at most 30 seconds, only the exact previous body may
+  be waited out). The very first publication of a policy needs an explicit
+  `--bootstrap`, which the workflow never passes: bootstrap each policy by hand
+  once (see the runbook) before enabling renewal. The workflow always passes
+  `--renewal`: the entries on the branch at the moment of publication must be
+  identical to the renewed ones, so a revocation an operator published after the
+  baseline was read is never silently dropped; such a run fails and the next
+  run renews from the new head.
+- Policies are independent of the catalog and of each other: every stage of one
+  runs even if a stage of the other failed (for example a 404 on an
+  un-bootstrapped policy does not skip the catalog renewal), and any failure
+  fails the run. A policy whose URL is not this repository's raw
+  `refs/heads/<branch>/<policy file>` on the catalog's own discovery branch is an
+  error, not a skip.
+- The automation can only extend validity. Adding, changing or removing an entry is
+  a reviewed, manual signing and `publish-policy` (see the revocation runbook).
+
+The pinned released CLI in `ci/released-cli.env` must include `fetch-policy`,
+`renew-policy`, `publish-policy --renewal` and `verify-provider-blocklist`; the
+renewal step names the missing command and fails if it does not.
+
 **Inert until configured.** If `CADENCR_REGISTRY_CATALOG_URL` is unset, each job
 logs a notice and skips. Once it is set, any other missing required variable, any
 download problem, any verification or renewal problem fails the run.
 
-| Repository variable (public values)                                                                                     | Used by      | Meaning                                                                                                                                                                                        |
-| ----------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CADENCR_REGISTRY_CATALOG_URL`                                                                                          | both; switch | `https://raw.githubusercontent.com/<owner>/<repo>/refs/heads/<branch>/managed-index.json`; for renewal `<owner>/<repo>` must be this repository, and schema 2 requires branch `marketplace-v2` |
-| `CADENCR_REGISTRY_KEY_ID`                                                                                               | both         | Active metadata signing key id                                                                                                                                                                 |
-| `CADENCR_REGISTRY_PUBLIC_KEY_PEM`                                                                                       | both         | SPKI PEM public key for that key; never a private key                                                                                                                                          |
-| `CADENCR_REGISTRY_PROVIDER_BLOCKLIST_URL`, `CADENCR_REGISTRY_THEME_BLOCKLIST_URL`, `CADENCR_REGISTRY_TAB_BLOCKLIST_URL` | watch        | Public raw URLs of the three signed revocation policies; all required by the watch                                                                                                             |
-| `CADENCR_REGISTRY_TRUST_MANIFEST_JSON`, `CADENCR_REGISTRY_ROOT_KEY_ID`, `CADENCR_REGISTRY_ROOT_PUBLIC_KEY_PEM`          | renewal      | Optional, all-or-none root trust profile passed as the request's `trust` object                                                                                                                |
-| `CADENCR_REGISTRY_TRUST_MIN_GENERATION`                                                                                 | renewal      | Optional positive generation floor (default `1`)                                                                                                                                               |
+| Repository variable (public values)                                                                                     | Used by      | Meaning                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CADENCR_REGISTRY_CATALOG_URL`                                                                                          | both; switch | `https://raw.githubusercontent.com/<owner>/<repo>/refs/heads/<branch>/managed-index.json`; for renewal `<owner>/<repo>` must be this repository, and schema 2 requires branch `marketplace-v2`                       |
+| `CADENCR_REGISTRY_KEY_ID`                                                                                               | both         | Active metadata signing key id                                                                                                                                                                                       |
+| `CADENCR_REGISTRY_PUBLIC_KEY_PEM`                                                                                       | both         | SPKI PEM public key for that key; never a private key                                                                                                                                                                |
+| `CADENCR_REGISTRY_PROVIDER_BLOCKLIST_URL`, `CADENCR_REGISTRY_THEME_BLOCKLIST_URL`, `CADENCR_REGISTRY_TAB_BLOCKLIST_URL` | both         | Public raw URLs of the three signed revocation policies; all required once the catalog URL is set. For renewal each must be this repository's `refs/heads/<branch>/<policy file>`, on the same branch as the catalog |
+| `CADENCR_REGISTRY_TRUST_MANIFEST_JSON`, `CADENCR_REGISTRY_ROOT_KEY_ID`, `CADENCR_REGISTRY_ROOT_PUBLIC_KEY_PEM`          | renewal      | Optional, all-or-none root trust profile passed as the request's `trust` object                                                                                                                                      |
+| `CADENCR_REGISTRY_TRUST_MIN_GENERATION`                                                                                 | renewal      | Optional positive generation floor (default `1`)                                                                                                                                                                     |
 
 | Environment / secret                                                | Where                                                                                                              |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -138,12 +179,10 @@ thing the key can do through this path is re-sign the authenticated baseline.
 
 **What is not automated.**
 
-- The three revocation policies are **not** renewed: the released CLI signs a policy
-  from a reviewed payload (`sign-theme-blocklist`, `sign-tab-blocklist`) but has no
-  authenticated renew-and-publish command, so renewing them stays a manual step 3–4
-  of the runbook. The watch alerts on them (provider policy by timestamp only; there
-  is no provider-policy verifier in the released CLI). A fresh catalog does not
-  extend any policy.
+- Revocation policy **entries** are never changed automatically: a renewal keeps them
+  identical, and any addition, edit or removal is a reviewed payload signed with
+  `sign-*-blocklist` and published with `publish-policy`. The first publication of
+  each policy (`publish-policy --bootstrap`) is also manual.
 - GitHub disables scheduled workflows in a public repository after 60 days without
   repository activity and emails only the person who last edited the cron line.
   Subscribe the real owner and backup to failed-run notifications and keep the
@@ -153,9 +192,10 @@ thing the key can do through this path is re-sign the authenticated baseline.
 
 ## Renewal runbook
 
-The renewal workflow above performs steps 1–4 for the **catalog only**, when
-configured; the manual procedure remains the recovery path and the only path for
-the revocation policies.
+The renewal workflow above performs steps 1–4 for the catalog and for each due
+revocation policy (unchanged entries only), when configured; the manual procedure
+remains the recovery path, the only path for policy entry changes and bootstrap, and
+the fallback when a renewal run fails repeatedly.
 
 1. Renewal owner authenticates and archives exact current catalog and both policy
    envelopes, trust generation, feed heads and immutable publication receipts.
@@ -165,10 +205,12 @@ the revocation policies.
    publication window is 14 days. Catalog renewal uses an authenticated baseline
    and `publications: []`: no historical package rebuild/download or release mutation.
 3. Review the exact request/commit and policy payloads in the protected environment.
-   Never extend timestamps without new signatures. Renew policies independently;
-   a fresh catalog cannot extend provider or theme revocation policy validity.
+   Never extend timestamps without new signatures. Renew policies independently
+   (`registry renew-policy --kind provider|theme|tab`); a fresh catalog cannot extend
+   any revocation policy's validity.
 4. After explicit publication authority, use the qualified Rust pipeline and local
-   policy signing/verification commands in [release configuration](../../docs/MARKETPLACE_RELEASE_CONFIG.md).
+   policy signing/verification/renewal/publication commands in
+   [release configuration](../../docs/MARKETPLACE_RELEASE_CONFIG.md).
    Preserve exact content-bound state after any error; reconcile the same operation
    rather than retrying new writes or rolling back. A failed final verification can
    leave remote state advanced without a success receipt.

@@ -10,6 +10,7 @@ mod commands;
 mod metadata;
 mod output;
 mod pipeline;
+mod policy;
 mod publication;
 mod signing;
 mod tab;

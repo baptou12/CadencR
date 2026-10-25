@@ -13,12 +13,16 @@ mod fs;
 mod github;
 mod mirror;
 mod pipeline;
+mod policy_publish;
 mod promote;
+mod public_read;
 mod publication_local;
 mod receipt;
 mod recover;
 mod restore;
 mod stage;
+#[cfg(test)]
+mod test_support;
 
 use std::path::{Path, PathBuf};
 
@@ -29,6 +33,10 @@ pub use error::PublisherError;
 pub use pipeline::{
     prepare_registry_publication, publish_registry, PipelineReceipt, PipelineRequest,
     PreparedPipeline,
+};
+pub use policy_publish::{
+    prepare_policy_publication, publish_policy, read_published_policy, PolicyOutcome,
+    PolicyReceipt, PreparePolicyRequest, PreparedPolicy,
 };
 pub use stage::{StageArtifact, StageReceipt};
 

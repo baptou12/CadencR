@@ -75,57 +75,21 @@ fn verify_raw_with(
     pause: std::time::Duration,
     wait: &impl Fn(std::time::Duration),
 ) -> Result<(), PublisherError> {
-    use crate::download::DiscoveryObservation;
     let url = cadencr_registry_core::discovery_url(snapshot.repository(), branch)?;
-    let deadline = std::time::Instant::now() + budget;
-    // Only an exact authenticated previous body may retry until the deadline.
-    let mut retry = false;
-    loop {
-        if retry {
-            wait(pause.min(deadline.saturating_duration_since(std::time::Instant::now())));
-            if std::time::Instant::now() >= deadline {
-                return Err(exhausted());
-            }
-            revalidate(deadline)?;
-        }
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            return Err(exhausted());
-        }
-        let temporary = OwnedDirectory::create(directory, ".discovery-public-")?;
-        let observed = downloader.observe(
-            DownloadRequest {
-                url: &url,
-                sha256: snapshot.sha256(),
-                output: temporary
-                    .path()
-                    .join(cadencr_registry_core::DISCOVERY_FILENAME),
-                max_bytes: cadencr_registry_core::MAX_DISCOVERY_BYTES as u64,
-            },
-            snapshot.previous_sha256(),
-            deadline.saturating_duration_since(std::time::Instant::now()),
-        );
-        let observed = combine_cleanup(observed, temporary.remove())?;
-        if std::time::Instant::now() >= deadline {
-            return Err(exhausted());
-        }
-        match observed {
-            DiscoveryObservation::Candidate(actual)
-                if actual.size == snapshot.size() as u64 && actual.sha256 == snapshot.sha256() =>
-            {
-                return Ok(())
-            }
-            DiscoveryObservation::Previous if snapshot.previous_sha256().is_some() => retry = true,
-            _ => {
-                return Err(PublisherError::new(
-                    "public discovery: candidate size or digest does not match",
-                ))
-            }
-        }
-    }
-}
-fn exhausted() -> PublisherError {
-    PublisherError::new("public discovery: convergence read budget exhausted")
+    crate::public_read::verify_public_object()
+        .url(&url)
+        .file_name(cadencr_registry_core::DISCOVERY_FILENAME)
+        .sha256(snapshot.sha256())
+        .size(snapshot.size() as u64)
+        .max_bytes(cadencr_registry_core::MAX_DISCOVERY_BYTES as u64)
+        .maybe_previous_sha256(snapshot.previous_sha256())
+        .directory(directory)
+        .downloader(downloader)
+        .revalidate(revalidate)
+        .budget(budget)
+        .pause(pause)
+        .wait(wait)
+        .call()
 }
 fn verify_download(
     url: &str,

@@ -14,7 +14,7 @@ use crate::{canonical_json_bytes, PreparedSigningPayload, RegistryError};
 pub(crate) const MAX_BLOCKLIST_BYTES: usize = 1024 * 1024;
 /// Envelope overhead a signed feed may add to its payload.
 pub(crate) const SIGNED_OVERHEAD_BYTES: usize = 1024;
-const MAX_ENTRIES: usize = 4096;
+pub(crate) const MAX_ENTRIES: usize = 4096;
 const MAX_WINDOW_DAYS: i64 = 14;
 
 /// A validated revocation feed. Only [`prepare_blocklist`] builds one: it
@@ -83,9 +83,25 @@ pub(crate) fn prepare_blocklist<E: BlocklistEntry>(
         now,
         &label,
     )?;
+    let requirements = validate_entries(&policy.entries, &label)?;
+    policy.requirements = requirements;
+    let signing = PreparedSigningPayload {
+        canonical,
+        generated_at: policy.generated_at.clone(),
+        expires_at: policy.expires_at.clone(),
+    };
+    Ok(PreparedBlocklist { signing, policy })
+}
+
+/// Every entry's parsed version requirement once all fields are valid and
+/// the entries are unique and sorted by identity.
+pub(crate) fn validate_entries<E: BlocklistEntry>(
+    entries: &[E],
+    label: &str,
+) -> Result<Vec<Option<semver::VersionReq>>, RegistryError> {
     let mut previous: Option<Vec<&str>> = None;
-    let mut requirements = Vec::with_capacity(policy.entries.len());
-    for entry in &policy.entries {
+    let mut requirements = Vec::with_capacity(entries.len());
+    for entry in entries {
         requirements.push(validate_entry(entry)?);
         let identity = entry.identity();
         if previous.as_ref().is_some_and(|prior| *prior >= identity) {
@@ -95,13 +111,7 @@ pub(crate) fn prepare_blocklist<E: BlocklistEntry>(
         }
         previous = Some(identity);
     }
-    policy.requirements = requirements;
-    let signing = PreparedSigningPayload {
-        canonical,
-        generated_at: policy.generated_at.clone(),
-        expires_at: policy.expires_at.clone(),
-    };
-    Ok(PreparedBlocklist { signing, policy })
+    Ok(requirements)
 }
 
 /// The entry's parsed version requirement, once its fields are valid.
@@ -171,7 +181,7 @@ pub(crate) fn validate_window(
     Ok(())
 }
 
-fn timestamp(value: &str, label: &str) -> Result<DateTime<Utc>, RegistryError> {
+pub(crate) fn timestamp(value: &str, label: &str) -> Result<DateTime<Utc>, RegistryError> {
     let parsed = DateTime::parse_from_rfc3339(value)
         .map_err(|_| invalid(format!("{label} timestamp is invalid")))?
         .with_timezone(&Utc);

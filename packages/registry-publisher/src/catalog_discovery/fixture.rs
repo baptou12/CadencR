@@ -63,8 +63,7 @@ pub(super) fn setup() -> (FlowFixture, Raw) {
 }
 
 pub(super) fn setup_baseline() -> (FlowFixture, Raw) {
-    const PRIVATE: &str = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH\n-----END PRIVATE KEY-----\n";
-    const PUBLIC: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=\n-----END PUBLIC KEY-----\n";
+    use crate::test_support::{PRIVATE, PUBLIC};
     let mut value = FlowFixture::new();
     let previous = value.directory.join("previous.json");
     std::fs::write(&previous, value.snapshot.canonical_envelope()).unwrap();
@@ -151,30 +150,4 @@ pub(super) fn assert_js_receipt(
     assert_eq!(serde_json::to_value(receipt).unwrap(), oracle);
 }
 
-/// Fully read byte sequences pass the same typed classifier as raw HTTP.
-pub(super) struct Sequence {
-    pub(super) bodies: Vec<Vec<u8>>,
-    pub(super) calls: Cell<usize>,
-}
-impl crate::download::DiscoveryReader for Sequence {
-    fn observe(
-        &self,
-        request: DownloadRequest<'_>,
-        previous: Option<&str>,
-        _remaining: std::time::Duration,
-    ) -> Result<crate::download::DiscoveryObservation, PublisherError> {
-        let call = self.calls.get();
-        self.calls.set(call + 1);
-        let bytes = &self.bodies[call.min(self.bodies.len() - 1)];
-        std::fs::write(&request.output, bytes).unwrap();
-        crate::download::discovery::classify(
-            crate::Downloaded {
-                sha256: crate::hex(&Sha256::digest(bytes)),
-                size: bytes.len() as u64,
-            },
-            Some(bytes.len() as u64),
-            request.sha256,
-            previous,
-        )
-    }
-}
+pub(super) use crate::test_support::ScriptedFeed as Sequence;

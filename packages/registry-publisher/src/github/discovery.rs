@@ -14,6 +14,7 @@ use cadencr_registry_core::{validate_discovery_branch, DISCOVERY_FILENAME, MAX_D
 
 mod deadline;
 mod model;
+pub(crate) mod write;
 
 use model::{valid_sha, RawBlob, RawCommit, RawContent, RawRef, RawTree};
 
@@ -30,6 +31,29 @@ pub(crate) struct SetDiscoveryRequest<'a> {
     pub(crate) branch: &'a str,
     pub(crate) bytes: &'a [u8],
     pub(crate) expected_sha: Option<&'a str>,
+}
+
+/// One revocation policy file on a discovery branch, addressed by its fixed
+/// path. Reads and conditional updates reuse the catalog's commit-pinned
+/// machinery; only the path and commit message differ.
+#[derive(bon::Builder)]
+pub(crate) struct SetPolicyRequest<'a> {
+    pub(crate) branch: &'a str,
+    pub(crate) file: &'a str,
+    pub(crate) message: &'a str,
+    pub(crate) bytes: &'a [u8],
+    /// The blob SHA being replaced; `None` creates the file.
+    pub(crate) expected_sha: Option<&'a str>,
+}
+
+pub(crate) trait PolicyClient {
+    fn get_policy_before(
+        &self,
+        branch: &str,
+        file: &str,
+        deadline: Option<Instant>,
+    ) -> Result<Option<DiscoveryHead>, PublisherError>;
+    fn set_policy(&self, request: SetPolicyRequest<'_>) -> Result<(), PublisherError>;
 }
 
 pub(crate) trait DiscoveryClient {
@@ -49,7 +73,7 @@ pub(crate) trait DiscoveryClient {
 
 impl DiscoveryClient for GitHubClient {
     fn get_discovery(&self, branch: &str) -> Result<Option<DiscoveryHead>, PublisherError> {
-        self.read_discovery(branch, None)
+        self.read_discovery_file(branch, DISCOVERY_FILENAME, None)
     }
 
     fn get_discovery_before(
@@ -58,12 +82,50 @@ impl DiscoveryClient for GitHubClient {
         deadline: Instant,
     ) -> Result<Option<DiscoveryHead>, PublisherError> {
         super::request::check_deadline(Some(deadline))?;
-        let result = self.read_discovery(branch, Some(deadline));
+        let result = self.read_discovery_file(branch, DISCOVERY_FILENAME, Some(deadline));
         super::request::check_deadline(Some(deadline))?;
         result
     }
 
     fn set_discovery(&self, request: SetDiscoveryRequest<'_>) -> Result<(), PublisherError> {
+        self.put_file(SetPolicyRequest {
+            branch: request.branch,
+            file: DISCOVERY_FILENAME,
+            message: UPDATE_MESSAGE,
+            bytes: request.bytes,
+            expected_sha: request.expected_sha,
+        })
+    }
+}
+
+impl PolicyClient for GitHubClient {
+    fn get_policy_before(
+        &self,
+        branch: &str,
+        file: &str,
+        deadline: Option<Instant>,
+    ) -> Result<Option<DiscoveryHead>, PublisherError> {
+        cadencr_registry_core::discovery_object_url(&self.repository, branch, file)?;
+        super::request::check_deadline(deadline)?;
+        let result = self.read_discovery_file(branch, file, deadline);
+        super::request::check_deadline(deadline)?;
+        result
+    }
+
+    fn set_policy(&self, request: SetPolicyRequest<'_>) -> Result<(), PublisherError> {
+        cadencr_registry_core::discovery_object_url(
+            &self.repository,
+            request.branch,
+            request.file,
+        )?;
+        self.put_file(request)
+    }
+}
+
+impl GitHubClient {
+    /// Create (`expected_sha: None`) or conditionally replace one file on a
+    /// discovery branch. GitHub rejects a stale or already-existing target.
+    fn put_file(&self, request: SetPolicyRequest<'_>) -> Result<(), PublisherError> {
         validate_discovery_branch(request.branch)?;
         if request.bytes.len() > MAX_DISCOVERY_BYTES {
             return Err(error("GitHub discovery bytes are invalid"));
@@ -73,7 +135,7 @@ impl DiscoveryClient for GitHubClient {
         }
         let body = SetBody {
             branch: request.branch,
-            message: UPDATE_MESSAGE,
+            message: request.message,
             content: STANDARD.encode(request.bytes),
             sha: request.expected_sha,
         };
@@ -83,7 +145,7 @@ impl DiscoveryClient for GitHubClient {
             StatusCode::CREATED
         };
         let _: serde_json::Value = self.request.put(
-            &format!("/repos/{}/contents/{DISCOVERY_FILENAME}", self.repository),
+            &format!("/repos/{}/contents/{}", self.repository, request.file),
             &body,
             expected,
         )?;
@@ -94,7 +156,7 @@ impl DiscoveryClient for GitHubClient {
 #[derive(Serialize)]
 struct SetBody<'a> {
     branch: &'a str,
-    message: &'static str,
+    message: &'a str,
     content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     sha: Option<&'a str>,
@@ -259,6 +321,75 @@ mod tests {
         ]);
         assert_eq!(client(api).get_discovery("catalog").unwrap(), None);
         assert_eq!(observed.join().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn policy_files_are_read_and_written_at_their_own_fixed_path() {
+        let commit = "a".repeat(40);
+        let tree = "b".repeat(40);
+        let bytes = b"policy\n";
+        let blob = blob(bytes);
+        let file = "managed-theme-blocklist.json";
+        let (api, observed) = serve_sequence(vec![
+            format!(
+                r#"{{"ref":"refs/heads/catalog","object":{{"type":"commit","sha":"{commit}"}}}}"#
+            ),
+            format!(r#"{{"sha":"{commit}","tree":{{"sha":"{tree}"}}}}"#),
+            format!(
+                r#"{{"sha":"{tree}","truncated":false,"tree":[{{"path":"managed-index.json","mode":"100644","type":"blob","sha":"{}","size":1}},{{"path":"{file}","mode":"100644","type":"blob","sha":"{blob}","size":{}}}]}}"#,
+                "d".repeat(40),
+                bytes.len()
+            ),
+            format!(
+                r#"{{"type":"file","path":"{file}","name":"{file}","encoding":"base64","sha":"{blob}","size":{},"content":"{}"}}"#,
+                bytes.len(),
+                STANDARD.encode(bytes)
+            ),
+        ]);
+        let head = client(api)
+            .get_policy_before("catalog", file, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(head.bytes, bytes);
+        assert!(observed.join().unwrap()[3].starts_with(&format!(
+            "GET /repos/acme/releases/contents/{file}?ref={commit} HTTP/1.1"
+        )));
+
+        let (api, observed) = serve_json("200 OK", "{}");
+        client(api)
+            .set_policy(
+                SetPolicyRequest::builder()
+                    .branch("catalog")
+                    .file(file)
+                    .message("Update managed theme revocation policy")
+                    .bytes(b"abc")
+                    .expected_sha(&blob)
+                    .build(),
+            )
+            .unwrap();
+        let request = observed.join().unwrap();
+        assert!(request.starts_with(&format!(
+            "PUT /repos/acme/releases/contents/{file} HTTP/1.1"
+        )));
+        assert!(request.contains(r#""message":"Update managed theme revocation policy""#));
+        assert!(request.contains(&format!(r#""sha":"{blob}""#)));
+        // Only the catalog and the three policies are addressable.
+        for other in [
+            "other.json",
+            "../managed-index.json",
+            "managed-index.json/x",
+        ] {
+            assert!(client("http://127.0.0.1:1".into())
+                .set_policy(
+                    SetPolicyRequest::builder()
+                        .branch("catalog")
+                        .file(other)
+                        .message("m")
+                        .bytes(b"abc")
+                        .build()
+                )
+                .is_err());
+        }
     }
 
     #[test]

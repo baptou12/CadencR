@@ -54,6 +54,18 @@ cadencr registry sign-tab-blocklist --payload <tab-policy.json> \
   --private-key <private.pem> --key-id <key-id> --output <new-envelope.json>
 cadencr registry verify-tab-blocklist --index <tab-envelope.json> \
   --public-key <public.pem> --key-id <key-id> [--allow-expired]
+cadencr registry sign-provider-blocklist --payload <provider-policy.json> \
+  --private-key <private.pem> --key-id <key-id> --output <new-envelope.json>
+cadencr registry verify-provider-blocklist --index <provider-envelope.json> \
+  --public-key <public.pem> --key-id <key-id> [--allow-expired]
+cadencr registry renew-policy --kind <provider|theme|tab> --current <envelope.json> \
+  --public-key <public.pem> --key-id <key-id> --private-key <private.pem> \
+  --expires-at <YYYY-MM-DDTHH:mm:ssZ> --output <new-envelope.json>
+cadencr registry publish-policy --kind <provider|theme|tab> --signed <envelope.json> \
+  --repository <owner/repository> --discovery-branch <branch> \
+  --public-key <public.pem> --key-id <key-id> [--bootstrap | --renewal] [--receipt <new-receipt.json>]
+cadencr registry fetch-policy --kind <provider|theme|tab> \
+  --repository <owner/repository> --discovery-branch <branch> --output <new-envelope.json>
 cadencr registry assemble-signed-index --payload <index.json> \
   --signature <signature.json> --output <new-envelope.json>
 cadencr registry stage-publication --submission <submission.json> \
@@ -181,6 +193,41 @@ feed: a separate `kind: "tab-blocklist"` policy signed with the catalog key,
 whose sorted, unique entries are `{tab_id, version_requirement?,
 archive_sha256?, executable_sha256?, reason}` within a validity window of at
 most 14 days.
+
+`sign-provider-blocklist`/`verify-provider-blocklist` handle the managed-provider
+revocation policy, the closed document `{schema_version: 1, generated_at,
+expires_at, entries}` (no `kind`; entries `{provider_id, version_requirement?,
+archive_sha256?, reason}`, sorted and unique, optional fields omitted rather
+than `null`). Each policy domain is bound: a theme or tab policy never signs or
+verifies as a provider policy, nor the reverse.
+
+`renew-policy` renews one signed policy of the three kinds: it authenticates
+`--current` with the pinned `--public-key` (an expired policy is accepted if it
+is correctly signed), keeps `entries` identical, sets `generated_at` to now
+(strictly newer than the current one) and `expires_at` to `--expires-at` (later
+than the current expiry, at most 14 days after the new `generated_at`), refuses
+a signing key other than the pinned one, verifies the signed result again and
+only then writes the new file. Failures use `REGISTRY_POLICY_RENEWAL_FAILED`.
+
+`publish-policy` writes a signed policy to its one fixed path on the discovery
+branch (provider `managed-blocklist.json`, theme `managed-theme-blocklist.json`,
+tab `managed-tab-blocklist.json`) with the token from
+`CADENCR_REGISTRY_GITHUB_TOKEN` (never an argument). The candidate must be
+current and authenticate; local checks run before the token is read. The policy
+already on the branch must authenticate and be strictly older (no rollback);
+when the file does not exist `--bootstrap` is required, and it is refused when
+the file exists. The update is a single conditional write, followed by a public
+read-back with the catalog's bounded convergence rules; `--receipt` writes a
+small JSON record. `--renewal` (exclusive with `--bootstrap`) additionally
+requires the published policy to carry exactly the candidate's entries, so a
+renewal made from a stale baseline can never drop a newer revocation. Failures
+use `REGISTRY_POLICY_PUBLICATION_FAILED`.
+
+`fetch-policy` writes the policy as the authenticated GitHub API serves it from
+the discovery branch head (token in `CADENCR_REGISTRY_GITHUB_TOKEN`), bypassing
+the CDN cache, as the baseline for `renew-policy`. The bytes are unverified
+until `renew-policy` or `verify-*-blocklist` authenticates them. Failures use
+`REGISTRY_POLICY_FETCH_FAILED`.
 
 `build-index --schema-version 2` validates and wraps legacy provider source
 metadata in memory while retaining immutable files and ACP extensions. This is

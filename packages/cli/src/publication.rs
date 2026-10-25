@@ -66,7 +66,7 @@ fn preflight(args: &MirrorArgs, code: &'static str) -> Result<serde_json::Value,
         .map_err(|error| operation_error(code, error))
 }
 
-fn publication_token(code: &'static str) -> Result<String, Diagnostic> {
+pub(crate) fn publication_token(code: &'static str) -> Result<String, Diagnostic> {
     std::env::var("CADENCR_REGISTRY_GITHUB_TOKEN")
         .map_err(|_| operation_error(code, "CADENCR_REGISTRY_GITHUB_TOKEN is required"))
 }
