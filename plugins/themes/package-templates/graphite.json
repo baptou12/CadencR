@@ -15,9 +15,9 @@
       }
     },
     "host": {
-      "publisher": "PENDING",
+      "publisher": "cadencr",
       "compatibility": {
-        "min_app_version": "PENDING"
+        "min_app_version": "0.15.0"
       }
     }
   }

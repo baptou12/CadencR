@@ -14,6 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { PI_VERSION, PREPARED_TARGETS } from "../scripts/targets.mjs";
 const original = new URL("../", import.meta.url).pathname;
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const cli = process.env.CADENCR_PI_CANDIDATE_TEST_CLI;
@@ -114,7 +115,8 @@ async function fixture() {
 test("candidate refuses implicit targets/runtime, wrong source and checksum before creating output", async () => {
   const f = await fixture();
   for (const overrides of [
-    { "--candidate-target": "linux-x86_64" },
+    { "--candidate-target": "windows-x86_64" },
+    { "--candidate-target": "windows-aarch64" },
     { "--candidate-target": "auto" },
     { "--runtime": "native" },
     { "--source-commit": "0".repeat(40) },
@@ -210,7 +212,9 @@ test(
   "real Rust CLI creates source-bound reproducible candidate; preserves existing outputs",
   { skip: !cli },
   async () => {
-    for (const target of ["darwin-aarch64", "darwin-x86_64"]) {
+    const archiveDigests = new Set();
+    assert.ok(PREPARED_TARGETS.length > 1);
+    for (const target of PREPARED_TARGETS) {
       const f = await fixture();
       const binary = f.metadata.agent.distribution.binary["darwin-aarch64"];
       binary.archive = `https://example.invalid/pi-0.4.0-${target}.tar.gz`;
@@ -225,7 +229,7 @@ test(
       assert.equal(receipt.qualification, "PENDING");
       assert.equal(receipt.runtime.bundled, false);
       assert.equal(receipt.runtime.node, ">=22.19.0 <23.0.0");
-      assert.equal(receipt.runtime.pi, "0.85.1");
+      assert.equal(receipt.runtime.pi, PI_VERSION);
       assert.equal(receipt.source.commit, f.args[1]);
       assert.equal(
         receipt.readiness.manifest_sha256,
@@ -258,6 +262,10 @@ test(
         digest(await readFile(join(f.output, "package.json"))),
       );
       const archive = await readFile(join(f.output, receipt.archive.name));
+      archiveDigests.add(receipt.archive.sha256);
+      // Refusal, reproducibility and second-directory behavior do not depend on the
+      // target: run that battery once; the other targets only prove their archive bytes.
+      if (target !== PREPARED_TARGETS[0]) continue;
       assert.deepEqual(
         archive,
         await readFile(join(f.output, `reproducibility-${receipt.archive.name}`)),
@@ -277,6 +285,8 @@ test(
       assert.equal(f.run({ "--directory": second }).status, 0);
       assert.deepEqual(await readFile(join(second, receipt.archive.name)), archive);
     }
+    // The payload is a target-independent JS connector: macOS and Linux share bytes.
+    assert.equal(archiveDigests.size, 1, "archive bytes must not depend on the target");
   },
 );
 

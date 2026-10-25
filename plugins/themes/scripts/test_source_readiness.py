@@ -35,7 +35,7 @@ class SourceReadinessTests(unittest.TestCase):
                 self.assertEqual(identity['document_version'], 1)
                 self.assertEqual(identity['repository'], 'https://github.com/merkr-software/CadencR')
                 self.assertEqual(identity['distribution'], {'archive': 'PENDING', 'sha256': '0' * 64})
-                self.assertEqual(package['host'], {'publisher': 'PENDING', 'compatibility': {'min_app_version': 'PENDING'}})
+                self.assertEqual(package['host'], {'publisher': 'cadencr', 'compatibility': {'min_app_version': '0.15.0'}})
 
 
 if __name__ == '__main__':

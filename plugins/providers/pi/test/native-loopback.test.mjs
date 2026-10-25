@@ -10,6 +10,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { serializeJsonLine } from "../src/jsonl.mjs";
 import { qaClient, stopChild } from "../scripts/qa-client.mjs";
+import { PI_VERSION } from "../scripts/targets.mjs";
 import { startLoopbackModelServer } from "./helpers/loopback-model-server.mjs";
 
 const command = process.env.CADENCR_PI_NATIVE_TEST_COMMAND;
@@ -126,7 +127,11 @@ test(
         timeout: 15_000,
         maxBuffer: 4096,
       });
-      assert.equal(version.stdout.trim(), "0.85.1", "native qualification requires Pi 0.85.1");
+      assert.equal(
+        version.stdout.trim(),
+        PI_VERSION,
+        `native qualification requires Pi ${PI_VERSION}`,
+      );
       stage = "model discovery";
       const discovery = await promisify(execFile)(
         provider,

@@ -14,14 +14,19 @@
             "archive": "PENDING",
             "cmd": "bin/provider",
             "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "linux-aarch64": {
+            "archive": "PENDING",
+            "cmd": "bin/provider",
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
           }
         }
       }
     },
     "host": {
-      "publisher": "PENDING",
+      "publisher": "cadencr",
       "compatibility": {
-        "min_app_version": "PENDING"
+        "min_app_version": "0.15.0"
       },
       "assets": {
         "icon": "icon.svg",
