@@ -37,7 +37,7 @@ use super::prompt_receipts::PendingPromptReceipts;
 use super::provider_hooks::AcpProviderHooks;
 use super::server_request_extensions::{handle_extension_notification, handle_extension_request};
 use super::server_request_response::{
-    describe_exit, fs_outcome_from, respond_or_reject, terminal_id_param,
+    describe_exit, emit_recovered, fs_outcome_from, respond_or_reject, terminal_id_param,
 };
 use super::session_config::AcpSessionConfigState;
 use super::session_permissions::SessionPermissions;
@@ -396,13 +396,138 @@ fn enrich_permission_from_recorded_tool_input(
     }
 }
 
-/// Send a `RuntimeStreamStatus::Recovered` banner. The event loop pairs
-/// this with a previously-emitted `Degraded` so the UI doesn't get stuck
-/// after a transient lag spike.
-async fn emit_recovered(tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>) {
-    let _ = tx
-        .send(Ok(RuntimeEvent::stream_status_event(
-            RuntimeStreamStatus::Recovered,
-        )))
+#[cfg(test)]
+mod tests {
+    use super::super::server_request_event_loop_tests::{
+        client_with_agent_io, event_loop_config, read_agent_response, write_agent_request,
+    };
+    use super::spawn_event_loop;
+    use serde_json::{json, Value};
+    use tokio::io::{BufReader, DuplexStream};
+    use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn event_loop_round_trips_file_writes_reads_and_sandbox_errors() {
+        let directory = tempfile::tempdir().unwrap();
+        let (client, mut stdout, mut stdin) = client_with_agent_io().await;
+        let (tx, _rx) = mpsc::channel(8);
+        let task = spawn_event_loop(
+            client.clone(),
+            client.subscribe(),
+            tx,
+            event_loop_config(directory.path().to_path_buf()),
+        );
+        let response = exchange_request(
+            &mut stdout,
+            &mut stdin,
+            json!(41),
+            "fs/write_text_file",
+            json!({"sessionId": "s-1", "path": directory.path().join("nested/roundtrip.txt"), "content": "first\nsecond\n"}),
+        )
         .await;
+        assert!(response.get("result").is_some(), "{response}");
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("nested/roundtrip.txt")).unwrap(),
+            "first\nsecond\n"
+        );
+        let response = exchange_request(
+            &mut stdout,
+            &mut stdin,
+            json!("41"),
+            "fs/read_text_file",
+            json!({"sessionId": "s-1", "path": directory.path().join("nested/roundtrip.txt"), "line": 2, "limit": 1}),
+        )
+        .await;
+        assert_eq!(response["result"]["content"], "second");
+        let response = exchange_request(
+            &mut stdout,
+            &mut stdin,
+            json!(42),
+            "fs/write_text_file",
+            json!({"sessionId": "s-1", "path": directory.path().join("../escape-acp.txt"), "content": "must be rejected"}),
+        )
+        .await;
+        assert_eq!(response["error"]["code"], -32602);
+        client.shutdown().await;
+        task.abort();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn event_loop_round_trips_terminal_lifecycle_over_acp() {
+        let directory = tempfile::tempdir().unwrap();
+        let (client, mut stdout, mut stdin) = client_with_agent_io().await;
+        let (tx, _rx) = mpsc::channel(8);
+        let task = spawn_event_loop(
+            client.clone(),
+            client.subscribe(),
+            tx,
+            event_loop_config(directory.path().to_path_buf()),
+        );
+        let created = exchange_request(&mut stdout, &mut stdin, json!(51), "terminal/create",
+            json!({"sessionId": "s-1", "command": "/bin/sh", "args": ["-c", "printf ACP-transport-ok"], "outputByteLimit": 128})).await;
+        let terminal_id = created["result"]["terminalId"]
+            .as_str()
+            .expect("created terminal");
+        let params = json!({"sessionId": "s-1", "terminalId": terminal_id});
+        let exited = exchange_request(
+            &mut stdout,
+            &mut stdin,
+            json!("51"),
+            "terminal/wait_for_exit",
+            params.clone(),
+        )
+        .await;
+        assert_eq!(exited["result"]["exitCode"], 0);
+        let output = exchange_request(
+            &mut stdout,
+            &mut stdin,
+            json!(52),
+            "terminal/output",
+            params.clone(),
+        )
+        .await;
+        assert_eq!(output["result"]["output"], "ACP-transport-ok");
+        assert_eq!(output["result"]["truncated"], false);
+        let released = exchange_request(
+            &mut stdout,
+            &mut stdin,
+            json!(53),
+            "terminal/release",
+            params.clone(),
+        )
+        .await;
+        assert!(released.get("result").is_some(), "{released}");
+        let gone = exchange_request(
+            &mut stdout,
+            &mut stdin,
+            json!(54),
+            "terminal/output",
+            params,
+        )
+        .await;
+        assert_eq!(gone["error"]["code"], -32602);
+        client.shutdown().await;
+        task.abort();
+    }
+
+    async fn exchange_request(
+        stdout: &mut DuplexStream,
+        stdin: &mut BufReader<DuplexStream>,
+        id: Value,
+        method: &str,
+        params: Value,
+    ) -> Value {
+        write_agent_request(
+            stdout,
+            json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}),
+        )
+        .await;
+        let response = read_agent_response(stdin).await;
+        assert_eq!(
+            response["id"], id,
+            "response must preserve the request ID type"
+        );
+        response
+    }
 }

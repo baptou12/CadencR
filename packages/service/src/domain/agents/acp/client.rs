@@ -452,9 +452,255 @@ mod tests {
         assert_eq!(parsed["result"]["outcome"], "selected");
     }
 
+    #[tokio::test]
+    async fn server_request_ids_preserve_json_types_and_route_out_of_order() {
+        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
+        let mut subscriber = client.subscribe();
+        let ids = [
+            json!(17),
+            json!("17"),
+            json!(null),
+            json!(i64::MIN),
+            json!(i64::MAX),
+        ];
+        for id in &ids {
+            write_frame(
+                &mut agent_stdout,
+                json!({
+                    "jsonrpc": "2.0", "id": id, "method": "fs/read_text_file",
+                    "params": {"sessionId": "s1", "path": "/tmp/acp-id-test"}
+                }),
+            )
+            .await;
+            let event = tokio::time::timeout(Duration::from_secs(1), subscriber.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let AcpEvent::ServerRequest(request) = event else {
+                panic!("expected a server request");
+            };
+            assert_eq!(request.id(), id);
+        }
+        for id in ids.iter().rev() {
+            client
+                .respond_server_request(id.clone(), json!({"echo": id}))
+                .await
+                .unwrap();
+            let response = read_frame(&mut agent_stdin).await;
+            assert_eq!(&response["id"], id);
+            assert_eq!(&response["result"]["echo"], id);
+            assert!(client
+                .respond_server_request(id.clone(), json!({}))
+                .await
+                .is_err());
+        }
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn server_request_without_subscriber_gets_an_error_response() {
+        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
+        write_frame(
+            &mut agent_stdout,
+            json!({
+                "jsonrpc": "2.0", "id": 23, "method": "session/request_permission", "params": {}
+            }),
+        )
+        .await;
+        let response = read_frame(&mut agent_stdin).await;
+        assert_eq!(response["id"], 23);
+        assert_eq!(response["error"]["code"], -32603);
+        assert!(response["error"]["data"]
+            .as_str()
+            .unwrap()
+            .contains("no active receiver"));
+        assert!(client
+            .respond_server_request(json!(23), json!({}))
+            .await
+            .is_err());
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn responses_route_to_their_request_when_received_in_reverse_order() {
+        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
+        let first = tokio::spawn({
+            let client = client.clone();
+            async move {
+                client
+                    .request_with_timeout("first", json!({}), Duration::from_secs(2))
+                    .await
+            }
+        });
+        let first_frame = read_frame(&mut agent_stdin).await;
+        let second = tokio::spawn({
+            let client = client.clone();
+            async move {
+                client
+                    .request_with_timeout("second", json!({}), Duration::from_secs(2))
+                    .await
+            }
+        });
+        let second_frame = read_frame(&mut agent_stdin).await;
+        assert_ne!(first_frame["id"], second_frame["id"]);
+        for request in [&second_frame, &first_frame] {
+            write_frame(
+                &mut agent_stdout,
+                json!({
+                    "jsonrpc": "2.0", "id": request["id"], "result": {"method": request["method"]}
+                }),
+            )
+            .await;
+        }
+        assert_eq!(first.await.unwrap().unwrap(), json!({"method": "first"}));
+        assert_eq!(second.await.unwrap().unwrap(), json!({"method": "second"}));
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn agent_eof_settles_pending_request_without_waiting_for_rpc_timeout() {
+        let (client, agent_stdout, mut agent_stdin) = build_in_memory_client().await;
+        let pending = tokio::spawn({
+            let client = client.clone();
+            async move {
+                client
+                    .request_with_timeout("session/prompt", json!({}), Duration::from_secs(30))
+                    .await
+            }
+        });
+        read_frame(&mut agent_stdin).await;
+        drop(agent_stdout);
+        let error = tokio::time::timeout(Duration::from_secs(1), pending)
+            .await
+            .expect("EOF must fail the request promptly")
+            .unwrap()
+            .unwrap_err();
+        assert!(!matches!(error, AcpError::Timeout(_)));
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn shutdown_flushes_queued_notification_with_agent_output_still_open() {
+        let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client().await;
+        let notification =
+            UntypedMessage::new("session/cancel", json!({"sessionId": "flush"})).unwrap();
+        client.send_notification_typed(notification).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(1), client.shutdown())
+            .await
+            .expect("shutdown must not wait for remote EOF");
+        let frame = read_frame(&mut agent_stdin).await;
+        assert_eq!(frame["method"], "session/cancel");
+        assert_eq!(frame["params"]["sessionId"], "flush");
+        let mut after = String::new();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), agent_stdin.read_line(&mut after))
+                .await
+                .expect("shutdown must close the write half")
+                .unwrap(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn incoming_batch_preserves_notifications_and_groups_request_responses() {
+        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
+        let mut subscriber = client.subscribe();
+        write_frame(
+            &mut agent_stdout,
+            json!([
+                {"jsonrpc": "2.0", "id": 7, "method": "_qa/first", "params": {}},
+                {"jsonrpc": "2.0", "method": "session/update", "params": {
+                    "sessionId": "s1", "update": {"sessionUpdate": "agent_message_chunk",
+                    "content": {"type": "text", "text": "batch"}, "_extension": true}
+                }},
+                {"jsonrpc": "2.0", "id": "7", "method": "_qa/second", "params": {}}
+            ]),
+        )
+        .await;
+        for expected in ["first", "notification", "second"] {
+            let event = tokio::time::timeout(Duration::from_secs(1), subscriber.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            match (expected, event) {
+                ("notification", AcpEvent::Notification(notification)) => {
+                    assert_eq!(notification.params()["update"]["_extension"], true);
+                    assert_eq!(notification.params()["update"]["content"]["text"], "batch");
+                }
+                (method, AcpEvent::ServerRequest(request)) => {
+                    assert_eq!(request.method(), format!("_qa/{method}"));
+                }
+                _ => panic!("batch dispatch order changed"),
+            }
+        }
+        client
+            .reject_server_request(json!("7"), -32601, "unsupported extension")
+            .await
+            .unwrap();
+        client
+            .respond_server_request(json!(7), json!({"ok": true}))
+            .await
+            .unwrap();
+        let response = read_frame(&mut agent_stdin).await;
+        let responses = response.as_array().expect("batch replies remain grouped");
+        assert_eq!(
+            responses.len(),
+            2,
+            "notifications must not produce a response"
+        );
+        assert!(responses
+            .iter()
+            .any(|r| r["id"] == json!(7) && r["result"]["ok"] == true));
+        assert!(responses
+            .iter()
+            .any(|r| r["id"] == json!("7") && r["error"]["code"] == -32601));
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn initialize_rejects_an_incompatible_protocol_version() {
+        use agent_client_protocol::schema::{v1::InitializeRequest, ProtocolVersion};
+
+        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
+        let initialize = tokio::spawn({
+            let client = client.clone();
+            async move {
+                client
+                    .send_request_typed(
+                        InitializeRequest::new(ProtocolVersion::V1),
+                        Duration::from_secs(2),
+                    )
+                    .await
+            }
+        });
+        let request = read_frame(&mut agent_stdin).await;
+        assert_eq!(request["params"]["protocolVersion"], 1);
+        write_frame(
+            &mut agent_stdout,
+            json!({
+                "jsonrpc": "2.0", "id": request["id"],
+                "result": {"protocolVersion": 99, "agentCapabilities": {}}
+            }),
+        )
+        .await;
+        let error = initialize
+            .await
+            .unwrap()
+            .expect_err("v1 client must reject a different wire protocol");
+        assert!(!matches!(error, AcpError::Timeout(_)), "{error}");
+        assert!(
+            error.to_string().to_lowercase().contains("protocol"),
+            "{error}"
+        );
+        client.shutdown().await;
+    }
+
     async fn read_frame(reader: &mut BufReader<tokio::io::DuplexStream>) -> serde_json::Value {
         let mut line = String::new();
-        reader.read_line(&mut line).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), reader.read_line(&mut line))
+            .await
+            .expect("agent must receive a frame")
+            .unwrap();
         serde_json::from_str(line.trim()).unwrap()
     }
 
