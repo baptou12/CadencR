@@ -11,8 +11,9 @@ use sha2::Sha256;
 use tempfile::TempDir;
 
 use super::{flow::Timing, prepare_at, PreparePolicyRequest, PreparedPolicy};
+use crate::convergence::{ReadBack, VirtualClock};
 use crate::github::discovery::{DiscoveryHead, PolicyClient, SetPolicyRequest};
-use crate::test_support::{PRIVATE, PUBLIC};
+use crate::test_support::{ReadLag, PRIVATE, PUBLIC};
 use crate::PublisherError;
 
 pub(super) use crate::test_support::ScriptedFeed;
@@ -137,14 +138,17 @@ fn whole(time: DateTime<Utc>) -> DateTime<Utc> {
     DateTime::from_timestamp(time.timestamp(), 0).unwrap()
 }
 
-/// Pacing for a clock that reads `now` throughout.
+/// Pacing for a clock that reads `now` throughout; read-back waits cost no
+/// time.
 pub(super) fn timing_at(now: DateTime<Utc>) -> Timing {
-    Timing {
-        now: Box::new(move || now),
-        wait: |_| std::thread::sleep(Duration::from_millis(2)),
-        budget: Duration::from_millis(400),
-        pause: Duration::from_millis(1),
-    }
+    timing_with(now, VirtualClock::new().read_back())
+}
+
+pub(super) fn timing_with(now: DateTime<Utc>, read_back: ReadBack) -> Timing {
+    Timing::builder()
+        .now(move || now)
+        .read_back(read_back)
+        .build()
 }
 
 pub(super) fn timing(work: &Workspace) -> Timing {
@@ -171,6 +175,10 @@ pub(super) struct MockGitHub {
     racing_writer: RefCell<Option<Vec<u8>>>,
     /// Another writer lands these bytes when the nth read begins.
     drift: RefCell<Option<(usize, Vec<u8>)>>,
+    /// Reads served the pre-write head after a write lands (API lag).
+    lag: ReadLag<Option<DiscoveryHead>>,
+    /// The write is refused and never lands.
+    refuse_write: Cell<bool>,
 }
 
 impl MockGitHub {
@@ -191,10 +199,20 @@ impl MockGitHub {
     pub(super) fn lose_response(&self) {
         self.lost_response.set(true);
     }
+    /// After the write lands, the next `reads` reads still see the old head.
+    pub(super) fn lag_reads(&self, reads: u64) {
+        self.lag.set(reads);
+    }
+    pub(super) fn refuse_write(&self) {
+        self.refuse_write.set(true);
+    }
+    pub(super) fn gets(&self) -> usize {
+        self.gets.get()
+    }
     pub(super) fn race_with(&self, bytes: &[u8]) {
         *self.racing_writer.borrow_mut() = Some(bytes.to_vec());
     }
-    pub(super) fn drift_at_get(&self, nth: usize, bytes: &[u8]) {
+    pub(super) fn foreign_head_at_get(&self, nth: usize, bytes: &[u8]) {
         *self.drift.borrow_mut() = Some((nth, bytes.to_vec()));
     }
 }
@@ -214,6 +232,9 @@ impl PolicyClient for MockGitHub {
             if nth == self.gets.get() {
                 self.put(Some(&bytes));
             }
+        }
+        if let Some(stale) = self.lag.serve() {
+            return Ok(stale);
         }
         Ok(self.head.borrow().clone())
     }
@@ -235,6 +256,10 @@ impl PolicyClient for MockGitHub {
         if current.as_deref() != request.expected_sha {
             return Err(PublisherError::new("GitHub request failed: conflict"));
         }
+        if self.refuse_write.get() {
+            return Err(PublisherError::new("GitHub request failed: unavailable"));
+        }
+        self.lag.landed(self.head.borrow().clone());
         self.put(Some(request.bytes));
         if self.lost_response.get() {
             return Err(PublisherError::new("GitHub request failed: timeout"));

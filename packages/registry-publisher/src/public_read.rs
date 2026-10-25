@@ -1,8 +1,10 @@
 //! Public read-back of an object just written to a discovery branch, with the
 //! bounded convergence rule shared by the catalog and the revocation policies.
+use std::cell::Cell;
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
+use crate::convergence::{converge, Converged, ReadBack, Verdict};
 use crate::download::{DiscoveryObservation, DiscoveryReader};
 use crate::mirror::artifacts::{combine_cleanup, OwnedDirectory};
 use crate::{DownloadRequest, PublisherError};
@@ -12,9 +14,10 @@ use crate::{DownloadRequest, PublisherError};
 ///
 /// Raw CDN caches may keep serving the previous body for a while after the
 /// write, so exactly the authenticated previous body (`previous_sha256`) is
-/// retried until the budget ends; any other body is terminal. Before each
-/// retry `revalidate` re-checks that the write is still the authoritative
-/// state, so convergence can never mask a concurrent change or an expiry.
+/// retried within `pacing` until the budget ends; any other body is terminal.
+/// Before each retry `revalidate` re-checks that the write is still the
+/// authoritative state, so convergence can never mask a concurrent change or
+/// an expiry.
 #[bon::builder]
 pub(crate) fn verify_public_object(
     url: &str,
@@ -26,21 +29,14 @@ pub(crate) fn verify_public_object(
     directory: &Path,
     downloader: &impl DiscoveryReader,
     revalidate: &impl Fn(Instant) -> Result<(), PublisherError>,
-    budget: Duration,
-    pause: Duration,
-    wait: &impl Fn(Duration),
+    pacing: &ReadBack,
 ) -> Result<(), PublisherError> {
-    let deadline = Instant::now() + budget;
-    let mut retry = false;
-    loop {
-        if retry {
-            wait(pause.min(deadline.saturating_duration_since(Instant::now())));
-            if Instant::now() >= deadline {
-                return Err(exhausted());
-            }
+    let reads = Cell::new(0_u32);
+    let observe = |deadline: Instant| {
+        if reads.replace(reads.get() + 1) > 0 {
             revalidate(deadline)?;
         }
-        let remaining = deadline.saturating_duration_since(Instant::now());
+        let remaining = deadline.saturating_duration_since((pacing.clock)());
         if remaining.is_zero() {
             return Err(exhausted());
         }
@@ -53,25 +49,28 @@ pub(crate) fn verify_public_object(
                 max_bytes,
             },
             previous_sha256,
-            deadline.saturating_duration_since(Instant::now()),
+            remaining,
         );
         let observed = combine_cleanup(observed, temporary.remove())?;
-        if Instant::now() >= deadline {
+        if (pacing.clock)() >= deadline {
             return Err(exhausted());
         }
-        match observed {
-            DiscoveryObservation::Candidate(actual)
-                if actual.size == size && actual.sha256 == sha256 =>
-            {
-                return Ok(())
-            }
-            DiscoveryObservation::Previous if previous_sha256.is_some() => retry = true,
-            _ => {
-                return Err(PublisherError::new(
-                    "public discovery: candidate size or digest does not match",
-                ))
-            }
+        Ok(observed)
+    };
+    let judge = |observed| match observed {
+        DiscoveryObservation::Candidate(actual)
+            if actual.size == size && actual.sha256 == sha256 =>
+        {
+            Ok(Verdict::Done(()))
         }
+        DiscoveryObservation::Previous if previous_sha256.is_some() => Ok(Verdict::Stale),
+        _ => Err(PublisherError::new(
+            "public discovery: candidate size or digest does not match",
+        )),
+    };
+    match converge(pacing, observe, judge)? {
+        Converged::Done(()) => Ok(()),
+        Converged::Stale(_) | Converged::Foreign => Err(exhausted()),
     }
 }
 

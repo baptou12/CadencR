@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::convergence::ReadBack;
 use crate::github::discovery::{write, DiscoveryClient, DiscoveryHead, SetDiscoveryRequest};
 use crate::github::ReleaseClient;
 use crate::{Downloader, PublisherError};
@@ -32,6 +33,7 @@ pub(super) fn advance_with(
         .catalog_downloader(catalog_downloader)
         .discovery_downloader(discovery_downloader)
         .freshness(&freshness)
+        .pacing(&crate::convergence::VirtualClock::new().read_back())
         .call()
 }
 
@@ -54,6 +56,7 @@ pub(crate) fn advance_preflighted(
         .catalog_downloader(catalog_downloader)
         .discovery_downloader(discovery_downloader)
         .freshness(&freshness)
+        .pacing(&ReadBack::production())
         .call()
 }
 
@@ -68,6 +71,7 @@ pub(super) fn advance_with_freshness(
     catalog_downloader: &impl Downloader,
     discovery_downloader: &impl crate::download::DiscoveryReader,
     freshness: &impl Fn() -> Result<(), PublisherError>,
+    pacing: &ReadBack,
 ) -> Result<DiscoveryReceipt, PublisherError> {
     preflight(snapshot, manifest, directory, branch)?;
     advance_preflighted_with_freshness()
@@ -79,6 +83,7 @@ pub(super) fn advance_with_freshness(
         .catalog_downloader(catalog_downloader)
         .discovery_downloader(discovery_downloader)
         .freshness(freshness)
+        .pacing(pacing)
         .call()
 }
 
@@ -92,6 +97,7 @@ fn advance_preflighted_with_freshness(
     catalog_downloader: &impl Downloader,
     discovery_downloader: &impl crate::download::DiscoveryReader,
     freshness: &impl Fn() -> Result<(), PublisherError>,
+    pacing: &ReadBack,
 ) -> Result<DiscoveryReceipt, PublisherError> {
     let lock = crate::fs::OwnedLock::acquire(&directory.join(LOCK))?;
     let result = advance_locked()
@@ -103,6 +109,7 @@ fn advance_preflighted_with_freshness(
         .catalog_downloader(catalog_downloader)
         .discovery_downloader(discovery_downloader)
         .freshness(freshness)
+        .pacing(pacing)
         .call();
     match result {
         Ok(value) => {
@@ -123,6 +130,7 @@ fn advance_locked(
     catalog_downloader: &impl Downloader,
     discovery_downloader: &impl crate::download::DiscoveryReader,
     freshness: &impl Fn() -> Result<(), PublisherError>,
+    pacing: &ReadBack,
 ) -> Result<DiscoveryReceipt, PublisherError> {
     let catalog = crate::catalog_publish::read_receipt(directory, snapshot)?
         .ok_or_else(|| PublisherError::new("catalog publication receipt is required"))?;
@@ -147,15 +155,15 @@ fn advance_locked(
     let final_head = if replay {
         current.ok_or_else(|| PublisherError::new("discovery does not contain the candidate"))?
     } else {
-        set_or_reconcile(client, snapshot, branch, original.as_ref())?
+        set_or_reconcile(client, snapshot, branch, original.as_ref(), pacing)?
     };
     require_candidate(snapshot, Some(&final_head))?;
-    verify_raw(
-        snapshot,
-        branch,
-        directory,
-        discovery_downloader,
-        &|deadline| {
+    verify_raw()
+        .snapshot(snapshot)
+        .branch(branch)
+        .directory(directory)
+        .downloader(discovery_downloader)
+        .revalidate(&|deadline| {
             freshness()?;
             let current = client.get_discovery_before(branch, deadline)?;
             require_candidate(snapshot, current.as_ref())?;
@@ -166,8 +174,9 @@ fn advance_locked(
             }
             freshness()?;
             Ok(())
-        },
-    )?;
+        })
+        .pacing(pacing)
+        .call()?;
     let after_raw = client.get_discovery(branch)?;
     require_candidate(snapshot, after_raw.as_ref())?;
     if after_raw.as_ref().map(|head| &head.sha) != Some(&final_head.sha) {
@@ -194,11 +203,14 @@ fn set_or_reconcile(
     snapshot: &cadencr_registry_core::CatalogSnapshot,
     branch: &str,
     original: Option<&DiscoveryHead>,
+    pacing: &ReadBack,
 ) -> Result<DiscoveryHead, PublisherError> {
-    write::set_or_reconcile(
-        snapshot.canonical_envelope(),
-        "discovery",
-        || {
+    write::set_or_reconcile()
+        .candidate(snapshot.canonical_envelope())
+        .subject("discovery")
+        .original(original)
+        .pacing(pacing)
+        .set(|| {
             client.set_discovery(
                 SetDiscoveryRequest::builder()
                     .branch(branch)
@@ -206,19 +218,23 @@ fn set_or_reconcile(
                     .maybe_expected_sha(original.map(|head| head.sha.as_str()))
                     .build(),
             )
-        },
-        || client.get_discovery(branch),
-    )
+        })
+        .read(|deadline| client.probe_discovery(branch, deadline, original))
+        .call()
 }
 
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
+    use std::time::Duration;
 
     use super::*;
 
-    use super::super::fixture::{assert_js_receipt, run, setup, setup_baseline, RawMode};
+    use super::super::fixture::{
+        assert_js_receipt, run, run_paced, setup, setup_baseline, RawMode,
+    };
     use crate::catalog_publish::fixture::PublicMode;
+    use crate::convergence::VirtualClock;
 
     #[test]
     fn advances_recovers_lost_put_and_replays_without_mutation() {
@@ -314,6 +330,7 @@ mod tests {
                 .catalog_downloader(&value.downloader)
                 .discovery_downloader(&raw)
                 .freshness(&fresh)
+                .pacing(&crate::convergence::VirtualClock::new().read_back())
                 .call()
                 .is_err());
             assert_eq!(value.client.discovery_counts().1, sets);
@@ -371,5 +388,95 @@ mod tests {
         assert!(run(&value, &raw).is_err());
         assert_eq!(value.client.api_calls(), 0);
         assert_eq!(value.downloader.calls(), 0);
+    }
+
+    #[test]
+    fn a_bootstrap_waits_out_reads_that_still_show_discovery_absent() {
+        let (value, raw) = setup();
+        value.client.lag_discovery_reads(3);
+        let clock = VirtualClock::new();
+        let receipt = run_paced(&value, &raw, &clock.read_back()).unwrap();
+        assert_js_receipt(&receipt, &value.snapshot);
+        assert_eq!(value.client.discovery_counts().1, 1, "one write only");
+        let backoff: Vec<_> = [250, 500, 1000].map(Duration::from_millis).into();
+        assert_eq!(*clock.waits.borrow(), backoff);
+    }
+
+    #[test]
+    fn an_update_waits_out_reads_that_still_show_the_previous_catalog() {
+        let (value, raw) = setup_baseline();
+        value
+            .client
+            .set_discovery_head(std::fs::read(value.directory.join("previous.json")).unwrap());
+        value.client.lag_discovery_reads(2);
+        let clock = VirtualClock::new();
+        run_paced(&value, &raw, &clock.read_back()).unwrap();
+        assert_eq!(value.client.discovery_counts().1, 1);
+        assert_eq!(clock.waits.borrow().len(), 2);
+    }
+
+    #[test]
+    fn reads_stale_for_the_whole_budget_fail_without_a_receipt() {
+        for (attempts, waits) in [(15, 14), (3, 2)] {
+            let (value, raw) = setup();
+            value.client.lag_discovery_reads(u64::MAX);
+            let clock = VirtualClock::new();
+            let error = run_paced(&value, &raw, &clock.read_back_capped(attempts))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("stale pre-write state"), "{error}");
+            assert!(error.contains("file absent"), "{error}");
+            assert_eq!(value.client.discovery_counts().1, 1);
+            assert!(!value.directory.join(receipt::RECEIPT).exists());
+            assert_eq!(raw.calls(), 0, "never reaches the public read");
+            assert_eq!(clock.waits.borrow().len(), waits);
+            let waited: Duration = clock.waits.borrow().iter().sum();
+            assert!(waited <= Duration::from_secs(30), "{waited:?}");
+        }
+    }
+
+    #[test]
+    fn a_foreign_head_after_the_write_is_refused_at_once_without_another_write() {
+        let (value, raw) = setup();
+        value.client.lag_discovery_reads(1);
+        // Reads: 1-2 before the write, 3 stale, 4 someone else's catalog.
+        value.client.foreign_head_at_get(4);
+        let clock = VirtualClock::new();
+        let error = run_paced(&value, &raw, &clock.read_back())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("neither the candidate"), "{error}");
+        assert_eq!(value.client.discovery_counts(), (4, 1));
+        assert_eq!(clock.waits.borrow().len(), 1);
+        assert_eq!(raw.calls(), 0);
+    }
+
+    #[test]
+    fn a_failed_write_gets_one_probe_and_never_a_wait() {
+        // The write lands but its response is lost, and the probe sees it.
+        let (value, raw) = setup();
+        value.client.set_lost_discovery(true);
+        let clock = VirtualClock::new();
+        run_paced(&value, &raw, &clock.read_back()).unwrap();
+        assert_eq!(value.client.discovery_counts().1, 1);
+        assert!(clock.waits.borrow().is_empty());
+        // Lagging, the probe still sees the old state: the write's own error.
+        let (value, raw) = setup();
+        value.client.set_lost_discovery(true);
+        value.client.lag_discovery_reads(2);
+        let error = run_paced(&value, &raw, &clock.read_back())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("lost discovery PUT"), "{error}");
+        assert_eq!(value.client.discovery_counts(), (3, 1));
+        // A refused write is the same.
+        let (value, raw) = setup();
+        value.client.refuse_discovery_set();
+        let error = run_paced(&value, &raw, &clock.read_back())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("refused discovery PUT"), "{error}");
+        assert_eq!(value.client.discovery_counts(), (3, 1));
+        assert!(clock.waits.borrow().is_empty());
     }
 }
