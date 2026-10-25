@@ -1,7 +1,7 @@
 # Prepare a provider release locally
 
 The standalone `validate-submission` command is included in the locally selected,
-qualified `0.13.1-dev.39306959010.1`. Binary selection is not production adoption
+qualified `0.14.2`. Binary selection is not production adoption
 or publication authority. See [runtime gates](README.md#status-and-runtime).
 
 These commands prepare artifacts only. They do not create a GitHub repository,

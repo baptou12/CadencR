@@ -101,9 +101,9 @@ if stat.S_IMODE(private.stat().st_mode) & 0o077:
     fail('qualification private key must have no group or other permissions')
 cli = regular(required('CLI'), 'CLI', 134217728)
 pins = (pathlib.Path(os.environ['SCRIPT_ROOT']) / 'cli-qualification.env').read_text()
-expected_pins = ['CADENCR_RELEASE_VERSION=0.13.1-dev.39306959010.1',
-                 'CADENCR_RELEASE_SHA256=251c5d0cc7120ccc44dc2d8ad473bd5bb31e3577542098feb72f31372ed7b88a',
-                 'CADENCR_RELEASE_TAG=cli/v0.13.1-dev.39306959010.1']
+expected_pins = ['CADENCR_RELEASE_VERSION=0.14.2',
+                 'CADENCR_RELEASE_SHA256=1a2c28a13009c303e01148fe87b54fa77936bcfbe3947c51db918cbae5477849',
+                 'CADENCR_RELEASE_TAG=cli/v0.14.2']
 if [line for line in pins.splitlines() if line and not line.startswith('#')] != expected_pins:
     fail('unexpected qualification pins')
 with cli.open('rb') as binary:
@@ -120,13 +120,13 @@ try:
         env={'PATH': os.environ['PATH'], 'HOME': '/nonexistent'})
 except (OSError, subprocess.TimeoutExpired):
     fail('CLI version check failed')
-if result.returncode != 0 or result.stdout != b'cadencr 0.13.1-dev.39306959010.1\n\nstatus:0\n':
+if result.returncode != 0 or result.stdout != b'cadencr 0.14.2\n\nstatus:0\n':
     fail('CLI version mismatch or failed version check')
 print(json.dumps({'schema_version': 1, 'qualification': 'github-contract-preflight',
     'status': 'incomplete', 'lifecycle_qualified': False, 'semantic_preflight': 'pending',
     'remote_verification': 'pending', 'public_publication': 'pending',
     'interruption_resume': 'pending', 'fresh_runner_recovery': 'pending', 'renewal': 'pending',
-    'production_pins_changed': False, 'cli_version': '0.13.1-dev.39306959010.1',
+    'production_pins_changed': False, 'cli_version': '0.14.2',
     'cli_sha256': expected_pins[1].split('=')[1], 'request_sha256': expected}))
 # Exit 3 means contract checked, not qualification passed.
 raise SystemExit(3)

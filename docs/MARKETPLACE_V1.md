@@ -9,6 +9,31 @@ after official package publication, signed-feed readiness and consumer QA.
 This supersedes the earlier stop-at-hidden milestone. Preserve data and secret
 boundaries; record actual deployment/qualification separately from source work.
 
+## Release-owner decisions — 2026-10-25
+
+The sole release owner and contact is the repository owner (`rle-mino`).
+Decisions:
+
+- **Trust model:** two levels. An offline Ed25519 root key signs trust
+  generations that delegate catalog/policy signing to one online key. The root
+  private key is kept offline in the release owner's password manager and local
+  keychain, and never touches a runner or the repository.
+- **Renewal:** automatic. A scheduled renewal-only registry workflow re-signs the
+  unchanged catalog and policies well inside the 14-day validity window; an
+  expiry watch fails (and so notifies the owner) when expiry is under 72 hours.
+- **Official publisher:** `cadencr`, reserved. Packages outside the official
+  `merkr-software` repositories cannot claim it.
+- **First compatible desktop release:** `min_app_version` `0.15.0`.
+- **Platforms:** no fixed matrix. Each provider and native tab declares its own
+  OS/architecture targets; the client hides packages without a build for the
+  current platform (themes and UI-only tabs are platform-neutral). The same rule
+  applies to Linux clients once a Linux desktop release exists.
+- **Official custom tab:** not in v1.
+- **Security contact:** GitHub private vulnerability reporting on the public
+  registry; no email address is published.
+
+The remaining work follows the waves below.
+
 ## Current registry delivery checkpoint — 2026-10-23
 
 - Registry bootstrap [PR #1](https://github.com/merkr-software/cadencr-registry/pull/1)
@@ -29,9 +54,9 @@ boundaries; record actual deployment/qualification separately from source work.
 - Explicit current governance: only `rle-mino` may push `main`; no teams/apps,
   `enforce_admins: true`, no mandatory reviews or CI checks. CI remains advisory.
   This supersedes earlier policy requirements, not package-integrity gates.
-- Registry, author and qualification pins still select qualified
-  `0.13.1-dev.39306959010.1`. Stable CLI `0.14.1` is now published, but its
-  adoption and expanded native-tab qualification remain separate gates below.
+- Monorepo registry, author and qualification pins select stable `0.14.2`;
+  see the [0.14.2 evidence](qa/MARKETPLACE_STABLE_CLI_2026_10_25.md). The
+  deployed registry pin follows separately (wave 3).
   No official Graphite, Ember, Fjord or Pi release, production signing/feed
   publication or desktop activation follows from SDK/CLI publication.
 
@@ -179,7 +204,7 @@ that work; an optional official tab must not hold up the initial four plugins.
 ### Wave 3 — Qualify and adopt the published stable CLI
 
 - [x] Merge the required source changes to `main`, pass canonical CI, then use
-      the existing manual **CLI-only** development release workflow. The current
+      the existing manual **CLI-only** development release workflow. The first
       qualified executable is `0.13.1-dev.39306959010.1`, source
       `646864caeca2896170baa65d5389b475099b2ce1`, released by
       [run 39306959010](https://github.com/merkr-software/CadencR/actions/runs/39306959010).
@@ -213,20 +238,24 @@ that work; an optional official tab must not hold up the initial four plugins.
       deadline and per-retry authority/freshness checks (`1d998241b`). All 169
       publisher tests, strict Clippy and 339 scripts tests pass; see the
       [current evidence](qa/MARKETPLACE_STABLE_CLI_2026_10_23.md).
-- [ ] Integrate that correction onto canonical `main`, preserving its independent
+- [x] Integrate that correction onto canonical `main`, preserving its independent
       tool versions; confirm the next CLI version, pass exact-tip CI and a CLI-only
       dry run, then obtain explicit post-dry-run publishing approval. Qualify the
       newly distributed executable before pin promotion. Delayed recovery of the
       old `0.14.1` executable does not deliver the correction. No SDK or desktop
       release is required solely to ship this CLI fix.
+      Stable `0.14.2` (source `7bd611a0d10bfd161bb71f0f87ad693313b2c24f`, ELF
+      SHA-256 `1a2c28a1…5477849`) was released and its exact distributed ELF
+      passed all 12 gates, including first-pass renewal; see the
+      [0.14.2 evidence](qa/MARKETPLACE_STABLE_CLI_2026_10_25.md).
 - [ ] Run native conformance on each supported executable host separately;
       inert fixture distribution and Linux runner checks do not qualify macOS
       binaries, managed archive installation or Electron behavior.
-- [ ] Review/promote the three monorepo pins atomically, then deliver the
-      reviewed matching public registry pin and workflow contract. Re-run
-      trusted-base populated CI, including a native-backend tab and unchanged
-      provider/theme/UI-only-tab cases. Do not replace the currently qualified
-      dev binary merely because the newer semver is stable.
+- [x] Review/promote the three monorepo pins atomically to `0.14.2`.
+- [ ] Deliver the reviewed matching public registry pin and workflow contract
+      (stable `cli/vX.Y.Z` tag fetch parity). Re-run trusted-base populated CI,
+      including a native-backend tab and unchanged provider/theme/UI-only-tab
+      cases.
 
 #### Wave 3 qualification checkpoint — 2026-10-18
 
