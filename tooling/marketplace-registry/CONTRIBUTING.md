@@ -76,6 +76,10 @@ checks continuity against the authenticated prior signed catalog.
 
 - IDs use `^[a-z][a-z0-9-]*$`; normalized collisions and reserved identities fail.
 - New identities require proof of authority over the linked source project.
+- The `host.publisher` value `cadencr` (any letter case) is reserved for the
+  official `merkr-software` GitHub organisation. A package or submission that
+  claims it from any other source repository fails validation and is never
+  signed into the catalog.
 - A normal version PR cannot silently transfer publisher/source ownership.
   Transfers need a separate explicit administrative procedure and independent
   evidence; there is no ordinary contribution bypass.

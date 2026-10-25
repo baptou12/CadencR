@@ -37,6 +37,10 @@ variable. This is not a public activation switch.
 Use the [operator runbook](../tooling/marketplace-registry/OPERATIONS.md)
 for renewal, failure alerts, revocation and rotation preparation. No real owner,
 alert destination or production trust root is provisioned by this repository.
+The registry template also carries an automatic, renewal-only catalog workflow
+(daily, renewing when due) and a read-only expiry watch (daily); see
+[Automatic catalog renewal and expiry watch](../tooling/marketplace-registry/OPERATIONS.md#automatic-catalog-renewal-and-expiry-watch).
+They are template files, not deployed, and inert until configured as described below.
 
 ## Activation gate
 
@@ -90,17 +94,41 @@ Before activation, verify all of the following:
 - [ ] An accountable renewal owner, incident/revocation owner, monitored security
       contact, alert destination, and on-call escalation are assigned.
 - [ ] Renewal scheduling, expiry monitoring, failure alerts, key compromise recovery,
-      and replacement trust-root delivery have an exercised operational runbook.
+      and replacement trust-root delivery have an exercised operational runbook
+      (the registry template's daily renewal and daily watch are configured, the
+      renewal environment is protected, and a failing watch run reached a human).
 - [ ] Clean packaged builds verify the mixed catalog, install/update/remove a theme,
       preserve user themes, and fail closed on tampering, unavailable policy, and
       revoked identity/version/checksum.
+
+## Registry repository variables for renewal and expiry watch
+
+These belong to the **registry repository** (not the desktop release workflow, and
+never compiled into the app). Leave them all unset until activation is authorized:
+the renewal and watch workflows then skip with a notice. Once
+`CADENCR_REGISTRY_CATALOG_URL` is set the jobs treat any missing or invalid input as
+an error.
+
+| Variable                                                                                                                                                | Meaning                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `CADENCR_REGISTRY_CATALOG_URL`                                                                                                                          | Stable catalog feed; the activation switch. Same URL the desktop `CADENCR_MANAGED_*_INDEX_URL` pins.    |
+| `CADENCR_REGISTRY_PROVIDER_BLOCKLIST_URL`, `CADENCR_REGISTRY_THEME_BLOCKLIST_URL`, `CADENCR_REGISTRY_TAB_BLOCKLIST_URL`                                 | The three signed revocation policy feeds the watch checks (mirrors the desktop `*_BLOCKLIST_URL` pins). |
+| `CADENCR_REGISTRY_KEY_ID`, `CADENCR_REGISTRY_PUBLIC_KEY_PEM`                                                                                            | Public signing identity (PEM, not the base64 form used by desktop builds); no private material.         |
+| `CADENCR_REGISTRY_TRUST_MANIFEST_JSON`, `CADENCR_REGISTRY_ROOT_KEY_ID`, `CADENCR_REGISTRY_ROOT_PUBLIC_KEY_PEM`, `CADENCR_REGISTRY_TRUST_MIN_GENERATION` | Optional root trust profile (the request's `trust` object); the first three are all-or-none.            |
+
+The signing key and publication token are secrets of the protected
+`protected-marketplace-renewal` environment (distinct from the reviewed
+`protected-marketplace-publisher` environment). Only the catalog is renewed
+automatically; the revocation policies still need the manual procedures here.
 
 ## Current operational gaps
 
 Repository policy describes renewal and revocation requirements, but does not
 establish a production owner, monitored security contact, alert destination,
-signing environment, production key, or deployed feeds. This build wiring does
-not close those operational gates and must not be represented as public activation.
+signing environment, production key, or deployed feeds. The renewal and watch
+workflows are templates: nothing is scheduled or deployed from this repository.
+This build wiring does not close those operational gates and must not be
+represented as public activation.
 
 ## Theme revocation operator procedure
 
@@ -206,6 +234,108 @@ immutability, rollback and equivocation checks. An unknown or altered historical
 cache requires explicit recovery; deleting a cache or a database is not a recovery
 procedure. Offline-root replacement/compromise is a distinct app-delivery incident,
 not an ordinary delegated-key rotation.
+
+## Key custody runbook
+
+`scripts/marketplace-keys.sh` is the operator tool for the two-level trust model on
+the release owner's Mac. The Keychain commands (`generate-root`, `sign-trust`,
+`verify-backup`) refuse to run off macOS (`CADENCR_KEYS_ALLOW_NON_DARWIN=1` exists for
+tests only); `generate-online` needs only `gh` and OpenSSL and also runs on Linux. Every
+command accepts `--dry-run` to print the plan, and
+reads its tools from `CADENCR_BIN`, `OP_BIN`, `SECURITY_BIN`, `GH_BIN` and
+`OPENSSL_BIN`. Ed25519 needs OpenSSL 3 (`brew install openssl@3`); the LibreSSL that
+ships with macOS cannot generate it.
+
+| Key                                             | Lives in                                                                                                                 | Never in                                                   |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| Offline root (signs trust generations)          | The owner's login Keychain (service `cadencr-marketplace-root`, account = root key id) **and** one 1Password Secure Note | Any GitHub secret, repository, CI runner or build variable |
+| Online signing key (signs catalog and policies) | GitHub environment secret `CADENCR_REGISTRY_PRIVATE_KEY_PEM` in the publication and renewal environments only            | The Mac, 1Password, the repository                         |
+
+The two root-key stores hold the same value: the single-line base64 of the PKCS8 PEM.
+The online key is uploaded to GitHub as the raw PEM. A private key never appears on
+argv, stdout or stderr. Keychain writes go through
+`security -i` and 1Password writes through an item template, both on stdin; GitHub
+secrets are streamed from the key file to `gh secret set` on stdin. The CLI refuses
+FIFOs and symlinks as key files, so `sign-trust` uses a `0600` file inside a `0700`
+`mktemp` directory. The key file is overwritten with random bytes and removed right
+after signing, and anything left in the directory gets the same treatment on every exit
+path including INT, TERM and HUP. The overwrite is best effort only: it is not
+guaranteed on APFS (copy-on-write, snapshots) or SSDs (wear levelling). FileVault is the
+real at-rest protection, together with the 0700 directory and the short lifetime.
+Public outputs (`--public-pem-out`, the verified trust manifest) are written `0644`;
+an existing `--public-pem-out` file is refused before any key is generated or stored.
+`--item-title`, `CADENCR_KEYS_SERVICE`, key ids and `--keychain` are validated against
+a safe character set because they are interpolated into the `security -i` input and
+the 1Password item template.
+
+### Generate the keys
+
+```sh
+scripts/marketplace-keys.sh generate-root --key-id <root-key-id> --vault <vault> \
+  --public-pem-out ./root-public.pem
+scripts/marketplace-keys.sh generate-online --key-id <online-key-id> \
+  --repo <owner>/<registry-repo> --env <publication-env> --env <renewal-env>
+```
+
+Both print only the key id and public key (base64 of the raw 32 bytes, the form the
+`CADENCR_REGISTRY_ROOT_PUBLIC_KEY_BASE64` and trust manifest `public_key_base64`
+fields use, plus the SPKI PEM the CLI verifiers take). `generate-root` refuses to
+overwrite an existing Keychain or 1Password entry, writes 1Password first, reads both
+copies back and requires them to be identical; if a step fails it names the store to
+inspect and never deletes anything (if the Keychain write fails after the 1Password
+item was created, remove that item by hand before re-running). Review the printed public keys independently
+before pinning them in a build.
+
+### Sign generation 1
+
+Write the payload (`schema_version: 1`, `kind: "registry-trust"`, `generation: 1`, one
+active `keys` entry holding the online public key, empty `revoked_key_ids`), review
+it, then:
+
+```sh
+scripts/marketplace-keys.sh sign-trust --payload reviewed-trust.json \
+  --output signed-trust.json --key-id <root-key-id> \
+  --root-public-key ./root-public.pem --minimum-generation 1
+```
+
+The tool runs `cadencr registry sign-trust-manifest`, verifies the result with
+`verify-trust-manifest` against the root public key and the generation floor, and
+only then writes the output (it will not overwrite one without `--force`). Ship the
+verified envelope and root pins in a build per the rotation procedure above.
+
+### Online key rotation (root stays offline)
+
+1. `generate-online` with a new `--key-id`; it uploads the new private key to the
+   named environments (use `--secret-name` for a staged secret) and prints its public key.
+2. Author generation N+1: retain the old online key with a `retired_at` cutoff, add
+   the new one as active, and `sign-trust` with `--minimum-generation N+1`.
+3. Ship the new envelope in a supported build, then switch the environment secret to
+   the new key and publish. Never reuse a key id.
+
+Renewal of catalog and policy freshness is performed by the online key in the renewal
+environment and needs neither the root nor the Mac.
+
+### Verify the backups
+
+```sh
+scripts/marketplace-keys.sh verify-backup --key-id <root-key-id> --vault <vault> \
+  --expected-public-key ./root-public.pem
+```
+
+Reads both copies without printing them, requires them to be byte-identical and the
+derived public key to match the reviewed one. Run it after generation and on a
+schedule the release owner owns.
+
+### Mac lost or Keychain wiped
+
+The root is recoverable from 1Password; nothing else on the lost Mac is required.
+On a replacement Mac, with the 1Password CLI signed in, read the Secure Note
+(`op item get cadencr-marketplace-root-<root-key-id> --vault <vault> --fields
+notesPlain`) straight into the new login Keychain with `security -i` (the secret
+must stay off argv), then run `verify-backup`. If 1Password is also gone, or the root
+is suspected compromised, this is the app-delivery incident described under
+"Compromise recovery": a new root requires a new build that pins it, not a rotation.
+A stolen or lost laptop with an unlocked Keychain is a suspected compromise.
 
 ## Theme policy freshness and offline behavior
 

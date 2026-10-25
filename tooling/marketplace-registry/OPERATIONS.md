@@ -6,8 +6,11 @@ v0.13.0 ships hidden UI, not a public registry launch. The next milestone publis
 reviewed themes and Pi before a future desktop activation. Procedures involving
 signing, tags, feed advancement, production pins or remote writes require reviewed
 targets/inputs and protected operator authority; preparation alone is insufficient.
-Examples are syntax, not actual keys, destinations or assigned owners. No scheduler
-is deployed here. Earlier distributed CLI qualification is dated evidence, not
+Examples are syntax, not actual keys, destinations or assigned owners. This
+template contains a daily renewal workflow and a daily expiry watch (see
+[Automatic renewal and expiry watch](#automatic-catalog-renewal-and-expiry-watch));
+neither is deployed, scheduled or configured in any live repository, and both stay
+inert until their repository variables exist. Earlier distributed CLI qualification is dated evidence, not
 production deployment. The locally selected `0.14.2` includes
 standalone Rust diagnostics and the bounded discovery-convergence correction.
 Its exact distributed executable passed first-pass renewal, unchanged replays,
@@ -57,10 +60,11 @@ cadencr registry check-metadata-expiry \
   A tampered timestamp can look healthy; never use the result as acquisition or
   publication authority. Independently authenticate fetched bytes with the reviewed
   Rust trust profile and domain-specific validator before recording a healthy feed.
-- After deployment is authorized, wire a read-only job at least daily with bounded
-  HTTPS snapshot acquisition (no redirects/credentials), independent verification
-  and this diagnostic. Missing feeds and verification failures must fail the job.
-  Do not attach signing or GitHub write tokens to monitoring.
+- The template's `watch-registry-expiry.yml` is that read-only daily job: bounded
+  HTTPS snapshot acquisition (no redirects/credentials), the diagnostic above and,
+  where the released CLI has a verifier, signature verification. Missing feeds and
+  verification failures fail the job. It has no secrets or write permissions; never
+  attach signing or GitHub write tokens to monitoring. See the next section.
 - Subscribe the actual alert destination to **all failed runs**, not only expiry
   warnings. Include run URL, feed namespace and remaining validity; exclude secrets.
   A separate watchdog must alert on a missing scheduled run within 24 hours.
@@ -70,7 +74,88 @@ No workflow/schedule or synthetic alert test here establishes live alert deliver
 Exercise expiry, corrupt signature, unavailable feed and missing-run alerts in an
 isolated environment, and retain real acknowledgment evidence as an activation gate.
 
+## Automatic catalog renewal and expiry watch
+
+Two workflows automate the routine part of the renewal runbook below. Both are
+**template files, not yet deployed**: nothing renews or alerts until the registry
+repository exists, the variables and environment below are configured by an
+authorized operator, and a real alert path has been exercised.
+
+| Workflow                  | Schedule           | Authority                                                                 |
+| ------------------------- | ------------------ | ------------------------------------------------------------------------- |
+| `renew-protected-catalog` | Daily, plus manual | Environment `protected-marketplace-renewal`; can only re-sign the catalog |
+| `watch-registry-expiry`   | Daily, plus manual | `contents: read`, no environment, no secrets                              |
+
+**Renewal-only by construction.** `scripts/ci/registry-feeds.sh` downloads the
+current published catalog from this repository's own discovery URL (HTTPS on
+`raw.githubusercontent.com`, no redirects, bounded size) and writes a request with
+`publications: []`, no inputs, no mirror tags and no schema upgrade. The pinned
+released CLI authenticates that exact baseline against the pinned public key before
+signing; a forged or stale download therefore fails closed. `publish` then re-asserts
+the request before the CLI runs: only the fixed baseline/key/trust files may exist,
+`publications` must be present and empty, no unknown fields, the repository must be
+this one, and the window must stay within 14 days. Any deviation aborts before the
+signing key is read by the CLI. The workflow has no `inputs`, and the reviewed
+`publication-request.json` flow stays in `publish-protected-catalog.yml`.
+
+**Cadence.** A new window lasts 13 days. The renewal runs daily but renews only when
+the baseline has 8 days or less left (otherwise it logs a notice and succeeds), so a
+healthy registry renews about every 5 days and keeps at least about 7 days of
+validity. The daily schedule is also the retry policy: if a run fails, the next daily
+runs try again, giving roughly five attempts before the daily watch fails at 72 hours
+remaining. If every attempt fails, the owner must investigate, re-dispatch the
+renewal or follow the manual runbook.
+
+The renewal shares the `marketplace-publication` concurrency lane with the publisher
+and never cancels a run, so the two can never race. The trade-off: GitHub keeps only
+one _pending_ run per group, so a renewal that arrives while a dispatched publication
+is queued behind a running job supersedes that pending publication, which must then
+be re-dispatched. Separate groups would avoid this but would allow a renewal and a
+publication to sign concurrently.
+
+**Inert until configured.** If `CADENCR_REGISTRY_CATALOG_URL` is unset, each job
+logs a notice and skips. Once it is set, any other missing required variable, any
+download problem, any verification or renewal problem fails the run.
+
+| Repository variable (public values)                                                                                     | Used by      | Meaning                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CADENCR_REGISTRY_CATALOG_URL`                                                                                          | both; switch | `https://raw.githubusercontent.com/<owner>/<repo>/refs/heads/<branch>/managed-index.json`; for renewal `<owner>/<repo>` must be this repository, and schema 2 requires branch `marketplace-v2` |
+| `CADENCR_REGISTRY_KEY_ID`                                                                                               | both         | Active metadata signing key id                                                                                                                                                                 |
+| `CADENCR_REGISTRY_PUBLIC_KEY_PEM`                                                                                       | both         | SPKI PEM public key for that key; never a private key                                                                                                                                          |
+| `CADENCR_REGISTRY_PROVIDER_BLOCKLIST_URL`, `CADENCR_REGISTRY_THEME_BLOCKLIST_URL`, `CADENCR_REGISTRY_TAB_BLOCKLIST_URL` | watch        | Public raw URLs of the three signed revocation policies; all required by the watch                                                                                                             |
+| `CADENCR_REGISTRY_TRUST_MANIFEST_JSON`, `CADENCR_REGISTRY_ROOT_KEY_ID`, `CADENCR_REGISTRY_ROOT_PUBLIC_KEY_PEM`          | renewal      | Optional, all-or-none root trust profile passed as the request's `trust` object                                                                                                                |
+| `CADENCR_REGISTRY_TRUST_MIN_GENERATION`                                                                                 | renewal      | Optional positive generation floor (default `1`)                                                                                                                                               |
+
+| Environment / secret                                                | Where                                                                                                              |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Environment `protected-marketplace-renewal`                         | Create it, restrict deployment to the default branch. Separate from the reviewed `protected-marketplace-publisher` |
+| `CADENCR_REGISTRY_PRIVATE_KEY_PEM`, `CADENCR_REGISTRY_GITHUB_TOKEN` | Secrets of that environment only, same names and scopes as the publisher; read by the key and renewal steps only   |
+
+The renewal environment holds a signing key that an unattended job can use. That is a
+deliberate trade-off: protect the default branch and the workflow files with required
+review, keep the token scoped to the registry repository, and note that the only
+thing the key can do through this path is re-sign the authenticated baseline.
+
+**What is not automated.**
+
+- The three revocation policies are **not** renewed: the released CLI signs a policy
+  from a reviewed payload (`sign-theme-blocklist`, `sign-tab-blocklist`) but has no
+  authenticated renew-and-publish command, so renewing them stays a manual step 3–4
+  of the runbook. The watch alerts on them (provider policy by timestamp only; there
+  is no provider-policy verifier in the released CLI). A fresh catalog does not
+  extend any policy.
+- GitHub disables scheduled workflows in a public repository after 60 days without
+  repository activity and emails only the person who last edited the cron line.
+  Subscribe the real owner and backup to failed-run notifications and keep the
+  independent missing-run watchdog above.
+- Neither workflow proves live delivery: exercise a failing watch run and an
+  acknowledged alert before relying on them.
+
 ## Renewal runbook
+
+The renewal workflow above performs steps 1–4 for the **catalog only**, when
+configured; the manual procedure remains the recovery path and the only path for
+the revocation policies.
 
 1. Renewal owner authenticates and archives exact current catalog and both policy
    envelopes, trust generation, feed heads and immutable publication receipts.

@@ -38,6 +38,10 @@ export const catalogSchema = z
     error: nullableText,
     error_code: nullableText,
     recommended_versions: z.record(z.string(), z.string()).optional(),
+    /** Versions that cannot install on the service host, id → version → why. */
+    unavailable_versions: z
+      .record(z.string(), z.record(z.string(), z.enum(["platform", "protocol"])))
+      .optional(),
     index: signedProviderCatalogSchema.nullable().optional(),
   })
   .strict();

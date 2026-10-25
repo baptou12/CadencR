@@ -2964,6 +2964,25 @@ export type ManagedCatalogResponseIndex = null | SignedProviderCatalog;
  */
 export type ManagedCatalogResponseRecommendedVersions = { [key: string]: string };
 
+/**
+ * Why a catalog tab or provider version does not install on this host.
+ */
+export type TabVersionUnavailable =
+  (typeof TabVersionUnavailable)[keyof typeof TabVersionUnavailable];
+
+export const TabVersionUnavailable = {
+  platform: "platform",
+  protocol: "protocol",
+} as const;
+
+/**
+ * Provider versions that cannot install on this host, by provider id then
+ * version: the installer would find no binary for it. Never recommended.
+ */
+export type ManagedCatalogResponseUnavailableVersions = {
+  [key: string]: { [key: string]: TabVersionUnavailable };
+};
+
 export interface ManagedCatalogResponse {
   cache_status: ManagedCatalogCacheStatus;
   /** @nullable */
@@ -2981,6 +3000,11 @@ export interface ManagedCatalogResponse {
   /** @nullable */
   signer_key_id?: string | null;
   source_configured: boolean;
+  /**
+   * Provider versions that cannot install on this host, by provider id then
+   * version: the installer would find no binary for it. Never recommended.
+   */
+  unavailable_versions?: ManagedCatalogResponseUnavailableVersions;
   used_cached_verified_catalog: boolean;
 }
 
@@ -3214,18 +3238,7 @@ export type ManagedThemeCatalogResponseIndex = null | SignedMixedCatalog;
 export type ManagedThemeCatalogResponseRecommendedVersions = { [key: string]: string };
 
 /**
- * Why a catalog tab version does not install on this host.
- */
-export type TabVersionUnavailable =
-  (typeof TabVersionUnavailable)[keyof typeof TabVersionUnavailable];
-
-export const TabVersionUnavailable = {
-  platform: "platform",
-  protocol: "protocol",
-} as const;
-
-/**
- * The custom-tab catalog only: the versions that cannot install here, by
+ * The custom-tab catalog: the versions that cannot install here, by
  * tab id then version, and why. They are never recommended.
  */
 export type ManagedThemeCatalogResponseUnavailableVersions = {
@@ -3245,7 +3258,7 @@ export interface ManagedThemeCatalogResponse {
   index?: ManagedThemeCatalogResponseIndex;
   recommended_versions: ManagedThemeCatalogResponseRecommendedVersions;
   /**
-   * The custom-tab catalog only: the versions that cannot install here, by
+   * The custom-tab catalog: the versions that cannot install here, by
    * tab id then version, and why. They are never recommended.
    */
   unavailable_versions?: ManagedThemeCatalogResponseUnavailableVersions;

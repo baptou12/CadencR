@@ -40,8 +40,8 @@ interface ListingVersion {
   /** Provider or tab backend binary targets (`darwin-aarch64`, …); empty for themes. */
   platforms: string[];
   /**
-   * Why it can't be installed on this computer — a custom tab backend with no
-   * binary for this platform, or a newer backend protocol. Absent: it can.
+   * Why it can't be installed on this computer — a provider or tab backend with
+   * no binary for this platform, or a newer backend protocol. Absent: it can.
    */
   unavailable?: TabVersionUnavailable;
   /** Custom tab: the native backend this exact version ships (`null`: none). */
@@ -196,23 +196,31 @@ function baseListing(
   };
 }
 
+function providerVersion(item: ManagedProviderPackage, catalog?: ManagedCatalogResponse) {
+  // The service decides what installs here, with the installer's own check.
+  const unavailable = catalog?.unavailable_versions?.[item.agent.id]?.[item.agent.version];
+  return {
+    version: item.agent.version,
+    minApp: item.host.compatibility.min_app_version,
+    maxApp: item.host.compatibility.max_app_version,
+    platforms: Object.keys(item.agent.distribution?.binary ?? {}),
+    ...(unavailable ? { unavailable } : {}),
+  } satisfies ListingVersion;
+}
+
 function providerListing(
   id: string,
   versions: ManagedProviderPackage[] = [],
   entry: ManagedProviderInventoryEntry | undefined,
   recommended: string | undefined,
+  catalog?: ManagedCatalogResponse,
 ): MarketplaceListing {
   const meta = pickMeta(versions, (item) => item.agent.version, recommended);
   return {
     ...baseListing(
       "provider",
       id,
-      versions.map((item) => ({
-        version: item.agent.version,
-        minApp: item.host.compatibility.min_app_version,
-        maxApp: item.host.compatibility.max_app_version,
-        platforms: Object.keys(item.agent.distribution?.binary ?? {}),
-      })),
+      versions.map((item) => providerVersion(item, catalog)),
       recommended,
       entry && providerInstalled(entry),
     ),
@@ -349,6 +357,7 @@ export function buildListings(sources: ListingSources): MarketplaceListing[] {
         providerGroups.get(id),
         providerEntries.get(id),
         sources.providerCatalog?.recommended_versions?.[id],
+        sources.providerCatalog,
       ),
     ),
     ...[...themeIds].map((id) =>

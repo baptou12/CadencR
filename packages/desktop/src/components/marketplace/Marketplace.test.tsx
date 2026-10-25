@@ -935,3 +935,95 @@ describe("blocked custom tabs in the marketplace", () => {
     ).toBeInTheDocument();
   });
 });
+
+function platformProvider(id: string, name: string, platform: string) {
+  return {
+    kind: "provider",
+    package: {
+      agent: {
+        id,
+        name,
+        version: "1.0.0",
+        description: `${name} agent`,
+        distribution: { binary: { [platform]: { archive: `https://x/${id}.tgz`, cmd: "bin/a" } } },
+      },
+      host: {
+        publisher: "Acme",
+        compatibility: { min_app_version: "0.1.0" },
+        assets: { icon: "icon.svg" },
+      },
+    },
+  };
+}
+
+/** A catalog served to a service whose host platform is `host` (absent: unknown). */
+function stubPlatformCatalog(host: string | null, installed: ManagedProviderInventoryEntry[] = []) {
+  stubBackend(installed);
+  const providers = [
+    { id: "macagent", platform: "darwin-aarch64" },
+    { id: "linuxagent", platform: "linux-x86_64" },
+  ];
+  const platformIndex = {
+    ...index,
+    signed: {
+      ...index.signed,
+      packages: [
+        platformProvider("macagent", "Macagent", "darwin-aarch64"),
+        platformProvider("linuxagent", "Linuxagent", "linux-x86_64"),
+      ],
+    },
+  };
+  // The service's verdict: no build for the host (or a host with no name) is "platform".
+  const unavailable = Object.fromEntries(
+    providers
+      .filter((provider) => provider.platform !== host)
+      .map((provider) => [provider.id, { "1.0.0": "platform" as const }]),
+  );
+  vi.mocked(catalog).mockResolvedValue({
+    source_configured: true,
+    cache_status: "verified",
+    refreshed: true,
+    used_cached_verified_catalog: false,
+    recommended_versions: {},
+    unavailable_versions: unavailable,
+    index: platformIndex,
+  });
+}
+
+describe("platform filtering in the marketplace", () => {
+  it("lists the macOS provider and hides the Linux-only one for an Apple silicon host", async () => {
+    stubPlatformCatalog("darwin-aarch64");
+    inMarketplace(<MarketplaceHome view="discover" kind="all" query="" onChange={vi.fn()} />);
+    expect((await screen.findAllByText("Macagent")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Linuxagent")).toBeNull();
+    expect(screen.getByText(/^\d+ plugins/).textContent).toMatch(/^2 plugins/);
+  });
+
+  it("lists the Linux provider and hides the macOS-only one for a Linux host", async () => {
+    stubPlatformCatalog("linux-x86_64");
+    inMarketplace(<MarketplaceHome view="discover" kind="all" query="" onChange={vi.fn()} />);
+    expect((await screen.findAllByText("Linuxagent")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Macagent")).toBeNull();
+  });
+
+  it("hides every provider when the host platform has no registry name", async () => {
+    stubPlatformCatalog(null);
+    inMarketplace(<MarketplaceHome view="discover" kind="all" query="" onChange={vi.fn()} />);
+    await screen.findByText(/^\d+ plugins/);
+    expect(screen.queryByText("Macagent")).toBeNull();
+    expect(screen.queryByText("Linuxagent")).toBeNull();
+  });
+
+  it("keeps a hidden package's detail page reachable, saying it is not for this platform", async () => {
+    stubPlatformCatalog("darwin-aarch64");
+    inMarketplace(<PluginDetail kind="provider" id="linuxagent" />);
+    const button = await screen.findByRole("button", { name: "Not available on this platform" });
+    expect(button).toBeDisabled();
+  });
+
+  it("keeps an installed package in the Library even with no build for this platform", async () => {
+    stubPlatformCatalog("darwin-aarch64", [{ ...pi, id: "linuxagent", version: "1.0.0" }]);
+    inMarketplace(<MarketplaceHome view="installed" kind="all" query="" onChange={vi.fn()} />);
+    expect((await screen.findAllByText("Linuxagent")).length).toBeGreaterThan(0);
+  });
+});
