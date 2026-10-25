@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use sha2::Digest as _;
 
 use crate::binding::{ArtifactSource, ExpectedArtifact, MirrorReceipt, MIRROR_RECEIPT};
+use crate::convergence::{converge, Converged, ReadBack, Verdict};
 use crate::fs::{hash_regular, remove_owned, write_private_synced, Identity};
 use crate::github::AssetUrlPolicy;
 use crate::github::{Asset, ReleaseClient, UploadAssetRequest, VerifyAssetRequest};
@@ -137,6 +138,14 @@ fn verify_one(
     combine_cleanup(result, cleanup)
 }
 
+/// Upload one artifact. After an accepted upload the listing is awaited within
+/// `pacing` until the asset shows (a listing without it is the stale
+/// pre-upload set); a listed asset that does not match, or any unexpected
+/// asset, is refused at once. A failed or lost upload is reconciled by one
+/// listing: a verified asset is returned as `recovered`, otherwise the
+/// upload's own error. Either way the validated listing that settled it is
+/// returned, so the caller need not list again.
+#[bon::builder]
 pub(crate) fn upload_one(
     client: &impl ReleaseClient,
     release_id: u64,
@@ -144,7 +153,8 @@ pub(crate) fn upload_one(
     expected: &[ExpectedArtifact],
     directory: &Path,
     policy: AssetUrlPolicy,
-) -> Result<Option<Asset>, PublisherError> {
+    pacing: &ReadBack,
+) -> Result<Uploaded, PublisherError> {
     let mut owned = None;
     let file = match &artifact.source {
         ArtifactSource::File(path) => path.as_path(),
@@ -163,7 +173,14 @@ pub(crate) fn upload_one(
             .size(artifact.size)
             .build(),
     ) {
-        Ok(_) => Ok(None),
+        Ok(_) => {
+            await_listed(client, release_id, artifact, expected, policy, pacing).map(|assets| {
+                Uploaded {
+                    assets,
+                    recovered: None,
+                }
+            })
+        }
         Err(primary) => {
             let assets = validated_assets_with_policy(
                 client.list_assets(release_id)?,
@@ -174,7 +191,8 @@ pub(crate) fn upload_one(
             match asset(&assets, &artifact.name) {
                 Some(remote) => {
                     verify_one(client, remote, artifact, directory, policy)?;
-                    Ok(Some(remote.clone()))
+                    let recovered = Some(remote.clone());
+                    Ok(Uploaded { assets, recovered })
                 }
                 None => Err(primary),
             }
@@ -186,6 +204,49 @@ pub(crate) fn upload_one(
         None => Ok(()),
     };
     combine_cleanup(result, cleanup)
+}
+
+/// The settled state after an upload.
+pub(crate) struct Uploaded {
+    /// The validated release listing, the artifact among its assets.
+    pub(crate) assets: Vec<Asset>,
+    /// The artifact as found by reconciling a failed or lost upload response.
+    pub(crate) recovered: Option<Asset>,
+}
+
+fn await_listed(
+    client: &impl ReleaseClient,
+    release_id: u64,
+    artifact: &ExpectedArtifact,
+    expected: &[ExpectedArtifact],
+    policy: AssetUrlPolicy,
+    pacing: &ReadBack,
+) -> Result<Vec<Asset>, PublisherError> {
+    let converged = converge(
+        pacing,
+        |deadline| client.list_assets_before(release_id, deadline),
+        |list| {
+            // A mismatching or unexpected asset is terminal, not lag.
+            let assets = validated_assets_with_policy(list, expected, false, policy)?;
+            Ok(if asset(&assets, &artifact.name).is_some() {
+                Verdict::Done(assets)
+            } else {
+                Verdict::Stale
+            })
+        },
+    )?;
+    match converged {
+        Converged::Done(assets) => Ok(assets),
+        Converged::Foreign => Err(PublisherError::new(
+            "release asset listing changed unexpectedly after upload",
+        )),
+        Converged::Stale(reads) => Err(PublisherError::new(format!(
+            "release asset {} was uploaded but {reads} listings over {}s still returned the \
+             stale pre-upload set; re-run to verify once the asset is listed",
+            artifact.name,
+            pacing.budget.as_secs()
+        ))),
+    }
 }
 
 pub(crate) fn validate_local_artifact(artifact: &ExpectedArtifact) -> Result<(), PublisherError> {
@@ -290,4 +351,126 @@ pub(crate) fn verify_present(
         directory,
         AssetUrlPolicy::default(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::convergence::VirtualClock;
+    use crate::mirror::fixture::FakeClient;
+
+    const BYTES: &[u8] = b"archive";
+    const URL: &str =
+        "https://github.com/cadencr/registry/releases/download/provider-acme-v1.0.0/a.tgz";
+
+    fn artifact() -> ExpectedArtifact {
+        ExpectedArtifact {
+            name: "a.tgz".into(),
+            sha256: crate::hex(&sha2::Sha256::digest(BYTES)),
+            size: BYTES.len() as u64,
+            source: ArtifactSource::Bytes(BYTES.to_vec()),
+            expected_url: URL.into(),
+        }
+    }
+
+    fn upload(client: &FakeClient, clock: &VirtualClock) -> Result<Uploaded, PublisherError> {
+        let artifact = artifact();
+        let directory = tempfile::tempdir().unwrap();
+        upload_one()
+            .client(client)
+            .release_id(7)
+            .artifact(&artifact)
+            .expected(std::slice::from_ref(&artifact))
+            .directory(directory.path())
+            .policy(AssetUrlPolicy::default())
+            .pacing(&clock.read_back())
+            .call()
+    }
+
+    fn lagging(reads: u64) -> FakeClient {
+        let client = FakeClient::default();
+        client.upload_lag.set(reads);
+        client
+    }
+
+    #[test]
+    fn an_upload_waits_out_listings_that_still_show_the_pre_upload_set() {
+        let client = lagging(3);
+        let clock = VirtualClock::new();
+        let uploaded = upload(&client, &clock).unwrap();
+        assert!(uploaded.recovered.is_none());
+        assert_eq!(uploaded.assets.len(), 1, "the settled listing is returned");
+        assert_eq!(client.uploads.get(), 1, "the upload is never repeated");
+        assert_eq!(client.asset_lists.get(), 4);
+        let backoff: Vec<_> = [250, 500, 1000].map(Duration::from_millis).into();
+        assert_eq!(*clock.waits.borrow(), backoff);
+    }
+
+    #[test]
+    fn listings_stale_for_the_whole_budget_fail_with_a_stale_message() {
+        let client = lagging(u64::MAX);
+        let clock = VirtualClock::new();
+        let message = upload(&client, &clock).err().unwrap().to_string();
+        assert!(message.contains("stale pre-upload set"), "{message}");
+        assert_eq!(client.uploads.get(), 1);
+        let waited: Duration = clock.waits.borrow().iter().sum();
+        assert!(waited <= Duration::from_secs(30), "{waited:?}");
+        assert!(waited > Duration::from_secs(15), "{waited:?}");
+    }
+
+    #[test]
+    fn a_listed_asset_that_does_not_match_stops_at_once() {
+        let client = FakeClient {
+            skew_listed_size: true,
+            ..Default::default()
+        };
+        let clock = VirtualClock::new();
+        let message = upload(&client, &clock).err().unwrap().to_string();
+        assert!(message.contains("metadata does not match"), "{message}");
+        assert!(clock.waits.borrow().is_empty());
+        assert_eq!(client.asset_lists.get(), 1);
+    }
+
+    #[test]
+    fn an_unexpected_asset_in_the_listing_stops_at_once() {
+        let client = FakeClient::default();
+        client.assets.borrow_mut().push((
+            Asset {
+                id: 99,
+                name: "foreign".into(),
+                state: "uploaded".into(),
+                browser_download_url: "x".into(),
+                size: 1,
+            },
+            vec![0],
+        ));
+        let clock = VirtualClock::new();
+        let message = upload(&client, &clock).err().unwrap().to_string();
+        assert!(message.contains("unexpected asset"), "{message}");
+        assert!(clock.waits.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_lost_upload_response_is_reconciled_by_one_listing_without_waiting() {
+        let client = FakeClient {
+            lose_upload: true,
+            ..Default::default()
+        };
+        let clock = VirtualClock::new();
+        let uploaded = upload(&client, &clock).unwrap();
+        assert_eq!(uploaded.recovered.expect("asset recovered").name, "a.tgz");
+        assert_eq!(uploaded.assets.len(), 1);
+        assert!(clock.waits.borrow().is_empty());
+        // A lost response whose asset is not yet listed keeps its own error.
+        let client = FakeClient {
+            lose_upload: true,
+            ..Default::default()
+        };
+        client.upload_lag.set(5);
+        let message = upload(&client, &clock).err().unwrap().to_string();
+        assert_eq!(message, "lost upload response");
+        assert!(clock.waits.borrow().is_empty());
+    }
 }

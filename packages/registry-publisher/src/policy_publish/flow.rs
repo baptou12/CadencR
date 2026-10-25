@@ -1,30 +1,29 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 use sha2::{Digest as _, Sha256};
 
 use super::{PolicyOutcome, PolicyReceipt, PreparedPolicy};
+use crate::convergence::ReadBack;
 use crate::download::DiscoveryReader;
 use crate::github::discovery::write;
 use crate::github::discovery::{DiscoveryHead, PolicyClient, SetPolicyRequest};
 use crate::PublisherError;
 
-/// Clock and read-back pacing; tests substitute their own.
+/// The wall clock and the read-back pacing; tests substitute their own.
+#[derive(bon::Builder)]
 pub(super) struct Timing {
+    #[builder(with = |now: impl Fn() -> DateTime<Utc> + 'static| Box::new(now))]
     pub(super) now: Box<dyn Fn() -> DateTime<Utc>>,
-    pub(super) wait: fn(Duration),
-    pub(super) budget: Duration,
-    pub(super) pause: Duration,
+    pub(super) read_back: ReadBack,
 }
 
 impl Timing {
     pub(super) fn production() -> Self {
-        Self {
-            now: Box::new(Utc::now),
-            wait: std::thread::sleep,
-            budget: Duration::from_secs(30),
-            pause: Duration::from_millis(250),
-        }
+        Self::builder()
+            .now(Utc::now)
+            .read_back(ReadBack::production())
+            .build()
     }
 }
 
@@ -60,7 +59,7 @@ pub(super) fn publish(
         Assessment::Replay => {
             current.ok_or_else(|| PublisherError::new("policy does not contain the candidate"))?
         }
-        _ => set_or_reconcile(prepared, client, original.as_ref())?,
+        _ => set_or_reconcile(prepared, client, original.as_ref(), timing)?,
     };
     require_candidate(prepared, Some(&written))?;
     verify_public(prepared, &assessment, &written, client, reader, timing)?;
@@ -164,13 +163,16 @@ fn set_or_reconcile(
     prepared: &PreparedPolicy,
     client: &impl PolicyClient,
     original: Option<&DiscoveryHead>,
+    timing: &Timing,
 ) -> Result<DiscoveryHead, PublisherError> {
     let file = prepared.kind.file_name();
     let message = format!("Update managed {} revocation policy", prepared.kind.name());
-    write::set_or_reconcile(
-        &prepared.bytes,
-        "policy",
-        || {
+    write::set_or_reconcile()
+        .candidate(&prepared.bytes)
+        .subject("policy")
+        .original(original)
+        .pacing(&timing.read_back)
+        .set(|| {
             client.set_policy(
                 SetPolicyRequest::builder()
                     .branch(&prepared.branch)
@@ -180,9 +182,9 @@ fn set_or_reconcile(
                     .maybe_expected_sha(original.map(|head| head.sha.as_str()))
                     .build(),
             )
-        },
-        || client.get_policy_before(&prepared.branch, file, None),
-    )
+        })
+        .read(|deadline| client.probe_policy(&prepared.branch, file, deadline, original))
+        .call()
 }
 
 fn verify_public(
@@ -223,9 +225,7 @@ fn verify_public(
         .directory(scratch.path())
         .downloader(reader)
         .revalidate(&revalidate)
-        .budget(timing.budget)
-        .pause(timing.pause)
-        .wait(&timing.wait)
+        .pacing(&timing.read_back)
         .call()
 }
 
@@ -269,11 +269,12 @@ mod tests {
     use std::time::Duration;
 
     use super::super::fixture::{
-        blob_sha, sha256, timing, timing_at, MockGitHub, ScriptedFeed, Workspace, BRANCH, KINDS,
-        REPOSITORY,
+        blob_sha, sha256, timing, timing_at, timing_with, MockGitHub, ScriptedFeed, Workspace,
+        BRANCH, KINDS, REPOSITORY,
     };
     use super::super::PreparePolicyRequest;
     use super::*;
+    use crate::convergence::VirtualClock;
     use cadencr_registry_core::PolicyKind;
 
     const HOUR: Duration = Duration::from_secs(3600);
@@ -565,7 +566,7 @@ mod tests {
         let candidate = work.signed(PolicyKind::Tab, HOUR, WINDOW, "new");
         let prepared = work.prepared(PolicyKind::Tab, &candidate, false).unwrap();
         let github = MockGitHub::with_head(Some(&published));
-        github.drift_at_get(2, &foreign);
+        github.foreign_head_at_get(2, &foreign);
         let message = error_of(publish(
             &prepared,
             &github,
@@ -587,7 +588,7 @@ mod tests {
             .unwrap();
         let github = MockGitHub::with_head(Some(&published));
         // Reads: 1-2 assessment, 3 after the write, 4 inside the convergence loop.
-        github.drift_at_get(4, &foreign);
+        github.foreign_head_at_get(4, &foreign);
         let feed = ScriptedFeed::new(vec![published, candidate]);
         let message = error_of(publish(&prepared, &github, &feed, &timing(&work)));
         assert!(
@@ -664,5 +665,154 @@ mod tests {
                 .build();
             assert!(super::super::prepare_at(request, work.start).is_err());
         }
+    }
+
+    /// Publish `candidate` over `published` (or a bootstrap) against a GitHub
+    /// whose authenticated reads lag `lag` reads behind the write.
+    fn lagging(
+        published: Option<&[u8]>,
+        lag: u64,
+    ) -> (Workspace, MockGitHub, super::super::PreparedPolicy, Vec<u8>) {
+        let work = Workspace::new();
+        let candidate = work.signed(PolicyKind::Theme, HOUR, WINDOW, "new");
+        let prepared = work
+            .prepared(PolicyKind::Theme, &candidate, published.is_none())
+            .unwrap();
+        let github = MockGitHub::with_head(published);
+        github.lag_reads(lag);
+        (work, github, prepared, candidate)
+    }
+
+    /// Timing whose read-back waits are recorded by `clock`.
+    fn timed(work: &Workspace, clock: &VirtualClock) -> Timing {
+        timing_with(work.start, clock.read_back())
+    }
+
+    #[test]
+    fn a_bootstrap_waits_out_an_authenticated_read_that_still_shows_the_file_absent() {
+        let (work, github, prepared, candidate) = lagging(None, 3);
+        let feed = ScriptedFeed::new(vec![candidate.clone()]);
+        let clock = VirtualClock::new();
+        let receipt = publish(&prepared, &github, &feed, &timed(&work, &clock)).unwrap();
+        assert_eq!(receipt.outcome, PolicyOutcome::Bootstrapped);
+        assert_eq!(github.sets.borrow().len(), 1, "the write is never repeated");
+        // Two assessment reads, three stale reads, the converged read, then
+        // the final authenticated read after the public verification.
+        assert_eq!(github.gets(), 7);
+        let backoff: Vec<_> = [250, 500, 1000].map(Duration::from_millis).into();
+        assert_eq!(*clock.waits.borrow(), backoff);
+        assert_eq!(github.head_bytes().unwrap(), candidate);
+    }
+
+    #[test]
+    fn an_update_waits_out_an_authenticated_read_that_still_shows_the_old_blob() {
+        let work = Workspace::new();
+        let published = work.signed(PolicyKind::Theme, 2 * HOUR, WINDOW, "old");
+        let (_, github, prepared, candidate) = lagging(Some(&published), 2);
+        let feed = ScriptedFeed::new(vec![published, candidate]);
+        let clock = VirtualClock::new();
+        let receipt = publish(&prepared, &github, &feed, &timed(&work, &clock)).unwrap();
+        assert_eq!(receipt.outcome, PolicyOutcome::Advanced);
+        assert_eq!(
+            clock.waits.borrow().len(),
+            2 + 1,
+            "two reads, one public retry"
+        );
+        assert_eq!(github.sets.borrow().len(), 1);
+    }
+
+    #[test]
+    fn a_read_that_stays_stale_for_the_whole_budget_fails_and_names_the_stale_read() {
+        let (work, github, prepared, _) = lagging(None, u64::MAX);
+        let feed = ScriptedFeed::new(vec![]);
+        let clock = VirtualClock::new();
+        let message = error_of(publish(&prepared, &github, &feed, &timed(&work, &clock)));
+        assert!(message.contains("stale pre-write state"), "{message}");
+        assert!(message.contains("file absent"), "{message}");
+        assert!(message.contains("re-run"), "{message}");
+        assert_eq!(github.sets.borrow().len(), 1);
+        let waited: Duration = clock.waits.borrow().iter().sum();
+        assert!(waited <= Duration::from_secs(30), "{waited:?}");
+        assert!(waited > Duration::from_secs(15), "{waited:?}");
+        assert_eq!(feed.calls.get(), 0, "never reaches the public read");
+    }
+
+    #[test]
+    fn the_attempt_budget_bounds_the_stale_reads_whatever_time_is_left() {
+        let work = Workspace::new();
+        let published = work.signed(PolicyKind::Theme, 2 * HOUR, WINDOW, "old");
+        let (_, github, prepared, _) = lagging(Some(&published), u64::MAX);
+        let clock = VirtualClock::new();
+        let timing = timing_with(work.start, clock.read_back_capped(3));
+        let message = error_of(publish(
+            &prepared,
+            &github,
+            &ScriptedFeed::new(vec![]),
+            &timing,
+        ));
+        assert!(message.contains("3 authenticated reads"), "{message}");
+        assert!(message.contains("blob"), "{message}");
+        assert_eq!(github.gets(), 2 + 3);
+        assert_eq!(clock.waits.borrow().len(), 2);
+    }
+
+    #[test]
+    fn a_foreign_head_after_the_write_is_refused_at_once_without_another_write() {
+        let work = Workspace::new();
+        let published = work.signed(PolicyKind::Theme, 3 * HOUR, WINDOW, "old");
+        let foreign = work.signed(PolicyKind::Theme, 2 * HOUR, WINDOW, "foreign");
+        let (_, github, prepared, _) = lagging(Some(&published), 1);
+        // Reads: 1-2 assessment, 3 stale, 4 shows someone else's policy.
+        github.foreign_head_at_get(4, &foreign);
+        let feed = ScriptedFeed::new(vec![]);
+        let clock = VirtualClock::new();
+        let message = error_of(publish(&prepared, &github, &feed, &timed(&work, &clock)));
+        assert!(message.contains("neither the candidate"), "{message}");
+        assert_eq!(github.sets.borrow().len(), 1);
+        assert_eq!(
+            clock.waits.borrow().len(),
+            1,
+            "no waiting once the head is foreign"
+        );
+        assert_eq!(github.gets(), 4);
+        assert_eq!(github.head_bytes().unwrap(), foreign);
+        assert_eq!(feed.calls.get(), 0);
+    }
+
+    #[test]
+    fn a_failed_write_gets_one_probe_and_never_a_wait() {
+        let work = Workspace::new();
+        let published = work.signed(PolicyKind::Theme, 2 * HOUR, WINDOW, "old");
+        // The write lands but its response is lost, and the probe sees it.
+        let (_, github, prepared, candidate) = lagging(Some(&published), 0);
+        github.lose_response();
+        let feed = ScriptedFeed::new(vec![candidate]);
+        let clock = VirtualClock::new();
+        let receipt = publish(&prepared, &github, &feed, &timed(&work, &clock)).unwrap();
+        assert_eq!(receipt.outcome, PolicyOutcome::Advanced);
+        // Lagging, the probe still sees the old state: the write's own error.
+        let (_, github, prepared, _) = lagging(Some(&published), 2);
+        github.lose_response();
+        let message = error_of(publish(
+            &prepared,
+            &github,
+            &ScriptedFeed::new(vec![]),
+            &timed(&work, &clock),
+        ));
+        assert!(message.contains("timeout"), "{message}");
+        assert_eq!(github.gets(), 3, "two assessment reads and one probe");
+        // A refused write that never lands is the same.
+        let (_, github, prepared, _) = lagging(None, 0);
+        github.refuse_write();
+        let message = error_of(publish(
+            &prepared,
+            &github,
+            &ScriptedFeed::new(vec![]),
+            &timed(&work, &clock),
+        ));
+        assert!(message.contains("unavailable"), "{message}");
+        assert_eq!(github.sets.borrow().len(), 1);
+        assert_eq!(github.head_bytes(), None);
+        assert!(clock.waits.borrow().is_empty());
     }
 }

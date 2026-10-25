@@ -16,7 +16,8 @@ mod deadline;
 mod model;
 pub(crate) mod write;
 
-use model::{valid_sha, RawBlob, RawCommit, RawContent, RawRef, RawTree};
+use deadline::Known;
+use model::{valid_sha, RawBlob, RawCommit, RawContent, RawRef, RawTree, RawTreeEntry};
 
 const UPDATE_MESSAGE: &str = "Update managed provider discovery index";
 
@@ -24,6 +25,23 @@ const UPDATE_MESSAGE: &str = "Update managed provider discovery index";
 pub(crate) struct DiscoveryHead {
     pub(crate) sha: String,
     pub(crate) bytes: Vec<u8>,
+}
+
+/// What a read found, given the state the caller already holds.
+pub(crate) enum Observed {
+    /// The file is exactly what the caller already holds (`original`).
+    Unchanged,
+    Head(Option<DiscoveryHead>),
+}
+
+impl Observed {
+    fn compared(head: Option<DiscoveryHead>, original: Option<&DiscoveryHead>) -> Self {
+        if head.as_ref() == original {
+            Self::Unchanged
+        } else {
+            Self::Head(head)
+        }
+    }
 }
 
 #[derive(bon::Builder)]
@@ -53,6 +71,18 @@ pub(crate) trait PolicyClient {
         file: &str,
         deadline: Option<Instant>,
     ) -> Result<Option<DiscoveryHead>, PublisherError>;
+    /// Like [`Self::get_policy_before`], for a caller that holds `original`:
+    /// an unchanged file is reported without fetching its contents.
+    fn probe_policy(
+        &self,
+        branch: &str,
+        file: &str,
+        deadline: Instant,
+        original: Option<&DiscoveryHead>,
+    ) -> Result<Observed, PublisherError> {
+        self.get_policy_before(branch, file, Some(deadline))
+            .map(|head| Observed::compared(head, original))
+    }
     fn set_policy(&self, request: SetPolicyRequest<'_>) -> Result<(), PublisherError>;
 }
 
@@ -67,6 +97,17 @@ pub(crate) trait DiscoveryClient {
         let result = self.get_discovery(branch);
         super::request::check_deadline(Some(deadline))?;
         result
+    }
+    /// Like [`Self::get_discovery_before`], for a caller that holds
+    /// `original`: an unchanged file is reported without fetching its contents.
+    fn probe_discovery(
+        &self,
+        branch: &str,
+        deadline: Instant,
+        original: Option<&DiscoveryHead>,
+    ) -> Result<Observed, PublisherError> {
+        self.get_discovery_before(branch, deadline)
+            .map(|head| Observed::compared(head, original))
     }
     fn set_discovery(&self, request: SetDiscoveryRequest<'_>) -> Result<(), PublisherError>;
 }
@@ -83,6 +124,23 @@ impl DiscoveryClient for GitHubClient {
     ) -> Result<Option<DiscoveryHead>, PublisherError> {
         super::request::check_deadline(Some(deadline))?;
         let result = self.read_discovery_file(branch, DISCOVERY_FILENAME, Some(deadline));
+        super::request::check_deadline(Some(deadline))?;
+        result
+    }
+
+    fn probe_discovery(
+        &self,
+        branch: &str,
+        deadline: Instant,
+        original: Option<&DiscoveryHead>,
+    ) -> Result<Observed, PublisherError> {
+        super::request::check_deadline(Some(deadline))?;
+        let result = self.read_discovery_entry(
+            branch,
+            DISCOVERY_FILENAME,
+            Some(deadline),
+            Some(Known::of(original)),
+        );
         super::request::check_deadline(Some(deadline))?;
         result
     }
@@ -109,6 +167,21 @@ impl PolicyClient for GitHubClient {
         super::request::check_deadline(deadline)?;
         let result = self.read_discovery_file(branch, file, deadline);
         super::request::check_deadline(deadline)?;
+        result
+    }
+
+    fn probe_policy(
+        &self,
+        branch: &str,
+        file: &str,
+        deadline: Instant,
+        original: Option<&DiscoveryHead>,
+    ) -> Result<Observed, PublisherError> {
+        cadencr_registry_core::discovery_object_url(&self.repository, branch, file)?;
+        super::request::check_deadline(Some(deadline))?;
+        let result =
+            self.read_discovery_entry(branch, file, Some(deadline), Some(Known::of(original)));
+        super::request::check_deadline(Some(deadline))?;
         result
     }
 
@@ -304,6 +377,64 @@ mod tests {
         assert!(observed.join().unwrap()[3].starts_with(&format!(
             "GET /repos/acme/releases/git/blobs/{sha} HTTP/1.1"
         )));
+    }
+
+    /// The three Git reads that resolve `managed-index.json` to `sha`.
+    fn tree_walk(sha: Option<&str>) -> Vec<String> {
+        let commit = "a".repeat(40);
+        let tree = "b".repeat(40);
+        let entries = sha.map_or_else(String::new, |sha| {
+            format!(
+                r#"{{"path":"managed-index.json","mode":"100644","type":"blob","sha":"{sha}","size":3}}"#
+            )
+        });
+        vec![
+            format!(
+                r#"{{"ref":"refs/heads/catalog","object":{{"type":"commit","sha":"{commit}"}}}}"#
+            ),
+            format!(r#"{{"sha":"{commit}","tree":{{"sha":"{tree}"}}}}"#),
+            format!(r#"{{"sha":"{tree}","truncated":false,"tree":[{entries}]}}"#),
+        ]
+    }
+
+    #[test]
+    fn a_probe_that_finds_the_known_state_never_fetches_contents() {
+        let deadline = Instant::now() + std::time::Duration::from_secs(5);
+        let old = blob(b"old");
+        let held = DiscoveryHead {
+            sha: old.clone(),
+            bytes: b"old".to_vec(),
+        };
+        // Same blob as the caller holds: the tree walk is the only traffic.
+        let (api, observed) = serve_sequence(tree_walk(Some(&old)));
+        let probed = client(api)
+            .probe_discovery("catalog", deadline, Some(&held))
+            .unwrap();
+        assert!(matches!(probed, Observed::Unchanged));
+        assert_eq!(observed.join().unwrap().len(), 3);
+        // Absent file, absent expected.
+        let (api, observed) = serve_sequence(tree_walk(None));
+        let probed = client(api)
+            .probe_discovery("catalog", deadline, None)
+            .unwrap();
+        assert!(matches!(probed, Observed::Unchanged));
+        assert_eq!(observed.join().unwrap().len(), 3);
+        // A file where none was expected is a change, and is fetched.
+        let new = blob(b"new");
+        let mut bodies = tree_walk(Some(&new));
+        bodies.push(format!(
+            r#"{{"type":"file","path":"managed-index.json","name":"managed-index.json","encoding":"base64","sha":"{new}","size":3,"content":"{}"}}"#,
+            STANDARD.encode(b"new")
+        ));
+        let (api, observed) = serve_sequence(bodies);
+        let probed = client(api)
+            .probe_discovery("catalog", deadline, Some(&held))
+            .unwrap();
+        assert!(matches!(
+            probed,
+            Observed::Head(Some(head)) if head.bytes == b"new"
+        ));
+        assert_eq!(observed.join().unwrap().len(), 4);
     }
 
     #[test]

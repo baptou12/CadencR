@@ -7,6 +7,7 @@ mod binding;
 mod catalog;
 mod catalog_discovery;
 mod catalog_publish;
+mod convergence;
 mod download;
 mod error;
 mod fs;

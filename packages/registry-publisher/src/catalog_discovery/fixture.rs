@@ -2,10 +2,11 @@ use std::cell::Cell;
 
 use sha2::{Digest as _, Sha256};
 
-use super::lifecycle::advance_with;
+use super::lifecycle::{advance_with, advance_with_freshness};
 use super::DiscoveryReceipt;
 use crate::catalog_publish::fixture::Client;
 use crate::catalog_publish::fixture::FlowFixture;
+use crate::convergence::ReadBack;
 use crate::{DownloadRequest, Downloader, PublisherError};
 
 #[derive(Clone, Copy)]
@@ -122,6 +123,25 @@ pub(super) fn run(value: &FlowFixture, raw: &Raw) -> Result<DiscoveryReceipt, Pu
         &value.downloader,
         raw,
     )
+}
+
+pub(super) fn run_paced(
+    value: &FlowFixture,
+    raw: &Raw,
+    pacing: &ReadBack,
+) -> Result<DiscoveryReceipt, PublisherError> {
+    let fresh = || value.snapshot.revalidate_freshness().map_err(Into::into);
+    advance_with_freshness()
+        .snapshot(&value.snapshot)
+        .manifest(&value.manifest)
+        .directory(&value.directory)
+        .branch("main")
+        .client(&value.client)
+        .catalog_downloader(&value.downloader)
+        .discovery_downloader(raw)
+        .freshness(&fresh)
+        .pacing(pacing)
+        .call()
 }
 
 pub(super) fn assert_js_receipt(

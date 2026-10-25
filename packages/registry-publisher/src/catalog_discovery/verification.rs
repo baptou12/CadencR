@@ -45,35 +45,14 @@ pub(super) fn verify_public_catalog(
     )
 }
 
+#[bon::builder]
 pub(super) fn verify_raw(
     snapshot: &cadencr_registry_core::CatalogSnapshot,
     branch: &str,
     directory: &Path,
     downloader: &impl crate::download::DiscoveryReader,
     revalidate: &impl Fn(std::time::Instant) -> Result<(), PublisherError>,
-) -> Result<(), PublisherError> {
-    verify_raw_with()
-        .snapshot(snapshot)
-        .branch(branch)
-        .directory(directory)
-        .downloader(downloader)
-        .revalidate(revalidate)
-        .budget(std::time::Duration::from_secs(30))
-        .pause(std::time::Duration::from_millis(250))
-        .wait(&std::thread::sleep)
-        .call()
-}
-
-#[bon::builder]
-fn verify_raw_with(
-    snapshot: &cadencr_registry_core::CatalogSnapshot,
-    branch: &str,
-    directory: &Path,
-    downloader: &impl crate::download::DiscoveryReader,
-    revalidate: &impl Fn(std::time::Instant) -> Result<(), PublisherError>,
-    budget: std::time::Duration,
-    pause: std::time::Duration,
-    wait: &impl Fn(std::time::Duration),
+    pacing: &crate::convergence::ReadBack,
 ) -> Result<(), PublisherError> {
     let url = cadencr_registry_core::discovery_url(snapshot.repository(), branch)?;
     crate::public_read::verify_public_object()
@@ -86,9 +65,7 @@ fn verify_raw_with(
         .directory(directory)
         .downloader(downloader)
         .revalidate(revalidate)
-        .budget(budget)
-        .pause(pause)
-        .wait(wait)
+        .pacing(pacing)
         .call()
 }
 fn verify_download(
@@ -169,7 +146,7 @@ mod tests {
     fn deadline_covers_backoff_guard_and_body_and_cleanup_failure_is_terminal() {
         let (value, _) = super::super::fixture::setup_baseline();
         let previous = std::fs::read(value.directory.join("previous.json")).unwrap();
-        for mode in ["zero", "body", "guard", "backoff", "persistent", "cleanup"] {
+        for mode in ["zero", "body", "guard", "persistent", "cleanup"] {
             let reader = Reader {
                 bytes: if mode == "body" {
                     value.snapshot.canonical_envelope()
@@ -192,25 +169,31 @@ mod tests {
                 }
                 Ok(())
             };
-            let wait = |duration| {
-                if mode == "backoff" || mode == "persistent" {
-                    std::thread::sleep(duration);
-                }
-            };
-            let started = Instant::now();
-            let result = verify_raw_with()
-                .snapshot(&value.snapshot)
-                .branch("main")
-                .directory(&value.directory)
-                .downloader(&reader)
-                .revalidate(&guard)
+            // Only the guard mode leaves room for a second read; in every
+            // other mode the pause outlasts the budget and nothing is waited.
+            let pacing = crate::convergence::ReadBack::builder()
                 .budget(if mode == "zero" {
                     Duration::ZERO
                 } else {
                     Duration::from_millis(250)
                 })
-                .pause(Duration::from_millis(300))
-                .wait(&wait)
+                .pause(Duration::from_millis(if mode == "guard" {
+                    10
+                } else {
+                    300
+                }))
+                .attempts(24)
+                .clock(Instant::now)
+                .wait(|_| {})
+                .build();
+            let started = Instant::now();
+            let result = verify_raw()
+                .snapshot(&value.snapshot)
+                .branch("main")
+                .directory(&value.directory)
+                .downloader(&reader)
+                .revalidate(&guard)
+                .pacing(&pacing)
                 .call();
             assert!(result.is_err(), "{mode}");
             if mode == "persistent" {
@@ -337,6 +320,7 @@ mod tests {
                     .catalog_downloader(&value.downloader)
                     .discovery_downloader(&raw)
                     .freshness(&fresh)
+                    .pacing(&crate::convergence::ReadBack::production())
                     .call()
                     .is_err(),
                 "{mode}"

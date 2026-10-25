@@ -6,12 +6,23 @@ impl GitHubClient {
         noun: &str,
         path: &str,
     ) -> Result<Vec<T>, PublisherError> {
+        self.paged_before(noun, path, None)
+    }
+
+    /// Like [`Self::paged`], every page request bounded by `deadline`.
+    pub(super) fn paged_before<T: for<'de> Deserialize<'de>>(
+        &self,
+        noun: &str,
+        path: &str,
+        deadline: Option<Instant>,
+    ) -> Result<Vec<T>, PublisherError> {
         let mut result = Vec::new();
         for page in 1..=MAX_PAGES {
             let separator = if path.contains('?') { '&' } else { '?' };
-            let values: Vec<T> = self.request.get(&format!(
-                "{path}{separator}per_page={PAGE_SIZE}&page={page}"
-            ))?;
+            let values: Vec<T> = self.request.get_with_deadline(
+                &format!("{path}{separator}per_page={PAGE_SIZE}&page={page}"),
+                deadline,
+            )?;
             let count = values.len();
             if count > PAGE_SIZE {
                 return Err(error(format!("GitHub {noun} response is malformed")));

@@ -1,5 +1,5 @@
 //! Doubles shared by the publisher's unit tests.
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use sha2::{Digest as _, Sha256};
 
@@ -46,5 +46,45 @@ impl DiscoveryReader for ScriptedFeed {
             request.sha256,
             previous,
         )
+    }
+}
+
+/// Replication lag for a test double: after a write lands, the next `reads`
+/// reads still see the state from before it.
+pub(crate) struct ReadLag<T> {
+    reads: Cell<u64>,
+    before: RefCell<Option<T>>,
+    left: Cell<u64>,
+}
+
+impl<T> Default for ReadLag<T> {
+    fn default() -> Self {
+        Self {
+            reads: Cell::new(0),
+            before: RefCell::new(None),
+            left: Cell::new(0),
+        }
+    }
+}
+
+impl<T: Clone> ReadLag<T> {
+    /// Lag the next writes by `reads` reads.
+    pub(crate) fn set(&self, reads: u64) {
+        self.reads.set(reads);
+    }
+
+    /// A write is landing: `before` is the state it replaces.
+    pub(crate) fn landed(&self, before: T) {
+        *self.before.borrow_mut() = Some(before);
+        self.left.set(self.reads.get());
+    }
+
+    /// The stale state while lag remains, consuming one read.
+    pub(crate) fn serve(&self) -> Option<T> {
+        if self.left.get() == 0 {
+            return None;
+        }
+        self.left.set(self.left.get() - 1);
+        self.before.borrow().clone()
     }
 }
