@@ -34,7 +34,7 @@
     },
     "darwin-x86_64": {
       "preparation": "external-node-pi-candidate",
-      "evidence": "pending-hosted-run",
+      "evidence": "native-loopback-qualified-hosted",
       "managed_installation": "not-qualified"
     },
     "linux-aarch64": {
@@ -44,7 +44,7 @@
     },
     "linux-x86_64": {
       "preparation": "external-node-pi-candidate",
-      "evidence": "pending-hosted-run",
+      "evidence": "native-loopback-qualified-hosted",
       "managed_installation": "not-qualified"
     }
   },
@@ -95,16 +95,74 @@
         "environment": "local",
         "host": "apple-silicon-macos-27.0.1"
       },
+      "darwin-x86_64": {
+        "environment": "hosted",
+        "run_id": "40195699743",
+        "run_attempt": 1,
+        "runner_label": "macos-15-intel",
+        "runner": "github-hosted/macOS/X64",
+        "host": "darwin-x64",
+        "machine": null,
+        "kernel_or_darwin_release": "24.6.0",
+        "rosetta_translated": false,
+        "node": "v22.19.0",
+        "pi": "0.85.1",
+        "tests": "2/2",
+        "skipped": 0,
+        "evidence_generated_at": "2026-10-25T13:02:11.110Z"
+      },
       "linux-aarch64": {
         "environment": "container",
         "host": "debian-12-container-in-docker-desktop-linuxkit-vm",
         "kernel": "6.12.76-linuxkit",
         "cpu_execution": "native-arm64-linux-kernel-not-emulated",
-        "hosted_arm64_runner_evidence": "pending"
+        "hosted_evidence": {
+          "environment": "hosted",
+          "run_id": "40195699743",
+          "run_attempt": 1,
+          "runner_label": "ubuntu-24.04-arm",
+          "runner": "github-hosted/Linux/ARM64",
+          "host": "linux-arm64",
+          "machine": "aarch64",
+          "kernel_or_darwin_release": "6.17.0-1022-azure",
+          "rosetta_translated": false,
+          "node": "v22.19.0",
+          "pi": "0.85.1",
+          "tests": "2/2",
+          "skipped": 0,
+          "evidence_generated_at": "2026-10-25T13:01:47.062Z"
+        }
+      },
+      "linux-x86_64": {
+        "environment": "hosted",
+        "run_id": "40195699743",
+        "run_attempt": 1,
+        "runner_label": "ubuntu-24.04",
+        "runner": "github-hosted/Linux/X64",
+        "host": "linux-x64",
+        "machine": "x86_64",
+        "kernel_or_darwin_release": "6.17.0-1022-azure",
+        "rosetta_translated": false,
+        "node": "v22.19.0",
+        "pi": "0.85.1",
+        "tests": "2/2",
+        "skipped": 0,
+        "evidence_generated_at": "2026-10-25T13:01:46.062Z"
       }
     },
-    "pending_hosted_run": ["darwin-x86_64", "linux-x86_64"],
+    "pending_hosted_run": [],
     "uses_personal_credentials": false,
-    "managed_installation": "not-qualified"
+    "managed_installation": "not-qualified",
+    "hosted_run": {
+      "workflow": ".github/workflows/pi-provider-qualification.yml",
+      "url": "https://github.com/merkr-software/CadencR/actions/runs/40195699743",
+      "run_id": "40195699743",
+      "source_commit": "ba3ddf239d5694e58f7c92576e913f139aa2d79c",
+      "date": "2026-10-25",
+      "archive_sha256": "c89431a61e4c2110f2e5d5bfe54d378fc231062208632533113f206205796c12",
+      "archive_bytes": 26406,
+      "archive_identical_across_targets": true,
+      "executable_payload_sha256sums_digest": "2a3728dacebd01f1c9e8fd725ac1fb114a08e0939b0010efb8ef22e614e1e485"
+    }
   }
 }

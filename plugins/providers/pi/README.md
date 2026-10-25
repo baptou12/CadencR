@@ -307,16 +307,16 @@ external runtime requirements and per-target evidence boundaries. Preparation
 verifies those digests and prerequisites against committed Git blobs. It is a
 review aid, not an approval or a replacement for canonical CLI validation.
 
-| Item         | Reviewed source fact                                                                        | Boundary                                                                               |
-| ------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Connector    | Package and retained `LICENSE` declare Apache-2.0; runtime has no npm dependencies          | License-file presence is not an authorship/legal attestation                           |
-| Artwork      | Original `icon.svg` uses a rounded rectangle, orthogonal connector and three circular nodes | Created during source maintenance; Apache-2.0; not upstream Pi branding                |
-| Runtime      | External Node.js `>=22.19.0 <23.0.0` and Pi `0.85.1`                                        | Neither runtime, credentials nor model access is bundled                               |
-| macOS arm64  | Native loopback qualified on a real Apple Silicon Mac (extracted archive, actual Pi)        | Declared in the template; managed admission remains separate                           |
-| Linux arm64  | Native loopback qualified in an arm64 Linux container on a native arm64 kernel (actual Pi)  | Declared in the template; container evidence is not a bare-metal or packaged-app check |
-| macOS x86_64 | Prepared; hosted-runner qualification pending                                               | Not declared until the hosted workflow passes on an Intel macOS runner                 |
-| Linux x86_64 | Prepared; hosted-runner qualification pending                                               | Not declared until the hosted workflow passes on an x86_64 Linux runner                |
-| Windows      | Not prepared                                                                                | Needs a verified launcher                                                              |
+| Item         | Reviewed source fact                                                                        | Boundary                                                                |
+| ------------ | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Connector    | Package and retained `LICENSE` declare Apache-2.0; runtime has no npm dependencies          | License-file presence is not an authorship/legal attestation            |
+| Artwork      | Original `icon.svg` uses a rounded rectangle, orthogonal connector and three circular nodes | Created during source maintenance; Apache-2.0; not upstream Pi branding |
+| Runtime      | External Node.js `>=22.19.0 <23.0.0` and Pi `0.85.1`                                        | Neither runtime, credentials nor model access is bundled                |
+| macOS arm64  | Native loopback qualified on a real Apple Silicon Mac (extracted archive, actual Pi)        | Declared in the template; managed admission remains separate            |
+| Linux arm64  | Native loopback qualified in an arm64 container and on a hosted arm64 runner (actual Pi)    | Declared in the template; not a bare-metal or packaged-app check        |
+| macOS x86_64 | Native loopback qualified on a hosted Intel macOS runner (actual Pi)                        | Declared in the template; managed admission remains separate            |
+| Linux x86_64 | Native loopback qualified on a hosted x86_64 Linux runner (actual Pi)                       | Declared in the template; managed admission remains separate            |
+| Windows      | Not prepared                                                                                | Needs a verified launcher                                               |
 
 Evidence, exact commands and digests are in
 [`docs/qa/MARKETPLACE_PI_PLATFORMS_2026_10_25.md`](../../../docs/qa/MARKETPLACE_PI_PLATFORMS_2026_10_25.md).
@@ -327,8 +327,7 @@ build's platform and architecture equal the target (and, as extra guards, macOS 
 translating the process under Rosetta and the Linux `uname -m` matches), and
 `--environment hosted` additionally requires the GitHub runner variables for that
 target. These are guards against operator mistakes, not attestations; the manually
-dispatched
-`pi-provider-qualification` workflow produces the remaining runner evidence.
+dispatched `pi-provider-qualification` workflow produces the hosted runner evidence.
 
 To qualify the machine you are on (Node `>=22.19.0 <23.0.0`, Pi `0.85.1` installed, the
 reviewed `cadencr` CLI checksum known; no credentials or network model are used):
@@ -353,8 +352,8 @@ Mac) is recorded as such and never as hosted or bare-metal evidence.
 
 [`package-template.json`](package-template.json) fixes the discriminated provider
 kind, Pi identity, source repository, Apache declaration, executable and assets.
-Only targets whose native loopback qualification passed (`darwin-aarch64` and
-`linux-aarch64` today) appear in that source-owned template's `distribution.binary`;
+Only targets whose native loopback qualification passed (all four macOS and Linux
+targets today) appear in that source-owned template's `distribution.binary`;
 the marketplace filters packages by the user's platform, so there is no fixed matrix.
 Its publisher is the official `cadencr` publisher and its first compatible desktop is
 `0.15.0`. The archive URL and digest stay `PENDING` placeholders and publication stays
