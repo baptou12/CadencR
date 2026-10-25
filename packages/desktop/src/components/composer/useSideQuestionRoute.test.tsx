@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { toast } from "sonner";
 import { useAskSessionSideQuestion } from "@/api/generated";
+import { useSideConversationStore } from "@/stores/side-conversation-store";
 import { useSideQuestionRoute } from "./useSideQuestionRoute";
 
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock(import("@/api/generated"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -14,6 +14,8 @@ vi.mock(import("@/api/generated"), async (importOriginal) => ({
 const ask = vi.fn();
 
 beforeEach(() => {
+  localStorage.clear();
+  useSideConversationStore.setState({ bySource: {} });
   ask.mockReset();
   vi.mocked(toast.error).mockReset();
   vi.mocked(useAskSessionSideQuestion).mockReturnValue({
@@ -26,13 +28,15 @@ function route(sessionId: number | undefined = 7) {
 }
 
 describe("useSideQuestionRoute", () => {
-  it("sends the question to a side conversation, never to the agent", async () => {
-    ask.mockResolvedValue({ project_id: 1, feature_id: 2 });
+  it("sends the question to a side conversation shown under this one, never to the agent", async () => {
+    ask.mockResolvedValue({ project_id: 1, feature_id: 2, session_id: 3 });
     const send = vi.fn();
     await route()(send)("/cadencr:side why?");
     expect(ask).toHaveBeenCalledWith({ sessionId: 7, data: { question: "why?" } });
     expect(send).not.toHaveBeenCalled();
-    expect(toast.success).toHaveBeenCalled();
+    expect(useSideConversationStore.getState().bySource[7]).toEqual([
+      { featureId: 2, sessionId: 3, projectId: 1, question: "why?" },
+    ]);
   });
 
   it("passes every other prompt through", async () => {
@@ -52,5 +56,6 @@ describe("useSideQuestionRoute", () => {
     ask.mockRejectedValue(new Error("boom"));
     await expect(route()(vi.fn())("/cadencr:side why?")).rejects.toThrow("boom");
     expect(toast.error).toHaveBeenCalled();
+    expect(useSideConversationStore.getState().bySource[7]).toBeUndefined();
   });
 });

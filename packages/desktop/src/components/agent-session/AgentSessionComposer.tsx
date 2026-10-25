@@ -11,6 +11,7 @@ import { LaunchManifest } from "../composer/LaunchManifest";
 import { AgentTodoList } from "../AgentTodoList";
 import { AutoScrollChip } from "./AutoScrollChip";
 import { useComposerSessionInfo } from "./ComposerSessionSlots";
+import { SideConversations } from "../side-conversation/SideConversations";
 
 export interface AgentSessionComposerProps {
   sessionProps: AgentSessionProps;
@@ -235,6 +236,13 @@ function AgentSessionPrompt(
       session.worktreeSelectedBranch,
     ],
   );
+  const sideConversations = useMemo(
+    () =>
+      session.sessionId != null && props.projectPath ? (
+        <SideConversations sourceSessionId={session.sessionId} cwd={props.projectPath} />
+      ) : undefined,
+    [props.projectPath, session.sessionId],
+  );
   return (
     <AgentPromptBar
       ref={props.promptBarRef}
@@ -274,6 +282,7 @@ function AgentSessionPrompt(
       instrumentTrailing={composerUtilities(props)}
       steeringAcknowledged={session.steeringAcknowledged}
       launchManifest={launchManifest(props)}
+      sideConversations={sideConversations}
       instrumentLeading={props.instruments}
       slashCommandsOverride={session.slashCommandsOverride}
       slashCommandsLoading={session.slashCommandsLoading}

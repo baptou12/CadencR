@@ -28,6 +28,8 @@ const HtmlVisual = lazy(loadHtmlVisual);
  * read and the rendered result replaces it — and fetches its renderer
  * meanwhile, so the result can paint as soon as the reply settles.
  */
+// The service drops these same fences from a side question's excerpt
+// (`side_question/excerpt.rs`, `RENDERED_FENCES`): keep both lists in step.
 const RENDERED_FENCES = {
   mermaid: {
     highlight: "text",

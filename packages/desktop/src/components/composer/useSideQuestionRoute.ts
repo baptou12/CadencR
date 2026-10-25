@@ -1,22 +1,22 @@
 import { useCallback } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { getListFeaturesQueryKey, useAskSessionSideQuestion } from "@/api/generated";
+import { useAskSessionSideQuestion } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { queryClient } from "@/lib/queryClient";
 import { parseSideQuestion, SIDE_QUESTION_SKILL } from "@/lib/side-question-skill";
-import { navigateToFeatureIdOrHome } from "@/components/project-feature-navigation";
+import { useSideConversationStore } from "@/stores/side-conversation-store";
 import type { SendFn } from "../agent-prompt-send";
 
 /**
  * Routes a `/cadencr:side <question>` prompt away from the agent: the question
  * goes to a new read-only conversation in the same working directory, seeded
  * with this one's recent messages, and this agent is neither interrupted nor
- * shown it. Any other prompt goes through `send` untouched. A refused question
- * throws after its toast, so the send runner restores the draft.
+ * shown it. The service keeps that conversation archived (temporary); it
+ * answers in a panel atop this composer (`SideConversations`) until the user
+ * keeps it as a thread. Any other prompt goes through `send` untouched. A
+ * refused question throws after its toast, so the send runner restores the
+ * draft.
  */
 export function useSideQuestionRoute(sessionId: number | undefined) {
-  const navigate = useNavigate();
   const { mutateAsync } = useAskSessionSideQuestion();
   return useCallback(
     (send: SendFn): SendFn =>
@@ -34,22 +34,17 @@ export function useSideQuestionRoute(sessionId: number | undefined) {
         }
         try {
           const result = await mutateAsync({ sessionId, data: { question } });
-          void queryClient.invalidateQueries({
-            queryKey: getListFeaturesQueryKey({ project_id: result.project_id }),
-          });
-          toast.success("Side question sent", {
-            description: "A read-only conversation is answering it next to this one.",
-            action: {
-              label: "Open",
-              onClick: () =>
-                navigateToFeatureIdOrHome(navigate, result.project_id, result.feature_id),
-            },
+          useSideConversationStore.getState().add(sessionId, {
+            featureId: result.feature_id,
+            sessionId: result.session_id,
+            projectId: result.project_id,
+            question,
           });
         } catch (error) {
           toast.error(apiErrorMessage(error, "Couldn't start the side conversation"));
           throw error;
         }
       },
-    [mutateAsync, navigate, sessionId],
+    [mutateAsync, sessionId],
   );
 }

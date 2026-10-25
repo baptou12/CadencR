@@ -137,6 +137,7 @@ function PromptComposer({
           )}
           {...state.attachments.dragHandlers}
         >
+          {props.sideConversations}
           <QueueRail />
           {props.referencedWorktreeSelection && props.projectId != null ? (
             <ReferencedWorktreeTip
