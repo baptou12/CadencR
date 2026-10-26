@@ -7,6 +7,7 @@ import { registerPushServiceWorker } from "./lib/remote/push-register";
 import { applyThemeToDocument, readPersistedTheme } from "./lib/themes";
 import { apiErrorMessage } from "./lib/api-errors";
 import { installGlobalRendererErrorHandlers } from "./lib/renderer-error-reporting";
+import { reactRootErrorHandlers } from "./lib/react-root-error-reporting";
 import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary";
 import { detectStandalone } from "./hooks/useFullscreen";
 import { initializeStandaloneViewport } from "./lib/standalone-viewport";
@@ -34,7 +35,7 @@ async function bootstrap(): Promise<void> {
   // when push is unsupported). Fire-and-forget — it must not block first paint,
   // and actually subscribing is a separate user-gesture flow in settings.
   void registerPushServiceWorker();
-  const root = createRoot(document.getElementById("root")!);
+  const root = createRoot(document.getElementById("root")!, reactRootErrorHandlers);
   root.render(
     <React.StrictMode>
       <GlobalErrorBoundary>

@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   installGlobalRendererErrorHandlers,
+  createReactErrorReporter,
   toRendererErrorPayload,
 } from "./renderer-error-reporting";
 
@@ -39,6 +40,39 @@ describe("toRendererErrorPayload", () => {
     expect(payload.source).toBe("unhandledrejection");
     expect(payload.message).toBe("async failed");
     expect(payload.stack).toContain("async failed");
+  });
+});
+
+describe("createReactErrorReporter", () => {
+  it("bounds React reports while preserving a missing component stack at the limit", async () => {
+    const report = vi.fn(() => Promise.resolve());
+    const reportReactError = createReactErrorReporter(report);
+    for (let i = 0; i < 19; i += 1) reportReactError(new Error("earlier"), "at Panel");
+    const error = new Error("last error");
+    reportReactError(error, null);
+    reportReactError(error, "at StreamingPanel");
+    reportReactError(error, "at StreamingPanel\n at App");
+    reportReactError(error, null);
+    reportReactError(new Error("over limit"), "at OtherPanel", "react-uncaught");
+    await Promise.resolve();
+    expect(report).toHaveBeenCalledTimes(20);
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        message: "last error",
+        componentStack: "at StreamingPanel\n at App",
+      }),
+    );
+  });
+
+  it("does not replace an existing component stack with an empty duplicate", async () => {
+    const report = vi.fn(() => Promise.resolve());
+    const reportReactError = createReactErrorReporter(report);
+    const error = new Error("failed");
+    reportReactError(error, "at Panel");
+    reportReactError(error, "");
+    reportReactError(error, "at Panel");
+    await Promise.resolve();
+    expect(report).toHaveBeenCalledTimes(1);
   });
 });
 

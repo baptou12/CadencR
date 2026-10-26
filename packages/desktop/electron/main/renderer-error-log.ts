@@ -1,18 +1,9 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { optionalNumber, requiredRecord, requiredString } from "./browser-arg-validation";
+import type { RendererErrorReportPayload } from "../../src/shared/renderer-error";
 
-type RendererErrorSource = "error" | "unhandledrejection" | "react-boundary";
-
-interface RendererErrorPayload {
-  source: RendererErrorSource;
-  message: string;
-  stack?: string | null;
-  componentStack?: string | null;
-  url?: string | null;
-  line?: number | null;
-  column?: number | null;
-}
+type RendererErrorSource = RendererErrorReportPayload["source"];
 
 interface RendererErrorLogOptions {
   appVersion: string;
@@ -30,7 +21,7 @@ export function appendRendererErrorLog(
   appendFileSync(options.logPath, buildRendererErrorLog(payload, options), "utf8");
 }
 
-function parseRendererErrorPayload(rawPayload: unknown): RendererErrorPayload {
+function parseRendererErrorPayload(rawPayload: unknown): RendererErrorReportPayload {
   const payload = requiredRecord(rawPayload, "renderer error payload");
   const source = parseSource(payload.source);
   return {
@@ -45,7 +36,13 @@ function parseRendererErrorPayload(rawPayload: unknown): RendererErrorPayload {
 }
 
 function parseSource(rawSource: unknown): RendererErrorSource {
-  if (rawSource === "error" || rawSource === "unhandledrejection" || rawSource === "react-boundary")
+  if (
+    rawSource === "error" ||
+    rawSource === "unhandledrejection" ||
+    rawSource === "react-boundary" ||
+    rawSource === "react-uncaught" ||
+    rawSource === "react-recoverable"
+  )
     return rawSource;
   throw new Error("Expected renderer error source.");
 }
@@ -68,7 +65,7 @@ function clamp(value: string, maxLength: number): string {
 }
 
 function buildRendererErrorLog(
-  payload: RendererErrorPayload,
+  payload: RendererErrorReportPayload,
   options: RendererErrorLogOptions,
 ): string {
   return [

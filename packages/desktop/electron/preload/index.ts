@@ -22,6 +22,7 @@ import type {
   BrowserAgentActivity,
 } from "../main/browser-types";
 import type { ChangelogImageBytes } from "../../src/shared/changelog-image";
+import type { RendererErrorReportPayload } from "../../src/shared/renderer-error";
 import { notchHostBridge } from "./notch-host-bridge";
 import { installPluginTabPortRelay, pluginTabsHostBridge } from "./plugin-tabs-host-bridge";
 
@@ -53,16 +54,6 @@ interface NotifyOptions {
   projectId: number;
   routeType: RouteType;
   mode: NotifyMode;
-}
-
-interface RendererErrorReportPayload {
-  source: "error" | "unhandledrejection" | "react-boundary";
-  message: string;
-  stack?: string | null;
-  componentStack?: string | null;
-  url?: string | null;
-  line?: number | null;
-  column?: number | null;
 }
 
 interface FileDropItem {

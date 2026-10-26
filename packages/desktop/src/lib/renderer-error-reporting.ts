@@ -2,14 +2,15 @@ import { desktopBridge, type RendererErrorReportPayload } from "./desktop-bridge
 
 type ReportRendererError = (payload: RendererErrorReportPayload) => Promise<void>;
 
-const MAX_GLOBAL_ERROR_REPORTS = 20;
+const MAX_ERROR_REPORTS = 20;
+type ReactErrorSource = "react-boundary" | "react-uncaught" | "react-recoverable";
 
 export function installGlobalRendererErrorHandlers(
   report: ReportRendererError = defaultReportRendererError,
 ): () => void {
   let reports = 0;
   const reportGlobalError = (payload: RendererErrorReportPayload): void => {
-    if (reports >= MAX_GLOBAL_ERROR_REPORTS) return;
+    if (reports >= MAX_ERROR_REPORTS) return;
     reports += 1;
     reportSafely(report, payload);
   };
@@ -53,16 +54,45 @@ export function toRendererErrorPayload(
   };
 }
 
-export function reportReactBoundaryError(error: Error, componentStack: string | null): void {
-  reportSafely(defaultReportRendererError, {
-    source: "react-boundary",
-    message: error.message || String(error),
-    stack: error.stack ?? null,
-    componentStack,
-    url: window.location.href,
-    line: null,
-    column: null,
-  });
+export const reportReactBoundaryError = createReactErrorReporter();
+
+export function createReactErrorReporter(report: ReportRendererError = defaultReportRendererError) {
+  let reports = 0;
+  const pending = new WeakMap<object, RendererErrorReportPayload>();
+  return (
+    error: unknown,
+    componentStack: string | null,
+    source: ReactErrorSource = "react-boundary",
+  ): void => {
+    const boundaryError =
+      source === "react-boundary" && typeof error === "object" && error !== null ? error : null;
+    const previous = boundaryError ? pending.get(boundaryError) : undefined;
+    if (previous) {
+      // Consolidate the root hook and componentDidCatch before persisting. Keep
+      // the fuller stack even when the reporting budget has just been exhausted.
+      if ((componentStack?.trim().length ?? 0) > (previous.componentStack?.trim().length ?? 0))
+        previous.componentStack = componentStack;
+      return;
+    }
+    if (reports >= MAX_ERROR_REPORTS) return;
+    reports += 1;
+    const normalized = errorFromUnknown(error);
+    const payload: RendererErrorReportPayload = {
+      source,
+      message: normalized.message,
+      stack: normalized.stack,
+      componentStack,
+      url: window.location.href,
+      line: null,
+      column: null,
+    };
+    if (!boundaryError) return reportSafely(report, payload);
+    pending.set(boundaryError, payload);
+    queueMicrotask(() => {
+      pending.delete(boundaryError);
+      reportSafely(report, payload);
+    });
+  };
 }
 
 function defaultReportRendererError(payload: RendererErrorReportPayload): Promise<void> {

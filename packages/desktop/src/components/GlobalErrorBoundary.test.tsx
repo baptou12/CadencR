@@ -28,7 +28,7 @@ describe("GlobalErrorBoundary", () => {
     expect(screen.getByText("healthy app")).toBeInTheDocument();
   });
 
-  it("shows a whole-app fallback and reports component diagnostics", () => {
+  it("shows a whole-app fallback and reports component diagnostics", async () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     setDesktopBridgeOverrideForTests({
       reportRendererError,
@@ -42,6 +42,7 @@ describe("GlobalErrorBoundary", () => {
 
     expect(screen.getByText(/Cadencr UI crashed/i)).toBeInTheDocument();
     expect(screen.getByText(/root exploded/)).toBeInTheDocument();
+    await Promise.resolve();
     expect(reportRendererError).toHaveBeenCalledWith(
       expect.objectContaining({
         source: "react-boundary",

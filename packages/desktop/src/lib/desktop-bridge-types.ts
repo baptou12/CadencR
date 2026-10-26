@@ -6,6 +6,7 @@ import type {
   NotchSnapshot,
 } from "@/shared/notch";
 import type { ChangelogImageBytes } from "@/shared/changelog-image";
+import type { RendererErrorReportPayload } from "@/shared/renderer-error";
 import type { LinkHoverContext, LinkMenuOpenPayload } from "@/lib/link-routing";
 import type {
   BrowserBounds,
@@ -105,15 +106,7 @@ export type UpdateEvent =
       message: string;
     };
 
-export interface RendererErrorReportPayload {
-  source: "error" | "unhandledrejection" | "react-boundary";
-  message: string;
-  stack?: string | null;
-  componentStack?: string | null;
-  url?: string | null;
-  line?: number | null;
-  column?: number | null;
-}
+export type { RendererErrorReportPayload } from "@/shared/renderer-error";
 
 export interface CadencrDesktopBridge {
   isElectron: boolean;

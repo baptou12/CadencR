@@ -262,6 +262,8 @@ export default defineConfig(({ mode }) => {
         }),
       ],
       build: {
+        // Opt-in diagnostics: retain mappings without automatic browser downloads.
+        sourcemap: process.env.CADENCR_RENDERER_SOURCEMAPS === "1" ? "hidden" : false,
         rollupOptions: {
           input: {
             index: path.resolve(__dirname, "index.html"),

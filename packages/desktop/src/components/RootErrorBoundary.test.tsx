@@ -73,7 +73,7 @@ describe("RootErrorBoundary", () => {
     errSpy.mockRestore();
   });
 
-  it("reports route crashes to the renderer diagnostics bridge", () => {
+  it("reports route crashes to the renderer diagnostics bridge", async () => {
     const reportRendererError = vi.fn<(_payload: unknown) => Promise<void>>(() =>
       Promise.resolve(),
     );
@@ -86,6 +86,7 @@ describe("RootErrorBoundary", () => {
       </RootErrorBoundary>,
     );
 
+    await Promise.resolve();
     expect(reportRendererError).toHaveBeenCalledWith(
       expect.objectContaining({
         source: "react-boundary",
