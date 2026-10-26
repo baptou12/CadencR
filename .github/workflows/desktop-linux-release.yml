@@ -148,7 +148,11 @@ jobs:
       - name: Build renderer + main bundles
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+          CADENCR_RENDERER_SOURCEMAPS: "1"
         run: pnpm --filter @cadencr/desktop exec electron-vite build
+
+      - name: Archive exact renderer bundles and source maps
+        run: node packages/desktop/scripts/archive-renderer-diagnostics.mjs
 
       - name: Build Rust service sidecar (x64)
         run: node scripts/validate-marketplace-build-env.mjs -- pnpm --filter @cadencr/service build:sidecars
@@ -169,6 +173,9 @@ jobs:
       - name: Smoke test Linux packages
         run: scripts/smoke-linux-packages.sh packages/desktop/dist-electron "${RELEASE_TAG#v}" x64
 
+      - name: Stage renderer diagnostics beside Linux packages
+        run: cp packages/desktop/diagnostics/*-renderer-diagnostics.tar.gz packages/desktop/dist-electron/
+
       # actions/upload-artifact@v4.6.2
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -181,6 +188,7 @@ jobs:
             packages/desktop/dist-electron/*.deb
             packages/desktop/dist-electron/*.rpm
             packages/desktop/dist-electron/latest-linux.yml
+            packages/desktop/dist-electron/*-renderer-diagnostics.tar.gz
 
   attach:
     needs: build
@@ -207,7 +215,8 @@ jobs:
             "dist/Cadencr-${version}-x86_64.AppImage" \
             "dist/Cadencr-${version}-amd64.deb" \
             "dist/Cadencr-${version}-x86_64.rpm" \
-            "dist/latest-linux.yml"
+            "dist/latest-linux.yml" \
+            "dist/Cadencr-${version}-linux-renderer-diagnostics.tar.gz"
 
       - name: Verify uploaded Linux alpha assets
         run: |
@@ -218,7 +227,8 @@ jobs:
             "Cadencr-${version}-x86_64.AppImage" \
             "Cadencr-${version}-amd64.deb" \
             "Cadencr-${version}-x86_64.rpm" \
-            "latest-linux.yml"; do
+            "latest-linux.yml" \
+            "Cadencr-${version}-linux-renderer-diagnostics.tar.gz"; do
             if ! grep -Fxq "$asset" "$RUNNER_TEMP/uploaded-release-assets.txt"; then
               echo "Uploaded GitHub release is missing asset: $asset" >&2
               exit 1

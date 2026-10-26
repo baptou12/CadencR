@@ -5,6 +5,7 @@ directories:
   output: dist-electron
 files:
   - out/**/*
+  - "!**/*.map"
   # The built SPA ships once, as extraResources `renderer/` below. Excluding it
   # from the asar avoids a ~44 MB duplicate; the packaged window loads it from
   # `process.resourcesPath/renderer` (see `rendererLoadUrl`).
@@ -18,6 +19,7 @@ extraResources:
   # window and served over the remote listener.
   - from: out/renderer
     to: renderer
+    filter: ["**/*", "!**/*.map"]
   # Universal AppKit addon from `electron/mac-native-addon.ts` (see `mac-window.ts`).
   - from: resources/native
     to: native

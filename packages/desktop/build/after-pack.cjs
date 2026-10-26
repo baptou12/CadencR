@@ -3,13 +3,18 @@ const { join } = require("node:path");
 const { execFileSync } = require("node:child_process");
 const { Arch } = require("electron-builder");
 const { prepareLinuxSidecar } = require("./linux-sidecar.cjs");
+const { assertRendererHasNoSourceMaps } = require("./assert-renderer-no-maps.cjs");
 
 // electron-builder arch → what `lipo -archs` reports for a matching binary.
 const LIPO_ARCH = { arm64: "arm64", x64: "x86_64" };
 
 exports.default = async function afterPack(context) {
   if (context.electronPlatformName === "linux") {
-    prepareLinuxSidecar(join(context.appOutDir, "resources", "cadencr-service"), Arch[context.arch]);
+    assertRendererHasNoSourceMaps(join(context.appOutDir, "resources", "renderer"));
+    prepareLinuxSidecar(
+      join(context.appOutDir, "resources", "cadencr-service"),
+      Arch[context.arch],
+    );
     return;
   }
 
@@ -17,6 +22,7 @@ exports.default = async function afterPack(context) {
 
   const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   const resources = join(appPath, "Contents", "Resources");
+  assertRendererHasNoSourceMaps(join(resources, "renderer"));
   const sidecar = join(resources, "cadencr-service");
   assertBinaryArch(sidecar, Arch[context.arch], { universal: false });
   // Universal by construction (electron/mac-native-addon.ts); electron-builder signs it.

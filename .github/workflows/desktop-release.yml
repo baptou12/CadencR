@@ -129,7 +129,11 @@ jobs:
       - name: Build renderer + main bundles
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+          CADENCR_RENDERER_SOURCEMAPS: "1"
         run: pnpm --filter @cadencr/desktop exec electron-vite build
+
+      - name: Archive exact renderer bundles and source maps
+        run: node packages/desktop/scripts/archive-renderer-diagnostics.mjs
 
       - name: Build Rust service sidecars (arm64 + x64)
         run: node scripts/validate-marketplace-build-env.mjs -- pnpm --filter @cadencr/service build:macos-sidecars
@@ -274,7 +278,8 @@ jobs:
             "$dist_dir/Cadencr-${version}-arm64.dmg.blockmap" \
             "$dist_dir/Cadencr-${version}-arm64-mac.zip" \
             "$dist_dir/Cadencr-${version}-arm64-mac.zip.blockmap" \
-            "$dist_dir/latest-mac.yml"
+            "$dist_dir/latest-mac.yml" \
+            "packages/desktop/diagnostics/Cadencr-${version}-darwin-renderer-diagnostics.tar.gz"
 
       - name: Verify uploaded GitHub release assets
         if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
@@ -290,6 +295,7 @@ jobs:
             "Cadencr-${version}-arm64-mac.zip"
             "Cadencr-${version}-arm64-mac.zip.blockmap"
             "latest-mac.yml"
+            "Cadencr-${version}-darwin-renderer-diagnostics.tar.gz"
           )
 
           is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"

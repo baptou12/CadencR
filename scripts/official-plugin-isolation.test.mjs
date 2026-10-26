@@ -122,22 +122,22 @@ const linuxWindowIcon = { from: "icons/512x512.png", to: "icons/512x512.png" };
 
 // Both reviewed desktop layouts are app-only; no other source is admitted.
 export function assertAppOnlyResources(config) {
-  assert.deepEqual(config.files, ["out/**/*", "!out/renderer/**", "package.json"]);
+  assert.deepEqual(config.files, ["out/**/*", "!**/*.map", "!out/renderer/**", "package.json"]);
   const source = config.extraResources?.[0]?.from;
   assert.ok(sidecarSources.includes(source), `unreviewed sidecar source: ${source}`);
   assert.deepEqual(config.extraResources, [
     { from: source, to: "cadencr-service" },
-    { from: "out/renderer", to: "renderer" },
+    { from: "out/renderer", to: "renderer", filter: ["**/*", "!**/*.map"] },
     macWindowAddon,
     linuxWindowIcon,
   ]);
 }
 
 const resourceFixture = (source) => ({
-  files: ["out/**/*", "!out/renderer/**", "package.json"],
+  files: ["out/**/*", "!**/*.map", "!out/renderer/**", "package.json"],
   extraResources: [
     { from: source, to: "cadencr-service" },
-    { from: "out/renderer", to: "renderer" },
+    { from: "out/renderer", to: "renderer", filter: ["**/*", "!**/*.map"] },
     { ...macWindowAddon, filter: [...macWindowAddon.filter] },
     { ...linuxWindowIcon },
   ],

@@ -20,7 +20,10 @@ import {
 } from "./electron/bundle-contract";
 import { macNativeAddonPlugin } from "./electron/mac-native-addon";
 import { devServiceProxy } from "./electron/dev-service-proxy";
+import { rendererBuildInfo } from "./electron/renderer-build-info";
 import pkg from "./package.json" with { type: "json" };
+
+const rendererDiagnostics = rendererBuildInfo(pkg.version);
 
 const excalidrawFontsDir = path.join(
   path.dirname(createRequire(import.meta.url).resolve("@excalidraw/excalidraw")),
@@ -235,6 +238,7 @@ export default defineConfig(({ mode }) => {
       },
       define: {
         __APP_VERSION__: JSON.stringify(pkg.version),
+        __APP_BUILD_ID__: JSON.stringify(rendererDiagnostics.buildId),
         __APP_BUILD_BRANCH__: JSON.stringify(resolveBuildBranch()),
       },
       resolve: {
@@ -249,6 +253,7 @@ export default defineConfig(({ mode }) => {
         exclude: ["@silurus/ooxml"],
       },
       plugins: [
+        rendererDiagnostics.plugin,
         serviceProxy.plugin,
         visualLibrariesPlugin(),
         react(),

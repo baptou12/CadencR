@@ -14,6 +14,7 @@ afterPack: build/after-pack.cjs
 afterSign: build/notarize-app.cjs
 files:
   - out/**/*
+  - "!**/*.map"
   # The built SPA ships once, as extraResources `renderer/` below. Excluding it
   # from the asar avoids a ~44 MB duplicate; the packaged window loads it from
   # `process.resourcesPath/renderer` (see `rendererLoadUrl`).
@@ -29,6 +30,7 @@ extraResources:
   # listener via `--renderer-dir` (the Rust sidecar can't read an asar).
   - from: out/renderer
     to: renderer
+    filter: ["**/*", "!**/*.map"]
   # Universal AppKit addon from `electron/mac-native-addon.ts` (see `mac-window.ts`).
   - from: resources/native
     to: native

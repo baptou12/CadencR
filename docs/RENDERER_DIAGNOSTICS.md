@@ -1,57 +1,113 @@
-# Renderer error diagnostics
+# Renderer diagnostics
 
-These diagnostics help investigate errors such as React #185. They do not fix
-the application's nested-update loop or identify its origin from the last frame.
+Diagnostics capture the context needed to investigate failures such as React #185.
+They do not identify the update loop's origin automatically: a component stack can
+name the throw site rather than the component responsible for repeated updates.
 
-## Error sources
+## Collect a report
 
-Electron persists renderer reports in `renderer-errors.log` under its logs
-directory. The React root hooks preserve console error logging and report:
+1. On the crash screen, click **Export diagnostic report**. **Copy error details**
+   also copies the JavaScript stack, React component stack and crash context.
+2. After restarting, use **Settings → About Cadencr → Diagnostics → Export
+   diagnostic report** to retrieve retained errors.
+3. Share the JSON report with the issue, the approximate incident time and the
+   actions immediately preceding it. Inspect it before sharing: error messages,
+   stacks and error URLs can contain paths or application data.
 
-| Source | Context |
-| --- | --- |
-| `react-boundary` | React caught an error, including in a local boundary |
-| `react-uncaught` | React could not find a boundary |
-| `react-recoverable` | React recovered automatically |
-| `error`, `unhandledrejection` | Browser-level errors; no React component stack is available |
+Electron opens a native save dialog; browser clients download a JSON file. Export
+errors remain visible beside the button. Native exports require an unused `.json`
+filename and never overwrite an existing file. Reports stay local until the user
+shares them; there is no automatic upload.
 
-The existing `GlobalErrorBoundary` and `RootErrorBoundary` already forward
-`componentStack`; the Electron logger already preserves it. A record with source
-`error` and `componentStack: unavailable` does not demonstrate a broken transfer.
-Timers and store callbacks can throw outside React's error handling. Root hooks
-cannot invent a component stack for those errors, and a component stack names the
-throw site, which need not be the component driving a nested-update loop.
+## Captured context and retention
 
-React reporting is capped at 20 occurrences per page lifetime, independently of
-the existing 20-report browser-handler cap. Root and boundary reports for the
-same error object in one commit are consolidated in a microtask, retaining the
-longer component stack. Reusing the same error object in a later occurrence can
-produce another report within the budget. Console logging and fallbacks remain.
-Outside Electron, the existing browser bridge does not persist reports.
+| Data                 | Behavior                                                                                                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Correlation          | Unique report/session/build IDs, app and React versions, capture time, uptime                                                                                                         |
+| Runtime              | User agent and viewport; Electron adds OS, architecture, Electron and Chrome versions                                                                                                 |
+| Failure              | Source, message, JavaScript stack, URL/line/column and React component stack when available                                                                                           |
+| Recent activity      | Up to 100 events from the preceding 60 seconds, frozen when the error occurs                                                                                                          |
+| Events               | Redacted navigation, generic button/tab clicks, visibility/viewport, editor counts, agent status counts, connection state, WebSocket event types and conversation scroll-follow state |
+| Streaming            | Repeated events aggregated into one-second buckets; no per-token persistence                                                                                                          |
+| Retained reports     | Up to 10 errors across restarts; recoverable errors are evicted before fatal errors                                                                                                   |
+| Duplicate protection | Identical failures suppressed for 10 seconds, with a bounded fingerprint cache; no lifetime report cap                                                                                |
 
-## Opt-in source maps
+Breadcrumbs do not collect prompts, completions, typed values, file contents or
+filenames. Route identifiers and query strings are removed. The error payload
+itself preserves diagnostic text and is not guaranteed to be free of sensitive
+information. The recorder uses bounded plain memory; it does not write React or
+Zustand state. Editor summaries are coalesced over 100 ms and flushed before
+capturing a crash, keeping scans off the per-keystroke path.
 
-From the repository root, build with the locked dependencies and Node version:
+React root hooks report `react-boundary`, `react-uncaught` and `react-recoverable`.
+Root and boundary notifications for the same error object in one commit are
+consolidated before persistence, retaining the fuller component stack. Suppressed
+repeats reuse the original crash context so copied and exported report IDs match. Global
+`error` and `unhandledrejection` handlers also report failures; errors thrown by
+timers or store callbacks may have no React component stack.
+
+| Environment          | Storage                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Installed macOS      | `~/.cadencr/cache/logs/renderer-diagnostics.json`                                                                         |
+| Installed Linux      | `$XDG_CACHE_HOME/cadencr/logs/renderer-diagnostics.json`, defaulting to `~/.cache/cadencr/logs/renderer-diagnostics.json` |
+| Electron development | `renderer-diagnostics.json` in the isolated Electron `userData` profile                                                   |
+| Browser              | Origin-local `localStorage`, key `cadencr:renderer-diagnostics:v1`                                                        |
+
+Electron validates payloads and atomically replaces the bounded history file.
+A malformed existing history is preserved and surfaces an error instead of being
+silently discarded. The independent text log is still attempted if JSON history
+cannot be saved; save failures are visible even on the global crash screen. The existing Electron `renderer-errors.log` is also written
+and rotates at 2 MiB with one previous file. Console logging is preserved.
+A renderer process termination or a fully blocked event loop can still prevent
+JavaScript capture; this is not a native crash dump or session replay.
+
+## Release source maps outside the executable
+
+Both release workflows enable hidden maps during the **same renderer build** that
+is packaged. They publish a separate GitHub release asset:
+
+```text
+Cadencr-<version>-darwin-renderer-diagnostics.tar.gz
+Cadencr-<version>-linux-renderer-diagnostics.tar.gz
+```
+
+Each archive contains the exact JavaScript/CSS bundles and their maps, including
+source content, plus `manifest.json` with build ID, commit, version, build platform,
+Node version, lockfile SHA-256 and individual file sizes/SHA-256 hashes. The macOS
+archive corresponds to the shared renderer packaged for arm64 and x64; Linux uses
+its own build and build ID. Runtime architecture is included in Electron reports.
+
+Both production and local electron-builder configurations exclude `.map` files
+from the application archive and the copied renderer resources. The production
+`afterPack` hook additionally fails packaging if renderer resources contain maps.
+Hidden maps have no `sourceMappingURL` comment. The separate release asset is
+publicly downloadable; exclusion from the app is not an access-control mechanism.
+
+For a local diagnostic build:
 
 ```sh
 CADENCR_RENDERER_SOURCEMAPS=1 pnpm --filter @cadencr/desktop exec electron-vite build
+node packages/desktop/scripts/archive-renderer-diagnostics.mjs
 ```
 
-This emits hidden renderer maps in `packages/desktop/out/renderer/assets` without
-`sourceMappingURL` comments. Maps include source content. The default build still
-omits maps. Electron's existing renderer resource copy will include them if that
-opt-in output is packaged; hidden maps are not an access-control mechanism.
+The archive is written under `packages/desktop/diagnostics/`. Ordinary local builds
+omit maps unless the environment variable is set. Do not rebuild between archival
+and packaging: even the same commit can produce a different build ID and bundle.
 
-For a published build, the release job must enable this option **during the
-actual build being packaged**, then archive its exact JavaScript assets and maps
-together with the commit, lockfile, tool versions, target architecture and asset
-SHA-256 hashes. Retrieve that matching CI artifact for the affected release and
-verify that the logged bundle's bytes/hash match before symbolicating its
-one-based line and column. Keep archives outside the served renderer if maps
-should not ship to users.
+## Investigate an exported failure
 
-This change does not enable maps or artifact archival in release CI. It supplies
-an opt-in diagnostic build tool, not deployed symbolication. An old published
-bundle with no retained matching maps cannot reliably be symbolicated by a local
-rebuild, even from the same commit. Reproduce with an archived diagnostic build
-to capture new offsets instead.
+1. Select the relevant entry in `reports`; use its `error.diagnostics`, not the
+   export-time `current` context. Match its `reportId` to copied crash details.
+2. Retrieve the release archive for that app version and platform. Verify that
+   `manifest.json.buildId` equals the failed renderer's `buildId`.
+3. Locate the bundle named in the JavaScript stack and verify its SHA-256 against
+   the manifest. Use the adjacent `.map` to symbolicate that exact bundle. Browser
+   stack positions use one-based columns; source-map APIs usually expect a
+   zero-based generated column.
+4. Read breadcrumbs in chronological order alongside the React component stack.
+   Compare editor transitions, concurrent agent activity, stream bursts and scroll
+   state near the failure; these are leads, not proof of the loop's origin.
+
+An older published bundle with no retained matching maps cannot reliably be
+symbolicated using a fresh rebuild. This instrumentation helps subsequent
+releases; it cannot recover missing source maps for previously shipped binaries.
