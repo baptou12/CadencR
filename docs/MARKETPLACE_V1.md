@@ -300,7 +300,7 @@ that work; an optional official tab must not hold up the initial four plugins.
       tampering checks. All eight hosted jobs returned expected results; QA PRs
       closed unmerged. No hosted index artifact was inspected; exact output-kind
       counts were inspected in a local native test only.
-- [ ] Separately provision reviewed production author/signing environments,
+- [x] Separately provision reviewed production author/signing environments,
       credentials, trust profile and renewal/revocation owners/alerts; deploy and
       verify the protected Rust publisher. QA keys/tokens never become production
       authority, and author publication does not grant catalog signing authority.
@@ -309,17 +309,40 @@ that work; an optional official tab must not hold up the initial four plugins.
       reviewer identities/types and `prevent_self_review`, bound to the pinned
       environment ID. A sole reviewed owner may approve their own dispatch when
       that policy explicitly selects `false`; no second reviewer is inferred.
-      Production policy remains `PENDING` until the real environment is reviewed.
+      Delivered 2026-10-25/26: environment `25284345176` (sole reviewer
+      `rle-mino`, `prevent_self_review: false`) and publication `APPROVED` in
+      both policies; registry environments `protected-marketplace-publisher`
+      (reviewed) and `protected-marketplace-renewal` (unattended renewal only)
+      hold the online key `cadencr-registry-1`; trust generation 1 is signed by
+      the offline root `cadencr-root-1` (see [trust material](marketplace-trust/README.md)).
+      Registry actions are restricted to two SHA-pinned actions; the deployed
+      workflows use exactly those pins (registry PR #15).
 
 ### Wave 5 — Publish the initial plugins and populate signed feeds
 
-- [ ] Publish reviewed immutable author releases for Graphite, Ember, Fjord and
+- [x] Publish reviewed immutable author releases for Graphite, Ember, Fjord and
       Pi using the qualified CLI and completed official jobs. An official tab is
       added only if its source and release are explicitly approved.
-- [ ] Submit/review their registry entries, mirror exact approved archives into
+      `plugins/theme-{graphite,ember,fjord}/v0.1.0` and
+      `plugins/provider-pi/v0.4.0` were published from `16469b9f2` with stable
+      CLI `0.15.2`. No official tab is in v1.
+- [x] Submit/review their registry entries, mirror exact approved archives into
       registry-owned GitHub Releases, and publish/independently verify signed
-      catalogs and revocation policies. Exercise initial submission and a later
-      version; conflicting changes to an existing version must fail closed.
+      catalogs and revocation policies.
+      Registry PRs #13–#15 (squash) carried the entries and the reviewed request;
+      [run 40287994876](https://github.com/merkr-software/cadencr-registry/actions/runs/40287994876)
+      mirrored the four archives and published catalog release
+      `marketplace-v2-18a2cf06…` (attempt 1 failed on the missing discovery
+      branch, attempt 2 of the same run reconciled and advanced it). The
+      [public catalog](https://raw.githubusercontent.com/merkr-software/cadencr-registry/refs/heads/marketplace-v2/managed-index.json)
+      lists the four `cadencr` packages and verifies against `cadencr-registry-1`.
+      [Run 40288735135](https://github.com/merkr-software/cadencr-registry/actions/runs/40288735135)
+      bootstrapped the three empty signed revocation policies; each verifies
+      with the `0.15.2` CLI (Linux container). The registry feed variables are
+      set; the first expiry watch ([run 40375261277](https://github.com/merkr-software/cadencr-registry/actions/runs/40375261277))
+      passed, everything expires 2026-11-08.
+- [ ] Exercise a later version; conflicting changes to an existing version must
+      fail closed.
 
 ### Wave 6 — Qualify consumer and external-author lifecycles
 

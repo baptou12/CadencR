@@ -192,6 +192,16 @@ thing the key can do through this path is re-sign the authenticated baseline.
 - Neither workflow proves live delivery: exercise a failing watch run and an
   acknowledged alert before relying on them.
 
+## First catalog publication
+
+The publisher never creates the discovery branch. Before the first
+`publish-protected-catalog` run, create `marketplace-v2` from `main` (a branch
+without `managed-index.json`); `previous_index: "bootstrap"` in the reviewed
+request means only that this file is absent. If the run fails after the mirrors
+and the catalog release are published, re-run the failed job of the same run:
+it keeps the reviewed commit, request and window, reconciles the published
+releases and then advances discovery.
+
 ## First publication of the revocation policies
 
 The online signing key exists only as the secret `CADENCR_REGISTRY_PRIVATE_KEY_PEM`
