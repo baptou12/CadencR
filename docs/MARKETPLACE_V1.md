@@ -341,8 +341,11 @@ that work; an optional official tab must not hold up the initial four plugins.
       with the `0.15.2` CLI (Linux container). The registry feed variables are
       set; the first expiry watch ([run 40375261277](https://github.com/merkr-software/cadencr-registry/actions/runs/40375261277))
       passed, everything expires 2026-11-08.
-- [ ] Exercise a later version; conflicting changes to an existing version must
-      fail closed.
+- [x] Exercise a later version; conflicting changes to an existing version must
+      fail closed. QA PR #17 (closed unmerged) changing Graphite 0.1.0's digest
+      failed contribution CI (`existing packages are immutable`). Pi 0.4.1 was
+      published as an incremental version (registry PR #18, run `40405778470`,
+      catalog `2056f6a1…` with Pi 0.4.0 and 0.4.1).
 
 ### Wave 6 — Qualify consumer and external-author lifecycles
 
@@ -350,6 +353,12 @@ that work; an optional official tab must not hold up the initial four plugins.
       install/use/update/restart/remove, theme activation, tab consent and Pi's
       generic ACP lifecycle. Use inert signed tab fixtures if no official tab is
       published, and exercise repeated updates beyond the former retention cap.
+      **2026-10-26, dev build on macOS arm64 against the production feeds**
+      ([evidence](qa/MARKETPLACE_CONSUMER_QA_2026_10_26.md)): discovery, theme
+      install/activate/remove/restart, Pi install, real turn, resume after
+      restart and removal pass. Pi 0.4.0 failed closed at the conformance gate
+      (`MANAGED_RESTORE_FAILED`, never-prompted resume) and was fixed in 0.4.1.
+      Packaged clients and Linux remain open.
 - [ ] Exercise native-tab execution consent, scoped API access, revoked/stale
       policy refusal, per-conversation process lifecycle, executable integrity,
       update/restart and removal while leased. Verify macOS arm64 signature/CPU
