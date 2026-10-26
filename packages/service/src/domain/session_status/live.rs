@@ -13,10 +13,12 @@ use crate::domain::sessions::models::SessionStatusSnapshotEntry;
 use super::{AgentStatus, PendingKind, SessionStatusEvent, TurnOutcome};
 
 /// Who is asking for a transition.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Source {
     /// The code path that owns the change: a prompt, a gate, a stop, a turn end.
     Authoritative,
+    /// Resolves this request only; a newer gate must keep its pending status.
+    GateResponse { request_id: String },
     /// Runtime stream activity. It proves the turn is alive but cannot answer a
     /// pending gate, so it never turns a `Question` back into `Agent`; and only
     /// an event that `starts_turn` revives a session another path marked idle
@@ -97,7 +99,7 @@ impl LiveStatusBook {
         now_ms: i64,
     ) -> Option<SessionStatusEvent> {
         let current = self.sessions.get(&transition.session_id);
-        if stream_cannot_apply(current, transition) {
+        if transition_cannot_apply(current, transition) {
             return None;
         }
         let next = next_entry(current, transition, now_ms);
@@ -133,19 +135,26 @@ impl LiveStatusBook {
     }
 }
 
-fn stream_cannot_apply(
+fn transition_cannot_apply(
     current: Option<&SessionStatusSnapshotEntry>,
     transition: &Transition,
 ) -> bool {
-    let Source::Stream { starts_turn } = transition.source else {
-        return false;
-    };
-    if transition.status != AgentStatus::Agent {
-        return false;
-    }
-    match current {
-        Some(entry) => entry.status == AgentStatus::Question,
-        None => !starts_turn,
+    match &transition.source {
+        Source::Authoritative => false,
+        Source::GateResponse { request_id } => current.is_some_and(|entry| {
+            entry.status == AgentStatus::Question
+                && entry
+                    .request_id
+                    .as_ref()
+                    .is_some_and(|pending| pending != request_id)
+        }),
+        Source::Stream { starts_turn } if transition.status == AgentStatus::Agent => {
+            match current {
+                Some(entry) => entry.status == AgentStatus::Question,
+                None => !starts_turn,
+            }
+        }
+        Source::Stream { .. } => false,
     }
 }
 
