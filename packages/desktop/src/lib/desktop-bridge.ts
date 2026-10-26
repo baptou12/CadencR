@@ -1,3 +1,4 @@
+import { persistBrowserDiagnostic, exportBrowserDiagnostics } from "./renderer-diagnostics-browser";
 import { isSafeExternalUrl, isUserOpenableUrl } from "@/lib/safe-url";
 import type { PluginTabsBridge } from "@/shared/plugin-tab-host";
 import type { CadencrBrowserBridge, DesktopTheme } from "./desktop-bridge-types";
@@ -131,7 +132,8 @@ const browserBridge: CadencrBrowserBridge = {
   windowMinimize: () => unavailable("windowMinimize"),
   windowToggleMaximize: () => unavailable("windowToggleMaximize"),
   windowClose: () => unavailable("windowClose"),
-  reportRendererError: () => Promise.resolve(),
+  reportRendererError: persistBrowserDiagnostic,
+  exportRendererDiagnostics: exportBrowserDiagnostics,
   setZoom: () => Promise.resolve(),
   setTrafficLightsCenter: () => Promise.resolve(),
   currentTheme: () => Promise.resolve(browserTheme()),

@@ -6,6 +6,7 @@ import {
   resolveDatabasePath,
   resolveDataDir,
   resolveLogsDir,
+  resolveRendererDiagnosticHistory,
   resolveWorktreesDir,
 } from "./app-paths";
 
@@ -38,6 +39,33 @@ describe("app-paths on macOS", () => {
       "/Users/u/.cadencr",
     );
   });
+});
+
+describe("renderer diagnostic history location", () => {
+  it("uses the platform cache and respects Linux XDG overrides for installed apps", () => {
+    expect(resolveRendererDiagnosticHistory(true, "/unused", macos())).toBe(
+      "/Users/u/.cadencr/cache/logs/renderer-diagnostics.json",
+    );
+    expect(resolveRendererDiagnosticHistory(true, "/unused", linux())).toBe(
+      "/home/u/.cache/cadencr/logs/renderer-diagnostics.json",
+    );
+    expect(
+      resolveRendererDiagnosticHistory(
+        true,
+        "/unused",
+        linux({ XDG_CACHE_HOME: "/tmp/custom-cache" }),
+      ),
+    ).toBe("/tmp/custom-cache/cadencr/logs/renderer-diagnostics.json");
+  });
+
+  it.each([macos(), linux()])(
+    "keeps development crashes isolated in their Electron profile",
+    (platform) => {
+      expect(resolveRendererDiagnosticHistory(false, "/tmp/worktree-profile", platform)).toBe(
+        "/tmp/worktree-profile/renderer-diagnostics.json",
+      );
+    },
+  );
 });
 
 describe("app-paths on Linux", () => {

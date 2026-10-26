@@ -7,6 +7,8 @@ import { registerPushServiceWorker } from "./lib/remote/push-register";
 import { applyThemeToDocument, readPersistedTheme } from "./lib/themes";
 import { apiErrorMessage } from "./lib/api-errors";
 import { installGlobalRendererErrorHandlers } from "./lib/renderer-error-reporting";
+import { installDiagnosticStoreObservers } from "./lib/renderer-diagnostic-observers";
+import { installDiagnosticBrowserEvents } from "./lib/renderer-diagnostics";
 import { reactRootErrorHandlers } from "./lib/react-root-error-reporting";
 import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary";
 import { detectStandalone } from "./hooks/useFullscreen";
@@ -22,7 +24,9 @@ if (detectStandalone()) initializeStandaloneViewport();
 // localStorage paint hint only avoids a flash on cold start. `useThemeSync`
 // rewrites the cache once the workspace setting resolves.
 applyThemeToDocument(readPersistedTheme());
+installDiagnosticBrowserEvents();
 installGlobalRendererErrorHandlers();
+installDiagnosticStoreObservers();
 
 // Preload the API endpoint before mounting so sync accessors everywhere have
 // the config by the time the first request or WebSocket fires.

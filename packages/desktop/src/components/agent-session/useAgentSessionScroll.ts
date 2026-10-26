@@ -1,3 +1,4 @@
+import { recordDiagnosticEvent } from "@/lib/renderer-diagnostics";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { FollowOutputCallback, VirtuosoHandle } from "react-virtuoso";
@@ -71,6 +72,7 @@ function useScrollPinning(state: ScrollState) {
   const setAutoScrollEnabled = useCallback(
     (enabled: boolean): void => {
       if (state.stickRef.current === enabled) return;
+      recordDiagnosticEvent("scroll", { following: enabled });
       state.stickRef.current = enabled;
       state.setAutoScrollEnabledState(enabled);
     },
@@ -227,6 +229,7 @@ function useScrollLifecycle(
 ) {
   useLayoutEffect(() => {
     if (state.prevConversationKeyRef.current === conversationKey) return;
+    recordDiagnosticEvent("scroll", { event: "conversation-changed", following: true });
     state.prevConversationKeyRef.current = conversationKey;
     state.loadGenerationRef.current += 1;
     state.loadingOlderRef.current = false;

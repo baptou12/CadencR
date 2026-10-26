@@ -1,3 +1,4 @@
+import type { DiagnosticContext } from "../../src/shared/renderer-diagnostics";
 import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
 import type {
   BrowserBounds,
@@ -218,6 +219,8 @@ contextBridge.exposeInMainWorld("cadencr", {
   windowMinimize: (): Promise<void> => ipcRenderer.invoke("app:window-minimize"),
   windowToggleMaximize: (): Promise<void> => ipcRenderer.invoke("app:window-toggle-maximize"),
   windowClose: (): Promise<void> => ipcRenderer.invoke("app:window-close"),
+  exportRendererDiagnostics: (context: DiagnosticContext): Promise<{ canceled: boolean }> =>
+    ipcRenderer.invoke("app:export-renderer-diagnostics", context),
   reportRendererError: (payload: RendererErrorReportPayload): Promise<void> =>
     ipcRenderer.invoke("app:renderer-error", payload),
   setZoom: (factor: number): Promise<void> => ipcRenderer.invoke("webview:set-zoom", factor),

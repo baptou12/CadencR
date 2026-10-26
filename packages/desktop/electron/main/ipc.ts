@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  app,
   dialog,
   ipcMain,
   nativeTheme,
@@ -22,7 +21,7 @@ import {
   type NotifyOptions,
 } from "./notifications";
 import { sendToWindow } from "./safe-send";
-import { appendRendererErrorLog } from "./renderer-error-log";
+import { registerRendererDiagnosticsIpc } from "./renderer-diagnostics-ipc";
 import { setLinkHoverContext, suppressNextNativeContextMenu } from "./context-menu";
 import { assertOpenableLocalFile } from "./openable-local-file";
 import {
@@ -33,9 +32,7 @@ import {
 
 const MAX_READ_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_FILE_HANDLES = 128;
-const MAX_RENDERER_ERROR_LOGS_PER_RUN = 100;
 const fileHandles = new Map<string, string>();
-let rendererErrorLogCount = 0;
 
 export interface IpcOptions {
   getMainWindow: () => BrowserWindow | null;
@@ -110,17 +107,9 @@ export function registerIpc({ getMainWindow, confirmClose, requestQuit }: IpcOpt
     requestQuit();
   });
   registerWindowControlIpc(getMainWindow);
-  ipcMain.handle("app:renderer-error", (event, payload: unknown) => {
-    assertTrustedSender(event, getMainWindow);
-    if (rendererErrorLogCount >= MAX_RENDERER_ERROR_LOGS_PER_RUN) return;
-    appendRendererErrorLog(payload, {
-      appVersion: app.getVersion(),
-      logPath: path.join(app.getPath("logs"), "renderer-errors.log"),
-      now: () => new Date(),
-      platform: process.platform,
-    });
-    rendererErrorLogCount += 1;
-  });
+  registerRendererDiagnosticsIpc(getMainWindow, (event) =>
+    assertTrustedSender(event, getMainWindow),
+  );
   ipcMain.handle("webview:set-zoom", (event, factor: unknown) => {
     assertTrustedSender(event, getMainWindow);
     const win = requireMainWindow(getMainWindow);

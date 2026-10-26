@@ -123,7 +123,7 @@ describe("React root error diagnostics", () => {
     );
   });
 
-  it("deduplicates root/boundary pairs without suppressing a later recurrence", async () => {
+  it("deduplicates root/boundary pairs and immediate repeated failures", async () => {
     const error = new Error("same instance");
     reactRootErrorHandlers.onCaughtError(error, {
       componentStack: "at Panel",
@@ -135,6 +135,6 @@ describe("React root error diagnostics", () => {
       componentStack: "at Panel",
     });
     await Promise.resolve();
-    expect(report).toHaveBeenCalledTimes(2);
+    expect(report).toHaveBeenCalledTimes(1);
   });
 });

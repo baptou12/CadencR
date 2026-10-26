@@ -1,3 +1,4 @@
+import { ExportDiagnosticsButton } from "../ExportDiagnosticsButton";
 import { CadencrLogo } from "@/components/CadencrLogo";
 import { Button } from "@/components/ui/button";
 import { APP_VERSION } from "@/lib/app-version";
@@ -63,6 +64,14 @@ export function AboutSection(): React.JSX.Element {
             })}
           </div>
         )}
+      </SettingsCard>
+      <SettingsCard padded>
+        <h3 className="text-sm font-semibold">Diagnostics</h3>
+        <p className="my-2 text-xs text-muted-foreground">
+          Export recent errors and app activity to help investigate a problem, even after
+          restarting. The report is saved locally for you to share.
+        </p>
+        <ExportDiagnosticsButton />
       </SettingsCard>
     </SettingsSection>
   );

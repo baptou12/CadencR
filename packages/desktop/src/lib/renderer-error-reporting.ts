@@ -1,18 +1,22 @@
 import { desktopBridge, type RendererErrorReportPayload } from "./desktop-bridge";
 
+import { toast } from "sonner";
+import { createDiagnosticGate, type DiagnosticContext } from "@/shared/renderer-diagnostics";
+import { captureDiagnosticContext, recordDiagnosticSuppression } from "./renderer-diagnostics";
+import { normalizeRendererError } from "@/shared/renderer-error";
+
 type ReportRendererError = (payload: RendererErrorReportPayload) => Promise<void>;
 
-const MAX_ERROR_REPORTS = 20;
 type ReactErrorSource = "react-boundary" | "react-uncaught" | "react-recoverable";
 
 export function installGlobalRendererErrorHandlers(
   report: ReportRendererError = defaultReportRendererError,
 ): () => void {
-  let reports = 0;
+  const gate = createDiagnosticGate();
   const reportGlobalError = (payload: RendererErrorReportPayload): void => {
-    if (reports >= MAX_ERROR_REPORTS) return;
-    reports += 1;
-    reportSafely(report, payload);
+    const accepted = gate.accept(payload);
+    if (!accepted) recordDiagnosticSuppression();
+    if (accepted) reportSafely(report, { ...payload, diagnostics: captureDiagnosticContext() });
   };
   const onError = (event: ErrorEvent): void => {
     reportGlobalError(toRendererErrorPayload(event));
@@ -32,7 +36,7 @@ export function toRendererErrorPayload(
   event: ErrorEvent | PromiseRejectionEvent,
 ): RendererErrorReportPayload {
   if (event instanceof ErrorEvent) {
-    const error = errorFromUnknown(event.error);
+    const error = normalizeRendererError(event.error);
     return {
       source: "error",
       message: event.message || error.message,
@@ -43,7 +47,7 @@ export function toRendererErrorPayload(
     };
   }
 
-  const error = errorFromUnknown(event.reason);
+  const error = normalizeRendererError(event.reason);
   return {
     source: "unhandledrejection",
     message: error.message,
@@ -57,27 +61,28 @@ export function toRendererErrorPayload(
 export const reportReactBoundaryError = createReactErrorReporter();
 
 export function createReactErrorReporter(report: ReportRendererError = defaultReportRendererError) {
-  let reports = 0;
-  const pending = new WeakMap<object, RendererErrorReportPayload>();
+  const gate = createDiagnosticGate();
+  const pending = new WeakMap<
+    object,
+    RendererErrorReportPayload & { diagnostics: DiagnosticContext }
+  >();
   return (
     error: unknown,
     componentStack: string | null,
     source: ReactErrorSource = "react-boundary",
-  ): void => {
+  ): DiagnosticContext => {
     const boundaryError =
       source === "react-boundary" && typeof error === "object" && error !== null ? error : null;
     const previous = boundaryError ? pending.get(boundaryError) : undefined;
     if (previous) {
       // Consolidate the root hook and componentDidCatch before persisting. Keep
-      // the fuller stack even when the reporting budget has just been exhausted.
+      // the fuller stack before applying repeat suppression.
       if ((componentStack?.trim().length ?? 0) > (previous.componentStack?.trim().length ?? 0))
         previous.componentStack = componentStack;
-      return;
+      return previous.diagnostics;
     }
-    if (reports >= MAX_ERROR_REPORTS) return;
-    reports += 1;
-    const normalized = errorFromUnknown(error);
-    const payload: RendererErrorReportPayload = {
+    const normalized = normalizeRendererError(error);
+    const payload: RendererErrorReportPayload & { diagnostics: DiagnosticContext } = {
       source,
       message: normalized.message,
       stack: normalized.stack,
@@ -85,13 +90,23 @@ export function createReactErrorReporter(report: ReportRendererError = defaultRe
       url: window.location.href,
       line: null,
       column: null,
+      diagnostics: captureDiagnosticContext(),
     };
-    if (!boundaryError) return reportSafely(report, payload);
+    if (!gate.accept(payload)) {
+      recordDiagnosticSuppression();
+      return gate.previousContext(payload)!;
+    }
+    const submit = (): void => reportSafely(report, payload);
+    if (!boundaryError) {
+      submit();
+      return payload.diagnostics;
+    }
     pending.set(boundaryError, payload);
     queueMicrotask(() => {
       pending.delete(boundaryError);
-      reportSafely(report, payload);
+      submit();
     });
+    return payload.diagnostics;
   };
 }
 
@@ -99,24 +114,12 @@ function defaultReportRendererError(payload: RendererErrorReportPayload): Promis
   return desktopBridge.reportRendererError(payload);
 }
 
-function errorFromUnknown(value: unknown): { message: string; stack: string | null } {
-  if (value instanceof Error) {
-    return { message: value.message || String(value), stack: value.stack ?? null };
-  }
-  return { message: stringifyUnknown(value), stack: null };
-}
-
-function stringifyUnknown(value: unknown): string {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value) ?? String(value);
-  } catch {
-    return String(value);
-  }
-}
-
 function reportSafely(report: ReportRendererError, payload: RendererErrorReportPayload): void {
   void report(payload).catch((error: unknown) => {
     console.error("Failed to persist renderer error:", error);
+    toast.error("Could not save diagnostic report", {
+      id: "renderer-diagnostics-persistence",
+      description: `Copy the error details before reloading.${error instanceof Error ? ` ${error.message}` : ""}`,
+    });
   });
 }

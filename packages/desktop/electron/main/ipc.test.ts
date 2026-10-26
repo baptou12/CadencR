@@ -19,6 +19,11 @@ const electronState = vi.hoisted(() => ({
   openPath: vi.fn<(_path: string) => Promise<string>>(() => Promise.resolve("")),
 }));
 
+vi.mock("./app-paths", () => ({
+  resolveRendererDiagnosticHistory: () =>
+    path.join(electronState.logsPath, "renderer-diagnostics.json"),
+}));
+
 vi.mock("./renderer-window-security", () => ({
   rendererLoadTarget: () => ({ kind: "url", value: "http://127.0.0.1:1420/" }),
 }));

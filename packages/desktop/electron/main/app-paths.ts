@@ -87,3 +87,15 @@ export function resolveWorktreesDir(overrides?: AppPathsOverrides): string {
 export function resolveLogsDir(overrides?: AppPathsOverrides): string {
   return path.join(resolveCacheDir(overrides), "logs");
 }
+
+/** Development profiles are per-worktree; never mix their test crashes with release reports. */
+export function resolveRendererDiagnosticHistory(
+  isPackaged: boolean,
+  userDataPath: string,
+  overrides?: AppPathsOverrides,
+): string {
+  return path.join(
+    isPackaged ? resolveLogsDir(overrides) : userDataPath,
+    "renderer-diagnostics.json",
+  );
+}

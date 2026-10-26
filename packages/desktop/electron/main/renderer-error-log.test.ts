@@ -78,6 +78,6 @@ describe("appendRendererErrorLog", () => {
           platform: "darwin",
         },
       ),
-    ).toThrow(/position/);
+    ).toThrow(/line/);
   });
 });
