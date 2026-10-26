@@ -82,7 +82,7 @@ test("publisher is a manually dispatched, default-branch-only protected workflow
 });
 
 test("both jobs checkout only the dispatched commit without credentials", () => {
-  assert.equal(occurrences(/uses: actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/g), 2);
+  assert.equal(occurrences(/uses: actions\/checkout@11d5960a326750d5838078e36cf38b85af677262/g), 2);
   assert.equal(occurrences(/ref: \$\{\{ github\.sha \}\}/g), 2);
   assert.equal(occurrences(/persist-credentials: false/g), 2);
   assert.doesNotMatch(source, /github\.event\.pull_request|head\.sha|checkout@(?:main|master)/);
@@ -350,4 +350,28 @@ test("selector binds the same committed pin and owned destination", (t) => {
   );
   assert.notEqual(pending.result.status, 0);
   assert.equal(pending.output, "");
+});
+
+// The registry repository allows only these exact action pins (Settings →
+// Actions → "Allow select actions", SHA pinning required). A workflow using any
+// other action is refused at dispatch, so every deployed workflow must stay
+// inside this list. prepare-protected-publication is not deployed: its unsigned
+// index upload needs actions/upload-artifact, which the registry does not allow.
+test("deployed workflows use only the registry's allowed action pins", () => {
+  const allowed = new Set([
+    "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+    "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+  ]);
+  const directory = new URL("../.github/workflows/", import.meta.url);
+  for (const name of [
+    "validate-provider-metadata.yml",
+    "publish-protected-catalog.yml",
+    "bootstrap-revocation-policies.yml",
+    "renew-protected-catalog.yml",
+    "watch-registry-expiry.yml",
+  ]) {
+    const uses = [...readFileSync(new URL(name, directory), "utf8").matchAll(/uses:\s*(\S+)/g)];
+    assert.ok(uses.length > 0, name);
+    for (const [, action] of uses) assert.ok(allowed.has(action), `${name}: ${action}`);
+  }
 });
