@@ -265,7 +265,7 @@ impl AgentRuntimeSession for FullTurnRuntime {
 
 async fn full_turn_prompt_remains_cancellable(close_gate: bool) {
     let state = make_test_app_state().await;
-    sqlx::raw_sql("CREATE TABLE agent_session_prompt_queue (session_id INTEGER, status TEXT); CREATE TABLE agent_session_message_queue (id INTEGER, target_session_id INTEGER, status TEXT, error TEXT, claim_token TEXT, claimed_at TEXT, attempt_count INTEGER, source_session_id INTEGER, content TEXT, message_uuid TEXT);")
+    sqlx::raw_sql("CREATE TABLE agent_session_message_queue (id INTEGER, target_session_id INTEGER, status TEXT, error TEXT, claim_token TEXT, claimed_at TEXT, attempt_count INTEGER, source_session_id INTEGER, content TEXT, message_uuid TEXT);")
         .execute(&state.write_pool).await.unwrap();
     sqlx::query("INSERT INTO agent_sessions (id, feature_id, status, pending_permission) VALUES (1, 1, 'running', ?)")
         .bind(if close_gate { Some(serde_json::json!({"request_id":"full-turn", "tool_name":"AskUserQuestion", "tool_input":{}}).to_string()) } else { None })
