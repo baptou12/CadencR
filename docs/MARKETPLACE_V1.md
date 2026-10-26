@@ -416,13 +416,12 @@ that work; an optional official tab must not hold up the initial four plugins.
       official plugins and clean packaged-client acceptance gates pass. Verify
       default-visible navigation and provider/theme/tab discovery in the app.
       Publishing a new desktop release remains a separate delivery action.
-      **2026-10-26:** the UI gate is removed on `main` (`89b2b9f11`) and the nine
-      trust/feed variables are set on the repository, so the next desktop
-      release is the activation release. A release-built sidecar compiled the CI
-      way verified the production catalog (5 entries, `cadencr-registry-1`) and
-      installed a theme. The packaged Electron shell itself was not run: it pins
-      its service to port 5004, held by the owner's running Cadencr. Check the
-      release DMG before publishing (marketplace visible, catalog verified).
+      **2026-10-26:** activation was prepared and QA'd, then held back for the
+      release owner's go: the gate is back on `main` (`82c0b4263`) and the
+      repository variables are unset. A release-built sidecar compiled the CI
+      way verified the production catalog (5 entries, `cadencr-registry-1`)
+      and installed a theme. Re-enable with the
+      [activation runbook](MARKETPLACE_RELEASE_CONFIG.md#activation-runbook).
 
 ### Dependencies and delivery boundaries
 

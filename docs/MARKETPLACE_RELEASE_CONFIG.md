@@ -45,15 +45,65 @@ They are template files, not deployed, and inert until configured as described b
 
 ## Activation gate
 
-**State 2026-10-26:** the nine variables below are set on `merkr-software/CadencR`
-with the production registry (`merkr-software/cadencr-registry`, branch
-`marketplace-v2`), root `cadencr-root-1` and trust generation 1 (values in
-[`marketplace-trust/`](marketplace-trust/README.md)). The next desktop release
-built by `desktop-release.yml` or `desktop-linux-release.yml` ships with the
-marketplace configured; the UI gate is gone, so the marketplace is visible in
-every build. Local packaged builds through `pnpm build:local` receive the same
-values only when they are exported (turbo passes `CADENCR_MANAGED_*` and
-`CADENCR_REGISTRY_*` through).
+**State 2026-10-26:** not activated. The marketplace is hidden in production
+builds (`VITE_INTERNAL_MARKETPLACE` gate) and none of the variables below is set
+on `merkr-software/CadencR`. Activation was prepared, QA'd against the
+production registry and then held back for the release owner's go: see
+[Activation runbook](#activation-runbook).
+
+### Activation runbook
+
+Everything below is public data; no secret is involved. Do it only on the
+release owner's explicit go, right before the activation release.
+
+1. **Show the marketplace in every build.** Revert the hiding commit on `main`:
+
+   ```sh
+   git revert 82c0b4263   # "revert(marketplace): hide the marketplace again until the activation go"
+   ```
+
+   This restores `89b2b9f11` (gate removed, honest "not available in this
+   build" state) and the `catalogSourceMissing` helper reuse. The original
+   commits also live on the branch `feature/marketplace-activation`.
+
+2. **Compile the production trust and feeds into releases.** From the
+   repository root:
+
+   ```sh
+   R=merkr-software/CadencR
+   B=https://raw.githubusercontent.com/merkr-software/cadencr-registry/refs/heads/marketplace-v2
+   jq -c . docs/marketplace-trust/signed-trust-gen1.json | gh variable set CADENCR_REGISTRY_TRUST_MANIFEST_JSON -R $R
+   gh variable set CADENCR_REGISTRY_ROOT_KEY_ID -R $R -b cadencr-root-1
+   gh variable set CADENCR_REGISTRY_ROOT_PUBLIC_KEY_BASE64 -R $R -b 'qUXWCxcpNirGB4FE6xSo9azWv3RR2Fu+szGlS39074Q='
+   gh variable set CADENCR_REGISTRY_TRUST_MIN_GENERATION -R $R -b 1
+   gh variable set CADENCR_MANAGED_PROVIDER_INDEX_URL -R $R -b "$B/managed-index.json"
+   gh variable set CADENCR_MANAGED_PROVIDER_BLOCKLIST_URL -R $R -b "$B/managed-blocklist.json"
+   gh variable set CADENCR_MANAGED_THEME_INDEX_URL -R $R -b "$B/managed-index.json"
+   gh variable set CADENCR_MANAGED_THEME_BLOCKLIST_URL -R $R -b "$B/managed-theme-blocklist.json"
+   gh variable set CADENCR_MANAGED_TAB_BLOCKLIST_URL -R $R -b "$B/managed-tab-blocklist.json"
+   ```
+
+   Check them with the same validator the release workflows run:
+
+   ```sh
+   eval "$(gh variable list -R $R --json name,value --jq '.[] | select(.name|test("^CADENCR_(MANAGED|REGISTRY)_")) | "export \(.name)=\(.value|@sh)"')"
+   node scripts/validate-marketplace-build-env.mjs
+   ```
+
+3. **Before the release, check the registry is healthy:** the latest
+   `watch-registry-expiry` run on `merkr-software/cadencr-registry` is green and
+   the catalog has more than 72 hours of validity left.
+
+4. **Release and verify the artifact before publishing.** Open the release DMG
+   on a machine where no other Cadencr runs (the packaged service always binds
+   `127.0.0.1:5004`): the Marketplace entry is in the sidebar, Discover lists
+   the signed catalog, a theme installs and applies.
+
+For a local packaged check, export the same variables and run
+`node scripts/validate-marketplace-build-env.mjs -- pnpm build:local`; turbo
+passes `CADENCR_MANAGED_*` and `CADENCR_REGISTRY_*` through.
+
+To deactivate again, revert the step-1 commit and delete the nine variables.
 
 The desktop release workflow forwards public repository variables into service
 compilation. It does **not** provision trust, deploy feeds, generate signing keys,
