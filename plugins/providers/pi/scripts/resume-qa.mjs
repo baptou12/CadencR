@@ -86,7 +86,7 @@ function initializeParams() {
   return {
     protocolVersion: 1,
     clientCapabilities: {},
-    clientInfo: { name: "pi-cadencr-resume-qa", version: "0.4.0" },
+    clientInfo: { name: "pi-cadencr-resume-qa", version: "0.4.1" },
   };
 }
 

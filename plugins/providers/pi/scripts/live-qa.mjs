@@ -82,7 +82,7 @@ export async function runLiveQa({ env = process.env, spawnImpl = spawn } = {}) {
     await request("initialize", {
       protocolVersion: 1,
       clientCapabilities: {},
-      clientInfo: { name: "pi-cadencr-live-qa", version: "0.4.0" },
+      clientInfo: { name: "pi-cadencr-live-qa", version: "0.4.1" },
     });
     const session = await request("session/new", { cwd: scratchDirectory, mcpServers: [] });
     const model = session.configOptions.find((option) => option.category === "model");

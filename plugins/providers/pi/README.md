@@ -10,7 +10,7 @@ boundary, not a built-in adapter or a bundled desktop provider. This source
 import does not publish, sign, install, or certify a provider package.
 
 Imported from the sibling connector repository at commit `95bb90c`, preserving
-candidate version `0.4.0`. `LICENSE` is retained unchanged. The imported Pi-derived icon has been replaced
+candidate version `0.4.1`. `LICENSE` is retained unchanged. The imported Pi-derived icon has been replaced
 with original neutral connector artwork; see [Connector artwork](#connector-artwork).
 Runtime, managed-install and exact-release-candidate qualification remain separate gates.
 
@@ -108,7 +108,7 @@ live compatibility certification or packaged-host conformance.
 | Tool lifecycle              | `tool_execution_start/update/end` → ACP tool call updates                  | Full, including streaming output and raw input/output.                                             |
 | Tool permission             | Bundled Pi extension → RPC extension UI → ACP `session/request_permission` | Mutating/custom tools prompt; `read`, `grep`, `find`, and `ls` remain read-only and do not prompt. |
 | Cancellation                | ACP `session/cancel` → Pi `abort`                                          | Full; the prompt answers `stopReason: cancelled`.                                                  |
-| Durable resume              | Workspace-bound ACP ID → a new `pi --mode rpc --session <native-id>`       | Full through stable `session/resume`; legacy `session/load` remains accepted for older hosts.      |
+| Durable resume              | Workspace-bound ACP ID → a new `pi --mode rpc --session-id <native-id>`    | Full through stable `session/resume`; legacy `session/load` remains accepted for older hosts.      |
 | Graceful close              | `session/close` → Pi abort (when active) → process teardown                | Full; active work is cancelled before the connector releases the native process.                   |
 | Slash commands              | `get_commands` → `available_commands_update`                               | Full for commands Pi exposes in RPC mode.                                                          |
 | Usage/context/cost          | `get_session_stats` → ACP `usage_update`                                   | Full for Pi's cumulative session stats.                                                            |
@@ -215,12 +215,12 @@ node plugins/providers/pi/scripts/prepare-candidate.mjs \
   Runtime modules/assets are snapshotted from those Git objects,
   not shared `bin/` output. Input paths and output ancestors must be symlink-free.
 - The supplied legacy provider package object has exactly `agent` and `host`.
-  `agent` must use `id: "pi"`, `name: "Pi"`, version `0.4.0`, this package's exact
+  `agent` must use `id: "pi"`, `name: "Pi"`, version `0.4.1`, this package's exact
   description, repository `https://github.com/merkr-software/CadencR`, license
   `Apache-2.0`, and only the selected `distribution.binary` target. That target
   has only `archive`, `cmd: "bin/provider"`, and an initial 64-zero `sha256`.
   `archive` is an operator-supplied credential-free HTTPS URL ending in
-  `/pi-0.4.0-<candidate-target>.tar.gz`; no URL/query credentials are accepted.
+  `/pi-0.4.1-<candidate-target>.tar.gz`; no URL/query credentials are accepted.
 - `host` supplies the operator's candidate `publisher`, explicit compatibility
   versions, and `assets: {"icon":"icon.svg","readme":"README.md","license":"LICENSE"}`.
   No publisher, minimum app version or public hosting destination is invented.
@@ -340,7 +340,7 @@ node plugins/providers/pi/scripts/prepare-candidate.mjs \
   --runtime external-node-pi --package /absolute/new/input.json \
   --cli /absolute/reviewed/cadencr --cli-sha256 <sha256> --directory /absolute/new/candidate
 node plugins/providers/pi/scripts/qualify-native.mjs \
-  --target <this-machine-target> --archive /absolute/new/candidate/pi-0.4.0-<target>.tar.gz \
+  --target <this-machine-target> --archive /absolute/new/candidate/pi-0.4.1-<target>.tar.gz \
   --pi "$(command -v pi)" --environment local|container|hosted \
   --evidence /absolute/new/evidence.json
 ```

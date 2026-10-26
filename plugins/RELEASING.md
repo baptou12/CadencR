@@ -2,7 +2,7 @@
 
 ## Scope
 
-- Tags: `plugins/provider-pi/v0.4.0`, `plugins/theme-graphite/v0.1.0`,
+- Tags: `plugins/provider-pi/v0.4.1`, `plugins/theme-graphite/v0.1.0`,
   `plugins/theme-ember/v0.1.0`, `plugins/theme-fjord/v0.1.0`.
 - Never use desktop `v*` tags. Plugin versions do not change app versions.
 - `release-policy.json` records the explicit source identities, independent versions

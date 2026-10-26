@@ -12,7 +12,7 @@ import { isMain } from "./entrypoint.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = "plugins/providers/pi";
-const version = "0.4.0";
+const version = "0.4.1";
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 class CandidateError extends Error {}
 let stage = "arguments";

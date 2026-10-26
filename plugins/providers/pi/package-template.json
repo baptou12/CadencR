@@ -4,7 +4,7 @@
     "agent": {
       "id": "pi",
       "name": "Pi",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "description": "External Cadencr provider connector for Pi's native RPC mode",
       "repository": "https://github.com/merkr-software/CadencR",
       "license": "Apache-2.0",

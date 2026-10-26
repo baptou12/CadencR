@@ -3,7 +3,7 @@
   "plugin": {
     "kind": "provider",
     "id": "pi",
-    "version": "0.4.0"
+    "version": "0.4.1"
   },
   "source_license": {
     "declared_spdx": "Apache-2.0",
@@ -82,7 +82,7 @@
     "date": "2026-10-25",
     "report": "docs/qa/MARKETPLACE_PI_PLATFORMS_2026_10_25.md",
     "source_identity": "uncommitted-working-tree-snapshot-bound-by-executable-payload-digest",
-    "executable_payload_sha256sums_digest": "2a3728dacebd01f1c9e8fd725ac1fb114a08e0939b0010efb8ef22e614e1e485",
+    "executable_payload_sha256sums_digest": "e99a64a138cd178a9108bb8e82dc64e42e8a3d9d02e5c67b8d017ab501d55f0e",
     "executable_payload_scope": "bin/* lines of the packager SHA256SUMS (src/ built by scripts/build.mjs); README, LICENSE and icon are covered by their own readiness digests or are documentation",
     "runtime": {
       "node": "22.19.0",

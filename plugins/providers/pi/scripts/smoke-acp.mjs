@@ -44,7 +44,7 @@ export async function runSmokeQa({
     const initialized = await request("initialize", {
       protocolVersion: 1,
       clientCapabilities: {},
-      clientInfo: { name: "cadencr-pi-smoke", version: "0.4.0" },
+      clientInfo: { name: "cadencr-pi-smoke", version: "0.4.1" },
     });
     if (initialized.protocolVersion !== 1) {
       throw new Error(`Pi connector negotiated ACP ${initialized.protocolVersion}`);

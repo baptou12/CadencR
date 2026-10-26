@@ -174,6 +174,11 @@ test(
         "native output usage must match the fixture",
       );
       assert.equal(active.permissions.length, 0, "first inert turn must never request model tools");
+      stage = "never-prompted session creation";
+      // Pi persists a session only after its first message. The managed conformance gate (and a
+      // user who opens a session, never prompts and restarts) must still be able to resume it.
+      const unprompted = await active.request("session/new", { cwd: workspace, mcpServers: [] });
+      await active.request("session/close", { sessionId: unprompted.sessionId });
       await active.stop();
       active = null;
       stage = "durable resume initialization";
@@ -189,6 +194,18 @@ test(
         resumed.configOptions.find((option) => option.category === "model").currentValue,
         model,
       );
+      stage = "never-prompted durable resume";
+      const resumedUnprompted = await active.request("session/resume", {
+        sessionId: unprompted.sessionId,
+        cwd: workspace,
+        mcpServers: [],
+      });
+      assert.equal(
+        resumedUnprompted.configOptions.find((option) => option.category === "model").currentValue,
+        model,
+      );
+      await active.request("session/close", { sessionId: unprompted.sessionId });
+      stage = "durable resume turn";
       await completeTurn(
         active,
         session.sessionId,

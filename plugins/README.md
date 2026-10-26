@@ -9,7 +9,7 @@ trust and conformance rules for official and third-party packages.
 
 | Plugin                        | Source                                   | Candidate version |
 | ----------------------------- | ---------------------------------------- | ----------------- |
-| Pi provider                   | [`providers/pi`](providers/pi/README.md) | `0.4.0`           |
+| Pi provider                   | [`providers/pi`](providers/pi/README.md) | `0.4.1`           |
 | Graphite, Ember, Fjord themes | [`themes`](themes/README.md)             | `0.1.0` each      |
 
 Sources were imported from reviewed local repositories without their Git data,
@@ -44,13 +44,13 @@ model prompts, upload/sign/publish packages or change production trust pins.
 Future plugin tags use an explicit namespace, for example:
 
 ```text
-plugins/provider-pi/v0.4.0
+plugins/provider-pi/v0.4.1
 plugins/theme-graphite/v0.1.0
 plugins/theme-ember/v0.1.0
 plugins/theme-fjord/v0.1.0
 ```
 
-Do not use `v0.4.0-pi`: the desktop release workflow matches `v*`. Plugin versions
+Do not use `v0.4.1-pi`: the desktop release workflow matches `v*`. Plugin versions
 are independent of the app version, and each immutable artifact must bind its
 actual source commit/tag. No plugin tag, publication workflow or release is
 created by this import. Namespaced tags must be URL-encoded in release-asset

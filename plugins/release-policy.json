@@ -64,7 +64,7 @@
     "provider-pi": {
       "kind": "provider",
       "id": "pi",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "source_path": "plugins/providers/pi",
       "package": "plugins/providers/pi/package-template.json",
       "preparation": "READY",
@@ -113,7 +113,7 @@
               "source": "src/pi-args.mjs",
               "source_mode": "100644",
               "mode": "100644",
-              "sha256": "13714a00640080300ce183f32da364136a15dd028974e1ed0a91dec3d8733972"
+              "sha256": "ec532b34c8c3057cc0e029301b5deec379e0794eafbe6775d8becabae3c3d1f0"
             },
             "bin/pi-models.mjs": {
               "source": "src/pi-models.mjs",
@@ -143,11 +143,11 @@
               "source": "src/version.mjs",
               "source_mode": "100644",
               "mode": "100644",
-              "sha256": "2c0879b10a90f810d0ae4a795a982fa6b42428c71c1a452eb4d779215235a8db"
+              "sha256": "cf49f30d3e551b5c4a18f01cf2286117d905f79086b650f74dcfae1bd2b0f440"
             },
             "README.md": {
               "mode": "100644",
-              "sha256": "634227ae356cc8ea7674ddf7e3a947ecf646d444dfa1b8c952f9586bb1d35d4c"
+              "sha256": "942c7cb958e19af49ad96c3f023533832f067c4955aaf2a3c067ec6581c3f485"
             },
             "LICENSE": {
               "mode": "100644",
@@ -203,7 +203,7 @@
               "source": "src/pi-args.mjs",
               "source_mode": "100644",
               "mode": "100644",
-              "sha256": "13714a00640080300ce183f32da364136a15dd028974e1ed0a91dec3d8733972"
+              "sha256": "ec532b34c8c3057cc0e029301b5deec379e0794eafbe6775d8becabae3c3d1f0"
             },
             "bin/pi-models.mjs": {
               "source": "src/pi-models.mjs",
@@ -233,11 +233,11 @@
               "source": "src/version.mjs",
               "source_mode": "100644",
               "mode": "100644",
-              "sha256": "2c0879b10a90f810d0ae4a795a982fa6b42428c71c1a452eb4d779215235a8db"
+              "sha256": "cf49f30d3e551b5c4a18f01cf2286117d905f79086b650f74dcfae1bd2b0f440"
             },
             "README.md": {
               "mode": "100644",
-              "sha256": "634227ae356cc8ea7674ddf7e3a947ecf646d444dfa1b8c952f9586bb1d35d4c"
+              "sha256": "942c7cb958e19af49ad96c3f023533832f067c4955aaf2a3c067ec6581c3f485"
             },
             "LICENSE": {
               "mode": "100644",
@@ -293,7 +293,7 @@
               "source": "src/pi-args.mjs",
               "source_mode": "100644",
               "mode": "100644",
-              "sha256": "13714a00640080300ce183f32da364136a15dd028974e1ed0a91dec3d8733972"
+              "sha256": "ec532b34c8c3057cc0e029301b5deec379e0794eafbe6775d8becabae3c3d1f0"
             },
             "bin/pi-models.mjs": {
               "source": "src/pi-models.mjs",
@@ -323,11 +323,11 @@
               "source": "src/version.mjs",
               "source_mode": "100644",
               "mode": "100644",
-              "sha256": "2c0879b10a90f810d0ae4a795a982fa6b42428c71c1a452eb4d779215235a8db"
+              "sha256": "cf49f30d3e551b5c4a18f01cf2286117d905f79086b650f74dcfae1bd2b0f440"
             },
             "README.md": {
               "mode": "100644",
-              "sha256": "634227ae356cc8ea7674ddf7e3a947ecf646d444dfa1b8c952f9586bb1d35d4c"
+              "sha256": "942c7cb958e19af49ad96c3f023533832f067c4955aaf2a3c067ec6581c3f485"
             },
             "LICENSE": {
               "mode": "100644",
@@ -383,7 +383,7 @@
               "source": "src/pi-args.mjs",
               "source_mode": "100644",
               "mode": "100644",
-              "sha256": "13714a00640080300ce183f32da364136a15dd028974e1ed0a91dec3d8733972"
+              "sha256": "ec532b34c8c3057cc0e029301b5deec379e0794eafbe6775d8becabae3c3d1f0"
             },
             "bin/pi-models.mjs": {
               "source": "src/pi-models.mjs",
@@ -413,11 +413,11 @@
               "source": "src/version.mjs",
               "source_mode": "100644",
               "mode": "100644",
-              "sha256": "2c0879b10a90f810d0ae4a795a982fa6b42428c71c1a452eb4d779215235a8db"
+              "sha256": "cf49f30d3e551b5c4a18f01cf2286117d905f79086b650f74dcfae1bd2b0f440"
             },
             "README.md": {
               "mode": "100644",
-              "sha256": "634227ae356cc8ea7674ddf7e3a947ecf646d444dfa1b8c952f9586bb1d35d4c"
+              "sha256": "942c7cb958e19af49ad96c3f023533832f067c4955aaf2a3c067ec6581c3f485"
             },
             "LICENSE": {
               "mode": "100644",

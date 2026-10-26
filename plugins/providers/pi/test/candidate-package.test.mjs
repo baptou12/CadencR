@@ -58,14 +58,14 @@ async function fixture() {
     agent: {
       id: "pi",
       name: "Pi",
-      version: "0.4.0",
+      version: "0.4.1",
       description: "External Cadencr provider connector for Pi's native RPC mode",
       repository: "https://github.com/merkr-software/CadencR",
       license: "Apache-2.0",
       distribution: {
         binary: {
           "darwin-aarch64": {
-            archive: "https://example.invalid/pi-0.4.0-darwin-aarch64.tar.gz",
+            archive: "https://example.invalid/pi-0.4.1-darwin-aarch64.tar.gz",
             cmd: "bin/provider",
             sha256: "0".repeat(64),
           },
@@ -181,7 +181,7 @@ test("candidate rejects metadata secrets, extra targets and symlink input paths"
   binary.archive += "?token=never-archive-me";
   await writeFile(f.packagePath, `${JSON.stringify(f.metadata, null, 2)}\n`);
   assert.equal(f.run().status, 1);
-  binary.archive = "https://example.invalid/pi-0.4.0-darwin-aarch64.tar.gz";
+  binary.archive = "https://example.invalid/pi-0.4.1-darwin-aarch64.tar.gz";
   f.metadata.agent.distribution.binary["darwin-x86_64"] = binary;
   await writeFile(f.packagePath, `${JSON.stringify(f.metadata, null, 2)}\n`);
   assert.equal(f.run().status, 1);
@@ -217,7 +217,7 @@ test(
     for (const target of PREPARED_TARGETS) {
       const f = await fixture();
       const binary = f.metadata.agent.distribution.binary["darwin-aarch64"];
-      binary.archive = `https://example.invalid/pi-0.4.0-${target}.tar.gz`;
+      binary.archive = `https://example.invalid/pi-0.4.1-${target}.tar.gz`;
       f.metadata.agent.distribution.binary = { [target]: binary };
       f.args[f.args.indexOf("--candidate-target") + 1] = target;
       f.metadata.host.assets = { license: "LICENSE", readme: "README.md", icon: "icon.svg" };
@@ -293,8 +293,8 @@ test(
 test("candidate input refuses ambiguous metadata and symlink output", async () => {
   const f = await fixture();
   const document = JSON.stringify(f.metadata).replace(
-    '"version":"0.4.0"',
-    '"version":"9.0.0","version":"0.4.0"',
+    '"version":"0.4.1"',
+    '"version":"9.0.0","version":"0.4.1"',
   );
   await writeFile(f.packagePath, document);
   assert.equal(f.run().status, 1);

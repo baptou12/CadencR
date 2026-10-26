@@ -34,7 +34,7 @@ test("fresh packaged archive retains executable mode after extraction", async ()
   assert.equal((await stat(executable)).mode & 0o111, 0o111);
   const version = spawnSync(executable, ["version"], { encoding: "utf8" });
   assert.equal(version.status, 0, version.stderr);
-  assert.equal(version.stdout.trim(), "0.4.0");
+  assert.equal(version.stdout.trim(), "0.4.1");
 });
 
 test("builder rejects symlink modules instead of using stale shared output", async () => {
