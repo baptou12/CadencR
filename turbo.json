@@ -9,12 +9,10 @@
     "packages/registry-publisher/**",
     "tooling/marketplace-registry/tests/contribution.test.mjs"
   ],
-  "globalPassThroughEnv": ["RUSTC_WRAPPER", "TMPDIR"],
+  "globalPassThroughEnv": ["RUSTC_WRAPPER", "TMPDIR", "CADENCR_MANAGED_*", "CADENCR_REGISTRY_*"],
   "tasks": {
     "transit": {
-      "dependsOn": [
-        "^transit"
-      ]
+      "dependsOn": ["^transit"]
     },
     "build": {
       "dependsOn": ["^build"],
@@ -68,15 +66,11 @@
       "cache": false
     },
     "test": {
-      "dependsOn": [
-        "transit"
-      ],
+      "dependsOn": ["transit"],
       "outputs": []
     },
     "@cadencr/landing#test": {
-      "dependsOn": [
-        "transit"
-      ],
+      "dependsOn": ["transit"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/packages/desktop/src/lib/shortcuts/**",
@@ -92,15 +86,11 @@
       "outputs": []
     },
     "ts-check": {
-      "dependsOn": [
-        "transit"
-      ],
+      "dependsOn": ["transit"],
       "outputs": []
     },
     "@cadencr/landing#ts-check": {
-      "dependsOn": [
-        "transit"
-      ],
+      "dependsOn": ["transit"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/packages/desktop/src/lib/shortcuts/**",

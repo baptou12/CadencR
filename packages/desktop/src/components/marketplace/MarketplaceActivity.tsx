@@ -1,6 +1,6 @@
 import { CheckCircle2, CircleAlert, Info, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { marketplaceError } from "@/lib/marketplace";
+import { catalogSourceMissing, marketplaceError } from "@/lib/marketplace";
 import { useMarketplaceState } from "./MarketplaceContext";
 
 type Line = { tone: "error" | "info" | "done" | "busy"; text: string };
@@ -36,7 +36,7 @@ function useActivityLines(): Line[] {
   const providerCatalog = providers.catalogQuery.data;
   if (providerCatalog?.error && !catalogMissing)
     lines.push(
-      providerCatalog.error_code === "MANAGED_CATALOG_SOURCE_NOT_CONFIGURED"
+      catalogSourceMissing(providerCatalog)
         ? {
             tone: "info",
             text: "Providers are not available from a catalog in this build. Installed providers remain manageable.",
