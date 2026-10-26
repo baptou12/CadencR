@@ -1,6 +1,11 @@
 use tracing::{error, info};
 
-use crate::domain::agents::adapter::RuntimeSessionHandle;
+use crate::domain::agents::adapter::{AgentRuntimeSession, RuntimeSessionHandle};
+
+struct FollowupTurnGuard {
+    runtime: tokio::sync::OwnedRwLockReadGuard<Box<dyn AgentRuntimeSession>>,
+    _barrier: Option<tokio::sync::OwnedMutexGuard<()>>,
+}
 use crate::domain::feature_events::{FeatureEventAction, FeatureEventBroadcaster};
 use crate::domain::ws_session::protocol::PromptSendPayload;
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
@@ -17,7 +22,7 @@ use super::prompt_receipt::clear_pending_prompt_receipt;
 use super::prompt_status::{
     mark_agent_running, persist_and_publish_prompt, PromptPersistenceOutcome,
 };
-use super::user_shell_context::claim_pending_user_shell_context;
+use super::user_shell_context::{claim_pending_user_shell_context, PendingUserShellContext};
 
 pub(super) struct FollowupPromptContext {
     pub query: RuntimeSessionHandle,
@@ -75,6 +80,14 @@ pub(super) async fn handle_followup_prompt(
             return Err(error);
         }
     };
+    // Retain this read guard through dispatch. Reacquiring it while holding
+    // the barrier could deadlock against a queued writer and another control.
+    let runtime = context.query.clone().read_owned().await;
+    let barrier = runtime.turn_control_guard().await;
+    let turn_guard = FollowupTurnGuard {
+        runtime,
+        _barrier: barrier,
+    };
     mark_agent_running(
         &context.write_pool,
         &context.session_status_tx,
@@ -94,6 +107,7 @@ pub(super) async fn handle_followup_prompt(
     if context.internal_replay {
         return stream_followup_prompt(
             context,
+            turn_guard,
             payload,
             dispatch_claim,
             receipt_message_uuid,
@@ -104,6 +118,7 @@ pub(super) async fn handle_followup_prompt(
     tokio::spawn(async move {
         let _ = stream_followup_prompt(
             context,
+            turn_guard,
             payload,
             dispatch_claim,
             receipt_message_uuid,
@@ -144,39 +159,14 @@ async fn persist_followup_user_message(
 
 async fn stream_followup_prompt(
     context: FollowupPromptContext,
+    turn_guard: FollowupTurnGuard,
     payload: PromptSendPayload,
     dispatch_claim: Option<(i64, String)>,
     receipt_message_uuid: Option<String>,
     conversation_references: Vec<super::conversation_references::ResolvedConversationReference>,
 ) -> Result<(), String> {
-    let shell_delivery_id = payload
-        .message_uuid
-        .as_deref()
-        .unwrap_or(&context.envelope_id);
-    let shell_context = match claim_pending_user_shell_context(
-        &context.write_pool,
-        context.db_session_id,
-        shell_delivery_id,
-    )
-    .await
-    {
-        Ok(shell_context) => shell_context,
-        Err(message) => {
-            mark_followup_dispatch_failed(&context, dispatch_claim.as_ref(), &message).await;
-            persist_pause_and_send_session_error(
-                &context.write_pool,
-                &context.session_status_tx,
-                &context.sender,
-                &context.envelope_id,
-                context.feature_id,
-                context.db_session_id,
-                "USER_SHELL_CONTEXT_ERROR",
-                &message,
-            )
-            .await;
-            return Err(message);
-        }
-    };
+    let shell_context =
+        claim_followup_shell_context(&context, &payload, dispatch_claim.as_ref()).await?;
     let attachments = payload_attachments(&payload);
     // Expand Cadencr prompt directives only for the provider. The persisted
     // user message keeps the concise command and conversation-reference tokens.
@@ -202,11 +192,11 @@ async fn stream_followup_prompt(
     };
     let content =
         build_content_value_for_provider(&context.provider_id, &prompt_text, &attachments);
-    let query_guard = context.query.read().await;
-    let stream_result = query_guard
+    let stream_result = turn_guard
+        .runtime
         .stream_input_with_client_message_id(content, receipt_message_uuid.clone())
         .await;
-    drop(query_guard);
+    drop(turn_guard);
 
     if let Err(error) = stream_result {
         let message = error.to_string();
@@ -266,6 +256,41 @@ async fn stream_followup_prompt(
         }
     }
     Ok(())
+}
+
+async fn claim_followup_shell_context(
+    context: &FollowupPromptContext,
+    payload: &PromptSendPayload,
+    dispatch_claim: Option<&(i64, String)>,
+) -> Result<PendingUserShellContext, String> {
+    let shell_delivery_id = payload
+        .message_uuid
+        .as_deref()
+        .unwrap_or(&context.envelope_id);
+    match claim_pending_user_shell_context(
+        &context.write_pool,
+        context.db_session_id,
+        shell_delivery_id,
+    )
+    .await
+    {
+        Ok(shell_context) => Ok(shell_context),
+        Err(message) => {
+            mark_followup_dispatch_failed(context, dispatch_claim, &message).await;
+            persist_pause_and_send_session_error(
+                &context.write_pool,
+                &context.session_status_tx,
+                &context.sender,
+                &context.envelope_id,
+                context.feature_id,
+                context.db_session_id,
+                "USER_SHELL_CONTEXT_ERROR",
+                &message,
+            )
+            .await;
+            Err(message)
+        }
+    }
 }
 
 async fn mark_followup_dispatch_failed(

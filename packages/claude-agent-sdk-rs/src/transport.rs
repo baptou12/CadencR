@@ -6,6 +6,7 @@ use cli_discovery::DiscoverySpec;
 use once_cell::sync::Lazy;
 
 mod process;
+mod stderr;
 pub(crate) use process::CliProcess;
 
 /// Globally-set override for the `claude` binary path. Set once at app startup

@@ -13,6 +13,7 @@ mod bidirectional_controls;
 mod codex_provider;
 mod dispatch;
 mod gate;
+mod gate_cancellation;
 mod init;
 mod model_effort;
 mod permission;

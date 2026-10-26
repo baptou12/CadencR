@@ -63,6 +63,13 @@ pub trait AgentRuntimeSession: Send + Sync {
             "provider-native user shell commands are not supported by this runtime",
         ))
     }
+    /// Optional barrier for runtimes whose prompt method returns after input
+    /// acceptance. Held by dispatch through input delivery, and by cancellation
+    /// through readiness publication. Runtimes that await the entire turn must
+    /// leave this unset so controls can run concurrently with their prompt.
+    async fn turn_control_guard(&self) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        None
+    }
     async fn interrupt(&self) -> Result<(), RuntimeError>;
     async fn compact(&self) -> Result<(), RuntimeError> {
         Err(RuntimeError::new(
