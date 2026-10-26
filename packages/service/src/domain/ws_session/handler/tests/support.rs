@@ -236,6 +236,19 @@ pub(crate) async fn make_test_app_state() -> AppState {
     .await
     .unwrap();
 
+    for migration in [
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/migrations/20261024210000_session_prompt_queue.sql"
+        )),
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/migrations/20261026210000_prompt_queue_message_identity.sql"
+        )),
+    ] {
+        sqlx::raw_sql(migration).execute(&pool).await.unwrap();
+    }
+
     sqlx::query(
         r#"CREATE TABLE agent_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

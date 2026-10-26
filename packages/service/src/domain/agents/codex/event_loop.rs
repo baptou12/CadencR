@@ -29,6 +29,7 @@ pub(super) fn spawn_event_loop(
     turns: RootTurnTracker,
     model: Arc<RwLock<Option<String>>>,
     closing: Arc<AtomicBool>,
+    compaction: Arc<super::session::compaction::CompactionState>,
 ) {
     let event_loop = EventLoop {
         client,
@@ -39,6 +40,7 @@ pub(super) fn spawn_event_loop(
         turns,
         model,
         closing,
+        compaction,
     };
     tokio::spawn(async move { event_loop.run(source_rx).await });
 }
@@ -52,6 +54,7 @@ struct EventLoop {
     turns: RootTurnTracker,
     model: Arc<RwLock<Option<String>>>,
     closing: Arc<AtomicBool>,
+    compaction: Arc<super::session::compaction::CompactionState>,
 }
 
 struct NotificationState {
@@ -148,6 +151,9 @@ impl EventLoop {
         mut params: serde_json::Value,
         state: &mut NotificationState,
     ) -> bool {
+        if super::event_turn_state::belongs_to_root_thread(&params, &self.turns.root_thread_id) {
+            self.compaction.observe(&method, &params);
+        }
         if method == "turn/started" {
             let thread_id = params
                 .get("threadId")

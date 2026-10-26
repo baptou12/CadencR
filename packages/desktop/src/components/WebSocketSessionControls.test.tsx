@@ -74,6 +74,19 @@ describe("useSessionControls catalog scoping", () => {
     });
   });
 
+  it("queues input during compaction and restores steering when it finishes", () => {
+    const session = { ...ws("codex_cli"), isCompacting: true };
+    mocks.useWebSocketSession.mockReturnValue(session);
+    mocks.useAgentCatalog.mockReturnValue({
+      data: { providers: [{ id: "codex_cli", steering_acknowledged: true, models: [] }] },
+    });
+    const { result, rerender } = renderHook(() => useSessionControls("session", 1, 1, "/work"));
+    expect(result.current.steeringAcknowledged).toBe(false);
+    mocks.useWebSocketSession.mockReturnValue({ ...session, isCompacting: false });
+    rerender();
+    expect(result.current.steeringAcknowledged).toBe(true);
+  });
+
   it("deduplicates the runtime catalog with the unscoped base query when no profile is selected", () => {
     mocks.useWebSocketSession.mockReturnValue(ws());
     renderHook(() => useSessionControls("session", 1, 1, "/work"));
