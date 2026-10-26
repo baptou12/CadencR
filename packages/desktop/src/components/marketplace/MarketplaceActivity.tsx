@@ -8,7 +8,7 @@ type Line = { tone: "error" | "info" | "done" | "busy"; text: string };
 const ICONS = { error: CircleAlert, info: Info, done: CheckCircle2, busy: Loader2 } as const;
 
 function useActivityLines(): Line[] {
-  const { providers, themes, tabs } = useMarketplaceState();
+  const { providers, themes, tabs, catalogMissing } = useMarketplaceState();
   const lines: Line[] = [];
   const error = (label: string, value: unknown) => {
     const message = marketplaceError(value);
@@ -30,10 +30,11 @@ function useActivityLines(): Line[] {
   error("Installed themes", themes.inventory.error ?? themes.recovery.error);
   error("Tab catalog", tabs.catalog.error ?? tabs.refresh.error);
   error("Installed tabs", tabs.inventory.error ?? tabs.summaries.error ?? tabs.recovery.error);
-  if (tabs.catalog.data?.error)
+  // A build with no feed says so once, on the page itself, not as three notices.
+  if (!catalogMissing && tabs.catalog.data?.error)
     lines.push({ tone: "info", text: `Tab catalog: ${tabs.catalog.data.error}` });
   const providerCatalog = providers.catalogQuery.data;
-  if (providerCatalog?.error)
+  if (providerCatalog?.error && !catalogMissing)
     lines.push(
       providerCatalog.error_code === "MANAGED_CATALOG_SOURCE_NOT_CONFIGURED"
         ? {
@@ -42,7 +43,7 @@ function useActivityLines(): Line[] {
           }
         : { tone: "error", text: `Provider catalog: ${providerCatalog.error}` },
     );
-  if (themes.catalog.data?.error)
+  if (!catalogMissing && themes.catalog.data?.error)
     lines.push({ tone: "info", text: `Theme catalog: ${themes.catalog.data.error}` });
   const blocklist = providers.inventoryQuery.data?.blocklist;
   if (blocklist?.error) lines.push({ tone: "error", text: `Blocklist: ${blocklist.error}` });
