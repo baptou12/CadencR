@@ -60,7 +60,7 @@ pub async fn enqueue_session_prompt(
     super::notify_changed(&state, session_id);
     // The turn may have ended between the user's keypress and this request.
     // The prompt is queued either way: a failed delivery is recorded on its
-    // row (shown in the queue, retried by editing), so failing this request
+    // row (shown in the queue, retried explicitly), so failing this request
     // would put the text back in the composer too and duplicate it.
     if let Err(error) = delivery::drain_next_if_idle(&state, session_id).await {
         tracing::warn!(session_id, %error, "queued prompt could not be delivered right away");

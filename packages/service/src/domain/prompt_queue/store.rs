@@ -129,7 +129,7 @@ pub(crate) async fn has_pending(
     .await?)
 }
 
-/// Claim one prompt for delivery: the given one, or the oldest pending. At
+/// Claim one prompt for delivery: the given pending or failed one, or the oldest pending. At
 /// most one prompt per session is in flight, so two finished turns (or a turn
 /// end racing "send now") never deliver two prompts at once.
 pub(crate) async fn claim(
@@ -142,7 +142,9 @@ pub(crate) async fn claim(
          SET status = 'delivering', error = NULL, updated_at = datetime('now')
          WHERE id = (
              SELECT id FROM agent_session_prompt_queue
-             WHERE session_id = ? AND status = 'pending' AND (? IS NULL OR id = ?)
+             WHERE session_id = ?
+               AND (status = 'pending' OR (? IS NOT NULL AND status = 'error'))
+               AND (? IS NULL OR id = ?)
                AND NOT EXISTS (
                    SELECT 1 FROM agent_session_prompt_queue
                    WHERE session_id = ? AND status = 'delivering'
@@ -154,6 +156,7 @@ pub(crate) async fn claim(
         ""
     ))
     .bind(session_id)
+    .bind(id)
     .bind(id)
     .bind(id)
     .bind(session_id)
@@ -290,6 +293,58 @@ mod tests {
             .unwrap();
         assert_eq!(retried.status, QueuedPromptStatus::Pending);
         assert!(retried.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn failed_prompt_can_be_retried_manually_without_editing() {
+        let (pool, session) = pool_with_session().await;
+        let prompt = enqueue(&pool, session, "retry me").await.unwrap();
+        claim(&pool, session, Some(prompt.id))
+            .await
+            .unwrap()
+            .unwrap();
+        mark_error(&pool, prompt.id, "agent offline").await.unwrap();
+
+        assert!(claim(&pool, session, None).await.unwrap().is_none());
+        let retried = claim(&pool, session, Some(prompt.id))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retried.id, prompt.id);
+        assert_eq!(retried.content, "retry me");
+        assert_eq!(retried.status, QueuedPromptStatus::Delivering);
+        assert!(retried.error.is_none());
+        mark_delivered(&pool, prompt.id).await.unwrap();
+        assert!(claim(&pool, session, Some(prompt.id))
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn automatic_delivery_skips_errors_and_blocks_concurrent_manual_retries() {
+        let (pool, session) = pool_with_session().await;
+        let failed = enqueue(&pool, session, "failed").await.unwrap();
+        claim(&pool, session, Some(failed.id))
+            .await
+            .unwrap()
+            .unwrap();
+        mark_error(&pool, failed.id, "agent offline").await.unwrap();
+        let pending = enqueue(&pool, session, "pending").await.unwrap();
+
+        let automatic = claim(&pool, session, None).await.unwrap().unwrap();
+        assert_eq!(automatic.id, pending.id);
+        assert!(claim(&pool, session, Some(failed.id))
+            .await
+            .unwrap()
+            .is_none());
+        mark_delivered(&pool, pending.id).await.unwrap();
+        assert!(claim(&pool, session, None).await.unwrap().is_none());
+        let manual = claim(&pool, session, Some(failed.id))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(manual.id, failed.id);
     }
 
     #[tokio::test]
