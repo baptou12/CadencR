@@ -185,11 +185,36 @@ jobs:
         # uploads into duplicate releases for the same tag.
         run: |
           ulimit -Sn 10240
-          pnpm --filter @cadencr/desktop exec electron-builder \
-            --config electron-builder.yml \
-            --mac \
-            --arm64 --x64 \
-            --publish never
+          set -o pipefail
+          build_log="$RUNNER_TEMP/desktop-packaging.log"
+          for attempt in 1 2 3; do
+            set +e
+            pnpm --filter @cadencr/desktop exec electron-builder \
+              --config electron-builder.yml \
+              --mac \
+              --arm64 --x64 \
+              --publish never 2>&1 | tee "$build_log"
+            build_status=("${PIPESTATUS[@]}")
+            set -e
+
+            if [ "${build_status[1]}" -ne 0 ]; then
+              exit "${build_status[1]}"
+            fi
+            if [ "${build_status[0]}" -eq 0 ]; then
+              exit 0
+            fi
+            # A lost CloudKit connection can interrupt stapling after Apple
+            # accepted the app. Retry packaging without rebuilding the sidecars;
+            # signing, rejection and every other failure still stop immediately.
+            if [ "$attempt" -eq 3 ] ||
+              ! grep -Fq 'Failed to staple your application with code: 68' "$build_log" ||
+              ! grep -Fq 'Code=-1005 "The network connection was lost."' "$build_log"; then
+              exit "${build_status[0]}"
+            fi
+            delay=$((attempt * 20))
+            echo "::warning::Apple stapling connection lost; retrying packaging in ${delay}s (attempt ${attempt}/3)"
+            sleep "$delay"
+          done
 
       - name: Verify local desktop release assets
         if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''

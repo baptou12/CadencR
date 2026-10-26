@@ -97,7 +97,7 @@ test("packaging raises the descriptor limit inherited by pnpm", () => {
       mode: 0o700,
     });
     const result = spawnSync("bash", ["-e", "-c", `ulimit -Sn 256\n${packaging.run}`], {
-      env: { ...process.env, PATH: `${scratch}:${process.env.PATH}` },
+      env: { ...process.env, PATH: `${scratch}:${process.env.PATH}`, RUNNER_TEMP: scratch },
       encoding: "utf8",
     });
     assert.equal(result.status, 0, result.stderr);
@@ -108,6 +108,75 @@ test("packaging raises the descriptor limit inherited by pnpm", () => {
     for (const name of ["Verify packaging dependency graph", "Build renderer + main bundles"]) {
       const index = steps.findIndex((step) => step.name === name);
       assert.ok(index >= 0 && index < nativeIndex, `${name} must fail before the native build`);
+    }
+  } finally {
+    rmSync(scratch, { recursive: true });
+  }
+});
+
+test("packaging retries only transient Apple stapling failures with a bounded backoff", () => {
+  const packaging = workflow.jobs.release.steps.find(
+    (step) => step.name === "Build, sign, and notarize desktop app",
+  );
+  const scratch = mkdtempSync(join(tmpdir(), "cadencr-packaging-retry-"));
+  try {
+    writeFileSync(
+      join(scratch, "pnpm"),
+      `#!/bin/bash
+count=$(cat "$ATTEMPTS_FILE")
+count=$((count + 1))
+printf '%s' "$count" > "$ATTEMPTS_FILE"
+if [ "$count" -ge "$SUCCESS_AT" ]; then exit 0; fi
+printf '%s\\n' "$BUILD_ERROR" >&2
+exit 23
+`,
+      { mode: 0o700 },
+    );
+    writeFileSync(join(scratch, "sleep"), '#!/bin/sh\nprintf "%s\\n" "$1" >> "$DELAYS_FILE"\n', {
+      mode: 0o700,
+    });
+    const transient =
+      "Failed to staple your application with code: 68\n" +
+      'Error Domain=NSURLErrorDomain Code=-1005 "The network connection was lost."';
+    for (const { error, successAt, attempts, delays, status } of [
+      { error: transient, successAt: 1, attempts: 1, delays: "", status: 0 },
+      { error: transient, successAt: 2, attempts: 2, delays: "20\n", status: 0 },
+      { error: transient, successAt: 4, attempts: 3, delays: "20\n40\n", status: 23 },
+      { error: "Invalid signing identity", successAt: 2, attempts: 1, delays: "", status: 23 },
+      {
+        error: transient.replace("code: 68", "code: 65"),
+        successAt: 2,
+        attempts: 1,
+        delays: "",
+        status: 23,
+      },
+      {
+        error: "Failed to staple your application with code: 68\nTicket missing",
+        successAt: 2,
+        attempts: 1,
+        delays: "",
+        status: 23,
+      },
+    ]) {
+      const attemptsFile = join(scratch, "attempts");
+      const delaysFile = join(scratch, "delays");
+      writeFileSync(attemptsFile, "0");
+      writeFileSync(delaysFile, "");
+      const env = {
+        ...process.env,
+        PATH: `${scratch}:${process.env.PATH}`,
+        RUNNER_TEMP: scratch,
+        ATTEMPTS_FILE: attemptsFile,
+        DELAYS_FILE: delaysFile,
+        BUILD_ERROR: error,
+        SUCCESS_AT: String(successAt),
+      };
+      delete env.BASH_ENV;
+      const result = spawnSync("bash", ["-e", "-c", packaging.run], { env, encoding: "utf8" });
+      assert.equal(result.status, status, `${error}\n${result.stdout}\n${result.stderr}`);
+      assert.equal(Number(readFileSync(attemptsFile, "utf8")), attempts, error);
+      assert.equal(readFileSync(delaysFile, "utf8"), delays, error);
+      if (attempts > 1) assert.match(result.stdout, /::warning::/);
     }
   } finally {
     rmSync(scratch, { recursive: true });
