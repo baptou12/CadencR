@@ -48,6 +48,16 @@ They are template files, not deployed, and inert until configured as described b
 
 ## Activation gate
 
+**State 2026-10-26:** the nine variables below are set on `merkr-software/CadencR`
+with the production registry (`merkr-software/cadencr-registry`, branch
+`marketplace-v2`), root `cadencr-root-1` and trust generation 1 (values in
+[`marketplace-trust/`](marketplace-trust/README.md)). The next desktop release
+built by `desktop-release.yml` or `desktop-linux-release.yml` ships with the
+marketplace configured; the UI gate is gone, so the marketplace is visible in
+every build. Local packaged builds through `pnpm build:local` receive the same
+values only when they are exported (turbo passes `CADENCR_MANAGED_*` and
+`CADENCR_REGISTRY_*` through).
+
 The desktop release workflow forwards public repository variables into service
 compilation. It does **not** provision trust, deploy feeds, generate signing keys,
 or activate the public marketplace. Leaving every variable unset preserves
