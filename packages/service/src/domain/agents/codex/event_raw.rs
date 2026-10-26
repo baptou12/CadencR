@@ -79,7 +79,15 @@ fn tool_call_event(
     index_state: &mut IndexState,
 ) -> Vec<RuntimeEvent> {
     let id = response_item_id(params, item, name.as_str());
-    if name == "Bash" {
+    // Async questions are surfaced by agentMessage.questions. The raw call
+    // returns only {accepted:true}, which must not resolve the user's question.
+    let async_question = item.get("name").and_then(Value::as_str)
+        == Some("request_user_input_async")
+        && item
+            .get("namespace")
+            .and_then(Value::as_str)
+            .is_none_or(|namespace| namespace == "functions");
+    if name == "Bash" || async_question {
         index_state.record_suppressed_raw_tool_item(&id);
         return Vec::new();
     }

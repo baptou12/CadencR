@@ -1,5 +1,6 @@
 mod input;
 mod interrupt;
+mod question;
 mod stream;
 
 use std::collections::HashMap;
@@ -14,6 +15,7 @@ use tempfile::TempPath;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::warn;
 
+use super::async_questions::PendingAsyncQuestions;
 use super::event_loop::spawn_event_loop;
 use super::event_system::init_event;
 use super::event_turn_state::RootTurnTracker;
@@ -54,6 +56,7 @@ pub(super) struct CodexSession {
     local_rx: Option<mpsc::UnboundedReceiver<Result<RuntimeEvent, RuntimeError>>>,
     local_tx: mpsc::UnboundedSender<Result<RuntimeEvent, RuntimeError>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingCodexRequest>>>,
+    async_questions: Arc<Mutex<PendingAsyncQuestions>>,
     pending_prompt_receipts: Arc<PendingPromptReceipts>,
     temp_files: Arc<Mutex<Vec<TempPath>>>,
     closing: Arc<AtomicBool>,
@@ -101,6 +104,7 @@ impl CodexSession {
             local_rx: Some(local_rx),
             local_tx,
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
+            async_questions: Arc::new(Mutex::new(PendingAsyncQuestions::default())),
             pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
             temp_files: Arc::new(Mutex::new(Vec::new())),
             closing: Arc::new(AtomicBool::new(false)),
@@ -191,21 +195,22 @@ impl AgentRuntimeSession for CodexSession {
         };
 
         let (tx, rx) = stream_channel(&mut local_rx);
-        spawn_event_loop(
-            self.client.clone(),
-            source_rx,
-            tx.clone(),
-            Arc::clone(&self.pending_requests),
-            Arc::clone(&self.pending_prompt_receipts),
-            RootTurnTracker {
+        spawn_event_loop()
+            .client(self.client.clone())
+            .source_rx(source_rx)
+            .tx(tx.clone())
+            .pending_requests(Arc::clone(&self.pending_requests))
+            .async_questions(Arc::clone(&self.async_questions))
+            .pending_prompt_receipts(Arc::clone(&self.pending_prompt_receipts))
+            .turns(RootTurnTracker {
                 active_turn_id: Arc::clone(&self.active_turn_id),
                 last_root_turn_id: Arc::clone(&self.last_root_turn_id),
                 root_thread_id: self.thread_id.clone(),
                 child_turn_ids: Arc::clone(&self.child_turn_ids),
-            },
-            self.effective_model.clone(),
-            Arc::clone(&self.closing),
-        );
+            })
+            .model(self.effective_model.clone())
+            .closing(Arc::clone(&self.closing))
+            .call();
         spawn_local_forwarder(local_rx, tx);
         rx
     }
@@ -296,7 +301,9 @@ impl AgentRuntimeSession for CodexSession {
                     fallback: false,
                 }),
         );
-        interrupt::interrupt_turns(&self.client, targets).await
+        interrupt::interrupt_turns(&self.client, targets).await?;
+        self.async_questions.lock().await.clear();
+        Ok(())
     }
 
     async fn compact(&self) -> Result<(), RuntimeError> {
@@ -315,6 +322,7 @@ impl AgentRuntimeSession for CodexSession {
         .await;
         self.temp_files.lock().await.clear();
         self.pending_prompt_receipts.clear();
+        self.async_questions.lock().await.clear();
         self.client.shutdown().await;
         unsubscribe.map(|_| ()).map_err(|error| {
             RuntimeError::new(format!(
@@ -359,6 +367,9 @@ impl AgentRuntimeSession for CodexSession {
     ) -> Result<(), RuntimeError> {
         if is_plan_approval_request_id(&response.request_id) {
             return self.respond_plan_approval(response).await;
+        }
+        if super::async_questions::is_async_question(&response.request_id) {
+            return self.respond_async_question(response).await;
         }
         let pending = take_pending(&self.pending_requests, &response.request_id).await?;
         let result = response_value(&pending.method, &pending.params, &response);
