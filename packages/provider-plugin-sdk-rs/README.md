@@ -11,8 +11,13 @@ executable's command contract — `models`, `run`, `version`, and the optional
 
 ```toml
 [dependencies]
-cadencr-provider-sdk = "0.1"
+cadencr-provider-sdk = "0.2"
+agent-client-protocol = "3.4"
 ```
+
+The `0.2` series uses the ACP Rust SDK `3.4`; connectors migrating from
+`cadencr-provider-sdk 0.1` should align their `agent-client-protocol`
+dependency with that version. The wire protocol remains ACP v1.
 
 ```rust,no_run
 use std::ffi::OsString;

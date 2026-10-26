@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.15.0 - 2026-10-26
+
+Previous release: v0.14.1 - 2026-10-22
+
+![CadencR v0.15.0 announcement, with Command and K keycaps above an abstract prompt field](https://raw.githubusercontent.com/merkr-software/cadencr/v0.15.0/docs/changelog/v0.15.0/find-it-faster.png)
+
+### ✨ Added
+
+- [**Desktop**] Added inline charts and interactive visuals to agent replies with `/cadencr:visualize`. Charts, diagrams, explainers, and small interactive tools appear directly in the conversation, follow the current theme, and offer source viewing and copying; interactive HTML runs in an isolated frame without network or application access — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added `/cadencr:side` for asking a read-only side question without steering the working agent. Answers stream in a temporary mini-conversation above the composer, survive reloads, and can be closed or kept as a separate thread in the sidebar — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added a persistent prompt queue for follow-up messages that should wait until the agent finishes its current turn. Queued messages can be edited, removed, or sent immediately to steer the current turn; delivery failures remain visible with their explanation and retry controls — [@rle-mino](https://github.com/rle-mino).
+- [**Backend**] Added MCP tools for reading and changing global and project settings, including worktree setup commands, editor preferences, and notification options. Changes are validated together and update open windows; permission bypasses, agent executable paths, credential routing, and remote-access controls remain user-only — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added a notification-destination choice during onboarding, recommending the notch only when a notched display is connected. Your choice is saved after confirmation, replacing the automatic switch to notch notifications on every Mac — [@rle-mino](https://github.com/rle-mino).
+
+### 🔧 Changed
+
+- [**Desktop**] Redesigned the prompt composer around a single card with a clear launch summary, a tray for attachments, pasted text, editor and terminal selections, pull requests, and review comments, plus searchable prompt history and saved drafts. Mode, model, effort, access, and context controls stay accessible in narrow panes and on mobile; stopping an agent requires two presses of Escape, and review comments leave the Git pane only after their prompt is sent — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Rebuilt the command palette around conversations that need attention, working agents, and recent activity, with previews and improved ranking. Search active or archived conversations, files with `@`, commands with `>`, and message content with `#`; switch between project and workspace scope, open matching messages directly, and use result actions from the keyboard — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Reworked the Agents view to show all agents by default and prioritize waiting requests, failures, active work, and unread replies. Cards show pending questions and permissions, adapt to available width, refresh as work changes, and offer an explicit Re-sort action so cards do not move while you interact with them — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Made shortcut hints clearer with consistent key symbols and labels that follow your custom bindings, including controls, menus, and the shortcut reference — [@rle-mino](https://github.com/rle-mino).
+- [**Backend**] Passed automatic-title task hints and naming instructions to ACP connectors so they can distinguish title generation from an ordinary coding conversation — [@edjubert](https://github.com/edjubert).
+
+### 🐛 Fixed
+
+- [**provider:claude**] Fixed background commands, agents, monitors, and scheduled wakeups being stopped before Claude could resume. Idle connection cleanup now preserves pending background work, and runtime-changing settings wait until that work settles instead of silently cancelling it — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed copying long terminal selections losing text that had scrolled outside the viewport; selections now retain their original starting point when dragging or auto-scrolling in either direction — [@edjubert](https://github.com/edjubert).
+- [**Desktop**] Fixed file links opened before Neovim finished starting missing syntax highlighting and plugin initialization. The editor appears early enough to answer startup prompts, then opens the requested file once initialization completes — [@edjubert](https://github.com/edjubert).
+- [**Desktop**] Fixed pull-request checks and review statuses stopping their updates while an integrated browser pane or custom tab had keyboard focus — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed custom tabs swallowing conversation-wide keyboard shortcuts. Cadencr respects your rebound shortcuts first, and tabs can declare their own bindings with visible conflict explanations — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed custom-tab native backends continuing to run after their conversation was archived or deleted, including changes made from another client; unarchiving restores their availability — [@rle-mino](https://github.com/rle-mino).
+- [**Backend**] Fixed live Git status missing continuous file changes and accumulating redundant refreshes during sustained writes — [@rle-mino](https://github.com/rle-mino).
+- [**Backend**] Fixed database permission checks releasing SQLite locks while other connections were active, preserving transaction isolation when additional read or write pools open — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed onboarding buttons running their action twice from a single click — [@rle-mino](https://github.com/rle-mino).
+
+### 🔒 Security
+
+- [**Backend**] Hardened remote pairing and authentication with pairing codes kept out of URL query strings, stricter origin handling, and limits on repeated failed authentication attempts — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Restricted privileged desktop operations to trusted application frames and tightened browser automation permissions. Agents cannot inspect local files or Cadencr itself through browser tools, and external-site approval is limited to the requested origin — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Sanitized rendered diagram SVG before display and isolated HTML and SVG previews with restrictions on network access, embedded frames, form submissions, and forwarded keyboard shortcuts — [@rle-mino](https://github.com/rle-mino).
+- [**Backend**] Tightened permissions for private databases, settings, and temporary storage, and prevented Git-host authentication failures from exposing credential-command output — [@rle-mino](https://github.com/rle-mino).
+- [**dependencies**] Updated vulnerable JavaScript and Rust dependencies, including diagram sanitization, content preview, and archive-processing components — [@rle-mino](https://github.com/rle-mino).
+
 ## v0.14.1 - 2026-10-22
 
 Previous release: v0.14.0 - 2026-10-20
