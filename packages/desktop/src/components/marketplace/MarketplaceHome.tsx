@@ -16,7 +16,6 @@ import { MarketplaceSpotlight } from "./MarketplaceSpotlight";
 import {
   CheckCatalogButton,
   MarketplaceSkeleton,
-  MarketplaceNotInBuild,
   MarketplaceUnavailable,
 } from "./MarketplaceStates";
 import { formatAgo } from "@/lib/date-utils";
@@ -100,12 +99,9 @@ export function MarketplaceHome({
             <MarketplaceSkeleton />
           ) : view === "discover" ? (
             <>
-              {!anyCatalog &&
-                (state.catalogMissing ? (
-                  <MarketplaceNotInBuild />
-                ) : (
-                  <MarketplaceUnavailable refreshing={refreshing} onRefresh={refresh} />
-                ))}
+              {!anyCatalog && (
+                <MarketplaceUnavailable refreshing={refreshing} onRefresh={refresh} />
+              )}
               {!query && <MarketplaceSpotlight listings={spotlight} />}
               {searched.length > 0 && (
                 <KindFilterBar

@@ -28,14 +28,11 @@ JavaScript business implementations and executable legacy test oracles are
 removed from the source template; thin orchestration and frozen test data remain.
 The candidate registry pin still targets an older CLI. Reviewing its replacement,
 regenerating delivery approvals, actual registry deployment and official-plugin
-publication remain pending.
+publication remain pending. Desktop activation is separate.
 
-The marketplace UI is visible in every desktop build; there is no renderer
-opt-in. Whether it can browse or install anything depends only on the feed and
-trust configuration compiled into the service. A build without that
-configuration (dev builds, forks) shows the marketplace as unavailable: the
-catalog page says it is not available in this build and offers no retry, and
-anything already installed stays manageable.
+Internal QA can opt in with `VITE_INTERNAL_MARKETPLACE=true` in a DEV renderer
+only; production builds cannot expose the marketplace through that environment
+variable. This is not a public activation switch.
 
 Use the [operator runbook](../tooling/marketplace-registry/OPERATIONS.md)
 for renewal, failure alerts, revocation and rotation preparation. No real owner,

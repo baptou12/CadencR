@@ -15,6 +15,7 @@ import {
 import { DRACULA_THEME } from "@/lib/themes/dracula";
 import { useThemeMarketplace } from "./useThemeMarketplace";
 
+vi.mock("@/lib/marketplace-gate", () => ({ MARKETPLACE_ENABLED: true }));
 vi.mock("@/api/generated", () => ({
   getManagedThemeCatalog: vi.fn(),
   getManagedThemes: vi.fn(),

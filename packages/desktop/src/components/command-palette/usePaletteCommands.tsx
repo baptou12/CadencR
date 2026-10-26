@@ -25,6 +25,7 @@ import {
 import { runShortcutAction, useShortcutActionStore } from "@/lib/command-palette/shortcut-actions";
 import type { PaletteCommand } from "@/lib/command-palette/palette-types";
 import { isDesktopShell } from "@/lib/desktop-bridge";
+import { MARKETPLACE_ENABLED } from "@/lib/marketplace-gate";
 import type { ShortcutId } from "@/lib/shortcuts/registry";
 
 export interface PaletteCommandContext {
@@ -38,7 +39,7 @@ export interface PaletteCommandContext {
 type Navigate = ReturnType<typeof useNavigate>;
 
 function navigationCommands(navigate: Navigate): PaletteCommand[] {
-  return [
+  const commands: PaletteCommand[] = [
     {
       id: "go-agents",
       title: "Agents",
@@ -69,7 +70,9 @@ function navigationCommands(navigate: Navigate): PaletteCommand[] {
       description: "Global settings.",
       run: () => navigate({ to: "/settings" }),
     },
-    {
+  ];
+  if (MARKETPLACE_ENABLED) {
+    commands.push({
       id: "go-marketplace",
       title: "Marketplace",
       group: "Navigate",
@@ -77,8 +80,9 @@ function navigationCommands(navigate: Navigate): PaletteCommand[] {
       keywords: ["plugins", "themes", "providers", "extensions"],
       description: "Themes and provider connectors from the signed catalog.",
       run: () => navigate({ to: "/marketplace" }),
-    },
-  ];
+    });
+  }
+  return commands;
 }
 
 /** One command per settings section: "Appearance", "Git"… straight to its anchor. */

@@ -225,7 +225,7 @@ export default defineConfig(({ mode }) => {
     renderer: {
       root: ".",
       envDir: __dirname,
-      envPrefix: ["VITE_API_URL", "VITE_FRONTEND_PORT"],
+      envPrefix: ["VITE_API_URL", "VITE_FRONTEND_PORT", "VITE_INTERNAL_MARKETPLACE"],
       server: {
         host: "127.0.0.1",
         port: development.frontendPort,

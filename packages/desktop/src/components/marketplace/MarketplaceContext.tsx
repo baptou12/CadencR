@@ -5,7 +5,7 @@ import { useThemeMarketplace } from "@/hooks/useThemeMarketplace";
 import { useTheme } from "@/hooks/useTheme";
 import { buildListings, type MarketplaceListing } from "@/lib/marketplace-listings";
 import { browsableListings } from "@/lib/marketplace-platform";
-import { catalogSourceMissing, usableCatalog } from "@/lib/marketplace";
+import { usableCatalog } from "@/lib/marketplace";
 import { usableThemeCatalog } from "@/lib/theme-marketplace";
 
 interface MarketplaceState {
@@ -20,8 +20,6 @@ interface MarketplaceState {
   loading: boolean;
   /** At least one kind has a current, verified catalog to install from. */
   catalogUsable: { provider: boolean; theme: boolean; tab: boolean };
-  /** This build has no catalog feed and nothing cached: there is nothing to browse, by design. */
-  catalogMissing: boolean;
   /** "Update all" is walking its queue (kept here so it survives navigation). */
   updatingAll: boolean;
   setUpdatingAll: (running: boolean) => void;
@@ -77,19 +75,6 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
     themes.inventory.isPending ||
     tabs.catalog.isPending ||
     tabs.inventory.isPending;
-  const catalogUsable = useMemo(
-    () => ({
-      provider: usableCatalog(providerCatalog),
-      theme: usableThemeCatalog(themeCatalog),
-      tab: usableThemeCatalog(tabCatalog),
-    }),
-    [providerCatalog, themeCatalog, tabCatalog],
-  );
-  const catalogMissing =
-    catalogSourceMissing(providerCatalog) &&
-    !catalogUsable.provider &&
-    !catalogUsable.theme &&
-    !catalogUsable.tab;
   const value = useMemo(
     () => ({
       providers,
@@ -99,8 +84,11 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
       browsable,
       themeLoading,
       loading,
-      catalogUsable,
-      catalogMissing,
+      catalogUsable: {
+        provider: usableCatalog(providerCatalog),
+        theme: usableThemeCatalog(themeCatalog),
+        tab: usableThemeCatalog(tabCatalog),
+      },
       updatingAll,
       setUpdatingAll,
     }),
@@ -112,8 +100,9 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
       browsable,
       themeLoading,
       loading,
-      catalogUsable,
-      catalogMissing,
+      providerCatalog,
+      themeCatalog,
+      tabCatalog,
       updatingAll,
     ],
   );

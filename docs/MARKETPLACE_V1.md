@@ -1028,12 +1028,9 @@ and a separately authorized activation clears every gate.
       install/publication against real deployed artifacts, and assign operational owners.
 - [ ] Separately authorize official roots/feed activation and public UI exposure.
 
-The marketplace UI is visible in every desktop build; there is no renderer
-opt-in. Whether it can browse or install anything depends only on the feed and
-trust configuration compiled into the service. A build without that
-configuration (dev builds, forks) shows the marketplace as unavailable: the
-catalog page says it is not available in this build and offers no retry, and
-anything already installed stays manageable.
+Internal QA can opt in with `VITE_INTERNAL_MARKETPLACE=true` in a DEV renderer
+only; production builds cannot expose the marketplace through that environment
+variable. This is not a public activation switch.
 
 ### Milestone evidence — 2026-10-12
 
