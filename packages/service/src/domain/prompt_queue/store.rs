@@ -4,6 +4,9 @@ use serde::Serialize;
 
 use crate::error::AppError;
 
+mod identity;
+pub(crate) use identity::{enqueue_deferred, has_source};
+
 /// Where a queued prompt stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, sqlx::Type, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -26,13 +29,16 @@ pub struct QueuedPrompt {
     pub status: QueuedPromptStatus,
     pub error: Option<String>,
     pub created_at: String,
+    #[serde(skip)]
+    #[schema(ignore)]
+    pub(crate) message_uuid: Option<String>,
 }
 
 /// Column list shared by every `RETURNING` / `SELECT` (a macro so the SQL
 /// stays a compile-time literal, as sqlx requires).
 macro_rules! columns {
     () => {
-        "id, session_id, content, status, error, created_at"
+        "id, session_id, content, status, error, created_at, message_uuid"
     };
 }
 
@@ -59,13 +65,14 @@ pub(crate) async fn enqueue(
     content: &str,
 ) -> Result<QueuedPrompt, AppError> {
     Ok(sqlx::query_as(concat!(
-        "INSERT INTO agent_session_prompt_queue (session_id, content)
-         VALUES (?, ?) RETURNING ",
+        "INSERT INTO agent_session_prompt_queue (session_id, content, message_uuid)
+         VALUES (?, ?, ?) RETURNING ",
         columns!(),
         ""
     ))
     .bind(session_id)
     .bind(content)
+    .bind(uuid::Uuid::new_v4().to_string())
     .fetch_one(pool)
     .await?)
 }
@@ -80,12 +87,15 @@ pub(crate) async fn update_content(
 ) -> Result<QueuedPrompt, AppError> {
     sqlx::query_as(concat!(
         "UPDATE agent_session_prompt_queue
-         SET content = ?, status = 'pending', error = NULL, updated_at = datetime('now')
+         SET message_uuid = CASE WHEN content = ? THEN message_uuid ELSE ? END,
+             content = ?, status = 'pending', error = NULL, updated_at = datetime('now')
          WHERE id = ? AND session_id = ? AND status IN ('pending', 'error')
          RETURNING ",
         columns!(),
         ""
     ))
+    .bind(content)
+    .bind(uuid::Uuid::new_v4().to_string())
     .bind(content)
     .bind(id)
     .bind(session_id)
@@ -218,7 +228,7 @@ mod tests {
     use crate::shared::migrate::{run_migrations, MigrationContext};
 
     /// Migrated in-memory DB with two sessions (ids 1 and 2).
-    async fn pool_with_session() -> (sqlx::SqlitePool, i64) {
+    pub(super) async fn pool_with_session() -> (sqlx::SqlitePool, i64) {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         run_migrations(&MigrationContext::pool_only(&pool))
             .await

@@ -1,6 +1,9 @@
 use axum::extract::ws::Message;
 
 use super::super::protocol::*;
+use super::session_compact_lifecycle::{
+    begin_compact, finish_compact_start, persist_compact_command,
+};
 use super::session_compact_pending::spawn_pending_runtime_for_compact;
 use super::{parse_session_id, send_error, QueryState, SdkHandle, SdkSessions, WsSender};
 use crate::app_state::AppState;
@@ -70,49 +73,6 @@ pub(super) async fn handle_compact(
     }
 }
 
-async fn persist_compact_command(
-    app_state: &AppState,
-    sender: &WsSender,
-    session_id: i64,
-    message_uuid: Option<&str>,
-) -> Result<bool, String> {
-    let feature_id: i64 = sqlx::query_scalar("SELECT feature_id FROM agent_sessions WHERE id = ?")
-        .bind(session_id)
-        .fetch_one(&app_state.read_pool)
-        .await
-        .map_err(|error| error.to_string())?;
-    let message_uuid =
-        crate::domain::sessions::user_messages::canonical_user_message_uuid(message_uuid)
-            .map_err(|_| "message_uuid must be a valid UUID".to_string())?;
-    let outcome = super::session_prompt::persist_and_publish_user_message(
-        super::session_prompt::CanonicalUserMessageRequest {
-            pool: &app_state.write_pool,
-            feature_senders: &app_state.ws_feature_senders,
-            owner: Some(sender),
-            feature_id,
-            session_id,
-            content: "/compact",
-            message_uuid,
-            origin: None,
-            mode: super::session_prompt::CanonicalUserMessageMode::PersistOnly,
-        },
-    )
-    .await
-    .map_err(|error| error.to_string())?;
-    if let Err(error) = outcome.delivery {
-        tracing::warn!(feature_id, session_id, error = %error, "compact command owner disconnected");
-    }
-    let message = outcome.message;
-    if message.inserted {
-        app_state.feature_events_tx.emit(
-            feature_id,
-            None,
-            crate::domain::feature_events::FeatureEventAction::Reordered,
-        );
-    }
-    Ok(message.inserted)
-}
-
 fn compact_payload(envelope: &WsEnvelope, sender: &WsSender) -> Option<SessionActionPayload> {
     match serde_json::from_value(envelope.payload.clone()) {
         Ok(payload) => Some(payload),
@@ -143,53 +103,72 @@ async fn handle_active_runtime_compact(
     db_session_id: i64,
     app_state: Option<&AppState>,
 ) {
-    let query = {
-        let sessions = sdk_sessions.lock().await;
-        let Some(handle) = sessions.get(&db_session_id) else {
-            send_error(
-                sender,
-                envelope_id,
-                "SESSION_NOT_FOUND",
-                "Session not found",
-            );
+    let was_running = match begin_compact(sdk_sessions, db_session_id, app_state).await {
+        Ok(running) => running,
+        Err(error) => {
+            send_error(sender, envelope_id, "COMPACT_REJECTED", &error);
             return;
-        };
-        match compact_target(handle) {
-            CompactTarget::Active => {
-                let QueryState::Active { query, .. } = &handle.state else {
-                    unreachable!("compact_target returned active for non-active state");
-                };
-                query.clone()
-            }
-            CompactTarget::PendingSpawn => {
-                let Some(app_state) = app_state else {
-                    send_error(sender, envelope_id, "INVALID_STATE", "Session not active");
-                    return;
-                };
-                drop(sessions);
-                match spawn_pending_runtime_for_compact(
-                    envelope_id,
-                    sender,
-                    sdk_sessions,
-                    db_session_id,
-                    app_state,
-                )
-                .await
-                {
-                    Some(spawned) => spawned,
-                    None => return,
-                }
-            }
         }
     };
-
-    if let Err(error) = query.read().await.compact().await {
-        send_error(sender, envelope_id, "COMPACT_REJECTED", &error.to_string());
-        return;
+    let query =
+        resolve_compact_runtime(envelope_id, sender, sdk_sessions, db_session_id, app_state).await;
+    let succeeded = if let Some(query) = query {
+        match query.read().await.compact().await {
+            Ok(()) => true,
+            Err(error) => {
+                send_error(sender, envelope_id, "COMPACT_REJECTED", &error.to_string());
+                false
+            }
+        }
+    } else {
+        false
+    };
+    finish_compact_start(
+        sdk_sessions,
+        db_session_id,
+        app_state,
+        succeeded,
+        was_running,
+    )
+    .await;
+    if succeeded {
+        if let Err(error) = send_compact_started(sender, envelope_id) {
+            tracing::warn!(error = %error, "compact.started reply delivery failed");
+        }
     }
+}
 
-    if let Err(error) = send_compact_started(sender, envelope_id) {
-        tracing::warn!(error = %error, "compact.started reply delivery failed");
+async fn resolve_compact_runtime(
+    envelope_id: &str,
+    sender: &WsSender,
+    sdk_sessions: &SdkSessions,
+    db_session_id: i64,
+    app_state: Option<&AppState>,
+) -> Option<crate::domain::agents::adapter::RuntimeSessionHandle> {
+    let sessions = sdk_sessions.lock().await;
+    let handle = sessions.get(&db_session_id)?;
+    match compact_target(handle) {
+        CompactTarget::Active => {
+            let QueryState::Active { query, .. } = &handle.state else {
+                unreachable!("active compaction target has a runtime");
+            };
+            Some(query.clone())
+        }
+        CompactTarget::PendingSpawn => {
+            let Some(app_state) = app_state else {
+                send_error(sender, envelope_id, "INVALID_STATE", "Session not active");
+                return None;
+            };
+            drop(sessions);
+            spawn_pending_runtime_for_compact(
+                envelope_id,
+                sender,
+                sdk_sessions,
+                db_session_id,
+                app_state,
+            )
+            .await
+        }
     }
 }
 

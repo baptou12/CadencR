@@ -71,6 +71,10 @@ pub(super) struct LiveStatusBook {
 }
 
 impl LiveStatusBook {
+    pub(super) fn is_busy(&self, session_id: i64) -> bool {
+        self.sessions.contains_key(&session_id)
+    }
+
     pub(super) fn seq(&self) -> u64 {
         self.seq
     }

@@ -70,6 +70,11 @@ impl SessionStatusBroadcaster {
         }
     }
 
+    /// Whether a session has a live turn or a pending user-input gate.
+    pub fn is_busy(&self, session_id: i64) -> bool {
+        self.lock().is_busy(session_id)
+    }
+
     /// Broadcast a status transition of the current turn. Returns the new
     /// seq, or `None` when nothing changed.
     pub fn broadcast(

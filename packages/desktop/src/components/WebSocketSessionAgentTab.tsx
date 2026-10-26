@@ -258,6 +258,9 @@ function useAgentSendHandler(args: {
       // Awaiting delivery keeps the composer pending while the session
       // initializes; a rejection hands the text back to the composer.
       try {
+        if (controls.ws.isCompacting && attachments?.length) {
+          throw new Error("Keep attachments in the composer until compaction finishes.");
+        }
         await controls.ws.deliverPrompt(text, {
           attachments,
           branchSetup,

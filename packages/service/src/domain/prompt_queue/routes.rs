@@ -6,11 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::app_state::AppState;
 use crate::error::AppError;
 
-use super::delivery;
 use super::store::{self, QueuedPrompt};
-
-/// Longest prompt the queue accepts (same order as a pasted file).
-const MAX_QUEUED_PROMPT_BYTES: usize = 256 * 1024;
+use super::{acceptance, delivery};
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct QueuePromptRequest {
@@ -20,21 +17,6 @@ pub struct QueuePromptRequest {
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PromptQueueOkResponse {
     pub ok: bool,
-}
-
-fn validated(content: &str) -> Result<&str, AppError> {
-    let trimmed = content.trim();
-    if trimmed.is_empty() {
-        return Err(AppError::BadRequest(
-            "A queued message can't be empty.".to_string(),
-        ));
-    }
-    if trimmed.len() > MAX_QUEUED_PROMPT_BYTES {
-        return Err(AppError::BadRequest(
-            "This message is too long to queue.".to_string(),
-        ));
-    }
-    Ok(trimmed)
 }
 
 #[utoipa::path(get, path = "/api/sessions/{session_id}/prompt-queue",
@@ -56,15 +38,7 @@ pub async fn enqueue_session_prompt(
     Path(session_id): Path<i64>,
     Json(body): Json<QueuePromptRequest>,
 ) -> Result<Json<QueuedPrompt>, AppError> {
-    let prompt = store::enqueue(&state.write_pool, session_id, validated(&body.content)?).await?;
-    super::notify_changed(&state, session_id);
-    // The turn may have ended between the user's keypress and this request.
-    // The prompt is queued either way: a failed delivery is recorded on its
-    // row (shown in the queue, retried explicitly), so failing this request
-    // would put the text back in the composer too and duplicate it.
-    if let Err(error) = delivery::drain_next_if_idle(&state, session_id).await {
-        tracing::warn!(session_id, %error, "queued prompt could not be delivered right away");
-    }
+    let prompt = acceptance::enqueue(&state, session_id, &body.content).await?;
     Ok(Json(prompt))
 }
 
@@ -77,8 +51,13 @@ pub async fn update_session_queued_prompt(
     Path((session_id, id)): Path<(i64, i64)>,
     Json(body): Json<QueuePromptRequest>,
 ) -> Result<Json<QueuedPrompt>, AppError> {
-    let prompt =
-        store::update_content(&state.write_pool, session_id, id, validated(&body.content)?).await?;
+    let prompt = store::update_content(
+        &state.write_pool,
+        session_id,
+        id,
+        acceptance::validated(&body.content)?,
+    )
+    .await?;
     super::notify_changed(&state, session_id);
     Ok(Json(prompt))
 }

@@ -297,7 +297,7 @@ pub(crate) async fn publish_user_message(
     Ok(())
 }
 
-pub(super) async fn mark_agent_running(
+pub(crate) async fn mark_agent_running(
     write_pool: &sqlx::SqlitePool,
     session_status_tx: &crate::domain::session_status::SessionStatusBroadcaster,
     active_turns: &super::super::ActiveTurnRegistry,

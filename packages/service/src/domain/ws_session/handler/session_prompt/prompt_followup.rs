@@ -36,12 +36,17 @@ pub(super) struct FollowupPromptContext {
     pub active_turns: Arc<ActiveTurnRegistry>,
     pub provider_id: String,
     pub internal_replay: bool,
+    /// Control callers must observe the provider's delivery result before
+    /// acknowledging a queued or scheduled prompt.
+    pub wait_for_delivery: bool,
 }
 
 pub(super) async fn handle_followup_prompt(
     context: FollowupPromptContext,
     payload: PromptSendPayload,
 ) -> Result<(), String> {
+    let preserve_running_turn =
+        context.wait_for_delivery && context.session_status_tx.is_busy(context.db_session_id);
     let persistence = persist_followup_user_message(&context, &payload).await?;
     if !persistence.should_dispatch() {
         return Ok(());
@@ -91,13 +96,14 @@ pub(super) async fn handle_followup_prompt(
     super::prompt_checkpoint::capture_pre_turn_followup(&context, persistence.message_id()).await;
 
     info!(context.db_session_id, "follow-up prompt");
-    if context.internal_replay {
+    if context.wait_for_delivery {
         return stream_followup_prompt(
             context,
             payload,
             dispatch_claim,
             receipt_message_uuid,
             conversation_references,
+            preserve_running_turn,
         )
         .await;
     }
@@ -108,6 +114,7 @@ pub(super) async fn handle_followup_prompt(
             dispatch_claim,
             receipt_message_uuid,
             conversation_references,
+            preserve_running_turn,
         )
         .await;
     });
@@ -148,6 +155,7 @@ async fn stream_followup_prompt(
     dispatch_claim: Option<(i64, String)>,
     receipt_message_uuid: Option<String>,
     conversation_references: Vec<super::conversation_references::ResolvedConversationReference>,
+    preserve_running_turn: bool,
 ) -> Result<(), String> {
     let shell_delivery_id = payload
         .message_uuid
@@ -213,37 +221,14 @@ async fn stream_followup_prompt(
         if let Err(release_error) = shell_context.release(&context.write_pool).await {
             error!(context.db_session_id, error = %release_error, "failed to release user shell context claim");
         }
-        mark_followup_dispatch_failed(&context, dispatch_claim.as_ref(), &message).await;
-        error!(context.db_session_id, error = %message, "stream_input failed");
-        if let Some(message_uuid) = receipt_message_uuid {
-            let owner_closed = clear_pending_prompt_receipt(
-                &context.write_pool,
-                &context.ws_feature_senders,
-                &context.sender,
-                context.feature_id,
-                context.db_session_id,
-                message_uuid,
-            )
-            .await;
-            if owner_closed {
-                error!(
-                    context.db_session_id,
-                    "prompt delivery-failed receipt owner disconnected"
-                );
-            }
-        }
-        persist_pause_and_send_session_error(
-            &context.write_pool,
-            &context.session_status_tx,
-            &context.sender,
-            &context.envelope_id,
-            context.feature_id,
-            context.db_session_id,
-            "SDK_ERROR",
-            &message,
+        return fail_followup_stream(
+            &context,
+            dispatch_claim.as_ref(),
+            receipt_message_uuid,
+            message,
+            preserve_running_turn,
         )
         .await;
-        return Err(message);
     }
     if let Err(error) = shell_context.mark_delivered(&context.write_pool).await {
         error!(context.db_session_id, %error, "failed to mark user shell context delivered");
@@ -254,17 +239,7 @@ async fn stream_followup_prompt(
             &error,
         );
     }
-    if let Some((message_id, token)) = dispatch_claim {
-        if let Err(error) = crate::domain::sessions::message_dispatch::mark_succeeded(
-            &context.write_pool,
-            message_id,
-            &token,
-        )
-        .await
-        {
-            error!(context.db_session_id, error = %error, "failed to persist prompt dispatch success");
-        }
-    }
+    mark_followup_succeeded(&context, dispatch_claim.as_ref()).await;
     Ok(())
 }
 
@@ -285,5 +260,67 @@ async fn mark_followup_dispatch_failed(
     .await
     {
         tracing::error!(context.db_session_id, error = %status_error, "failed to persist prompt dispatch failure");
+    }
+}
+
+async fn fail_followup_stream(
+    context: &FollowupPromptContext,
+    dispatch_claim: Option<&(i64, String)>,
+    receipt_message_uuid: Option<String>,
+    message: String,
+    preserve_running_turn: bool,
+) -> Result<(), String> {
+    mark_followup_dispatch_failed(context, dispatch_claim, &message).await;
+    error!(context.db_session_id, error = %message, "stream_input failed");
+    if let Some(message_uuid) = receipt_message_uuid {
+        let owner_closed = clear_pending_prompt_receipt(
+            &context.write_pool,
+            &context.ws_feature_senders,
+            &context.sender,
+            context.feature_id,
+            context.db_session_id,
+            message_uuid,
+        )
+        .await;
+        if owner_closed {
+            error!(
+                context.db_session_id,
+                "prompt delivery-failed receipt owner disconnected"
+            );
+        }
+    }
+    // Refusing this queued steer does not end the already-running turn.
+    // The control caller surfaces the error on the durable queue entry.
+    if preserve_running_turn {
+        return Err(message);
+    }
+    persist_pause_and_send_session_error(
+        &context.write_pool,
+        &context.session_status_tx,
+        &context.sender,
+        &context.envelope_id,
+        context.feature_id,
+        context.db_session_id,
+        "SDK_ERROR",
+        &message,
+    )
+    .await;
+    Err(message)
+}
+
+async fn mark_followup_succeeded(
+    context: &FollowupPromptContext,
+    dispatch_claim: Option<&(i64, String)>,
+) {
+    if let Some((message_id, token)) = dispatch_claim {
+        if let Err(error) = crate::domain::sessions::message_dispatch::mark_succeeded(
+            &context.write_pool,
+            *message_id,
+            token,
+        )
+        .await
+        {
+            error!(context.db_session_id, error = %error, "failed to persist prompt dispatch success");
+        }
     }
 }

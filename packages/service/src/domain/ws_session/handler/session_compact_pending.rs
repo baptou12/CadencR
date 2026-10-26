@@ -24,15 +24,6 @@ pub(super) async fn spawn_pending_runtime_for_compact(
     let mut spawn = match pending_spawn_config(sdk_sessions, db_session_id, sender, app_state).await
     {
         PendingCompactSpawnResult::Ready(spawn) => spawn,
-        PendingCompactSpawnResult::Busy => {
-            send_error(
-                sender,
-                envelope_id,
-                "COMPACT_REJECTED",
-                "Manual compaction is already starting for this session",
-            );
-            return None;
-        }
         PendingCompactSpawnResult::Missing => {
             send_error(
                 sender,
@@ -143,7 +134,6 @@ struct PendingCompactSpawn {
 
 enum PendingCompactSpawnResult {
     Ready(PendingCompactSpawn),
-    Busy,
     Missing,
     NotPending,
 }
@@ -161,12 +151,6 @@ async fn pending_spawn_config(
     let QueryState::Pending(pending) = &handle.state else {
         return PendingCompactSpawnResult::NotPending;
     };
-    if handle
-        .manual_compact_spawn_pending
-        .swap(true, Ordering::SeqCst)
-    {
-        return PendingCompactSpawnResult::Busy;
-    }
     let (permission_tx, permission_rx) = mpsc::channel::<PermissionResponse>(16);
     let resume_session_id = pending
         .resume_session_id
@@ -248,9 +232,6 @@ async fn activate_spawned_runtime(
     handle.spawned_thinking_effort = spawn.spawned_thinking_effort.clone();
     handle.runtime_control_endpoint = runtime_control_endpoint;
     handle.resume_session_id = None;
-    handle
-        .manual_compact_spawn_pending
-        .store(false, Ordering::SeqCst);
     true
 }
 

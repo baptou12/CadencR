@@ -155,7 +155,7 @@ function useRuntimeSelection(
   const providerAccessModes = activeProvider?.access_modes ?? EMPTY_PROVIDER_ACCESS_MODES;
   const modelSupportsAutoMode = activeSessionModel?.supports_auto_mode ?? undefined;
   // Unknown (catalog still loading) keeps today's behavior: Enter steers.
-  const steeringAcknowledged = activeProvider?.steering_acknowledged ?? true;
+  const steeringAcknowledged = !ws.isCompacting && (activeProvider?.steering_acknowledged ?? true);
   return useMemo(
     () => ({
       modelSupportsAutoMode,

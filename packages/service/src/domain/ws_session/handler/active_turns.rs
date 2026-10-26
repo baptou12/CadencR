@@ -163,6 +163,30 @@ impl ActiveTurnRegistry {
         }
     }
 
+    pub(crate) async fn requires_prompt_queue(&self, session_id: i64) -> bool {
+        let Some(owner) = self.owner_sessions(session_id).await else {
+            return false;
+        };
+        let query = {
+            let sessions = owner.lock().await;
+            let Some(handle) = sessions.get(&session_id) else {
+                return false;
+            };
+            if handle
+                .manual_compact_spawn_pending
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                return true;
+            }
+            let QueryState::Active { query, .. } = &handle.state else {
+                return false;
+            };
+            query.clone()
+        };
+        let runtime = query.read().await;
+        runtime.requires_prompt_queue()
+    }
+
     /// Pid of every live agent process, keyed to the feature it serves.
     ///
     /// Read straight from the owning connections' session maps rather than from

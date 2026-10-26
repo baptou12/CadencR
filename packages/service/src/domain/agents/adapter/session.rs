@@ -48,6 +48,11 @@ pub trait AgentRuntimeSession: Send + Sync {
         self.available_mcp_servers().await
     }
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError>;
+    /// The live runtime is temporarily unable to accept steering input.
+    /// The host keeps user prompts in its durable queue until the turn ends.
+    fn requires_prompt_queue(&self) -> bool {
+        false
+    }
     async fn stream_input_with_client_message_id(
         &self,
         content: Value,

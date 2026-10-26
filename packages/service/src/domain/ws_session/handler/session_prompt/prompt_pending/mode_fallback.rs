@@ -134,6 +134,7 @@ mod tests {
             .expect("payload"),
             permission_tx: None,
             internal_replay: false,
+            wait_for_delivery: false,
         };
         (context, receiver)
     }

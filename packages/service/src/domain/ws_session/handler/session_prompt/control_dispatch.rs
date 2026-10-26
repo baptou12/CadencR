@@ -90,6 +90,7 @@ async fn dispatch_to_active_owner(
                 active_turns: app_state.active_turns.clone(),
                 provider_id: handle.runtime_provider.clone(),
                 internal_replay,
+                wait_for_delivery: true,
             }),
             QueryState::Pending(_) => None,
         }
@@ -181,6 +182,7 @@ async fn pending_context_from_handle(
         payload,
         permission_tx: None,
         internal_replay,
+        wait_for_delivery: true,
     })
 }
 

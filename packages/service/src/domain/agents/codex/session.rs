@@ -1,3 +1,4 @@
+pub(super) mod compaction;
 mod input;
 mod interrupt;
 mod question;
@@ -60,6 +61,7 @@ pub(super) struct CodexSession {
     pending_prompt_receipts: Arc<PendingPromptReceipts>,
     temp_files: Arc<Mutex<Vec<TempPath>>>,
     closing: Arc<AtomicBool>,
+    compaction: Arc<compaction::CompactionState>,
     mcp_servers: Arc<RwLock<Vec<RuntimeMcpServerStatus>>>,
     context_window: Option<u64>,
 }
@@ -108,6 +110,7 @@ impl CodexSession {
             pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
             temp_files: Arc::new(Mutex::new(Vec::new())),
             closing: Arc::new(AtomicBool::new(false)),
+            compaction: Arc::default(),
             mcp_servers: Arc::new(RwLock::new(Vec::new())),
             context_window: options.context_window,
         }
@@ -210,6 +213,7 @@ impl AgentRuntimeSession for CodexSession {
             })
             .model(self.effective_model.clone())
             .closing(Arc::clone(&self.closing))
+            .compaction(Arc::clone(&self.compaction))
             .call();
         spawn_local_forwarder(local_rx, tx);
         rx
@@ -244,6 +248,10 @@ impl AgentRuntimeSession for CodexSession {
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError> {
         self.stream_input_with_client_message_id(content, None)
             .await
+    }
+
+    fn requires_prompt_queue(&self) -> bool {
+        self.compaction.is_active()
     }
 
     async fn stream_input_with_client_message_id(
@@ -307,10 +315,7 @@ impl AgentRuntimeSession for CodexSession {
     }
 
     async fn compact(&self) -> Result<(), RuntimeError> {
-        self.client
-            .thread_compact_start(&self.thread_id)
-            .await
-            .map_err(RuntimeError::from)
+        self.start_compaction().await
     }
 
     async fn close(&mut self) -> Result<(), RuntimeError> {

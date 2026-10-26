@@ -7,6 +7,7 @@
 //! right away. Changes broadcast a bare `{session_id}` ping on
 //! `prompt_queue_events_tx`; clients re-fetch the list.
 
+pub(crate) mod acceptance;
 pub mod delivery;
 pub mod routes;
 pub mod store;

@@ -178,6 +178,7 @@ fn build_followup_context(
         active_turns: app_state.active_turns.clone(),
         provider_id,
         internal_replay: false,
+        wait_for_delivery: false,
     }
 }
 
@@ -301,6 +302,7 @@ pub(super) async fn spawn_pending_prompt(
         payload,
         permission_tx: None,
         internal_replay: false,
+        wait_for_delivery: false,
     };
     drop(sessions);
     // Persist user message in the pending helper after releasing sdk_sessions.
