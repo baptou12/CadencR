@@ -39,7 +39,7 @@
     },
     "linux-aarch64": {
       "preparation": "external-node-pi-candidate",
-      "evidence": "native-loopback-qualified-container",
+      "evidence": "native-loopback-qualified-hosted",
       "managed_installation": "not-qualified"
     },
     "linux-x86_64": {
@@ -61,7 +61,10 @@
     "record": "plugins/providers/pi/README.md",
     "authority": "historical-local-source-record-not-verified-upstream"
   },
-  "not_prepared_targets": ["windows-aarch64", "windows-x86_64"],
+  "not_prepared_targets": [
+    "windows-aarch64",
+    "windows-x86_64"
+  ],
   "working_tree_protocol_evidence": {
     "date": "2026-10-23",
     "target": "darwin-aarch64",
@@ -79,7 +82,7 @@
     "exact_committed_candidate": "pending"
   },
   "native_loopback_qualification": {
-    "date": "2026-10-25",
+    "date": "2026-10-26",
     "report": "docs/qa/MARKETPLACE_PI_PLATFORMS_2026_10_25.md",
     "source_identity": "uncommitted-working-tree-snapshot-bound-by-executable-payload-digest",
     "executable_payload_sha256sums_digest": "e99a64a138cd178a9108bb8e82dc64e42e8a3d9d02e5c67b8d017ab501d55f0e",
@@ -93,11 +96,16 @@
     "passed": {
       "darwin-aarch64": {
         "environment": "local",
-        "host": "apple-silicon-macos-27.0.1"
+        "host": "apple-silicon-macos-27.0.0",
+        "node": "v22.18.0",
+        "pi": "0.85.1",
+        "tests": "2/2",
+        "skipped": 0,
+        "archive_sha256": "673033b55a4438af95b10e1c37e480bfc4243af512d7c9e9110a9f2872a7a0a8"
       },
       "darwin-x86_64": {
         "environment": "hosted",
-        "run_id": "40195699743",
+        "run_id": "40379170907",
         "run_attempt": 1,
         "runner_label": "macos-15-intel",
         "runner": "github-hosted/macOS/X64",
@@ -109,33 +117,27 @@
         "pi": "0.85.1",
         "tests": "2/2",
         "skipped": 0,
-        "evidence_generated_at": "2026-10-25T13:02:11.110Z"
+        "evidence_generated_at": "2026-10-26T18:37:33.945Z"
       },
       "linux-aarch64": {
-        "environment": "container",
-        "host": "debian-12-container-in-docker-desktop-linuxkit-vm",
-        "kernel": "6.12.76-linuxkit",
-        "cpu_execution": "native-arm64-linux-kernel-not-emulated",
-        "hosted_evidence": {
-          "environment": "hosted",
-          "run_id": "40195699743",
-          "run_attempt": 1,
-          "runner_label": "ubuntu-24.04-arm",
-          "runner": "github-hosted/Linux/ARM64",
-          "host": "linux-arm64",
-          "machine": "aarch64",
-          "kernel_or_darwin_release": "6.17.0-1022-azure",
-          "rosetta_translated": false,
-          "node": "v22.19.0",
-          "pi": "0.85.1",
-          "tests": "2/2",
-          "skipped": 0,
-          "evidence_generated_at": "2026-10-25T13:01:47.062Z"
-        }
+        "environment": "hosted",
+        "run_id": "40379170907",
+        "run_attempt": 1,
+        "runner_label": "ubuntu-24.04-arm",
+        "runner": "github-hosted/Linux/ARM64",
+        "host": "linux-arm64",
+        "machine": "aarch64",
+        "kernel_or_darwin_release": "6.17.0-1022-azure",
+        "rosetta_translated": false,
+        "node": "v22.19.0",
+        "pi": "0.85.1",
+        "tests": "2/2",
+        "skipped": 0,
+        "evidence_generated_at": "2026-10-26T18:36:46.879Z"
       },
       "linux-x86_64": {
         "environment": "hosted",
-        "run_id": "40195699743",
+        "run_id": "40379170907",
         "run_attempt": 1,
         "runner_label": "ubuntu-24.04",
         "runner": "github-hosted/Linux/X64",
@@ -147,34 +149,22 @@
         "pi": "0.85.1",
         "tests": "2/2",
         "skipped": 0,
-        "evidence_generated_at": "2026-10-25T13:01:46.062Z"
+        "evidence_generated_at": "2026-10-26T18:36:48.486Z"
       }
     },
     "pending_hosted_run": [],
-    "requalification_0_4_1": {
-      "status": "pending-archive-qualification-on-all-targets",
-      "change": "resume uses pi --session-id so a never-prompted session can be reopened",
-      "payload_digest_note": "executable_payload_sha256sums_digest above is the 0.4.1 payload; the per-target passes and hosted_run below ran the 0.4.0 payload (hosted_run keeps its own 0.4.0 digest)",
-      "source_checked_on_real_pi": "darwin-aarch64 macOS, Pi 0.85.1, test/native-loopback.test.mjs against src/provider.mjs: 2/2, includes a never-prompted session/new then session/resume across a restart",
-      "archive_qualification_pending": [
-        "darwin-aarch64",
-        "darwin-x86_64",
-        "linux-aarch64",
-        "linux-x86_64"
-      ]
-    },
     "uses_personal_credentials": false,
     "managed_installation": "not-qualified",
     "hosted_run": {
       "workflow": ".github/workflows/pi-provider-qualification.yml",
-      "url": "https://github.com/merkr-software/CadencR/actions/runs/40195699743",
-      "run_id": "40195699743",
-      "source_commit": "ba3ddf239d5694e58f7c92576e913f139aa2d79c",
-      "date": "2026-10-25",
-      "archive_sha256": "c89431a61e4c2110f2e5d5bfe54d378fc231062208632533113f206205796c12",
-      "archive_bytes": 26406,
+      "url": "https://github.com/merkr-software/CadencR/actions/runs/40379170907",
+      "run_id": "40379170907",
+      "source_commit": "ba6b047a2d8beb37031da0eb204ec877ac6e3d93",
+      "date": "2026-10-26",
+      "archive_sha256": "673033b55a4438af95b10e1c37e480bfc4243af512d7c9e9110a9f2872a7a0a8",
+      "archive_bytes": 26370,
       "archive_identical_across_targets": true,
-      "executable_payload_sha256sums_digest": "2a3728dacebd01f1c9e8fd725ac1fb114a08e0939b0010efb8ef22e614e1e485"
+      "executable_payload_sha256sums_digest": "e99a64a138cd178a9108bb8e82dc64e42e8a3d9d02e5c67b8d017ab501d55f0e"
     }
   }
 }
