@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.15.1 - 2026-10-27
+
+Previous release: v0.15.0 - 2026-10-26
+
+### ✨ Added
+
+- [**provider:codex**] Added support for asynchronous questions: Codex can ask for your input while continuing to work, and your answer reaches the active turn or starts a follow-up if it has already finished. Overlapping question forms appear one at a time without losing later questions — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added diagnostic reports that retain recent UI errors and activity across restarts, with export from crash screens and Settings → About Cadencr → Diagnostics. Reports include available JavaScript and React component stacks and stay local until you choose to share them — [@rle-mino](https://github.com/rle-mino).
+
+### 🐛 Fixed
+
+- [**provider:claude**] Fixed dismissing a question terminating Claude's session and causing subsequent prompts to fail with “Broken pipe.” Closing a question now stops the turn without killing the runtime, preserves queued prompts and inter-agent replies, and shows the intentional-stop marker — [@rle-mino](https://github.com/rle-mino).
+- [**provider:codex**] Fixed follow-up messages being lost or duplicated around context compaction. Messages wait in the persistent queue while compaction blocks input, delivery is confirmed only after Codex accepts it, and retries preserve the same message without duplicating the transcript — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed a React update loop when an untitled editor tab was missing or removed while its editor was still mounted — [@rle-mino](https://github.com/rle-mino).
+
 ## v0.15.0 - 2026-10-26
 
 Previous release: v0.14.1 - 2026-10-22
