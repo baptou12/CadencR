@@ -91,6 +91,21 @@ jobs:
         run: |
           node -e "const pkg=require('./packages/desktop/package.json'); const expected='v'+pkg.version; const actual=process.env.RELEASE_TAG; if (actual !== expected) { console.error('Release tag '+actual+' does not match desktop version '+expected); process.exit(1); }"
 
+      - name: Route Apple CloudKit requests over HTTPS TCP
+        # https://github.com/actions/runner-images/issues/14924
+        # Block HTTP/3 on this disposable runner so stapler falls back to TCP.
+        # Add a dedicated anchor; never replace the existing firewall rules.
+        run: |
+          set -euo pipefail
+          filter_rules="$(sudo pfctl -sr)"
+          if ! grep -Eq '^[[:space:]]*anchor "com[.]apple/[*]"([[:space:]]+all)?[[:space:]]*$' <<< "$filter_rules"; then
+            echo "::error::The macOS wildcard filter anchor is unavailable; refusing to replace firewall rules"
+            exit 1
+          fi
+          printf '%s\n' 'block return out quick proto udp from any to any port 443' \
+            | sudo pfctl -a com.apple/000.cadencr-cloudkit -f -
+          sudo pfctl -E
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
