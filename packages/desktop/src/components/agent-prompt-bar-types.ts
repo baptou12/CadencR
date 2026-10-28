@@ -45,6 +45,7 @@ export interface AgentPromptBarProps {
   splitSendActions?: SplitSendAction[];
   disabled?: boolean;
   pendingQuestions?: AgentQuestion[];
+  pendingQuestionRequestId?: string;
   onQuestionResponse?: (response: AgentQuestionAnswers) => void;
   disableShortcuts?: boolean;
   onCollapse?: () => void;

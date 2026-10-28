@@ -80,6 +80,7 @@ export interface AgentSessionProps {
   onStop: () => void;
   /** Active questions from AskUserQuestion tool calls */
   pendingQuestions?: AgentQuestion[];
+  pendingQuestionRequestId?: string;
   /** Called when the user submits a response to questions */
   onAnswerSubmit?: (response: AgentQuestionAnswers) => void;
   /** When true, disables keyboard shortcuts in the question drawer */

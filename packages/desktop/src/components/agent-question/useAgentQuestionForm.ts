@@ -1,8 +1,14 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useQuestionFormState } from "./useQuestionFormState";
+import type {
+  QuestionAnswerDraft as SavedAnswer,
+  QuestionDraftIdentity,
+} from "@/stores/question-drafts";
 import { agentQuestionOptionValue, type AgentQuestion, type AgentQuestionAnswers } from "./types";
 
 interface UseAgentQuestionFormParams {
   questions: AgentQuestion[];
+  draftIdentity?: QuestionDraftIdentity;
   onSubmit: (response: AgentQuestionAnswers) => void;
 }
 
@@ -32,13 +38,6 @@ export interface AgentQuestionForm {
   selectedPreview: string | undefined;
 }
 
-interface SavedAnswer {
-  text: string;
-  selectedOptions: Set<string>;
-  freeText: string;
-  showOther: boolean;
-}
-
 const EMPTY_ANSWER = (): SavedAnswer => ({
   text: "",
   selectedOptions: new Set<string>(),
@@ -61,55 +60,6 @@ function answerValues(question: AgentQuestion | undefined, state: SavedAnswer): 
   return values;
 }
 
-function useQuestionFormState() {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<SavedAnswer[]>([]);
-  const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
-  const [freeText, setFreeText] = useState("");
-  const [showOther, setShowOther] = useState(false);
-  const [freeTextFocused, setFreeTextFocused] = useState(false);
-  const resetState = useCallback(() => {
-    setSelectedOptions(new Set());
-    setFreeText("");
-    setShowOther(false);
-    setFreeTextFocused(false);
-  }, []);
-  const restoreState = useCallback((saved: SavedAnswer) => {
-    setSelectedOptions(new Set(saved.selectedOptions));
-    setFreeText(saved.freeText);
-    setShowOther(saved.showOther);
-    setFreeTextFocused(false);
-  }, []);
-  return useMemo(
-    () => ({
-      answers,
-      currentIndex,
-      freeText,
-      freeTextFocused,
-      resetState,
-      restoreState,
-      selectedOptions,
-      setAnswers,
-      setCurrentIndex,
-      setFreeText,
-      setFreeTextFocused,
-      setSelectedOptions,
-      setShowOther,
-      showOther,
-    }),
-    [
-      answers,
-      currentIndex,
-      freeText,
-      freeTextFocused,
-      resetState,
-      restoreState,
-      selectedOptions,
-      showOther,
-    ],
-  );
-}
-
 type QuestionFormState = ReturnType<typeof useQuestionFormState>;
 
 function currentSavedAnswer(
@@ -129,23 +79,13 @@ function useQuestionNavigation(questions: AgentQuestion[], state: QuestionFormSt
   const canGoBack = state.currentIndex > 0;
   const canGoForward =
     state.currentIndex < state.answers.length - 1 && state.answers[state.currentIndex + 1] != null;
-  const saveCurrentState = useCallback(() => {
-    const saved = currentSavedAnswer(questions[state.currentIndex], state);
-    state.setAnswers((previous) => {
-      const next = [...previous];
-      next[state.currentIndex] = saved;
-      return next;
-    });
-  }, [questions, state]);
   const move = useCallback(
     (nextIndex: number): void => {
-      saveCurrentState();
-      state.setCurrentIndex(nextIndex);
-      const saved = state.answers[nextIndex];
-      if (saved) state.restoreState(saved);
-      else state.resetState();
+      const answers = [...state.answers];
+      answers[state.currentIndex] = currentSavedAnswer(questions[state.currentIndex], state);
+      state.moveTo(nextIndex, answers);
     },
-    [saveCurrentState, state],
+    [questions, state],
   );
   const handleBack = useCallback(() => {
     if (canGoBack) move(state.currentIndex - 1);
@@ -170,11 +110,7 @@ function useQuestionSubmission(
     const newAnswers = [...state.answers];
     newAnswers[state.currentIndex] = current;
     if (state.currentIndex < questions.length - 1) {
-      state.setAnswers(newAnswers);
-      state.setCurrentIndex((previous) => previous + 1);
-      const nextSaved = newAnswers[state.currentIndex + 1];
-      if (nextSaved) state.restoreState(nextSaved);
-      else state.resetState();
+      state.moveTo(state.currentIndex + 1, newAnswers);
       return;
     }
     onSubmit(
@@ -182,9 +118,6 @@ function useQuestionSubmission(
         answerValues(question, newAnswers[index] ?? EMPTY_ANSWER()),
       ),
     );
-    state.setCurrentIndex(0);
-    state.setAnswers([]);
-    state.resetState();
   }, [onSubmit, questions, state]);
   const handleFreeTextSubmit = useCallback(() => {
     if (state.freeText.trim()) handleNext();
@@ -241,8 +174,9 @@ function useQuestionHighlight() {
 export function useAgentQuestionForm({
   questions,
   onSubmit,
+  draftIdentity,
 }: UseAgentQuestionFormParams): AgentQuestionForm {
-  const state = useQuestionFormState();
+  const state = useQuestionFormState(draftIdentity);
   const currentQuestion = questions[state.currentIndex];
   const navigation = useQuestionNavigation(questions, state);
   const submission = useQuestionSubmission(questions, onSubmit, state);

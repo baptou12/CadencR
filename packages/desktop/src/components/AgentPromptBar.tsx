@@ -98,6 +98,13 @@ function SpecialPrompt({
       />
     ) : special.visibleQuestions?.length && props.onQuestionResponse ? (
       <AgentQuestionDrawer
+        key={`${props.sessionId}:${props.pendingQuestionRequestId}`}
+        draftIdentity={
+          props.sessionId != null && props.pendingQuestionRequestId
+            ? { sessionId: props.sessionId, requestId: props.pendingQuestionRequestId }
+            : undefined
+        }
+        isSubmitting={props.isSubmittingPermission}
         questions={special.visibleQuestions}
         open
         onSubmit={props.onQuestionResponse}

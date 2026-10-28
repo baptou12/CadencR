@@ -252,6 +252,7 @@ function AgentSessionPrompt(
       status={session.status}
       disabled={session.disabled}
       pendingQuestions={session.pendingQuestions}
+      pendingQuestionRequestId={session.pendingQuestionRequestId}
       onQuestionResponse={session.onAnswerSubmit}
       disableShortcuts={session.disableShortcuts}
       onCollapse={props.collapsible ? props.onCollapse : undefined}
