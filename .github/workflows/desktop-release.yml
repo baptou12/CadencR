@@ -91,6 +91,21 @@ jobs:
         run: |
           node -e "const pkg=require('./packages/desktop/package.json'); const expected='v'+pkg.version; const actual=process.env.RELEASE_TAG; if (actual !== expected) { console.error('Release tag '+actual+' does not match desktop version '+expected); process.exit(1); }"
 
+      - name: Route Apple CloudKit requests over HTTPS TCP
+        # https://github.com/actions/runner-images/issues/14924
+        # Block HTTP/3 on this disposable runner so stapler falls back to TCP.
+        # Add a dedicated anchor; never replace the existing firewall rules.
+        run: |
+          set -euo pipefail
+          filter_rules="$(sudo pfctl -sr)"
+          if ! grep -Eq '^[[:space:]]*anchor "com[.]apple/[*]"([[:space:]]+all)?[[:space:]]*$' <<< "$filter_rules"; then
+            echo "::error::The macOS wildcard filter anchor is unavailable; refusing to replace firewall rules"
+            exit 1
+          fi
+          printf '%s\n' 'block return out quick proto udp from any to any port 443' \
+            | sudo pfctl -a com.apple/000.cadencr-cloudkit -f -
+          sudo pfctl -E
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -183,10 +198,30 @@ jobs:
           echo "CSC_KEYCHAIN=$keychain_path" >> "$GITHUB_ENV"
           echo "CADENCR_MAC_CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
 
+      - name: Enable recovery of interrupted Apple notarization status polling
+        # Load orchestration from the immutable workflow commit, while the app
+        # checkout remains pinned to RELEASE_TAG (including manual dispatches).
+        run: |
+          set -euo pipefail
+          tool_dir="$RUNNER_TEMP/cadencr-notary-tools"
+          mkdir -p "$tool_dir"
+          gh api "repos/$GITHUB_REPOSITORY/contents/scripts/release-xcrun.mjs?ref=$GITHUB_SHA" --jq .content \
+            | node -e 'const fs=require("node:fs"); fs.writeFileSync(process.argv[1], Buffer.from(fs.readFileSync(0,"utf8"),"base64"));' "$tool_dir/release-xcrun.mjs"
+          cat > "$tool_dir/xcrun" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec node "$CADENCR_XCRUN_WRAPPER" "$@"
+          SH
+          chmod +x "$tool_dir/xcrun"
+          printf 'CADENCR_XCRUN_WRAPPER=%s\n' "$tool_dir/release-xcrun.mjs" >> "$GITHUB_ENV"
+          printf '%s\n' "$tool_dir" >> "$GITHUB_PATH"
+
       - name: Build, sign, and notarize desktop app
         # GitHub release creation/upload is handled explicitly in later steps.
         # Letting electron-builder publish directly can race multi-target macOS
         # uploads into duplicate releases for the same tag.
+        # The mandatory afterSign hook owns notarization, ticket validation and
+        # Gatekeeper assessment. Disable only builder's duplicate submission.
         run: |
           ulimit -Sn 10240
           set -o pipefail
@@ -195,6 +230,7 @@ jobs:
             set +e
             pnpm --filter @cadencr/desktop exec electron-builder \
               --config electron-builder.yml \
+              -c.mac.notarize=false \
               --mac \
               --arm64 --x64 \
               --publish never 2>&1 | tee "$build_log"
