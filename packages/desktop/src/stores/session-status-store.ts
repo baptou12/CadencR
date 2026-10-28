@@ -1,3 +1,4 @@
+import { reconcileQuestionDrafts } from "./question-drafts";
 /**
  * Single source of truth for agent status on the frontend.
  *
@@ -115,19 +116,24 @@ function createEnvelopeDispatcher(
       const bySession = applySnapshot(previous, payload, previousEpoch);
       const { seq: snapshotSeq, epoch } = snapshotCursor(payload);
       set({ bySession, hasSnapshot: true, epoch, snapshotSeq });
+      reconcileQuestionDrafts(previous, bySession);
       syncWsLifecycles(previous, bySession);
       return;
     }
     if (action === "session_status.update") {
       observeServerClock(payload.server_now_ms);
-      const result = applyUpdate(get().bySession, payload, get().snapshotSeq);
-      if (result.next) set({ bySession: result.next });
+      const previous = get().bySession;
+      const result = applyUpdate(previous, payload, get().snapshotSeq);
+      if (result.next) {
+        set({ bySession: result.next });
+        reconcileQuestionDrafts(previous, result.next);
+      }
       if (
         result.entry &&
         result.sessionId != null &&
         (result.next || result.entry.status !== "idle")
       ) {
-        syncWsLifecycle(result.sessionId, result.entry, result.prevStatus);
+        syncWsLifecycle(result.sessionId, result.entry, previous[result.sessionId]);
       }
       if (result.featureId != null && result.nextStatus) {
         notifyTransition(result.featureId, result.prevStatus, result.nextStatus, result.failed);
@@ -178,7 +184,7 @@ function syncWsLifecycles(
     const entry = next[session.sessionDbId] ?? (wasBusy ? IDLE_ENTRY : null);
     const current = updated.sessions[sessionId];
     if (!entry || !current) continue;
-    const patch = statusSyncPatch(current, entry, previous[session.sessionDbId]?.status);
+    const patch = statusSyncPatch(current, entry, previous[session.sessionDbId]);
     if (!patch) continue;
     updated = { ...updated, ...updateSession(updated, sessionId, patch) };
     changed = true;
@@ -189,7 +195,7 @@ function syncWsLifecycles(
 function syncWsLifecycle(
   sessionDbId: number,
   entry: StatusSyncEntry,
-  previousStatus?: LiveAgentStatus,
+  previous?: SessionStatusEntry,
 ): void {
   const store = useWsSessionStore.getState();
   const match = Object.entries(store.sessions).find(
@@ -197,7 +203,7 @@ function syncWsLifecycle(
   );
   if (!match) return;
   const [sessionId, session] = match;
-  const patch = statusSyncPatch(session, entry, previousStatus);
+  const patch = statusSyncPatch(session, entry, previous);
   if (!patch) return;
   useWsSessionStore.setState(updateSession(store, sessionId, patch));
 }
@@ -217,11 +223,13 @@ function syncWsLifecycle(
 function statusSyncPatch(
   session: SessionEntry,
   entry: StatusSyncEntry,
-  previousStatus?: LiveAgentStatus,
+  previous?: SessionStatusEntry,
 ): Partial<SessionEntry> | null {
   const lifecyclePatch = lifecyclePatchFromStatus(session, entry);
   const gatePatch =
-    previousStatus === "question" && entry.status !== "question"
+    previous?.status === "question" &&
+    entry.status !== "question" &&
+    (previous.requestId == null || previous.requestId === session.pendingRequestId)
       ? buildClearedGatePatch(session)
       : null;
   if (!lifecyclePatch && !gatePatch) return null;

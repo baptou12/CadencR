@@ -1,7 +1,8 @@
+import type { QuestionDraftIdentity } from "@/stores/question-drafts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { SendIcon } from "lucide-react";
+import { Loader2Icon, SendIcon } from "lucide-react";
 import { AgentQuestionHeader } from "./agent-question/AgentQuestionHeader";
 import { AgentQuestionOptionList } from "./agent-question/AgentQuestionOptionList";
 import { useAgentQuestionForm } from "./agent-question/useAgentQuestionForm";
@@ -14,6 +15,8 @@ export type { AgentQuestion, AgentQuestionAnswers } from "./agent-question/types
 interface AgentQuestionDrawerProps {
   /** The questions to display */
   questions: AgentQuestion[];
+  draftIdentity?: QuestionDraftIdentity;
+  isSubmitting?: boolean;
   /** Called when the user submits their response */
   onSubmit: (response: AgentQuestionAnswers) => void;
   /** Called when the user closes the gate without answering it */
@@ -31,6 +34,7 @@ interface AgentQuestionContentProps {
   inline?: boolean;
   onCancel?: () => void;
   questionCount: number;
+  isSubmitting?: boolean;
 }
 
 function AgentQuestionContent({
@@ -38,6 +42,7 @@ function AgentQuestionContent({
   inline,
   onCancel,
   questionCount,
+  isSubmitting,
 }: AgentQuestionContentProps): React.ReactElement {
   const currentQuestion = form.currentQuestion!;
   const { hasAnswer, isLastQuestion, hasOptions, selectedPreview } = form;
@@ -101,8 +106,12 @@ function AgentQuestionContent({
       )}
       <div className="flex justify-end">
         <Button size="sm" disabled={!hasAnswer} onClick={form.handleNext}>
-          <SendIcon className="mr-1.5 size-3" />
-          {isLastQuestion ? "Submit" : "Next"}
+          {isSubmitting ? (
+            <Loader2Icon className="mr-1.5 size-3 animate-spin" />
+          ) : (
+            <SendIcon className="mr-1.5 size-3" />
+          )}
+          {isSubmitting ? "Submitting…" : isLastQuestion ? "Submit" : "Next"}
         </Button>
       </div>
     </div>
@@ -120,11 +129,13 @@ export function AgentQuestionDrawer({
   open,
   inline,
   disableShortcuts,
+  draftIdentity,
+  isSubmitting,
 }: AgentQuestionDrawerProps) {
-  const form = useAgentQuestionForm({ questions, onSubmit });
+  const form = useAgentQuestionForm({ questions, onSubmit, draftIdentity });
 
   useAgentQuestionShortcuts({
-    open,
+    open: open && !isSubmitting,
     disableShortcuts,
     onCancel,
     currentQuestion: form.currentQuestion,
@@ -146,11 +157,14 @@ export function AgentQuestionDrawer({
   }
 
   return (
-    <AgentQuestionContent
-      form={form}
-      inline={inline}
-      onCancel={onCancel}
-      questionCount={questions.length}
-    />
+    <fieldset disabled={isSubmitting} aria-busy={isSubmitting}>
+      <AgentQuestionContent
+        isSubmitting={isSubmitting}
+        form={form}
+        inline={inline}
+        onCancel={onCancel}
+        questionCount={questions.length}
+      />
+    </fieldset>
   );
 }

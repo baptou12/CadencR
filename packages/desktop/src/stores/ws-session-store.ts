@@ -1,31 +1,22 @@
+import { createPermissionActions } from "./ws-session-permission-actions";
 import { create, type StoreApi } from "zustand";
 import {
   type PromptDispatchOptions,
   type WsEnvelope,
   createSessionInit,
   createPromptSend,
-  createPermissionRespond,
 } from "@/lib/ws-envelope";
 import * as branch from "./ws-session-branch";
 import type { BranchDeps } from "./ws-session-branch";
 import type { StoreAccessors } from "./ws-envelope-handler";
-import { parseErrorPayload } from "./ws-envelope-payload";
-import { buildClearedGatePatch, isGateClosingErrorCode } from "./ws-gate-state";
-import {
-  makeErrorBlock,
-  buildQueuedInitEnvelopes,
-  buildQueuedPromptPatch,
-} from "./ws-session-store-helpers";
+import { buildQueuedInitEnvelopes, buildQueuedPromptPatch } from "./ws-session-store-helpers";
 import {
   type SessionEntry,
   type WsSessionStore,
   createSessionEntry,
   updateSession,
 } from "./ws-session-types";
-import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
-import { buildAskUserQuestionUpdatedInput } from "@/lib/build-ask-user-question-payload";
-import { isTurnActive, transitionTurn } from "./ws-turn-lifecycle";
-import { advancePendingPermissionQueue } from "@/lib/pending-permission-queue";
+import { isTurnActive } from "./ws-turn-lifecycle";
 import { noteUserPrompt } from "@/lib/auto-layout/auto-layout-controller";
 import { acknowledgeForMe } from "@/stores/for-me-ack";
 import type { SocketHandlerDeps } from "./ws-session-socket-handler";
@@ -39,7 +30,6 @@ import {
 } from "./ws-session-prompt-delivery";
 import { createWsSessionConfigActions } from "./ws-session-config-actions";
 
-import { blocksPatchWithDerived } from "./ws-message-processing";
 export type { PermissionMode, PendingPlanApproval } from "./ws-session-types";
 export {
   type StreamingState,
@@ -167,105 +157,6 @@ function reinitOnReconnect(get: WsStoreGet, sessionId: string): void {
       permissionMode: session.permissionMode,
     }),
   );
-}
-
-function handlePermissionResponse(
-  set: WsStoreSet,
-  get: WsStoreGet,
-  sessionId: string,
-  currentRequestId: string,
-  payload: unknown,
-): void {
-  const session = getSessionEntry(get, sessionId);
-  const error = parseErrorPayload(payload);
-  if (error?.message || payload === null) {
-    const message = error?.message ?? "Permission response timed out.";
-    const errorBlock = makeErrorBlock(session, message, { idPrefix: "ws-permission-error" });
-    const isDeadSessionError = isGateClosingErrorCode(error?.code);
-    const responseUuids = new Map(session.permissionResponseMessageUuids);
-    if (isDeadSessionError) responseUuids.delete(currentRequestId);
-    const gatePatch: Partial<SessionEntry> = isDeadSessionError
-      ? {
-          ...buildClearedGatePatch(session),
-          lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored", message }),
-        }
-      : { submittingPermissionRequestId: null };
-    set(
-      updateSession(get(), sessionId, {
-        ...blocksPatchWithDerived(session.streamingState, [...session.blocks, errorBlock]),
-        ...gatePatch,
-        permissionResponseMessageUuids: responseUuids,
-      }),
-    );
-    return;
-  }
-  const responseUuids = new Map(session.permissionResponseMessageUuids);
-  responseUuids.delete(currentRequestId);
-  const permissionPatch = advancePendingPermissionQueue(session.pendingPermissionQueue);
-  set(
-    updateSession(get(), sessionId, {
-      ...permissionPatch,
-      pendingRequestId: permissionPatch.pendingPermission?.requestId ?? "",
-      submittingPermissionRequestId: null,
-      permissionResponseMessageUuids: responseUuids,
-    }),
-  );
-}
-
-function createPermissionActions(
-  set: WsStoreSet,
-  get: WsStoreGet,
-): Pick<WsSessionStore, "respondToPermission" | "respondToQuestion"> {
-  return {
-    respondToPermission(sessionId, requestId, decision, feedback, optionId) {
-      const session = getSessionEntry(get, sessionId);
-      const currentRequestId = session.pendingPermission?.requestId ?? requestId;
-      if (session.submittingPermissionRequestId === currentRequestId) return;
-      const permissionResponseMessageUuids = new Map(session.permissionResponseMessageUuids);
-      const messageUuid =
-        permissionResponseMessageUuids.get(currentRequestId) ?? crypto.randomUUID();
-      permissionResponseMessageUuids.set(currentRequestId, messageUuid);
-      const envelope = createPermissionRespond(
-        session.serverSessionId,
-        currentRequestId,
-        decision,
-        { feedback, optionId, messageUuid },
-      );
-      set(
-        updateSession(get(), sessionId, {
-          submittingPermissionRequestId: currentRequestId,
-          permissionResponseMessageUuids,
-        }),
-      );
-      void get()
-        .sendRequest(sessionId, envelope)
-        .then((payload) =>
-          handlePermissionResponse(set, get, sessionId, currentRequestId, payload),
-        );
-    },
-    respondToQuestion(sessionId, response: AgentQuestionAnswers) {
-      const session = getSessionEntry(get, sessionId);
-      sendRawEnvelope(
-        get,
-        sessionId,
-        createPermissionRespond(session.serverSessionId, session.pendingRequestId, "allow_once", {
-          updatedInput: buildAskUserQuestionUpdatedInput(
-            session.pendingQuestionToolInput,
-            response,
-          ),
-          messageUuid: crypto.randomUUID(),
-        }),
-      );
-      set(
-        updateSession(get(), sessionId, {
-          pendingQuestions: [],
-          pendingQuestionToolInput: {},
-          pendingRequestId: "",
-          lifecycle: transitionTurn(session.lifecycle, { type: "question_answered" }),
-        }),
-      );
-    },
-  };
 }
 
 function createBranchActions(

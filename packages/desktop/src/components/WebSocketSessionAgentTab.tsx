@@ -94,6 +94,7 @@ function AgentTabContent({
         pendingQuestions={
           controls.ws.pendingQuestions.length > 0 ? controls.ws.pendingQuestions : undefined
         }
+        pendingQuestionRequestId={controls.ws.pendingRequestId}
         onAnswerSubmit={controls.ws.respondToQuestion}
         permissionMode={controls.ws.permissionMode}
         enabledOptInModes={controls.enabledOptInModes}

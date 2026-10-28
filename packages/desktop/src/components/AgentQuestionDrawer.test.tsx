@@ -184,7 +184,7 @@ describe("AgentQuestionDrawer", () => {
     expect(screen.queryByText("-")).toBeNull();
   });
 
-  it("re-enables the digit badges after submitting Other via Enter on the final question", async () => {
+  it("keeps Other after submitting via Enter until the backend confirms", async () => {
     // Same leak, but on the last question: resetState runs after onSubmit, and the
     // drawer stays mounted (open) showing question 1 again, so the badges must reset.
     const user = userEvent.setup();
@@ -197,9 +197,7 @@ describe("AgentQuestionDrawer", () => {
     await user.type(input, "custom answer{Enter}");
 
     expect(onSubmit).toHaveBeenCalledWith([["custom answer"]]);
-    expect(screen.queryByRole("textbox")).toBeNull();
-    expect(screen.getByText("1")).toBeInTheDocument();
-    expect(screen.queryByText("-")).toBeNull();
+    expect(screen.getByRole("textbox")).toHaveValue("custom answer");
   });
 
   it("shows first question when multiple questions provided", () => {

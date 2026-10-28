@@ -1,3 +1,4 @@
+import { updateQuestionDraft, useQuestionDraftStore } from "./question-drafts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useSessionStatusStore } from "@/stores/session-status-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
@@ -45,6 +46,7 @@ class MockWebSocket {
 
 describe("session status lifecycle sync", () => {
   afterEach(() => {
+    useQuestionDraftStore.setState({ drafts: new Map() });
     useSessionStatusStore.getState().disconnect();
     useSessionStatusStore.setState({
       bySession: {},
@@ -59,6 +61,87 @@ describe("session status lifecycle sync", () => {
     MockWebSocket.reset();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it.each(["update", "snapshot"])(
+    "reconciles offscreen drafts using confirmed %s identities",
+    (mode) => {
+      vi.stubGlobal("WebSocket", MockWebSocket);
+      useSessionStatusStore.setState({ bySession: {}, snapshotSeq: 0, epoch: null });
+      useSessionStatusStore.getState().connect();
+      const ws = MockWebSocket.instances.at(-1)!;
+      const emit = (requestId: string, seq: number) =>
+        ws.simulateMessage({
+          domain: "app",
+          action: "session_status.update",
+          payload: {
+            session_id: 7,
+            feature_id: 7,
+            status: "question",
+            kind: "question",
+            request_id: requestId,
+            seq,
+          },
+        });
+      emit("old", 1);
+      updateQuestionDraft({ sessionId: 7, requestId: "new" }, (draft) => ({
+        ...draft,
+        freeText: "ahead of app socket",
+      }));
+      emit("old", 2);
+      expect(useQuestionDraftStore.getState().drafts.get(7)?.draft.freeText).toBe(
+        "ahead of app socket",
+      );
+      emit("new", 3);
+      // A stale snapshot must preserve the newer status and draft.
+      ws.simulateMessage({
+        domain: "app",
+        action: "session_status.snapshot",
+        payload: { states: {}, seq: 2 },
+      });
+      expect(useQuestionDraftStore.getState().drafts.has(7)).toBe(true);
+      if (mode === "snapshot") {
+        ws.simulateMessage({
+          domain: "app",
+          action: "session_status.snapshot",
+          payload: { states: {}, seq: 4 },
+        });
+      } else {
+        ws.simulateMessage({
+          domain: "app",
+          action: "session_status.update",
+          payload: { session_id: 7, feature_id: 7, status: "idle", seq: 4 },
+        });
+      }
+      expect(useQuestionDraftStore.getState().drafts.has(7)).toBe(false);
+    },
+  );
+
+  it("does not clear a newer mounted gate when the older app gate closes", () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const session = createSessionEntry();
+    session.sessionDbId = 7;
+    session.pendingRequestId = "new";
+    session.pendingQuestions = [{ question: "New gate" }];
+    useWsSessionStore.setState({ sessions: { s1: session } });
+    useSessionStatusStore.setState({
+      bySession: {
+        7: { status: "question", kind: "question", requestId: "old", featureId: 7, seq: 1 },
+      },
+      snapshotSeq: 0,
+    });
+    updateQuestionDraft({ sessionId: 7, requestId: "new" }, (draft) => ({
+      ...draft,
+      freeText: "keep",
+    }));
+    useSessionStatusStore.getState().connect();
+    MockWebSocket.instances.at(-1)!.simulateMessage({
+      domain: "app",
+      action: "session_status.update",
+      payload: { session_id: 7, feature_id: 7, status: "agent", seq: 2 },
+    });
+    expect(useWsSessionStore.getState().sessions.s1.pendingRequestId).toBe("new");
+    expect(useQuestionDraftStore.getState().drafts.get(7)?.draft.freeText).toBe("keep");
   });
 
   it("does not restart active turn timing when status confirms an in-progress prompt", () => {
