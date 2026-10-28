@@ -198,10 +198,30 @@ jobs:
           echo "CSC_KEYCHAIN=$keychain_path" >> "$GITHUB_ENV"
           echo "CADENCR_MAC_CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
 
+      - name: Enable recovery of interrupted Apple notarization status polling
+        # Load orchestration from the immutable workflow commit, while the app
+        # checkout remains pinned to RELEASE_TAG (including manual dispatches).
+        run: |
+          set -euo pipefail
+          tool_dir="$RUNNER_TEMP/cadencr-notary-tools"
+          mkdir -p "$tool_dir"
+          gh api "repos/$GITHUB_REPOSITORY/contents/scripts/release-xcrun.mjs?ref=$GITHUB_SHA" --jq .content \
+            | node -e 'const fs=require("node:fs"); fs.writeFileSync(process.argv[1], Buffer.from(fs.readFileSync(0,"utf8"),"base64"));' "$tool_dir/release-xcrun.mjs"
+          cat > "$tool_dir/xcrun" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec node "$CADENCR_XCRUN_WRAPPER" "$@"
+          SH
+          chmod +x "$tool_dir/xcrun"
+          printf 'CADENCR_XCRUN_WRAPPER=%s\n' "$tool_dir/release-xcrun.mjs" >> "$GITHUB_ENV"
+          printf '%s\n' "$tool_dir" >> "$GITHUB_PATH"
+
       - name: Build, sign, and notarize desktop app
         # GitHub release creation/upload is handled explicitly in later steps.
         # Letting electron-builder publish directly can race multi-target macOS
         # uploads into duplicate releases for the same tag.
+        # The mandatory afterSign hook owns notarization, ticket validation and
+        # Gatekeeper assessment. Disable only builder's duplicate submission.
         run: |
           ulimit -Sn 10240
           set -o pipefail
@@ -210,6 +230,7 @@ jobs:
             set +e
             pnpm --filter @cadencr/desktop exec electron-builder \
               --config electron-builder.yml \
+              -c.mac.notarize=false \
               --mac \
               --arm64 --x64 \
               --publish never 2>&1 | tee "$build_log"
