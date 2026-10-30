@@ -102,15 +102,26 @@ export function createDiagnosticGate(now: () => number = () => Date.now()) {
   };
 }
 
+const resizeObserverNoiseMessages = new Set([
+  "ResizeObserver loop completed with undelivered notifications",
+  "ResizeObserver loop completed with undelivered notifications.",
+  "ResizeObserver loop limit exceeded",
+  "ResizeObserver loop limit exceeded.",
+]);
+
 export function retainDiagnosticRecord(
   records: DiagnosticRecord[],
   record: DiagnosticRecord,
 ): DiagnosticRecord[] {
   const next = [...records, record];
-  // Recovery noise must not evict all fatal React reports before export.
   if (next.length > 10) {
+    // Evict known ResizeObserver noise, then React recovery, then the oldest
+    // remaining report. Include the incoming record so noise cannot displace evidence.
+    const noise = next.findIndex(
+      ({ error }) => error.source === "error" && resizeObserverNoiseMessages.has(error.message),
+    );
     const recoverable = next.findIndex((item) => item.error.source === "react-recoverable");
-    next.splice(recoverable < 0 ? 0 : recoverable, 1);
+    next.splice(noise >= 0 ? noise : recoverable >= 0 ? recoverable : 0, 1);
   }
   return next;
 }
