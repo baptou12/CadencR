@@ -29,7 +29,7 @@ shares them; there is no automatic upload.
 | Recent activity      | Up to 100 events from the preceding 60 seconds, frozen when the error occurs                                                                                                          |
 | Events               | Redacted navigation, generic button/tab clicks, visibility/viewport, editor counts, agent status counts, connection state, WebSocket event types and conversation scroll-follow state |
 | Streaming            | Repeated events aggregated into one-second buckets; no per-token persistence                                                                                                          |
-| Retained reports     | Up to 10 errors across restarts; recoverable errors are evicted before fatal errors                                                                                                   |
+| Retained reports     | Up to 10 errors across restarts; known ResizeObserver loop notifications are evicted first, then React recoverable errors, then the oldest remaining error                            |
 | Duplicate protection | Identical failures suppressed for 10 seconds, with a bounded fingerprint cache; no lifetime report cap                                                                                |
 
 Breadcrumbs do not collect prompts, completions, typed values, file contents or
@@ -38,6 +38,14 @@ itself preserves diagnostic text and is not guaranteed to be free of sensitive
 information. The recorder uses bounded plain memory; it does not write React or
 Zustand state. Editor summaries are coalesced over 100 ms and flushed before
 capturing a crash, keeping scans off the per-keystroke path.
+
+Only `error` reports with the exact messages `ResizeObserver loop completed with
+undelivered notifications` or `ResizeObserver loop limit exceeded` (with or
+without a final period) receive the lowest retention priority. The incoming
+report is also eligible for eviction, so these notifications cannot displace
+important evidence from a full buffer. Other errors and unhandled rejections
+keep their priority; capture and console/text logging are unchanged. This policy
+does not establish any causal link with React #185 or demonstrate its resolution.
 
 React root hooks report `react-boundary`, `react-uncaught` and `react-recoverable`.
 Root and boundary notifications for the same error object in one commit are

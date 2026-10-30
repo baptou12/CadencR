@@ -56,6 +56,16 @@ it("exports persisted reports after a new main-process registration with the ori
     componentStack: "at AgentPanel",
     diagnostics: context,
   });
+  for (let i = 0; i < 30; i++) {
+    invoke("app:renderer-error", {
+      source: "error",
+      message: "ResizeObserver loop completed with undelivered notifications",
+      stack: `at layout${i}.js:1:1`,
+    });
+  }
+  expect(readFileSync(path.join(state.directory, "renderer-errors.log"), "utf8")).toContain(
+    "at layout0.js:1:1",
+  );
   registerRendererDiagnosticsIpc(() => window, trusted);
   const target = path.join(state.directory, "export.json");
   state.save.mockResolvedValue({ canceled: false, filePath: target });
@@ -63,10 +73,11 @@ it("exports persisted reports after a new main-process registration with the ori
     await invoke("app:export-renderer-diagnostics", { ...context, reportId: "export-time" }),
   ).toEqual({ canceled: false });
   const result = JSON.parse(readFileSync(target, "utf8"));
+  expect(result.reports).toHaveLength(10);
   expect(result.reports[0].error.diagnostics.reportId).toBe("report");
   expect(result.reports[0].error.componentStack).toBe("at AgentPanel");
   expect(result.current.reportId).toBe("export-time");
-  expect(trusted).toHaveBeenCalledTimes(2);
+  expect(trusted).toHaveBeenCalledTimes(32);
 });
 
 it("handles cancellation and rejects an untrusted or malformed export before opening a dialog", async () => {
