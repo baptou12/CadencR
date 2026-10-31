@@ -107,6 +107,25 @@ mod tests {
     }
 
     #[test]
+    fn javascript_evaluation_requires_provider_approval_in_every_namespace() {
+        for name in [
+            "mcp__cadencr-browser__browser_evaluate",
+            "mcp__cadencr_browser____browser_evaluate",
+            "cadencr-browser_browser_evaluate",
+        ] {
+            assert!(!is_trusted_cadencr_browser_tool_name(name));
+        }
+        assert!(!is_trusted_cadencr_browser_server_tool(
+            "cadencr-browser",
+            "browser_evaluate"
+        ));
+        assert!(!is_trusted_cadencr_browser_namespace_tool(
+            "mcp__cadencr_browser__",
+            "browser_evaluate"
+        ));
+    }
+
+    #[test]
     fn rejects_non_browser_and_unknown_cadencr_tools() {
         assert!(!is_trusted_cadencr_browser_tool_name("Bash"));
         assert!(!is_trusted_cadencr_browser_tool_name(

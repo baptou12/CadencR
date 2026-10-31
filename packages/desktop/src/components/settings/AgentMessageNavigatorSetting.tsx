@@ -4,9 +4,8 @@ import {
   AGENT_MESSAGE_NAVIGATOR_SETTING_KEY,
   parseAgentMessageNavigator,
 } from "@/lib/agent-message-navigator";
-import { formatCombo } from "@/lib/shortcuts/format";
-import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
 import { SettingsSwitchRow } from "./SettingsSwitchRow";
+import { useShortcutLabel } from "@/hooks/useShortcutLabel";
 
 /**
  * Settings → Interface row toggling the agent tab's message navigator: the
@@ -16,8 +15,8 @@ import { SettingsSwitchRow } from "./SettingsSwitchRow";
 export function AgentMessageNavigatorSetting(): React.JSX.Element {
   const setting = useDebouncedSetting(AGENT_MESSAGE_NAVIGATOR_SETTING_KEY, 0);
   // Resolved, not the registry defaults: the text follows a user's rebinding.
-  const previousCombo = formatCombo(useResolvedShortcut("agent-previous-message").keys).join("");
-  const nextCombo = formatCombo(useResolvedShortcut("agent-next-message").keys).join("");
+  const previousCombo = useShortcutLabel("agent-previous-message");
+  const nextCombo = useShortcutLabel("agent-next-message");
 
   return (
     <SettingsSwitchRow

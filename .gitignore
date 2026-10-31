@@ -52,3 +52,6 @@ packages/*/release/
 
 .cursor
 .idea
+
+# Exact-build source maps are release assets, not repository sources.
+packages/desktop/diagnostics/

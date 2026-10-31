@@ -24,6 +24,7 @@ use crate::domain::features::auto_name_route as features_auto_name_route;
 use crate::domain::features::models as features_models;
 use crate::domain::features::recent_routes as features_recent_routes;
 use crate::domain::features::routes as features_routes;
+use crate::domain::features::settings_routes as features_settings_routes;
 use crate::domain::imports::models as imports_models;
 use crate::domain::imports::routes as imports_routes;
 use crate::domain::lsp::routes as lsp_routes;
@@ -34,6 +35,8 @@ use crate::domain::ports::routes as ports_routes;
 use crate::domain::projects::icon as projects_icon;
 use crate::domain::projects::models as projects_models;
 use crate::domain::projects::routes as projects_routes;
+use crate::domain::prompt_queue::routes as prompt_queue_routes;
+use crate::domain::prompt_queue::store as prompt_queue_store;
 use crate::domain::push::models as push_models;
 use crate::domain::push::routes as push_routes;
 use crate::domain::remote::models as remote_models;
@@ -116,6 +119,8 @@ use crate::domain::ws_session::routes as ws_routes;
         features_routes::list_pinned_features_handler,
         features_recent_routes::list_recent_features_handler,
         features_recent_routes::list_active_features_handler,
+        crate::domain::search::routes::list_conversation_index_handler,
+        crate::domain::search::routes::search_messages_handler,
         features_routes::create_feature_handler,
         features_routes::get_feature_handler,
         features_routes::delete_feature_handler,
@@ -127,12 +132,12 @@ use crate::domain::ws_session::routes as ws_routes;
         features_routes::update_feature_label_handler,
         features_routes::update_feature_pinned_handler,
         features_routes::is_empty_handler,
-        features_routes::get_feature_settings_handler,
-        features_routes::set_feature_setting_handler,
-        features_routes::get_feature_model_settings_handler,
-        features_routes::set_feature_model_setting_handler,
-        features_routes::get_feature_provider_settings_handler,
-        features_routes::set_feature_provider_setting_handler,
+        features_settings_routes::get_feature_settings_handler,
+        features_settings_routes::set_feature_setting_handler,
+        features_settings_routes::get_feature_model_settings_handler,
+        features_settings_routes::set_feature_model_setting_handler,
+        features_settings_routes::get_feature_provider_settings_handler,
+        features_settings_routes::set_feature_provider_setting_handler,
         features_routes::get_working_dir_handler,
         crate::domain::features::pending_gate::get_pending_gate_handler,
         crate::domain::features::pending_gate::respond_gate_handler,
@@ -162,6 +167,12 @@ use crate::domain::ws_session::routes as ws_routes;
         feature_layouts_routes::update_layout_handler,
         feature_layouts_routes::delete_layout_handler,
         feature_layouts_routes::set_default_layout_handler,
+        crate::domain::mcp::control::side_question::ask_session_side_question,
+        prompt_queue_routes::list_session_prompt_queue,
+        prompt_queue_routes::enqueue_session_prompt,
+        prompt_queue_routes::update_session_queued_prompt,
+        prompt_queue_routes::delete_session_queued_prompt,
+        prompt_queue_routes::send_session_queued_prompt_now,
         diff_comments_routes::list_diff_comments_handler,
         diff_comments_routes::create_diff_comment_handler,
         diff_comments_routes::update_diff_comment_handler,
@@ -233,6 +244,7 @@ use crate::domain::ws_session::routes as ws_routes;
         imports_routes::start_provider_import_handler,
         imports_routes::get_import_job_handler,
         remote_routes::status_handler,
+        remote_routes::browser_origins_handler,
         remote_routes::enable_handler,
         remote_routes::disable_handler,
         remote_routes::pairing_code_handler,
@@ -257,9 +269,11 @@ use crate::domain::ws_session::routes as ws_routes;
         crate::domain::plugin_tabs::managed::routes::get_managed_tabs,
         crate::domain::plugin_tabs::managed::routes::get_managed_tab_catalog,
         crate::domain::plugin_tabs::managed::routes::refresh_managed_tab_catalog,
+        crate::domain::plugin_tabs::managed::routes::get_managed_tab_policy,
         crate::domain::plugin_tabs::managed::routes::install_managed_tab,
         crate::domain::plugin_tabs::managed::routes::update_managed_tab,
         crate::domain::plugin_tabs::managed::routes::remove_managed_tab,
+        crate::domain::plugin_tabs::managed::routes::discard_managed_tab_update,
         crate::domain::plugin_tabs::routes::plugin_tab_list_handler,
         crate::domain::plugin_tabs::routes::plugin_tab_get_handler,
         crate::domain::plugin_tabs::routes::plugin_tab_set_enablement_handler,
@@ -291,6 +305,12 @@ use crate::domain::ws_session::routes as ws_routes;
         neovim_routes::open_file_route,
     ),
     components(schemas(
+        prompt_queue_store::QueuedPrompt,
+        prompt_queue_store::QueuedPromptStatus,
+        crate::domain::mcp::control::side_question::SideQuestionRequest,
+        crate::domain::mcp::control::side_question::SideQuestionResponse,
+        prompt_queue_routes::QueuePromptRequest,
+        prompt_queue_routes::PromptQueueOkResponse,
         HealthResponse,
         crate::domain::themes::managed::models::SignedMixedCatalog,
         crate::domain::themes::managed::models::MixedCatalogPayload,
@@ -301,6 +321,7 @@ use crate::domain::ws_session::routes as ws_routes;
         crate::domain::themes::managed::models::DuplicateManagedThemeRequest,
         crate::domain::themes::managed::models::ManagedThemeDuplicateResponse,
         crate::domain::themes::managed::models::ManagedThemeCatalogResponse,
+        crate::domain::themes::managed::models::TabVersionUnavailable,
         themes_models::UserTheme,
         themes_models::ThemeDocument,
         themes_models::ThemeAppearance,
@@ -323,10 +344,13 @@ use crate::domain::ws_session::routes as ws_routes;
         crate::domain::themes::workspace::ThemeWorkspace,
         crate::domain::plugin_tabs::managed::InstallManagedTabRequest,
         crate::domain::plugin_tabs::managed::ManagedTabInventoryEntry,
+        crate::domain::plugin_tabs::managed::policy::ManagedTabPolicyStatus,
+        crate::domain::plugin_tabs::managed::policy::PolicyFreshness,
         crate::domain::plugin_tabs::models::PluginTabSummary,
         crate::domain::plugin_tabs::models::PluginTabNetwork,
         crate::domain::plugin_tabs::models::PluginTabStatus,
         crate::domain::plugin_tabs::models::PluginTabEnablement,
+        crate::domain::plugin_tabs::models::PluginTabProjectOverride,
         crate::domain::plugin_tabs::models::SetPluginTabEnablementRequest,
         crate::domain::plugin_tabs::models::PluginTabConsentRequest,
         crate::domain::plugin_tabs::models::PluginTabConfiguration,
@@ -336,6 +360,7 @@ use crate::domain::ws_session::routes as ws_routes;
         crate::domain::plugin_tabs::models::CreatePluginTabGrantRequest,
         crate::domain::plugin_tabs::models::PluginTabGrant,
         crate::domain::plugin_tabs::models::TabConfigField,
+        crate::domain::plugin_tabs::models::TabShortcut,
         crate::domain::plugin_tabs::models::TabConfigFieldType,
         crate::domain::plugin_tabs::models::TabConfigScope,
         crate::domain::plugin_tabs::models::TabIssue,
@@ -343,6 +368,10 @@ use crate::domain::ws_session::routes as ws_routes;
         crate::domain::plugin_tabs::models::TabAccessLevel,
         crate::domain::plugin_tabs::models::TabCommand,
         crate::domain::plugin_tabs::models::TabBackend,
+        crate::domain::plugin_tabs::models::PluginTabBackendAvailability,
+        crate::domain::plugin_tabs::models::PluginTabPendingUpdate,
+        crate::domain::plugin_tabs::models::PluginTabBackendBinary,
+        crate::domain::plugin_tabs::models::TabPlatform,
         crate::domain::plugin_tabs::exec::PluginExecRequest,
         crate::domain::plugin_tabs::exec::PluginExecResult,
         crate::domain::plugin_tabs::backend::models::PluginBackendRequest,
@@ -492,6 +521,8 @@ use crate::domain::ws_session::routes as ws_routes;
         projects_icon::ProjectIconCandidate,
         features_models::Feature,
         features_models::FeatureStatus,
+        crate::domain::search::models::ConversationIndexEntry,
+        crate::domain::search::models::MessageSearchHit,
         features_models::CreateFeatureRequest,
         features_models::CreateFeatureResponse,
         features_models::ArchivePreview,
@@ -628,6 +659,7 @@ use crate::domain::ws_session::routes as ws_routes;
         imports_models::SkippedRecord,
         imports_models::SkipReason,
         remote_models::RemoteStatus,
+        remote_models::RemoteBrowserOrigins,
         crate::remote::pairing::PairingState,
         remote_models::RemoteDevice,
         remote_models::RemoteAuditEntry,

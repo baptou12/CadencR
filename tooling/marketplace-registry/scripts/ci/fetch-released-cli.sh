@@ -43,12 +43,14 @@ if ! printf '%s' "$sha256" | grep -Eq '^[0-9a-f]{64}$'; then
   exit 2
 fi
 
-# Namespaced releases are deliberately limited to CI-derived development tags.
-# The legacy two-field format retains its original version validation and URL.
+# Namespaced cli/v releases come from cli-release.yml (stable X.Y.Z) or
+# cli-dev-release.yml (X.Y.Z-dev.RUN.ATTEMPT); no other version may use them.
+# The legacy two-field format keeps its original validation and the app
+# release URL (v$version), where CLIs up to 0.14.0 were attached.
 if [ "$tag_lines" -eq 1 ]; then
-  if ! printf '%s' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-dev\.[1-9][0-9]*\.[1-9][0-9]*$' ||
+  if ! printf '%s' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-dev\.[1-9][0-9]*\.[1-9][0-9]*)?$' ||
     [ "$tag" != "cli/v$version" ]; then
-    echo "released CLI tag must match cli/vVERSION for a canonical development version" >&2
+    echo "released CLI tag must match cli/vVERSION for a canonical stable or development version" >&2
     exit 2
   fi
 else

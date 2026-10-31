@@ -8,7 +8,8 @@ use std::collections::BTreeSet;
 use super::issues::{TabFindings, TabIssueCode as Code};
 use super::manifest::TabManifest;
 use super::{
-    configuration, execution, network, SCOPES, SUPPORTED_API_VERSION, SUPPORTED_SCHEMA_VERSION,
+    configuration, execution, network, shortcuts, SCOPES, SUPPORTED_API_VERSION,
+    SUPPORTED_SCHEMA_VERSION,
 };
 
 pub const MAX_NAME_CHARS: usize = 64;
@@ -35,15 +36,21 @@ pub fn validate_manifest(manifest: &TabManifest) -> TabFindings {
     if let Some(backend) = &manifest.backend {
         execution::validate_backend(backend, &mut findings);
     }
+    shortcuts::validate(&manifest.shortcuts, &mut findings);
     findings
 }
 
 /// `^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$` — a URL host label.
 pub fn is_valid_tab_id(id: &str) -> bool {
+    is_label(id, MAX_ID_LEN)
+}
+
+/// 1–`max_len` lowercase letters, digits or inner hyphens.
+pub(super) fn is_label(id: &str, max_len: usize) -> bool {
     let bytes = id.as_bytes();
     let edge = |byte: &u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
     !bytes.is_empty()
-        && bytes.len() <= MAX_ID_LEN
+        && bytes.len() <= max_len
         && bytes.first().is_some_and(edge)
         && bytes.last().is_some_and(edge)
         && bytes.iter().all(|byte| edge(byte) || *byte == b'-')

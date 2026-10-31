@@ -10,8 +10,7 @@ use crate::github::discovery::{DiscoveryHead, SetDiscoveryRequest};
 use crate::github::{Asset, CreateDraftRequest, Release, UploadAssetRequest, VerifyAssetRequest};
 use crate::{DownloadRequest, Downloaded};
 
-pub(super) const PRIVATE: &str = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH\n-----END PRIVATE KEY-----\n";
-pub(super) const PUBLIC: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=\n-----END PUBLIC KEY-----\n";
+pub(super) use crate::test_support::{PRIVATE, PUBLIC};
 pub(super) const REPOSITORY: &str = "cadencr/registry";
 pub(super) const COMMIT: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 

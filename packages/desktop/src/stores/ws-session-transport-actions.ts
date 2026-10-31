@@ -12,7 +12,10 @@ import type { StoreAccessors } from "./ws-envelope-handler";
 import type { SessionEntry, WsSessionStore } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 
-type TransportActions = Pick<WsSessionStore, "disconnect" | "send" | "sendRequest" | "initSession">;
+type TransportActions = Pick<
+  WsSessionStore,
+  "disconnect" | "release" | "send" | "sendRequest" | "initSession"
+>;
 
 interface TransportActionDeps {
   ctx: StoreAccessors;
@@ -24,35 +27,39 @@ interface TransportActionDeps {
 export function createWsSessionTransportActions(deps: TransportActionDeps): TransportActions {
   const { ctx, sendRaw, sourceKey, rejectPendingRequests } = deps;
   const { get, set } = ctx;
-  return {
-    disconnect(sessionId: string) {
-      clearReconnect(sourceKey(sessionId));
-      unregisterReconnector(sourceKey(sessionId));
-      useConnectionStatusStore.getState().clearSource(sourceKey(sessionId));
-      discardStreamDeltas(sessionId);
-      const session = get().sessions[sessionId];
-      // Deliberate teardown: queued envelopes must not outlive it. Without
-      // this, a disconnect while the socket is already down early-returns
-      // below (conn is null), the entry survives, and a later connect() would
-      // flush stale envelopes (e.g. an old prompt) into a session the user
-      // had closed. In-place splice because the queue is mutated in place by
-      // design (see SessionEntry.outboundQueue).
-      session?.outboundQueue.splice(0);
-      // The deliberate close() below skips onClose's pending-request sweep
-      // (it early-returns on `intentional`), so resolve in-flight requests now
-      // rather than leaving permission/worktree calls hanging until the timeout.
-      if (session) rejectPendingRequests(session);
-      failPromptDelivery(sessionId, SESSION_CLOSED_BEFORE_DELIVERY);
-      if (session?.conn) {
-        if (session.serverSessionId) {
-          session.conn.sendJson(createDestroy(session.serverSessionId));
-        }
-        session.conn.close();
-      }
 
-      const { [sessionId]: _, ...rest } = get().sessions;
-      set({ sessions: rest });
-    },
+  function closeSession(sessionId: string, stopRuntime: boolean): void {
+    clearReconnect(sourceKey(sessionId));
+    unregisterReconnector(sourceKey(sessionId));
+    useConnectionStatusStore.getState().clearSource(sourceKey(sessionId));
+    discardStreamDeltas(sessionId);
+    const session = get().sessions[sessionId];
+    // Deliberate teardown: queued envelopes must not outlive it. Without
+    // this, a disconnect while the socket is already down early-returns
+    // below (conn is null), the entry survives, and a later connect() would
+    // flush stale envelopes (e.g. an old prompt) into a session the user
+    // had closed. In-place splice because the queue is mutated in place by
+    // design (see SessionEntry.outboundQueue).
+    session?.outboundQueue.splice(0);
+    // The deliberate close() below skips onClose's pending-request sweep
+    // (it early-returns on `intentional`), so resolve in-flight requests now
+    // rather than leaving permission/worktree calls hanging until the timeout.
+    if (session) rejectPendingRequests(session);
+    failPromptDelivery(sessionId, SESSION_CLOSED_BEFORE_DELIVERY);
+    if (session?.conn) {
+      if (stopRuntime && session.serverSessionId) {
+        session.conn.sendJson(createDestroy(session.serverSessionId));
+      }
+      session.conn.close();
+    }
+
+    const { [sessionId]: _, ...rest } = get().sessions;
+    set({ sessions: rest });
+  }
+
+  return {
+    disconnect: (sessionId: string) => closeSession(sessionId, true),
+    release: (sessionId: string) => closeSession(sessionId, false),
 
     send: sendRaw,
 

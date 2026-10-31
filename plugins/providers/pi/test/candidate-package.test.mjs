@@ -14,6 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { PI_VERSION, PREPARED_TARGETS } from "../scripts/targets.mjs";
 const original = new URL("../", import.meta.url).pathname;
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const cli = process.env.CADENCR_PI_CANDIDATE_TEST_CLI;
@@ -57,14 +58,14 @@ async function fixture() {
     agent: {
       id: "pi",
       name: "Pi",
-      version: "0.4.0",
+      version: "0.4.1",
       description: "External Cadencr provider connector for Pi's native RPC mode",
       repository: "https://github.com/merkr-software/CadencR",
       license: "Apache-2.0",
       distribution: {
         binary: {
           "darwin-aarch64": {
-            archive: "https://example.invalid/pi-0.4.0-darwin-aarch64.tar.gz",
+            archive: "https://example.invalid/pi-0.4.1-darwin-aarch64.tar.gz",
             cmd: "bin/provider",
             sha256: "0".repeat(64),
           },
@@ -114,7 +115,8 @@ async function fixture() {
 test("candidate refuses implicit targets/runtime, wrong source and checksum before creating output", async () => {
   const f = await fixture();
   for (const overrides of [
-    { "--candidate-target": "linux-x86_64" },
+    { "--candidate-target": "windows-x86_64" },
+    { "--candidate-target": "windows-aarch64" },
     { "--candidate-target": "auto" },
     { "--runtime": "native" },
     { "--source-commit": "0".repeat(40) },
@@ -179,7 +181,7 @@ test("candidate rejects metadata secrets, extra targets and symlink input paths"
   binary.archive += "?token=never-archive-me";
   await writeFile(f.packagePath, `${JSON.stringify(f.metadata, null, 2)}\n`);
   assert.equal(f.run().status, 1);
-  binary.archive = "https://example.invalid/pi-0.4.0-darwin-aarch64.tar.gz";
+  binary.archive = "https://example.invalid/pi-0.4.1-darwin-aarch64.tar.gz";
   f.metadata.agent.distribution.binary["darwin-x86_64"] = binary;
   await writeFile(f.packagePath, `${JSON.stringify(f.metadata, null, 2)}\n`);
   assert.equal(f.run().status, 1);
@@ -210,10 +212,12 @@ test(
   "real Rust CLI creates source-bound reproducible candidate; preserves existing outputs",
   { skip: !cli },
   async () => {
-    for (const target of ["darwin-aarch64", "darwin-x86_64"]) {
+    const archiveDigests = new Set();
+    assert.ok(PREPARED_TARGETS.length > 1);
+    for (const target of PREPARED_TARGETS) {
       const f = await fixture();
       const binary = f.metadata.agent.distribution.binary["darwin-aarch64"];
-      binary.archive = `https://example.invalid/pi-0.4.0-${target}.tar.gz`;
+      binary.archive = `https://example.invalid/pi-0.4.1-${target}.tar.gz`;
       f.metadata.agent.distribution.binary = { [target]: binary };
       f.args[f.args.indexOf("--candidate-target") + 1] = target;
       f.metadata.host.assets = { license: "LICENSE", readme: "README.md", icon: "icon.svg" };
@@ -225,7 +229,7 @@ test(
       assert.equal(receipt.qualification, "PENDING");
       assert.equal(receipt.runtime.bundled, false);
       assert.equal(receipt.runtime.node, ">=22.19.0 <23.0.0");
-      assert.equal(receipt.runtime.pi, "0.85.1");
+      assert.equal(receipt.runtime.pi, PI_VERSION);
       assert.equal(receipt.source.commit, f.args[1]);
       assert.equal(
         receipt.readiness.manifest_sha256,
@@ -235,7 +239,10 @@ test(
         receipt.readiness.targets[receipt.candidate_target].preparation,
         "external-node-pi-candidate",
       );
-      assert.equal(receipt.readiness.artwork.authorship, "not-established-by-retained-source");
+      assert.equal(
+        receipt.readiness.artwork.authorship,
+        "created-during-cadencr-source-maintenance-2026-10-23",
+      );
       assert.equal(
         receipt.readiness.historical_protocol_evidence.qualifies_current_candidate,
         false,
@@ -255,6 +262,10 @@ test(
         digest(await readFile(join(f.output, "package.json"))),
       );
       const archive = await readFile(join(f.output, receipt.archive.name));
+      archiveDigests.add(receipt.archive.sha256);
+      // Refusal, reproducibility and second-directory behavior do not depend on the
+      // target: run that battery once; the other targets only prove their archive bytes.
+      if (target !== PREPARED_TARGETS[0]) continue;
       assert.deepEqual(
         archive,
         await readFile(join(f.output, `reproducibility-${receipt.archive.name}`)),
@@ -274,14 +285,16 @@ test(
       assert.equal(f.run({ "--directory": second }).status, 0);
       assert.deepEqual(await readFile(join(second, receipt.archive.name)), archive);
     }
+    // The payload is a target-independent JS connector: macOS and Linux share bytes.
+    assert.equal(archiveDigests.size, 1, "archive bytes must not depend on the target");
   },
 );
 
 test("candidate input refuses ambiguous metadata and symlink output", async () => {
   const f = await fixture();
   const document = JSON.stringify(f.metadata).replace(
-    '"version":"0.4.0"',
-    '"version":"9.0.0","version":"0.4.0"',
+    '"version":"0.4.1"',
+    '"version":"9.0.0","version":"0.4.1"',
   );
   await writeFile(f.packagePath, document);
   assert.equal(f.run().status, 1);

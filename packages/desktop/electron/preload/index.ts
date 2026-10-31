@@ -1,3 +1,4 @@
+import type { DiagnosticContext } from "../../src/shared/renderer-diagnostics";
 import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
 import type {
   BrowserBounds,
@@ -22,6 +23,7 @@ import type {
   BrowserAgentActivity,
 } from "../main/browser-types";
 import type { ChangelogImageBytes } from "../../src/shared/changelog-image";
+import type { RendererErrorReportPayload } from "../../src/shared/renderer-error";
 import { notchHostBridge } from "./notch-host-bridge";
 import { installPluginTabPortRelay, pluginTabsHostBridge } from "./plugin-tabs-host-bridge";
 
@@ -30,7 +32,6 @@ type DesktopTheme = "light" | "dark";
 
 interface RuntimeConfig {
   baseUrl: string;
-  authToken: string | null;
 }
 
 interface NotificationClickPayload {
@@ -56,16 +57,6 @@ interface NotifyOptions {
   mode: NotifyMode;
 }
 
-interface RendererErrorReportPayload {
-  source: "error" | "unhandledrejection" | "react-boundary";
-  message: string;
-  stack?: string | null;
-  componentStack?: string | null;
-  url?: string | null;
-  line?: number | null;
-  column?: number | null;
-}
-
 interface FileDropItem {
   handle: string;
   name: string;
@@ -85,7 +76,8 @@ type UpdateEvent =
   | { kind: "not-available"; version: string }
   | { kind: "error"; message: string }
   | { kind: "download-progress"; percent: number; bytesPerSecond: number }
-  | { kind: "downloaded"; version: string };
+  | { kind: "downloaded"; version: string }
+  | { kind: "unsupported"; reason: "unsupported-install"; message: string };
 
 function onUpdateEvent(cb: (event: UpdateEvent) => void): () => void {
   const unsubs = [
@@ -105,6 +97,9 @@ function onUpdateEvent(cb: (event: UpdateEvent) => void): () => void {
     ),
     onIpc<{ version: string }>("update:downloaded", (p) =>
       cb({ kind: "downloaded", version: p.version }),
+    ),
+    onIpc<{ reason: "unsupported-install"; message: string }>("update:unsupported", (p) =>
+      cb({ kind: "unsupported", reason: p.reason, message: p.message }),
     ),
   ];
   return () => {
@@ -189,6 +184,7 @@ function onFileDrop(cb: (payload: FileDropPayload) => void): () => void {
 
 contextBridge.exposeInMainWorld("cadencr", {
   isElectron: true,
+  usesCustomWindowControls: process.platform === "linux",
   runtimeConfig: (): Promise<RuntimeConfig> => ipcRenderer.invoke("runtime-config"),
   readFileBase64: (handle: string): Promise<string> =>
     ipcRenderer.invoke("fs:read-file-base64", handle),
@@ -220,6 +216,11 @@ contextBridge.exposeInMainWorld("cadencr", {
   onCloseRequested: (cb: () => void): (() => void) => onIpc("app:close-requested", cb),
   confirmClose: (): Promise<void> => ipcRenderer.invoke("app:confirm-close"),
   requestQuit: (): Promise<void> => ipcRenderer.invoke("app:request-quit"),
+  windowMinimize: (): Promise<void> => ipcRenderer.invoke("app:window-minimize"),
+  windowToggleMaximize: (): Promise<void> => ipcRenderer.invoke("app:window-toggle-maximize"),
+  windowClose: (): Promise<void> => ipcRenderer.invoke("app:window-close"),
+  exportRendererDiagnostics: (context: DiagnosticContext): Promise<{ canceled: boolean }> =>
+    ipcRenderer.invoke("app:export-renderer-diagnostics", context),
   reportRendererError: (payload: RendererErrorReportPayload): Promise<void> =>
     ipcRenderer.invoke("app:renderer-error", payload),
   setZoom: (factor: number): Promise<void> => ipcRenderer.invoke("webview:set-zoom", factor),
@@ -233,6 +234,9 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("power:set-remote-host", enabled),
   onPowerSuspend: (cb: () => void): (() => void) => onIpc("power:suspend", cb),
   onPowerResume: (cb: () => void): (() => void) => onIpc("power:resume", cb),
+  isWindowFocused: (): Promise<boolean> => ipcRenderer.invoke("window:is-focused"),
+  onWindowFocusChange: (cb: (focused: boolean) => void): (() => void) =>
+    onIpc("window:focus-changed", cb),
 
   createBrowserTab: (
     url?: string,

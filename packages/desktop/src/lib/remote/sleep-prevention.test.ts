@@ -47,3 +47,12 @@ describe("remote sleep-prevention preference", () => {
     expect(readRemotePreventSleep()).toBe(true);
   });
 });
+
+describe("canPreventHostSleep", () => {
+  it("holds the sleep block only from the desktop host, on any desktop OS", async () => {
+    const { canPreventHostSleep } = await load();
+    expect(canPreventHostSleep(true, false)).toBe(true);
+    expect(canPreventHostSleep(true, true)).toBe(false);
+    expect(canPreventHostSleep(false, false)).toBe(false);
+  });
+});

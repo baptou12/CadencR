@@ -179,7 +179,8 @@ fn extract_zip(
         let mut entry = archive
             .by_index(index)
             .map_err(ArtifactError::unsafe_archive)?;
-        let relative = normalize_package_path(Path::new(entry.name()), "archive entry")?;
+        let name = entry.name().map_err(ArtifactError::unsafe_archive)?;
+        let relative = normalize_package_path(Path::new(name.as_ref()), "archive entry")?;
         if relative.as_os_str().is_empty() {
             continue;
         }

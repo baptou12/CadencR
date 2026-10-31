@@ -33,6 +33,8 @@ pub struct PluginTabChangedEvent {
 /// and the first tab would otherwise never reload live). A rebuild touches
 /// many files of one tab; each debounced batch yields one event per tab.
 pub fn start(dir: &Path, tx: broadcast::Sender<PluginTabChangedEvent>) {
+    // A revocation is a change of the managed tabs it names, too.
+    super::managed::policy::spawn_refresh_task(tx.clone());
     if let Err(error) = crate::remote::secure_fs::create_dir_owner_only(dir) {
         warn!(dir = %dir.display(), "failed to create the custom tabs dir: {error}");
         return;

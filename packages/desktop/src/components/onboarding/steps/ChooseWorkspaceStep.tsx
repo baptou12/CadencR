@@ -80,7 +80,6 @@ export function ChooseWorkspaceStep({
 
       <OnboardingFooter
         primaryLabel="Continue"
-        onPrimary={onAdvance}
         primaryDisabled={primaryDisabled}
         onBack={onBack}
         onSkipStep={onSkipStep}

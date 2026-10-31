@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useMarketplaceState } from "./MarketplaceContext";
 import { formatAgo } from "@/lib/date-utils";
 import { formatDay } from "./PluginBits";
+import { TabTrust } from "./TabTrust";
 
 function Section({
   title,
@@ -69,6 +70,15 @@ export function VersionsSection({
                     className="bg-foreground/8 px-1.5 py-0 text-[10.5px] text-muted-foreground"
                   >
                     Installed
+                  </Badge>
+                )}
+                {entry.blocked && (
+                  <Badge
+                    variant="ghost"
+                    title={entry.blocked}
+                    className="bg-destructive/10 px-1.5 py-0 text-[10.5px] text-destructive"
+                  >
+                    Blocked
                   </Badge>
                 )}
                 <span className="ml-auto text-[11px] text-muted-foreground">
@@ -199,7 +209,14 @@ export function FactsSection({ listing }: { listing: MarketplaceListing }): Reac
   );
 }
 
-export function TrustSection({ listing }: { listing: MarketplaceListing }): React.JSX.Element {
+export function TrustSection({
+  listing,
+  version,
+}: {
+  listing: MarketplaceListing;
+  /** The version the install panel acts on; the tab warning describes it. */
+  version: string;
+}): React.JSX.Element {
   const { providers, themes, tabs } = useMarketplaceState();
   const inventory = providers.inventoryQuery.data;
   // Each kind is verified against its own catalog; never show the other one's dates.
@@ -236,11 +253,7 @@ export function TrustSection({ listing }: { listing: MarketplaceListing }): Reac
             theme.
           </p>
         ) : listing.kind === "tab" ? (
-          <p>
-            Custom tabs run their compiled web interface in the existing sandbox. Installing does
-            not enable a tab or grant permissions. Review its declared data access and network
-            origins before enabling it. Permission changes require consent again.
-          </p>
+          <TabTrust listing={listing} version={version} />
         ) : (
           <>
             <p>

@@ -1,10 +1,12 @@
 import { ipcRenderer, webFrame } from "electron";
 import type { OnIpc } from "./notch-host-bridge";
 import {
+  PLUGIN_TAB_APP_SHORTCUT_CHANNEL,
   PLUGIN_TAB_EVENT_CHANNEL,
   PLUGIN_TAB_PORT_MESSAGE_TYPE,
   PLUGIN_TAB_RENDERER_PORT_CHANNEL,
   type PluginTabEvent,
+  type PluginTabKeyInput,
   type PluginTabPortMessage,
   type PluginTabsBridge,
 } from "../../src/shared/plugin-tab-host";
@@ -43,7 +45,11 @@ export function pluginTabsHostBridge(onIpc: OnIpc): { pluginTabs: PluginTabsBrid
       openDevTools: (instanceId) => ipcRenderer.invoke("plugin-tab:open-devtools", instanceId),
       focus: (instanceId) => ipcRenderer.invoke("plugin-tab:focus", instanceId),
       setTheme: (theme) => ipcRenderer.invoke("plugin-tab:set-theme", theme),
+      setAppShortcuts: (bindings) => ipcRenderer.invoke("plugin-tab:set-app-shortcuts", bindings),
+      setTabShortcuts: (instanceId, shortcuts) =>
+        ipcRenderer.invoke("plugin-tab:set-tab-shortcuts", instanceId, shortcuts),
       onEvent: (cb) => onIpc<PluginTabEvent>(PLUGIN_TAB_EVENT_CHANNEL, cb),
+      onAppShortcut: (cb) => onIpc<PluginTabKeyInput>(PLUGIN_TAB_APP_SHORTCUT_CHANNEL, cb),
     },
   };
 }

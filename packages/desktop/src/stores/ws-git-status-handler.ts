@@ -9,6 +9,7 @@
  * and never silently no-ops.
  */
 import { toast } from "sonner";
+import { scopedToastDescription } from "@/components/ToastScope";
 import {
   CiState,
   PrState,
@@ -96,7 +97,12 @@ export function handleGitEnvelope(action: string, payload: Record<string, unknow
     const error = typeof payload.error === "string" ? payload.error : null;
     if (featureId == null || !error) return;
     useGitStatusStore.getState().setStatusError({ feature_id: featureId, error });
-    toast.error(`Git status error: ${error}`);
+    // Pushed for any watched worktree, not just the one on screen, and again
+    // on every watcher tick while it fails: one toast per feature.
+    toast.error("Git status error", {
+      id: `git-status-error-${featureId}`,
+      description: scopedToastDescription({ featureId }, error),
+    });
     return;
   }
   // Streaming commit lifecycle: drives the commit dialog's terminal pane

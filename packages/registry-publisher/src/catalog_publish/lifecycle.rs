@@ -65,21 +65,18 @@ fn publish_locked(
     let recovered = if release.draft && assets.is_empty() {
         validate_current(client, snapshot, release_id, true)?;
         freshness()?;
-        let recovered = crate::mirror::artifacts::upload_one(
-            client,
-            release_id,
-            &expected,
-            std::slice::from_ref(&expected),
-            directory,
-            policy,
-        )?;
-        assets = validated_assets_with_policy(
-            client.list_assets(release_id)?,
-            std::slice::from_ref(&expected),
-            true,
-            policy,
-        )?;
-        recovered
+        let uploaded = crate::mirror::artifacts::upload_one()
+            .client(client)
+            .release_id(release_id)
+            .artifact(&expected)
+            .expected(std::slice::from_ref(&expected))
+            .directory(directory)
+            .policy(policy)
+            .pacing(&crate::convergence::ReadBack::production())
+            .call()?;
+        // The only expected asset is listed, so the listing is complete.
+        assets = uploaded.assets;
+        uploaded.recovered
     } else {
         None
     };

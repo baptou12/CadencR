@@ -54,6 +54,7 @@ export function blockSearchableText(
     case "turn_summary":
     case "compact_divider":
     case "clear_divider":
+    case "turn_interrupted":
       return "";
     case "tool_call": {
       const command = extractBashCommand(block.toolArgs);

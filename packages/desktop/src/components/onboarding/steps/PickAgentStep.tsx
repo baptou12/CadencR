@@ -38,7 +38,6 @@ export function PickAgentStep({
 
       <OnboardingFooter
         primaryLabel="Continue"
-        onPrimary={onAdvance}
         primaryDisabled={isPersisting}
         onBack={onBack}
         onSkipStep={onSkipStep}

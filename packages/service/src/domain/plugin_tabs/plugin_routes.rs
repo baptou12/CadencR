@@ -277,12 +277,13 @@ pub(super) async fn granted_manifest(
         .map(|(_, manifest)| manifest)
 }
 
-/// [`granted_manifest`], with the tab folder it was read from.
+/// [`granted_manifest`], with the tab folder it was read from (its staged
+/// update, if any, unread: a tab's own requests never run it).
 pub(super) async fn granted_tab(
     state: &AppState,
     principal: &PluginPrincipal,
 ) -> Result<(LocalTab, TabManifest), AppError> {
-    let tab = registry::get(&principal.plugin_id).await?;
+    let tab = registry::get_installed(&principal.plugin_id).await?;
     match tab.require_valid() {
         Ok((manifest, hash)) if hash == principal.permissions_hash => {
             let manifest = manifest.clone();

@@ -56,6 +56,20 @@ test("three-kind hosted offline guard binds repository, workflow, reviewed commi
     pins + "CADENCR_RELEASE_TAG=cli/v0.13.1-dev.1.1\n",
   );
   assert.notEqual(run().status, 0);
+  // A stable cli-release.yml pin is accepted under the same cli/v binding.
+  for (const [version, valid] of [
+    ["0.14.0", true],
+    ["0.14.0-rc.1", false],
+  ]) {
+    const stable = `CADENCR_RELEASE_VERSION=${version}\nCADENCR_RELEASE_SHA256=${"a".repeat(64)}\n`;
+    writeFileSync(join(root, "offline-cli-pin.env"), stable);
+    writeFileSync(
+      join(root, "offline-fetch-pin.env"),
+      stable + `CADENCR_RELEASE_TAG=cli/v${version}\n`,
+    );
+    const pinned = { PINS_SHA256: createHash("sha256").update(stable).digest("hex") };
+    assert.equal(run(pinned).status === 0, valid, version);
+  }
 });
 
 test("three-kind offline job has no write authority and exports evidence only", () => {
@@ -73,4 +87,42 @@ test("three-kind offline job has no write authority and exports evidence only", 
   assert.equal(upload.with.path, "${{ runner.temp }}/three-kind-offline/evidence/evidence.json");
   assert.equal(upload.if, "${{ always() }}");
   for (const step of steps.filter((step) => step.uses)) assert.match(step.uses, /@[a-f0-9]{40}$/);
+});
+
+test("reviewed CLI selection is atomic across repository consumers and bound by the author policy", () => {
+  const selected = readFileSync(new URL("./cli-qualification.env", import.meta.url), "utf8")
+    .split("\n")
+    .filter((line) => line && !line.startsWith("#"));
+  for (const file of [
+    "../tooling/marketplace-registry/ci/released-cli.env",
+    "./official-plugin-author-cli.env",
+  ]) {
+    assert.deepEqual(
+      readFileSync(new URL(file, import.meta.url), "utf8")
+        .split("\n")
+        .filter((line) => line && !line.startsWith("#")),
+      selected,
+    );
+  }
+  const preflight = readFileSync(
+    new URL("./qualify-released-cli-github.sh", import.meta.url),
+    "utf8",
+  );
+  for (const pin of selected) assert.ok(preflight.includes(pin));
+  const version = selected[0].split("=")[1];
+  assert.ok(preflight.includes(`b'cadencr ${version}\\n\\nstatus:0\\n'`));
+  const policy = JSON.parse(
+    readFileSync(new URL("./official-plugin-author-policy.json", import.meta.url), "utf8"),
+  );
+  // Publication approval binds the exact selected author pin and its qualification.
+  const sha256 = (path) =>
+    createHash("sha256").update(readFileSync(new URL(path, import.meta.url))).digest("hex");
+  assert.equal(policy.publication, "APPROVED");
+  assert.equal(policy.author_cli_version, version);
+  assert.equal(policy.author_cli_sha256, selected[1].split("=")[1]);
+  assert.equal(policy.author_cli_pin_sha256, sha256("./official-plugin-author-cli.env"));
+  assert.equal(
+    policy.author_cli_qualification_sha256,
+    sha256("./official-plugin-author-qualification.json"),
+  );
 });

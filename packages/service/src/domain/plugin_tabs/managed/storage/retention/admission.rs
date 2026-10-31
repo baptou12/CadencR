@@ -52,7 +52,7 @@ fn sweep(root: &Path) -> Result<(), AppError> {
             Err(std::sync::TryLockError::WouldBlock) => continue,
             Err(error) => return Err(invalid(error)),
         };
-        match entry.path().join("active.json").symlink_metadata() {
+        match entry.path().join(super::ACTIVE).symlink_metadata() {
             Ok(_) => continue,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(invalid(error)),

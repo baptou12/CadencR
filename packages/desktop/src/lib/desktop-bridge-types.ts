@@ -1,3 +1,4 @@
+import type { DiagnosticContext } from "@/shared/renderer-diagnostics";
 import type {
   NotchCapabilities,
   NotchConfig,
@@ -6,6 +7,7 @@ import type {
   NotchSnapshot,
 } from "@/shared/notch";
 import type { ChangelogImageBytes } from "@/shared/changelog-image";
+import type { RendererErrorReportPayload } from "@/shared/renderer-error";
 import type { LinkHoverContext, LinkMenuOpenPayload } from "@/lib/link-routing";
 import type {
   BrowserBounds,
@@ -36,7 +38,6 @@ import type { PluginTabsBridge } from "@/shared/plugin-tab-host";
 
 export interface RuntimeConfig {
   baseUrl: string;
-  authToken: string | null;
 }
 
 export type RouteType = "session";
@@ -94,20 +95,23 @@ export type UpdateEvent =
   | { kind: "not-available"; version: string }
   | { kind: "error"; message: string }
   | { kind: "download-progress"; percent: number; bytesPerSecond: number }
-  | { kind: "downloaded"; version: string };
+  | { kind: "downloaded"; version: string }
+  | {
+      /**
+       * In-app updates are unavailable because this Linux build is not an
+       * official AppImage, DEB, or RPM package. The renderer should render
+       * `message` instead of offering a non-working update action.
+       */
+      kind: "unsupported";
+      reason: "unsupported-install";
+      message: string;
+    };
 
-export interface RendererErrorReportPayload {
-  source: "error" | "unhandledrejection" | "react-boundary";
-  message: string;
-  stack?: string | null;
-  componentStack?: string | null;
-  url?: string | null;
-  line?: number | null;
-  column?: number | null;
-}
+export type { RendererErrorReportPayload } from "@/shared/renderer-error";
 
 export interface CadencrDesktopBridge {
   isElectron: boolean;
+  usesCustomWindowControls?: boolean;
   runtimeConfig: () => Promise<RuntimeConfig>;
   readFileBase64: (handle: string) => Promise<string>;
   suppressNextNativeContextMenu?: () => void;
@@ -130,6 +134,10 @@ export interface CadencrDesktopBridge {
   onCloseRequested: (cb: () => void) => () => void;
   confirmClose: () => Promise<void>;
   requestQuit: () => Promise<void>;
+  windowMinimize?: () => Promise<void>;
+  windowToggleMaximize?: () => Promise<void>;
+  windowClose?: () => Promise<void>;
+  exportRendererDiagnostics?: (context: DiagnosticContext) => Promise<{ canceled: boolean }>;
   reportRendererError?: (payload: RendererErrorReportPayload) => Promise<void>;
   setZoom: (factor: number) => Promise<void>;
   /** Centers the macOS traffic lights on a band `center` CSS px from the top; null restores them. */
@@ -140,6 +148,13 @@ export interface CadencrDesktopBridge {
   setRemoteHostAwake: (enabled: boolean) => Promise<void>;
   onPowerSuspend: (cb: () => void) => () => void;
   onPowerResume: (cb: () => void) => () => void;
+  /**
+   * Whether the app window has focus, also while a guest view inside it (a
+   * custom tab, a browser pane) holds it. Desktop only: in a browser the
+   * document's own focus is the window's.
+   */
+  isWindowFocused?: () => Promise<boolean>;
+  onWindowFocusChange?: (cb: (focused: boolean) => void) => () => void;
   checkForUpdates: () => Promise<void>;
   installUpdate: () => Promise<void>;
   fetchChangelog: (version: string) => Promise<string | null>;
@@ -149,6 +164,7 @@ export interface CadencrDesktopBridge {
 }
 
 export interface CadencrBrowserBridge extends CadencrDesktopBridge {
+  exportRendererDiagnostics: (context: DiagnosticContext) => Promise<{ canceled: boolean }>;
   reportRendererError: (payload: RendererErrorReportPayload) => Promise<void>;
   setTrafficLightsCenter: (center: number | null) => Promise<void>;
   // The macOS notch island; the browser fallback resolves them as unsupported.

@@ -2,9 +2,9 @@
 
 ## Reporting
 
-Before deploying this template, repository owners must replace this paragraph
-with a monitored private security contact or GitHub private vulnerability
-reporting instructions. Do not invent or publish an unmonitored address.
+Report vulnerabilities privately through the repository's **Security → Report a
+vulnerability** form (GitHub private vulnerability reporting). Do not disclose
+vulnerabilities or credentials in a public issue or pull request.
 
 Include the provider ID/version, affected digests, source revision, impact, and
 safe reproduction details. Do not attach credentials or exploit public users.

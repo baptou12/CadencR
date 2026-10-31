@@ -27,6 +27,12 @@ pub(super) async fn handle_app_action(
             "plugin_tab_changed",
             OnLag::ResendBare,
         ),
+        "subscribe.prompt_queue_events" => forward_app_events(
+            sender,
+            app_state.prompt_queue_events_tx.subscribe(),
+            "prompt_queue_changed",
+            OnLag::ResendBare,
+        ),
         "subscribe.alacritty_config_events" => {
             handle_subscribe_alacritty_config_events(sender, app_state).await
         }
@@ -35,6 +41,9 @@ pub(super) async fn handle_app_action(
         }
         "forge_visibility" => {
             super::app_forge::update_forge_visibility(envelope, sender, app_state).await
+        }
+        "subscribe.agent_archived_events" => {
+            super::app_notifications::subscribe_agent_archived_events(sender, app_state)
         }
         "subscribe.remote_events" => {
             super::app_notifications::subscribe_remote_events(sender, app_state)

@@ -17,6 +17,16 @@ pub struct RuntimeEvent {
     /// while a launched-and-detached agent is still running, instead of going
     /// idle the moment the launching turn's `Result` arrives (issue #58).
     pub(super) background_agent: Option<BackgroundAgentSignal>,
+    /// Number of the runtime's out-of-band background tasks (shell commands,
+    /// agents, monitors) still alive, from a full provider snapshot. A task
+    /// outlives the turn that launched it and the provider auto-resumes the
+    /// agent when it settles, so the runtime must stay alive until then even
+    /// though the session is idle. `None` when the event carries no snapshot.
+    pub(super) background_tasks: Option<usize>,
+    /// The agent asked the runtime to wake it up later (Claude Code's
+    /// `ScheduleWakeup`). The timer lives inside the runtime process, so the
+    /// runtime must outlive the delay for the agent to resume on its own.
+    pub(super) scheduled_wakeup: Option<ScheduledWakeup>,
     /// Set when this event is a turn-ending `Result` that itself reports
     /// failure (Claude Code: `is_error: true`, e.g. a Bedrock
     /// `error_during_execution`). The turn still ends normally; this carries
@@ -56,6 +66,20 @@ pub enum BackgroundAgentSignal {
     Started { agent_id: String },
     /// A background agent reached a terminal state (completed/failed/etc).
     Finished { agent_id: String },
+}
+
+/// Provider-neutral edge of an agent-scheduled wake-up (a timer held by the
+/// runtime process that re-invokes the agent with a new turn).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScheduledWakeup {
+    /// The agent asked to be woken after `due_in`. `tool_use_id` identifies
+    /// the scheduling call, so a call the runtime rejected can release it.
+    Scheduled {
+        tool_use_id: String,
+        due_in: std::time::Duration,
+    },
+    /// The agent cancelled its pending wake-up.
+    Cancelled,
 }
 
 #[derive(Debug, Clone, Default)]

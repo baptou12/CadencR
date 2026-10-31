@@ -5,7 +5,7 @@ use super::session_prompt::PermissionResponse;
 use super::{parse_session_id, send_error, QueryState, SdkSessions, WsSender};
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{
-    RuntimePermissionDecision, RuntimePermissionResponse, RuntimeSessionHandle,
+    RuntimeError, RuntimePermissionDecision, RuntimePermissionResponse, RuntimeSessionHandle,
 };
 use crate::domain::session_status::AgentStatus;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
@@ -13,6 +13,10 @@ use crate::domain::ws_session::protocol::{
     GateClosePayload, GateCloseReason, GateClosedPayload, PermissionDecision, WsEnvelope,
     WsSessionAction,
 };
+
+struct GateRuntimeGuard {
+    _barrier: Option<tokio::sync::OwnedMutexGuard<()>>,
+}
 
 struct ActiveGateRuntime {
     query: RuntimeSessionHandle,
@@ -50,6 +54,21 @@ pub(super) async fn handle_gate_close(
             }
         };
 
+    // Do not advertise Idle or release the gate until the old turn is stopped.
+    // Otherwise a queued reply can start before this cancellation interrupts it.
+    let runtime_guard =
+        match deny_runtime_gate(sdk_sessions, db_session_id, &request_id, app_state).await {
+            Ok(guard) => guard,
+            Err(error) => {
+                app_state
+                    .pending_gates
+                    .release(db_session_id, &request_id)
+                    .await;
+                send_error(sender, &envelope.id, "SDK_ERROR", &error.to_string());
+                return;
+            }
+        };
+
     let clear_result = clear_persisted_gate_and_notify(
         sender,
         app_state,
@@ -65,7 +84,18 @@ pub(super) async fn handle_gate_close(
                 .pending_gates
                 .complete(db_session_id, &request_id)
                 .await;
-            deny_runtime_gate(sdk_sessions, db_session_id, Some(&request_id)).await;
+            let had_runtime = runtime_guard.is_some();
+            drop(runtime_guard);
+            if had_runtime {
+                if let Err(error) = drain_after_gate_close(app_state, db_session_id).await {
+                    send_error(
+                        sender,
+                        &envelope.id,
+                        "QUEUE_DELIVERY_FAILED",
+                        &error.to_string(),
+                    );
+                }
+            }
         }
         Ok(false) => {
             app_state
@@ -175,41 +205,58 @@ fn send_gate_closed(
 async fn deny_runtime_gate(
     sdk_sessions: &SdkSessions,
     db_session_id: i64,
-    request_id: Option<&str>,
-) {
-    let Some(target) = active_runtime(sdk_sessions, db_session_id).await else {
-        return;
+    request_id: &str,
+    app_state: &AppState,
+) -> Result<Option<GateRuntimeGuard>, RuntimeError> {
+    let owner =
+        super::session_control::resolve_owner_sessions(sdk_sessions, app_state, db_session_id)
+            .await;
+    let Some(target) = active_runtime(&owner, db_session_id).await else {
+        return Ok(None);
     };
     let q = target.query.read().await;
-    if let Some(request_id) = request_id {
-        let runtime_response = RuntimePermissionResponse {
+    let barrier = q.turn_control_guard().await;
+    // Register before denying: Claude can finish the cancelled turn before the
+    // interrupt acknowledgement arrives. Reuse Stop's benign completion path,
+    // including its transcript marker and preservation of inter-agent waits.
+    let generation = app_state
+        .active_turns
+        .request_interruption(db_session_id, &target.query)
+        .await;
+    let runtime_response = RuntimePermissionResponse {
+        request_id: request_id.to_string(),
+        decision: RuntimePermissionDecision::Deny,
+        option_id: None,
+        feedback: None,
+        updated_input: None,
+    };
+    let respond_result = q.respond_permission(runtime_response).await;
+    if respond_result.is_err() {
+        let response = PermissionResponse {
             request_id: request_id.to_string(),
-            decision: RuntimePermissionDecision::Deny,
+            message_uuid: None,
+            decision: PermissionDecision::Deny,
             option_id: None,
             feedback: None,
             updated_input: None,
+            is_approval_gate: false,
         };
-        let respond_result = q.respond_permission(runtime_response).await;
-        if respond_result.is_err() {
-            let response = PermissionResponse {
-                request_id: request_id.to_string(),
-                message_uuid: None,
-                decision: PermissionDecision::Deny,
-                option_id: None,
-                feedback: None,
-                updated_input: None,
-                is_approval_gate: false,
-            };
-            if let Err(error) = target.permission_tx.try_send(response) {
-                info!(db_session_id, %error, "gate close: permission channel unavailable");
-            }
+        if let Err(error) = target.permission_tx.try_send(response) {
+            info!(db_session_id, %error, "gate close: permission channel unavailable");
         }
     }
 
-    let interrupt_result = q.interrupt().await;
-    if let Err(error) = interrupt_result {
-        info!(db_session_id, %error, "gate close: interrupt failed (treating as best-effort)");
-    }
+    let result = q.interrupt().await;
+    super::session_control::finish_interruption(
+        result,
+        &target.query,
+        app_state,
+        db_session_id,
+        generation,
+    )
+    .await?;
+    // Keep prompt writers behind the cancellation until gate.closed is sent.
+    Ok(Some(GateRuntimeGuard { _barrier: barrier }))
 }
 
 async fn active_runtime(
@@ -228,4 +275,25 @@ async fn active_runtime(
         }),
         QueryState::Pending(_) => None,
     }
+}
+
+async fn drain_after_gate_close(
+    app_state: &AppState,
+    session_id: i64,
+) -> Result<(), crate::error::AppError> {
+    if crate::domain::prompt_queue::delivery::drain_next_after_turn(app_state, session_id).await {
+        return Ok(());
+    }
+    let Some(row) =
+        WsSessionPersistence::try_get_session_row(&app_state.read_pool, session_id).await?
+    else {
+        return Ok(());
+    };
+    crate::domain::mcp::control::message_queue::drain_next_queued_message(
+        app_state,
+        row.feature_id,
+        session_id,
+    )
+    .await?;
+    Ok(())
 }

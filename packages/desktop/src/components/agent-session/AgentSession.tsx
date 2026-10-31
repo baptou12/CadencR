@@ -18,7 +18,6 @@ import { useAgentSessionModelAndProfile } from "./useAgentSessionModelAndProfile
 import { useAgentSessionMetaVisibility } from "./useAgentSessionMetaVisibility";
 import { useAgentSessionDisplay } from "./useAgentSessionDisplay";
 import type { MetaBarHandle } from "./MetaBar";
-import { useNarrowContainer } from "./useNarrowContainer";
 import { useAutoScrollShortcut } from "./useAutoScrollShortcut";
 import { AgentImageScope } from "@/components/AgentMarkdownImage";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
@@ -39,8 +38,6 @@ import { AgentSessionProvider } from "./agent-session-context";
 import { BranchConfirmDialog } from "./BranchConfirmDialog";
 import { useAgentSessionBranchEffects } from "./useAgentSessionBranchEffects";
 import { useAgentSessionImperativeHandle } from "./useAgentSessionImperativeHandle";
-
-const META_BAR_COMPACT_THRESHOLD_PX = 640;
 
 function useAgentSessionCollapsible(props: AgentSessionProps, ref: Ref<AgentSessionHandle>) {
   const { status, open: controlledOpen, onToggle, wsSessionId } = props;
@@ -174,9 +171,14 @@ function useAgentSessionState(props: AgentSessionProps, ref: Ref<AgentSessionHan
   } = useAgentSessionCollapsible(props, ref);
   const { agentCatalog, projectPath, verbosityMode, summaryMode, messageNavigator, scroll } =
     useAgentSessionScrollAndCatalog(props);
+  const sendRef = useRef<((text: string) => void) | null>(null);
   const agentSessionContextValue = useMemo(
-    () => ({ wsSessionId: wsSessionId ?? null }),
-    [wsSessionId],
+    () => ({
+      wsSessionId: wsSessionId ?? null,
+      sendPrompt: (text: string) => sendRef.current?.(text),
+      openModelPicker: () => metaBarRef.current?.openModelPicker(),
+    }),
+    [metaBarRef, wsSessionId],
   );
   const {
     isAgentWorking,
@@ -203,14 +205,15 @@ function useAgentSessionState(props: AgentSessionProps, ref: Ref<AgentSessionHan
     isFastModePending,
     handleFastModeChange,
   } = useAgentSessionModelAndProfile(props, agentCatalog.data, scroll.scrollToBottom);
-  const isNarrow = useNarrowContainer(containerRef, META_BAR_COMPACT_THRESHOLD_PX);
-  const {
-    showWorktreeChip,
-    showClaudeProfileSelector,
-    showAutoScrollChip,
-    hasMeta,
-    hasSecondaryMeta,
-  } = useAgentSessionMetaVisibility(props, isClaudeProvider, isNarrow, shouldShowPromptBar);
+  useEffect(() => {
+    sendRef.current = (text) => {
+      Promise.resolve(handleSend(text)).catch(() => {
+        // The send handler already toasted the failure.
+      });
+    };
+  }, [handleSend]);
+  const { showWorktreeChip, showClaudeProfileSelector, showAutoScrollChip, hasMeta } =
+    useAgentSessionMetaVisibility(props, isClaudeProvider, shouldShowPromptBar);
   return {
     promptBarRef,
     metaBarRef,
@@ -241,9 +244,7 @@ function useAgentSessionState(props: AgentSessionProps, ref: Ref<AgentSessionHan
     showWorktreeChip,
     showClaudeProfileSelector,
     showAutoScrollChip,
-    isNarrow,
     hasMeta,
-    hasSecondaryMeta,
     badge,
     IconComponent,
     displayLabel,
@@ -290,8 +291,6 @@ export const AgentSession = memo(
         onCollapse={s.handleCollapse}
         shouldShowPromptBar={s.shouldShowPromptBar}
         hasMeta={s.hasMeta}
-        isNarrow={s.isNarrow}
-        hasSecondaryMeta={!!s.hasSecondaryMeta}
         showAutoScrollChip={s.showAutoScrollChip}
         autoScrollEnabled={s.scroll.autoScrollEnabled}
         showWorktreeChip={s.showWorktreeChip}

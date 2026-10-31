@@ -86,7 +86,7 @@ describe("useMarketplace", () => {
     await waitFor(() =>
       expect(result.current.inventoryQuery.data?.providers[0].enabled_after_restart).toBe(false),
     );
-    expect(result.current.notice).toContain("Restart Cadencr");
+    expect(result.current.notice?.text).toContain("Restart Cadencr");
   });
   it("passes the original exact signed envelope to the install API", async () => {
     const index = {

@@ -114,6 +114,12 @@ export interface AgentSessionProps {
   permissionMode?: PermissionMode;
   /** Called when user toggles permission mode */
   onPermissionModeToggle?: () => void;
+  /** Sets a specific permission mode (the composer's mode menu). */
+  onPermissionModeSet?: (mode: PermissionMode) => void;
+  /** Whether the session's model can hold an `auto`-risk mode; undefined if unknown. */
+  modelSupportsAutoMode?: boolean;
+  /** Mid-turn prompts steer the running turn (else Enter queues them). */
+  steeringAcknowledged?: boolean;
   /**
    * Per-provider opt-in modes the user has unlocked via provider settings.
    * Driven by provider-level opt-in workspace settings.

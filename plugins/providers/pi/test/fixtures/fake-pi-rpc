@@ -32,37 +32,45 @@ let messageCount = 0;
 let memory = "";
 
 const stateFile = process.env.FAKE_PI_STATE_FILE;
-const sessionArgumentIndex = process.argv.indexOf("--session");
-const requestedSessionId =
-  sessionArgumentIndex === -1 ? null : process.argv[sessionArgumentIndex + 1];
+let sessionId = "fake-pi-rpc-session";
+
+// Mirrors real Pi: `--session <id>` only opens a PERSISTED session and exits 1 otherwise, while
+// `--session-id <id>` opens that exact id and creates an empty one when nothing was persisted.
+// Real Pi writes a session file only after the first message, so this fake does the same.
+function argumentValue(flag) {
+  const index = process.argv.indexOf(flag);
+  return index === -1 ? null : process.argv[index + 1];
+}
+const strictSessionId = argumentValue("--session");
+const exactSessionId = argumentValue("--session-id");
+const requestedSessionId = strictSessionId ?? exactSessionId;
 
 if (requestedSessionId) {
-  if (!stateFile || !existsSync(stateFile)) {
+  const saved =
+    stateFile && existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, "utf8")) : null;
+  if (saved?.sessionId === requestedSessionId) {
+    model =
+      models.find((entry) => entry.provider === saved.provider && entry.id === saved.modelId) ??
+      model;
+    thinkingLevel = saved.thinkingLevel ?? thinkingLevel;
+    autoCompactionEnabled = saved.autoCompactionEnabled ?? autoCompactionEnabled;
+    steeringMode = saved.steeringMode ?? steeringMode;
+    followUpMode = saved.followUpMode ?? followUpMode;
+    messageCount = saved.messageCount ?? messageCount;
+    memory = saved.memory ?? memory;
+  } else if (strictSessionId) {
     process.stderr.write(`No session found matching '${requestedSessionId}'\n`);
     process.exit(1);
   }
-  const saved = JSON.parse(readFileSync(stateFile, "utf8"));
-  if (saved.sessionId !== requestedSessionId) {
-    process.stderr.write(`No session found matching '${requestedSessionId}'\n`);
-    process.exit(1);
-  }
-  model = models.find((entry) => entry.provider === saved.provider && entry.id === saved.modelId) ?? model;
-  thinkingLevel = saved.thinkingLevel ?? thinkingLevel;
-  autoCompactionEnabled = saved.autoCompactionEnabled ?? autoCompactionEnabled;
-  steeringMode = saved.steeringMode ?? steeringMode;
-  followUpMode = saved.followUpMode ?? followUpMode;
-  messageCount = saved.messageCount ?? messageCount;
-  memory = saved.memory ?? memory;
-} else {
-  persistState();
+  sessionId = requestedSessionId;
 }
 
 function persistState() {
-  if (!stateFile) return;
+  if (!stateFile || messageCount === 0) return;
   writeFileSync(
     stateFile,
     JSON.stringify({
-      sessionId: "fake-pi-rpc-session",
+      sessionId,
       provider: model.provider,
       modelId: model.id,
       thinkingLevel,
@@ -91,7 +99,7 @@ function state() {
     isCompacting: false,
     steeringMode,
     followUpMode,
-    sessionId: "fake-pi-rpc-session",
+    sessionId,
     autoCompactionEnabled,
     messageCount,
     pendingMessageCount: 0,

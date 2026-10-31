@@ -18,7 +18,7 @@ use super::permission_dispatch::handle_can_use_tool_request;
 use super::turn_state::TurnState;
 use super::wire::{
     build_success_ack, control_cancel_request_id, control_request_subtype, parse_control_response,
-    parse_permission_request, write_to_stdin, InterruptAck, PendingControl,
+    parse_permission_request, write_to_stdin, PendingControl,
 };
 
 pub(super) struct ReaderTask {
@@ -32,13 +32,11 @@ pub(super) struct ReaderTask {
     pub pending_control: PendingControl,
     pub cancelled_control_requests: CancelledControlRequests,
     pub cancel_token: Option<CancellationToken>,
-    pub interrupt_rx: mpsc::Receiver<InterruptAck>,
     pub kill_rx: mpsc::Receiver<()>,
 }
 
 enum ReaderAction {
     Raw(Value),
-    Continue,
     Break,
 }
 
@@ -49,15 +47,9 @@ enum RawOutcome {
 
 impl ReaderTask {
     pub async fn run(mut self) {
-        loop {
-            match self.next_action().await {
-                ReaderAction::Raw(raw) => {
-                    if let RawOutcome::Break = self.handle_raw(raw).await {
-                        break;
-                    }
-                }
-                ReaderAction::Continue => continue,
-                ReaderAction::Break => break,
+        while let ReaderAction::Raw(raw) = self.next_action().await {
+            if let RawOutcome::Break = self.handle_raw(raw).await {
+                break;
             }
         }
     }
@@ -65,15 +57,6 @@ impl ReaderTask {
     async fn next_action(&mut self) -> ReaderAction {
         tokio::select! {
             result = self.process.read_message() => self.handle_read_result(result).await,
-            Some(ack) = self.interrupt_rx.recv() => {
-                debug!("interrupt signal received, sending SIGINT to CLI process");
-                let result = self.process.interrupt().await;
-                if let Err(error) = &result {
-                    warn!("failed to interrupt CLI process: {error}");
-                }
-                let _ = ack.send(result);
-                ReaderAction::Continue
-            }
             _ = self.kill_rx.recv() => {
                 debug!("kill signal received, terminating CLI process");
                 if let Err(e) = self.process.kill().await {

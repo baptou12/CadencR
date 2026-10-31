@@ -50,4 +50,56 @@ describe("AgentStreamItem", () => {
     expect(menu).toHaveAttribute("data-copy-content", "Visible reply body");
     expect(menu).toHaveAttribute("data-branching-enabled", "false");
   });
+
+  it("leaves an agent-sent message's name and time to its sender tab", () => {
+    render(
+      <AgentStreamItem
+        block={{
+          id: "msg-1",
+          type: "user_message",
+          content: "Relance les gates",
+          createdAt: "2026-06-18T12:00:00Z",
+          origin: { originKind: "session_generated", sourceSessionId: 3, sourceFeatureId: 17 },
+        }}
+        toolResultMap={new Map()}
+      />,
+    );
+
+    expect(screen.queryByText("User")).toBeNull();
+    expect(screen.getByText("Rendered reply")).toBeInTheDocument();
+  });
+
+  it("keeps the User line on an agent-sent gate, which renders as its own card", () => {
+    render(
+      <AgentStreamItem
+        block={{
+          id: "gate-1",
+          type: "user_message",
+          content:
+            '<cadencr-gate from-session="7" from-feature="8" kind="question" request-id="r">{}</cadencr-gate>',
+          createdAt: "2026-06-18T12:00:00Z",
+          origin: { originKind: "session_generated", sourceSessionId: 7, sourceFeatureId: 8 },
+        }}
+        toolResultMap={new Map()}
+      />,
+    );
+
+    expect(screen.getByText("User")).toBeInTheDocument();
+  });
+
+  it("keeps User on a message the person typed", () => {
+    render(
+      <AgentStreamItem
+        block={{
+          id: "msg-2",
+          type: "user_message",
+          content: "hello",
+          createdAt: "2026-06-18T12:00:00Z",
+        }}
+        toolResultMap={new Map()}
+      />,
+    );
+
+    expect(screen.getByText("User")).toBeInTheDocument();
+  });
 });

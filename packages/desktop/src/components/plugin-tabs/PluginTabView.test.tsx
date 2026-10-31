@@ -9,7 +9,11 @@ import {
 import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 import { render, screen, waitFor } from "@/test-utils";
 
-import { createPluginTabsBridgeMock, pluginTabSummary } from "./plugin-tab-fixtures";
+import {
+  createPluginTabsBridgeMock,
+  linuxOnlyBackendTab,
+  pluginTabSummary,
+} from "./plugin-tab-fixtures";
 import { PluginTabView } from "./PluginTabView";
 
 const navigate = vi.fn(() => Promise.resolve());
@@ -56,6 +60,26 @@ describe("PluginTabView", () => {
       expect(mock.bridge.setVisible).toHaveBeenLastCalledWith("7:plugin:graph", true),
     );
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("sets its active shortcuts — not those Cadencr takes — and ignores their presses' phase", async () => {
+    renderView({
+      shortcuts: [
+        { id: "palette", keys: ["mod", "k"], description: "Taken by Cadencr" },
+        { id: "refresh", keys: ["mod", "alt", "shift", "r"], description: "Refresh" },
+      ],
+    });
+    await waitFor(() =>
+      expect(mock.bridge.setTabShortcuts).toHaveBeenCalledWith("7:plugin:graph", [
+        { id: "refresh", keys: ["mod", "alt", "shift", "r"] },
+      ]),
+    );
+    act(() => mock.emit({ instanceId: "7:plugin:graph", type: "loaded" }));
+    act(() => mock.emit({ instanceId: "7:plugin:graph", type: "shortcut", detail: "refresh" }));
+    // Still shown: a shortcut is not a page lifecycle event.
+    await waitFor(() =>
+      expect(mock.bridge.setVisible).toHaveBeenLastCalledWith("7:plugin:graph", true),
+    );
   });
 
   it("closes the guest on unmount", async () => {
@@ -110,6 +134,40 @@ describe("PluginTabView", () => {
     });
     expect(screen.getByText("Changed files graph is off")).toBeInTheDocument();
     expect(mock.bridge.open).not.toHaveBeenCalled();
+  });
+
+  it("explains a backend with no build for this platform, without a guest", async () => {
+    const { user } = render(
+      <PluginTabView featureId={7} summary={linuxOnlyBackendTab()} context={CONTEXT} />,
+    );
+    expect(
+      screen.getByText("Changed files graph isn't available on this platform"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/ships for Linux \(x86-64\) only/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Manage custom tabs" }));
+    expect(navigate).toHaveBeenCalled();
+    expect(mock.bridge.open).not.toHaveBeenCalled();
+  });
+
+  it("closes an open tab that gets blocked, and says why", async () => {
+    const live = linuxOnlyBackendTab({ backend_availability: "available" });
+    const view = render(<PluginTabView featureId={7} summary={live} context={CONTEXT} />);
+    await waitFor(() => expect(mock.bridge.open).toHaveBeenCalled());
+    view.rerender(
+      <PluginTabView
+        featureId={7}
+        summary={{
+          ...live,
+          status: "blocked",
+          blocked_reason: "Sends repository contents to a third party.",
+          enablement: { ...live.enablement, effective: false },
+        }}
+        context={CONTEXT}
+      />,
+    );
+    expect(screen.getByText("Changed files graph is blocked")).toBeInTheDocument();
+    expect(screen.getByText("Sends repository contents to a third party.")).toBeInTheDocument();
+    expect(mock.bridge.close).toHaveBeenCalledWith("7:plugin:graph");
   });
 
   it("shows a desktop-only placeholder outside the desktop app", () => {

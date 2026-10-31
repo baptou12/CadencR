@@ -1,6 +1,8 @@
 use serde_json::Value;
+use tokio::sync::mpsc;
 
 use crate::domain::agents::acp::AcpClient;
+use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent, RuntimeStreamStatus};
 
 use super::fs::FsOutcome;
 
@@ -39,6 +41,17 @@ pub fn describe_exit(status: Option<i32>, signal: Option<i32>) -> String {
         (_, Some(sig)) => format!("signal {sig}"),
         _ => "unknown reason".to_string(),
     }
+}
+
+/// Send a `RuntimeStreamStatus::Recovered` banner. The event loop pairs
+/// this with a previously-emitted `Degraded` so the UI doesn't get stuck
+/// after a transient lag spike.
+pub(super) async fn emit_recovered(tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>) {
+    let _ = tx
+        .send(Ok(RuntimeEvent::stream_status_event(
+            RuntimeStreamStatus::Recovered,
+        )))
+        .await;
 }
 
 #[cfg(test)]

@@ -15,6 +15,8 @@ import { Markdown } from "@/components/Markdown";
 import { useStreamingMarkdownThrottle } from "@/hooks/useStreamingMarkdownThrottle";
 import { renderFileChangeBlocks } from "@/components/file-change-block";
 import { UserMessageBlock } from "@/components/UserMessageBlock";
+import { AgentMessageSender } from "@/components/AgentMessageSender";
+import { isAgentSentMessage } from "@/lib/agent-message-origin";
 import { renderGeneratedSessionMessage } from "@/components/session-generated-message";
 import { UserMessageActions } from "@/components/agent-session/UserMessageActions";
 import { CopyAsMenu } from "@/components/agent-session/CopyAsMenu";
@@ -25,6 +27,7 @@ import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { CompactDivider, ClearDivider, TurnSummaryDivider } from "@/components/StreamDividers";
 import { ToolSummaryBlock } from "@/components/agent-session/ToolSummaryBlock";
 import { ErrorBlock } from "@/components/ErrorBlock";
+import { TurnInterruptedMarker } from "@/components/TurnInterruptedMarker";
 import { FullContentPreview } from "@/components/FullContentPreview";
 import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
@@ -161,15 +164,28 @@ export const AgentBlock = memo(function AgentBlock({
         />
       );
     case "compact_divider":
-      return <CompactDivider metadata={block.content} />;
     case "clear_divider":
-      return <ClearDivider previousSessionId={block.content} />;
+    case "turn_interrupted":
     case "error":
-      return <ErrorBlock content={block.content} code={block.errorCode} />;
+      return <TranscriptMarker block={block} />;
     default:
       return null;
   }
 });
+
+/** Dividers and notices between turns: compaction, clear, a stop, an error. */
+function TranscriptMarker({ block }: { block: AgentBlockData }): ReactNode {
+  switch (block.type) {
+    case "compact_divider":
+      return <CompactDivider metadata={block.content} />;
+    case "clear_divider":
+      return <ClearDivider previousSessionId={block.content} />;
+    case "turn_interrupted":
+      return <TurnInterruptedMarker blockId={block.id} />;
+    default:
+      return <ErrorBlock content={block.content} code={block.errorCode} blockId={block.id} />;
+  }
+}
 
 interface ToolCallContentProps {
   block: AgentBlockData;
@@ -267,7 +283,11 @@ function UserMessageContent({
   return (
     <UserMessageBlock
       content={block.content}
-      origin={block.origin}
+      senderTab={
+        isAgentSentMessage(block) ? (
+          <AgentMessageSender origin={block.origin} sentAt={block.createdAt} />
+        ) : undefined
+      }
       deliveryState={block.promptDeliveryState}
       renderActions={(bubbleRef) => <UserMessageActions block={block} bubbleRef={bubbleRef} />}
     />

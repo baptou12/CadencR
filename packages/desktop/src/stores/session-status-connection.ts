@@ -60,6 +60,8 @@ function handleAppWsOpen(connection: AppWsConnection): void {
   useConnectionStatusStore.getState().reportSource(APP_WS_SOURCE, "connected");
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.session_status", {})));
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.feature_events", {})));
+  // An agent's project_archive_session: the Archive dialog's toast and teardown.
+  ws.send(JSON.stringify(createEnvelope("app", "subscribe.agent_archived_events", {})));
   // A schedule fires on the server's clock, into a conversation this client
   // need not have open, so nothing else tells the sidebar its rules moved.
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.schedule_events", {})));
@@ -67,6 +69,8 @@ function handleAppWsOpen(connection: AppWsConnection): void {
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.theme_events", {})));
   // Custom tab folders changed on disk: refetch the list, reload live tabs.
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.plugin_tab_events", {})));
+  // Prompts queued for after a turn: delivery happens server-side at turn end.
+  ws.send(JSON.stringify(createEnvelope("app", "subscribe.prompt_queue_events", {})));
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.alacritty_config_events", {})));
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.storage_maintenance_events", {})));
   connection.unsubscribeForgeVisibility = subscribeForgeStatus(ws);

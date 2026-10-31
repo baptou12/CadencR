@@ -1,7 +1,8 @@
 import { createEnvelope } from "@/lib/ws-envelope";
+import { isWindowFocused, onWindowFocusChange } from "@/lib/window-focus";
 
 function isAppFocused(): boolean {
-  return document.visibilityState === "visible" && document.hasFocus();
+  return document.visibilityState === "visible" && isWindowFocused();
 }
 
 function clientId(): string {
@@ -27,12 +28,14 @@ export function subscribeForgeStatus(ws: WebSocket): () => void {
   const windowCanListen = typeof window.addEventListener === "function";
 
   send("subscribe.forge_status");
+  const offWindowFocus = onWindowFocusChange(report);
   if (documentCanListen) document.addEventListener("visibilitychange", report);
   if (windowCanListen) {
     window.addEventListener("focus", report);
     window.addEventListener("blur", report);
   }
   return () => {
+    offWindowFocus();
     if (documentCanListen) document.removeEventListener("visibilitychange", report);
     if (windowCanListen) {
       window.removeEventListener("focus", report);

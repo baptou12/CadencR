@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { cn } from "@/lib/utils";
 import { KbdShortcut } from "@/components/KbdShortcut";
+import { useShortcutKeys } from "@/hooks/useShortcutLabel";
 import {
   AGENT_OPTION_CARD_BASE,
   AGENT_OPTION_CARD_RESTING,
@@ -29,6 +30,7 @@ function AgentQuestionOptionListComponent({
   onOptionToggle,
   onOtherToggle,
 }: AgentQuestionOptionListProps) {
+  const otherKeys = useShortcutKeys("q-other");
   return (
     <div className="mb-2 flex flex-col gap-1.5">
       {options.map((option, optIdx) => {
@@ -37,6 +39,8 @@ function AgentQuestionOptionListComponent({
           <button
             key={value}
             type="button"
+            aria-pressed={selectedOptions.has(value)}
+            aria-keyshortcuts={String(optIdx + 1)}
             className={cn(
               AGENT_OPTION_CARD_BASE,
               selectedOptions.has(value) ? AGENT_OPTION_CARD_SELECTED : AGENT_OPTION_CARD_RESTING,
@@ -50,12 +54,15 @@ function AgentQuestionOptionListComponent({
             }}
           >
             <span className="text-sm font-medium text-foreground">
-              <KbdShortcut
-                keys={[String(optIdx + 1)]}
-                variant="square"
-                scope="agent"
-                disabled={freeTextFocused}
-              />
+              {/* The key is announced via aria-keyshortcuts, not read as text. */}
+              <span aria-hidden>
+                <KbdShortcut
+                  keys={[String(optIdx + 1)]}
+                  variant="square"
+                  scope="agent"
+                  disabled={freeTextFocused}
+                />
+              </span>
               {option.label}
             </span>
             {option.description && (
@@ -69,6 +76,7 @@ function AgentQuestionOptionListComponent({
       {/* "Other" toggle */}
       <button
         type="button"
+        aria-pressed={showOther}
         className={cn(
           AGENT_OPTION_CARD_BASE,
           showOther ? AGENT_OPTION_CARD_SELECTED : AGENT_OPTION_CARD_RESTING,
@@ -80,8 +88,10 @@ function AgentQuestionOptionListComponent({
         }}
       >
         <span className="text-sm font-medium text-foreground">
-          <KbdShortcut keys={["cmd", "O"]} variant="square" scope="agent" />
-          Other...
+          <span aria-hidden>
+            <KbdShortcut keys={otherKeys} variant="square" scope="agent" />
+          </span>
+          Other…
         </span>
       </button>
     </div>

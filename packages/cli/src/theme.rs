@@ -40,11 +40,10 @@ pub(crate) fn pack(directory: &Path, destination: &Path) -> Result<Option<String
             .build(),
     )
     .map_err(|error| operation_error("THEME_PACKAGING_FAILED", error))?;
-    let mut receipt = serde_json::to_vec(&json!({
-        "kind":"theme", "archive":archive.archive, "sha256":archive.sha256, "size":archive.size,
-    }))
-    .map_err(|error| operation_error("THEME_PACKAGING_FAILED", error))?;
-    receipt.push(b'\n');
-    output::write_stdout(&receipt, &mut std::io::stdout().lock())?;
-    Ok(None)
+    output::write_receipt(
+        &json!({
+            "kind":"theme", "archive":archive.archive, "sha256":archive.sha256, "size":archive.size,
+        }),
+        "THEME_PACKAGING_FAILED",
+    )
 }

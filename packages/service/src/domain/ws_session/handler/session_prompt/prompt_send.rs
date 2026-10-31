@@ -14,7 +14,7 @@ use super::super::{parse_session_id, send_error, QueryState, SdkHandle, SdkSessi
 use super::prompt_followup::{handle_followup_prompt, FollowupPromptContext};
 use super::prompt_pending::{handle_pending_prompt, PendingPromptContext};
 use super::prompt_runtime_config::{
-    apply_respawn_if_needed, dispatch_changes, log_dispatch_decision,
+    apply_respawn_if_needed, dispatch_changes, log_dispatch_decision, notify_deferred_respawn,
 };
 use super::prompt_send_entry::{report_prompt_result, PromptedSelection};
 
@@ -85,6 +85,7 @@ pub(super) async fn dispatch_local_phase(
     apply_prompt_profile_update(handle, profile_update);
     let changes = apply_respawn_if_needed(handle, app_state, db_session_id).await;
     log_dispatch_decision(handle, db_session_id, &changes);
+    notify_deferred_respawn(sender, &envelope.id, &changes);
 
     if let QueryState::Active { query, .. } = &handle.state {
         let selection = PromptedSelection::of(handle);
@@ -177,6 +178,7 @@ fn build_followup_context(
         active_turns: app_state.active_turns.clone(),
         provider_id,
         internal_replay: false,
+        wait_for_delivery: false,
     }
 }
 
@@ -206,6 +208,7 @@ async fn owner_prompt_target(
             dispatch_changes(handle)
         };
         log_dispatch_decision(handle, db_session_id, &changes);
+        notify_deferred_respawn(sender, envelope_id, &changes);
 
         match &handle.state {
             QueryState::Active { query, .. } => (
@@ -299,6 +302,7 @@ pub(super) async fn spawn_pending_prompt(
         payload,
         permission_tx: None,
         internal_replay: false,
+        wait_for_delivery: false,
     };
     drop(sessions);
     // Persist user message in the pending helper after releasing sdk_sessions.

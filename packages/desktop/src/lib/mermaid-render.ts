@@ -1,5 +1,7 @@
 import { renderMermaidSVG } from "beautiful-mermaid";
 
+import { LruCache } from "@/lib/lru-cache";
+
 /**
  * Mermaid → SVG for chat diagrams.
  *
@@ -11,32 +13,9 @@ import { renderMermaidSVG } from "beautiful-mermaid";
 
 const CACHE_MAX = 100;
 
-/** Least-recently-used map: a hit moves the entry to the back of eviction order. */
-class LruCache<V> {
-  private readonly entries = new Map<string, V>();
-
-  get(key: string): V | undefined {
-    const value = this.entries.get(key);
-    if (value !== undefined) {
-      this.entries.delete(key);
-      this.entries.set(key, value);
-    }
-    return value;
-  }
-
-  set(key: string, value: V): void {
-    this.entries.delete(key);
-    if (this.entries.size >= CACHE_MAX) {
-      const oldest = this.entries.keys().next().value;
-      if (oldest !== undefined) this.entries.delete(oldest);
-    }
-    this.entries.set(key, value);
-  }
-}
-
 /** `null` records "not beautiful-mermaid's", so a rejected source is not re-parsed per mount. */
-const beautifulCache = new LruCache<string | null>();
-const mermaidCache = new LruCache<string>();
+const beautifulCache = new LruCache<string | null>(CACHE_MAX);
+const mermaidCache = new LruCache<string>(CACHE_MAX);
 
 /** First lines beautiful-mermaid lays out; it would misread anything else as a flowchart. */
 const BEAUTIFUL_HEADER =
@@ -157,6 +136,8 @@ export async function renderWithMermaid(code: string, appearance: Appearance): P
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",
+    htmlLabels: false,
+    secure: [...(mermaid.mermaidAPI.defaultConfig.secure ?? []), "htmlLabels"],
     // Never let mermaid inject its error "bomb" diagram into document.body;
     // on a failed render it leaks a stray, un-React-managed node there.
     suppressErrorRendering: true,

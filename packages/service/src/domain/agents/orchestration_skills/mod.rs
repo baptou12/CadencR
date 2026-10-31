@@ -1,5 +1,6 @@
-//! Provider-neutral catalog of the `/cadencr:*` **virtual** orchestration
-//! skills.
+//! Provider-neutral catalog of the `/cadencr:*` **virtual** skills: the
+//! orchestration workflows plus `visualize` (charts and HTML visuals the chat
+//! renders inline).
 //!
 //! These are *not* installed into any provider (no files written into user
 //! repos): they only exist inside Cadencr. Cadencr advertises them in the
@@ -21,7 +22,17 @@ const PORTABLE_WORKFLOW_BOUNDARY: &str = include_str!("prompts/workflow_boundary
 /// Additional boundary for workflows that can receive a pushed child completion.
 const CHILD_COMPLETION_BOUNDARY: &str = include_str!("prompts/child_completion_boundary.md");
 
-/// One virtual orchestration skill, surfaced as `/cadencr:<name>`.
+/// Shared text expanded ahead of a skill's own body.
+enum Preamble {
+    /// An orchestration workflow driven by the CadencR MCP tools.
+    Workflow,
+    /// A workflow that can also receive a pushed child final message.
+    FollowedWorkflow,
+    /// Self-contained guidance that needs no MCP tools.
+    SelfContained,
+}
+
+/// One virtual skill, surfaced as `/cadencr:<name>`.
 pub struct OrchestrationSkill {
     /// Bare skill name; the surfaced command is `cadencr:<name>`.
     pub name: &'static str,
@@ -29,8 +40,7 @@ pub struct OrchestrationSkill {
     pub description: &'static str,
     /// Prompt body expanded into the outgoing message when the skill runs.
     pub body: &'static str,
-    /// Whether this workflow can receive a pushed child final message.
-    includes_child_completion_boundary: bool,
+    preamble: Preamble,
 }
 
 impl OrchestrationSkill {
@@ -46,10 +56,12 @@ impl OrchestrationSkill {
     /// to empty.
     fn expand(&self, args: &str) -> String {
         let body = self.body.replace("$ARGUMENTS", args.trim());
-        if self.includes_child_completion_boundary {
-            format!("{PORTABLE_WORKFLOW_BOUNDARY}\n\n{CHILD_COMPLETION_BOUNDARY}\n\n{body}")
-        } else {
-            format!("{PORTABLE_WORKFLOW_BOUNDARY}\n\n{body}")
+        match self.preamble {
+            Preamble::FollowedWorkflow => {
+                format!("{PORTABLE_WORKFLOW_BOUNDARY}\n\n{CHILD_COMPLETION_BOUNDARY}\n\n{body}")
+            }
+            Preamble::Workflow => format!("{PORTABLE_WORKFLOW_BOUNDARY}\n\n{body}"),
+            Preamble::SelfContained => body,
         }
     }
 }
@@ -85,31 +97,37 @@ pub const ORCHESTRATION_SKILLS: &[OrchestrationSkill] = &[
         name: "review",
         description: "Spawn an independent reviewer session on this worktree",
         body: include_str!("prompts/review.md"),
-        includes_child_completion_boundary: true,
+        preamble: Preamble::FollowedWorkflow,
     },
     OrchestrationSkill {
         name: "rescue",
         description: "Hand this stuck conversation to a fresh model for an unblock suggestion",
         body: include_str!("prompts/rescue.md"),
-        includes_child_completion_boundary: true,
+        preamble: Preamble::FollowedWorkflow,
     },
     OrchestrationSkill {
         name: "status",
         description: "Render the live tree of spawned Cadencr sessions and any blocked gates",
         body: include_str!("prompts/status.md"),
-        includes_child_completion_boundary: false,
+        preamble: Preamble::Workflow,
     },
     OrchestrationSkill {
         name: "parallelize",
         description: "Fan out independent sub-tasks into isolated Cadencr worktrees",
         body: include_str!("prompts/parallelize.md"),
-        includes_child_completion_boundary: true,
+        preamble: Preamble::FollowedWorkflow,
     },
     OrchestrationSkill {
         name: "handoff",
         description: "Transfer this work to a successor session with a self-contained brief",
         body: include_str!("prompts/handoff.md"),
-        includes_child_completion_boundary: true,
+        preamble: Preamble::FollowedWorkflow,
+    },
+    OrchestrationSkill {
+        name: "visualize",
+        description: "Draw a chart or an interactive HTML visual inline in the conversation",
+        body: include_str!("prompts/visualize.md"),
+        preamble: Preamble::SelfContained,
     },
 ];
 
@@ -193,6 +211,17 @@ mod tests {
     }
 
     #[test]
+    fn visualize_expands_to_self_contained_guidance() {
+        let expanded = expand_prompt("/cadencr:visualize weekly build times");
+        assert!(expanded.contains("weekly build times"));
+        assert!(expanded.contains("```vega-lite"));
+        assert!(expanded.contains("```cadencr-html"));
+        // No orchestration preamble: drawing needs no MCP tool.
+        assert!(!expanded.contains("## CadencR workflow boundary"));
+        assert!(!expanded.contains("$ARGUMENTS"));
+    }
+
+    #[test]
     fn expand_prompt_never_hijacks_a_plain_message() {
         // Bare words that merely resemble a skill name must pass through.
         for text in [
@@ -216,7 +245,14 @@ mod tests {
         let names: Vec<&str> = ORCHESTRATION_SKILLS.iter().map(|s| s.name).collect();
         assert_eq!(
             names,
-            vec!["review", "rescue", "status", "parallelize", "handoff"]
+            vec![
+                "review",
+                "rescue",
+                "status",
+                "parallelize",
+                "handoff",
+                "visualize"
+            ]
         );
         for skill in ORCHESTRATION_SKILLS {
             assert!(

@@ -7,6 +7,9 @@ import { registerPushServiceWorker } from "./lib/remote/push-register";
 import { applyThemeToDocument, readPersistedTheme } from "./lib/themes";
 import { apiErrorMessage } from "./lib/api-errors";
 import { installGlobalRendererErrorHandlers } from "./lib/renderer-error-reporting";
+import { installDiagnosticStoreObservers } from "./lib/renderer-diagnostic-observers";
+import { installDiagnosticBrowserEvents } from "./lib/renderer-diagnostics";
+import { reactRootErrorHandlers } from "./lib/react-root-error-reporting";
 import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary";
 import { detectStandalone } from "./hooks/useFullscreen";
 import { initializeStandaloneViewport } from "./lib/standalone-viewport";
@@ -21,12 +24,14 @@ if (detectStandalone()) initializeStandaloneViewport();
 // localStorage paint hint only avoids a flash on cold start. `useThemeSync`
 // rewrites the cache once the workspace setting resolves.
 applyThemeToDocument(readPersistedTheme());
+installDiagnosticBrowserEvents();
 installGlobalRendererErrorHandlers();
+installDiagnosticStoreObservers();
 
-// Preload port + token before mounting so sync accessors everywhere have
+// Preload the API endpoint before mounting so sync accessors everywhere have
 // the config by the time the first request or WebSocket fires.
 async function bootstrap(): Promise<void> {
-  // In a remote browser, exchange any `?code=` pairing code for a device token
+  // In a remote browser, exchange any `#code=` pairing code (or legacy query code) for a device token
   // and persist it *before* the API client reads its config below.
   await ensurePaired();
   await preloadRuntimeConfig();
@@ -34,7 +39,7 @@ async function bootstrap(): Promise<void> {
   // when push is unsupported). Fire-and-forget — it must not block first paint,
   // and actually subscribing is a separate user-gesture flow in settings.
   void registerPushServiceWorker();
-  const root = createRoot(document.getElementById("root")!);
+  const root = createRoot(document.getElementById("root")!, reactRootErrorHandlers);
   root.render(
     <React.StrictMode>
       <GlobalErrorBoundary>

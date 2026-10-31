@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
+vi.mock("@/components/ToastScope", () => ({
+  scopedToastDescription: (scope: unknown, description?: unknown) => ({ scope, description }),
+}));
 
 import { toast } from "sonner";
 import {
@@ -288,7 +291,10 @@ describe("handleGitEnvelope", () => {
     handleGitEnvelope("status_error", { feature_id: 7, error: "fatal: not a git repo" });
 
     expect(useGitStatusStore.getState().errorByFeature[7]).toBe("fatal: not a git repo");
-    expect(toast.error).toHaveBeenCalledWith("Git status error: fatal: not a git repo");
+    expect(toast.error).toHaveBeenCalledWith("Git status error", {
+      id: "git-status-error-7",
+      description: { scope: { featureId: 7 }, description: "fatal: not a git repo" },
+    });
   });
 
   it("clears any prior error when a fresh snapshot arrives", () => {

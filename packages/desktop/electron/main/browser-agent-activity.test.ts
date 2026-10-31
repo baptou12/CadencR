@@ -12,5 +12,6 @@ describe("agentActivityFor", () => {
     expect(agentActivityFor("browser_open_url", undefined)).toBeNull();
     expect(agentActivityFor("browser_list_tabs", 4)).toBeNull();
     expect(agentActivityFor("browser_open_external_url", 4)).toBeNull();
+    expect(agentActivityFor("browser_close_scope_tabs", 4)).toBeNull();
   });
 });

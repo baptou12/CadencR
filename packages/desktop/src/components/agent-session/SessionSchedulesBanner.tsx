@@ -50,7 +50,9 @@ export const SessionSchedulesBanner = memo(function SessionSchedulesBanner({
   if (!schedules.length) return null;
 
   return (
-    <div className="flex flex-col gap-1 px-3 pt-2">
+    // The composer drops its top padding once the instrument row lives inside
+    // the card. This bottom gap is what keeps these cards off that edge.
+    <div className="flex flex-col gap-2 px-3 pt-2 pb-2">
       {visible.map((schedule) => (
         <ScheduleLine
           key={schedule.id}

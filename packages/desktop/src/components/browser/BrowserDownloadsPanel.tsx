@@ -14,9 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import type { BrowserDownload } from "@/lib/desktop-bridge";
-import { formatCombo, PLATFORM_IS_MAC } from "@/lib/shortcuts/format";
-import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
+import { PLATFORM_IS_MAC } from "@/lib/shortcuts/format";
 import { useBrowserDownloads, type BrowserDownloadsController } from "./useBrowserDownloads";
+import { useShortcutLabel } from "@/hooks/useShortcutLabel";
 
 interface BrowserDownloadsPanelProps {
   scopeId: number;
@@ -30,9 +30,7 @@ export const BrowserDownloadsPanel = memo(function BrowserDownloadsPanel({
   onOpenChange,
 }: BrowserDownloadsPanelProps): ReactElement {
   const controller = useBrowserDownloads(scopeId);
-  const shortcut = formatCombo(useResolvedShortcut("browser-downloads").keys).join(
-    PLATFORM_IS_MAC ? "" : "+",
-  );
+  const shortcut = useShortcutLabel("browser-downloads");
   const { activeCount = 0, aggregatePercent = null } = controller.snapshot ?? {};
   const summary =
     activeCount > 0

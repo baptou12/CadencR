@@ -11,46 +11,23 @@ workflow="$repo_root/.github/workflows/desktop-release.yml"
 [ -f "$workflow" ] || fail "missing workflow: $workflow"
 
 workflow_text="$(cat "$workflow")"
-cli_job_text="$(sed -n '/^  cli-linux:/,/^  release:/p' "$workflow")"
-
 case "$workflow_text" in
   *"--publish always"*)
     fail "desktop release workflow must not let electron-builder publish directly"
     ;;
 esac
 
-case "$cli_job_text" in
-  *'secrets.'*) fail "CLI build job must not consume repository secrets" ;;
-esac
-
-case "$cli_job_text" in
-  *'pnpm install'*|*'corepack enable'*|*'cache: pnpm'*)
-    fail "CLI build job must not install or cache the desktop pnpm workspace"
+# The CLI is released on its own (cli-release.yml, tag cli/vX.Y.Z), so the app
+# release neither builds it nor requires it to carry the app version.
+case "$workflow_text" in
+  *"-p cadencr-cli"*|*"package-cli-release.sh"*|*'cadencr-${RELEASE_TAG}-'*|*"unknown-linux-gnu"*)
+    fail "desktop release workflow must not build or attach the CLI"
     ;;
 esac
 
-grep -Fxq 'packages/cli/Cargo.toml' "$repo_root/scripts/release.sh" \
-  || fail "release preflight must require the CLI package version to match the tag"
-
-case "$cli_job_text" in
-  *"permissions:"*"contents: read"*"node scripts/cargo-env.mjs cargo test --locked"*"-p cadencr-cli"*"-p cadencr-plugin-core"*"-p cadencr-registry-core"*"-p cadencr-registry-publisher"*"node scripts/cargo-env.mjs cargo build --locked --release -p cadencr-cli"*) ;;
-  *) fail "workflow must build the CLI in a secret-free, read-only Linux job" ;;
-esac
-
-case "$workflow_text" in
-  *"scripts/package-cli-release.sh"*"actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"*) ;;
-  *) fail "workflow must smoke test, checksum, and transfer CLI release assets" ;;
-esac
-
-case "$workflow_text" in
-  *"actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"*'shasum -a 256 --check "$cli_manifest"'*) ;;
-  *) fail "desktop release job must download and verify the CLI checksum" ;;
-esac
-
-case "$workflow_text" in
-  *'cadencr-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu'*'cadencr-${GITHUB_REF_NAME}-SHA256SUMS'*) ;;
-  *) fail "workflow must upload the versioned Linux CLI and SHA256 manifest" ;;
-esac
+if grep -Eq '^packages/cli/' "$repo_root/scripts/release.sh"; then
+  fail "release preflight must not require the CLI package version to match the app tag"
+fi
 
 case "$workflow_text" in
   *"--publish never"*) ;;
@@ -86,4 +63,38 @@ esac
 case "$workflow_text" in
   *'CADENCR_MANAGED_THEME_INDEX_URL: ${{ vars.CADENCR_MANAGED_THEME_INDEX_URL }}'*'Validate marketplace build configuration'*'node scripts/validate-marketplace-build-env.mjs -- pnpm --filter @cadencr/service build:macos-sidecars'*) ;;
   *) fail "desktop sidecar must validate and forward optional mixed theme feed configuration" ;;
+esac
+
+# Linux ships as a manual alpha (desktop-linux-release.yml) attached to the
+# published release, so a Linux failure can never hold up macOS.
+case "$workflow_text" in
+  *"--linux"*|*"latest-linux.yml"*|*"smoke-linux-packages.sh"*)
+    fail "the tag-triggered release must not build or publish Linux packages"
+    ;;
+esac
+
+linux_workflow="$repo_root/.github/workflows/desktop-linux-release.yml"
+[ -f "$linux_workflow" ] || fail "missing workflow: $linux_workflow"
+linux_text="$(cat "$linux_workflow")"
+
+case "$linux_text" in
+  *"  push:"*|*"--publish always"*)
+    fail "the Linux alpha must only run by hand and never let electron-builder publish"
+    ;;
+esac
+
+case "$linux_text" in
+  *"runs-on: ubuntu-22.04"*"pnpm --filter @cadencr/service build:sidecars"*"resources/bin/x64/cadencr-service"*"--linux"*"--publish never"*"scripts/smoke-linux-packages.sh"*) ;;
+  *) fail "the Linux alpha must build, sidecar-smoke and package-smoke on the oldest-glibc runner" ;;
+esac
+
+case "$linux_text" in
+  *"Upload Linux alpha assets"*'Cadencr-${version}-x86_64.AppImage'*'Cadencr-${version}-amd64.deb'*'Cadencr-${version}-x86_64.rpm'*'latest-linux.yml'*"Verify uploaded Linux alpha assets"*"## Linux (alpha)"*) ;;
+  *) fail "the Linux alpha must upload and verify every updater target, then flag the release notes" ;;
+esac
+
+case "$workflow_text$linux_text" in
+  *"AppImage.blockmap"*)
+    fail "electron-builder embeds the AppImage block map; never expect a separate AppImage block map file"
+    ;;
 esac

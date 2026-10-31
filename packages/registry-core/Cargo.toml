@@ -1,6 +1,6 @@
 [package]
 name = "cadencr-registry-core"
-version = "0.14.0"
+version = "0.15.1"
 edition = "2021"
 license.workspace = true
 
@@ -22,6 +22,9 @@ sha2 = "0.11"
 unicode-normalization = "0.1"
 url = "2"
 zeroize = "1.8"
+
+[dev-dependencies]
+cadencr-plugin-core = { path = "../plugin-core", features = ["test-support"] }
 
 [lints]
 workspace = true

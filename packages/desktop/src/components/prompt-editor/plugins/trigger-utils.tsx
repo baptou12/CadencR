@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { useEffect, useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
 import {
   $createTextNode,
   $getSelection,
@@ -21,6 +14,7 @@ import {
   type LexicalNode,
   type TextNode,
 } from "lexical";
+import { composerOptionId } from "@/components/composer/ComposerPopover";
 
 /** Result of matching a trigger character (e.g. `@` or `/`) before the cursor. */
 interface TriggerMatch {
@@ -112,7 +106,9 @@ interface TriggerHookState {
 
 /**
  * Registers the 5 keyboard commands (ArrowUp, ArrowDown, Enter, Tab, Escape)
- * on the editor while the popover is open.
+ * on the editor while the popover is open, and — when `listId` is given —
+ * points the editor root's combobox ARIA at the popover's listbox so screen
+ * readers announce the highlighted option.
  */
 export function usePopoverKeyboardCommands<T>(
   editor: LexicalEditor,
@@ -120,7 +116,9 @@ export function usePopoverKeyboardCommands<T>(
   hookRef: RefObject<TriggerHookState>,
   getSelectedValue: () => T | undefined,
   onSelect: (value: T) => void,
+  listId?: string,
 ): void {
+  useComboboxAria(editor, isOpen, listId, hookRef.current?.selectedIndex ?? 0);
   useEffect(() => {
     if (!isOpen) return;
 
@@ -177,7 +175,10 @@ export function usePopoverKeyboardCommands<T>(
       editor.registerCommand(
         KEY_ESCAPE_COMMAND,
         (e) => {
+          // The popover owns this Esc: nothing above the editor (agent stop,
+          // pane close) may also react to it.
           e?.preventDefault();
+          e?.stopPropagation();
           hookRef.current.close();
           return true;
         },
@@ -189,22 +190,25 @@ export function usePopoverKeyboardCommands<T>(
   }, [editor, isOpen, hookRef, getSelectedValue, onSelect]);
 }
 
-/** Hook that tracks cursor position as a DOMRect for popover positioning. */
-export function useCursorRect(): [DOMRect | null, () => void] {
-  const [cursorRect, setCursorRect] = useState<DOMRect | null>(null);
-
-  const updateCursorRect = useCallback(() => {
-    const domSelection = window.getSelection();
-    if (!domSelection || domSelection.rangeCount === 0) return;
-    const range = domSelection.getRangeAt(0);
-    const rect =
-      typeof range.getBoundingClientRect === "function"
-        ? range.getBoundingClientRect()
-        : document.documentElement.getBoundingClientRect();
-    setCursorRect(rect);
-  }, []);
-
-  return [cursorRect, updateCursorRect];
+/** Mirror an open typeahead onto the editor root's combobox attributes. */
+function useComboboxAria(
+  editor: LexicalEditor,
+  isOpen: boolean,
+  listId: string | undefined,
+  selectedIndex: number,
+): void {
+  useEffect(() => {
+    const root = editor.getRootElement();
+    if (!root || !listId) return;
+    if (!isOpen) {
+      root.setAttribute("aria-expanded", "false");
+      root.removeAttribute("aria-activedescendant");
+      return;
+    }
+    root.setAttribute("aria-expanded", "true");
+    root.setAttribute("aria-controls", listId);
+    root.setAttribute("aria-activedescendant", composerOptionId(listId, selectedIndex));
+  }, [editor, isOpen, listId, selectedIndex]);
 }
 
 /** Minimal rect shared by cursor- and editor-anchored fixed popovers. */
@@ -263,6 +267,7 @@ export function useEditorAnchorRect(
 
     const root = editor.getRootElement();
     const anchor =
+      (root?.closest("[data-composer-card]") as HTMLElement | null) ??
       (root?.closest("[data-prompt-editor-anchor]") as HTMLElement | null) ??
       root?.parentElement ??
       root;

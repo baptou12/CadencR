@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::catalog::validate_catalog_identities_with_label;
 use crate::error::RegistryError;
 
-use crate::signing::{parse_public_key, verify_envelope_at};
+use crate::signing::{parse_public_key, verify_envelope_at, PayloadCheck};
 
 pub(crate) mod continuity;
 mod io;
@@ -16,7 +16,7 @@ use io::{parse_document, read_file, validate_inputs};
 use output::{assemble_snapshot, digest};
 
 const CATALOG_LIMIT: u64 = crate::MAX_CATALOG_BYTES as u64;
-const KEY_LIMIT: u64 = 16 * 1024;
+use crate::safe_io::KEY_LIMIT;
 
 #[derive(Clone, Copy, Debug)]
 pub enum PreviousCatalog<'a> {
@@ -65,7 +65,8 @@ pub fn prepare_catalog_snapshot(
     }
     let candidate_bytes = read_file(catalog_file, CATALOG_LIMIT, "catalog")?;
     let candidate = parse_document(&candidate_bytes, "catalog")?;
-    let canonical_payload = verify_envelope_at(&candidate, &key, key_id, false, now)?;
+    let canonical_payload =
+        verify_envelope_at(&candidate, &key, key_id, PayloadCheck::publish(now))?;
     let candidate_signed = signed(&candidate);
 
     let mut namespace_upgrade = false;
@@ -79,7 +80,7 @@ pub fn prepare_catalog_snapshot(
                     trust.verify_catalog(&baseline, crate::CatalogTrustPurpose::Baseline, now)?;
                 }
                 None => {
-                    verify_envelope_at(&baseline, &key, key_id, true, now)?;
+                    verify_envelope_at(&baseline, &key, key_id, PayloadCheck::history(now))?;
                 }
             }
             if signed(&baseline)["schema_version"] != candidate_signed["schema_version"]
@@ -215,9 +216,11 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         let key = parse_public_key(PUBLIC_KEY.as_bytes()).unwrap();
-        let payload = verify_envelope_at(&envelope, &key, "release-2026", false, now).unwrap();
+        let payload =
+            verify_envelope_at(&envelope, &key, "release-2026", PayloadCheck::publish(now))
+                .unwrap();
         let baseline: Value = serde_json::from_slice(&previous).unwrap();
-        verify_envelope_at(&baseline, &key, "release-2026", true, now).unwrap();
+        verify_envelope_at(&baseline, &key, "release-2026", PayloadCheck::history(now)).unwrap();
         validate_continuity(&baseline["signed"], &envelope["signed"]).unwrap();
         let snapshot = output::assemble_snapshot(
             envelope.clone(),

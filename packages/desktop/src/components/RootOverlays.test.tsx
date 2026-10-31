@@ -56,6 +56,10 @@ vi.mock("@/components/KeyboardShortcutsModal", () => ({
   KeyboardShortcutsModal: () => null,
 }));
 
+vi.mock("@/components/plugin-tabs/PluginTabPresenceKeeper", () => ({
+  PluginTabPresenceKeeper: () => null,
+}));
+
 vi.mock("@/components/UnifiedAgentsShortcut", () => ({
   UnifiedAgentsShortcut: () => null,
 }));

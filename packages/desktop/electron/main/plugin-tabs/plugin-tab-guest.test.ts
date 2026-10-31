@@ -49,7 +49,12 @@ vi.mock("electron", async () => {
 const { createPluginTabGuest } = await import("./plugin-tab-guest");
 
 function hooks() {
-  return { loaded: vi.fn(), loadFailed: vi.fn(), crashed: vi.fn(), shortcut: vi.fn() };
+  return {
+    loaded: vi.fn(),
+    loadFailed: vi.fn(),
+    crashed: vi.fn(),
+    keyDown: vi.fn((input: { key: string }) => input.key === "k"),
+  };
 }
 
 function spawn(hookSet = hooks()) {
@@ -170,20 +175,26 @@ describe("createPluginTabGuest", () => {
     expect(second.contents.close).toHaveBeenCalledTimes(1);
   });
 
-  it("relays feature-pane chords from a focused guest and leaves other keys alone", () => {
+  it("hands every key down to the host and takes only the ones it claims", () => {
     const { contents, hooks: h } = spawn();
-    const mod = process.platform === "darwin" ? { meta: true } : { control: true };
-    const paneSwitch = { preventDefault: vi.fn() };
-    contents.emit("before-input-event", paneSwitch, keyDown("a", { ...mod, shift: true }));
-    expect(paneSwitch.preventDefault).toHaveBeenCalled();
-    expect(h.shortcut).toHaveBeenCalledWith("pane-agent");
+    const claimed = { preventDefault: vi.fn() };
+    contents.emit("before-input-event", claimed, keyDown("k", { meta: true, shift: true }));
+    expect(claimed.preventDefault).toHaveBeenCalled();
+    expect(h.keyDown).toHaveBeenCalledWith({
+      key: "k",
+      code: "KeyK",
+      meta: true,
+      control: undefined,
+      alt: false,
+      shift: true,
+    });
 
-    const browserChord = { preventDefault: vi.fn() };
-    contents.emit("before-input-event", browserChord, keyDown("w", mod));
-    const plainKey = { preventDefault: vi.fn() };
-    contents.emit("before-input-event", plainKey, keyDown("a", {}));
-    expect(browserChord.preventDefault).not.toHaveBeenCalled();
-    expect(plainKey.preventDefault).not.toHaveBeenCalled();
-    expect(h.shortcut).toHaveBeenCalledTimes(1);
+    const typed = { preventDefault: vi.fn() };
+    contents.emit("before-input-event", typed, keyDown("a", {}));
+    const released = { preventDefault: vi.fn() };
+    contents.emit("before-input-event", released, { ...keyDown("k", {}), type: "keyUp" });
+    expect(typed.preventDefault).not.toHaveBeenCalled();
+    expect(released.preventDefault).not.toHaveBeenCalled();
+    expect(h.keyDown).toHaveBeenCalledTimes(2);
   });
 });

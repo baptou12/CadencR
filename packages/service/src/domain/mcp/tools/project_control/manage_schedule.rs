@@ -1,10 +1,11 @@
 use serde_json::json;
 
-use super::{require_i64, require_source_session, McpContext, McpControlClient};
+use super::{
+    relay_fields, require_i64, require_source_session, source_request, McpContext, McpControlClient,
+};
 
-/// The fields `project_update_schedule` may patch, relayed as the agent sent
-/// them: the service's typed request rejects a wrong type instead of reading
-/// it as "keep the stored value".
+/// The fields `project_update_schedule` may patch; an absent one keeps the
+/// stored value.
 const PATCH_FIELDS: [&str; 9] = [
     "name",
     "prompt",
@@ -38,18 +39,9 @@ async fn update_schedule_with_client(
     ctx: &McpContext,
     client: McpControlClient,
 ) -> Result<serde_json::Value, String> {
-    let source_session_id = require_source_session(ctx, "project_update_schedule")?;
-    let schedule_id = require_i64(args, "schedule_id")?;
-    let mut request = json!({
-        "source_feature_id": ctx.feature_id,
-        "source_session_id": source_session_id,
-        "schedule_id": schedule_id,
-    });
-    for field in PATCH_FIELDS {
-        if let Some(value) = args.get(field) {
-            request[field] = value.clone();
-        }
-    }
+    let mut request = source_request(ctx, "project_update_schedule")?;
+    request["schedule_id"] = json!(require_i64(args, "schedule_id")?);
+    relay_fields(args, &mut request, &PATCH_FIELDS);
     client
         .post_json("/internal/mcp/project/update-schedule", request)
         .await

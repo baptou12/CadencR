@@ -19,7 +19,7 @@ impl ManagedTrustStore {
         if index.signed.schema_version != 2 {
             return Err(invalid("mixed catalog schema must equal 2".into()));
         }
-        cadencr_registry_core::validate_signing_payload_at(&original, true, chrono::Utc::now())
+        cadencr_registry_core::validate_catalog_payload_at(&original, true, chrono::Utc::now())
             .map_err(|e| invalid(e.to_string()))?;
         let envelope = SignedProviderCatalog::Mixed(index);
         let signed = envelope.provider_view().map_err(invalid)?;

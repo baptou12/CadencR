@@ -9,6 +9,7 @@ use super::super::post_plan_mode::{
 use super::super::session_prompt::PermissionResponse;
 use super::super::types::{QueryState, SdkSessions, WsSender};
 use super::permission_dispatch::finish_gate_claim;
+use super::permission_pending::clear_answered_gate_preserving_replacement;
 use super::permission_user_message::persist_question_answer;
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{
@@ -47,32 +48,6 @@ fn acknowledge_permission_response(sender: &WsSender, envelope_id: &str) {
         serde_json::json!({ "action": "permission.respond" }),
     );
     let _ = sender.send(Message::Text(String::from(ack).into()));
-}
-
-async fn clear_answered_gate_preserving_replacement(
-    pool: &sqlx::SqlitePool,
-    db_session_id: i64,
-    answered_request_id: &str,
-) -> Result<bool, sqlx::Error> {
-    let remaining: Option<String> = sqlx::query_scalar(
-        "UPDATE agent_sessions SET \
-            pending_permission = CASE \
-                WHEN pending_permission IS NOT NULL \
-                    AND json_valid(pending_permission) \
-                    AND json_extract(pending_permission, '$.request_id') IS NOT NULL \
-                    AND json_extract(pending_permission, '$.request_id') != ? \
-                THEN pending_permission \
-                ELSE NULL \
-            END, \
-            pending_questions = NULL \
-         WHERE id = ? \
-         RETURNING pending_permission",
-    )
-    .bind(answered_request_id)
-    .bind(db_session_id)
-    .fetch_one(pool)
-    .await?;
-    Ok(remaining.is_some())
 }
 
 async fn lookup_active_permission_handle(
@@ -125,7 +100,7 @@ async fn finish_accepted_runtime_permission(
             payload.decision.clone(),
             turn_feedback,
         );
-    let has_stacked_permission = if denial_completes_session {
+    let has_pending_gate = if denial_completes_session {
         clear_runtime_resolved_gate(app_state, db_session_id).await;
         false
     } else {
@@ -167,13 +142,12 @@ async fn finish_accepted_runtime_permission(
         payload.message_uuid.as_deref(),
     )
     .await;
-    if !has_stacked_permission {
-        WsSessionPersistence::broadcast_session_status(
-            &app_state.session_status_tx,
+    if !has_pending_gate {
+        app_state.session_status_tx.broadcast_gate_resolved(
             db_session_id,
             feature_id,
+            &payload.request_id,
             next_status,
-            None,
         );
     }
     true

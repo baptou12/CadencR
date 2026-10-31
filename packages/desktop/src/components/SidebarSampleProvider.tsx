@@ -122,16 +122,14 @@ function useSampleState(enabled: boolean): SidebarSamplePreview {
 
   const rows = useMemo(
     () =>
-      conversations.map(
-        (conversation): SampleRow => ({
-          conversation,
-          state: answered.has(conversation.feature.id)
-            ? "working"
-            : replaying
-              ? conversation.before
-              : conversation.state,
-        }),
-      ),
+      conversations.map((conversation): SampleRow => ({
+        conversation,
+        state: answered.has(conversation.feature.id)
+          ? "working"
+          : replaying
+            ? conversation.before
+            : conversation.state,
+      })),
     [answered, conversations, replaying],
   );
   const views = useMemo(() => sampleViews(rows, recentCount), [recentCount, rows]);

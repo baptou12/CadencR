@@ -4,8 +4,12 @@
 //! so a key Cadencr does not know is a typo or a feature that does not exist,
 //! and either way the author should hear about it rather than ship it.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use super::platform::TabPlatform;
 
 /// A custom tab's manifest (`<plugins>/tabs/<id>/tab.json`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -41,6 +45,10 @@ pub struct TabManifest {
     /// the user's rights ([`TabAccessLevel::Backend`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<TabBackend>,
+    /// Keyboard shortcuts the tab handles while it has focus; one that
+    /// collides with a Cadencr shortcut is disabled by the host.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shortcuts: Vec<TabShortcut>,
 }
 
 impl TabManifest {
@@ -90,45 +98,48 @@ pub struct TabCommand {
     pub reasoning: Option<String>,
 }
 
-/// The tab's native backend process (`backend`).
+/// One keyboard shortcut a tab handles while it has focus (`shortcuts[]`),
+/// delivered to the page as a `shortcut` event naming its `id`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TabShortcut {
+    /// Stable within the tab, e.g. `refresh`.
+    pub id: String,
+    /// Shortcut tokens, e.g. `["mod", "shift", "r"]`: modifiers (`mod`,
+    /// `ctrl`, `alt`, `shift`) and exactly one key; `mod`, `ctrl` or `alt`
+    /// is required.
+    pub keys: Vec<String>,
+    /// What it does, for the shortcuts cheatsheet and the tab's settings.
+    pub description: String,
+}
+
+/// The tab's native backend process (`backend`): one executable per
+/// platform, shipped inside the tab folder, speaking stdio protocol
+/// `protocol` (`docs/CUSTOM_TABS.md` §4.7).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TabBackend {
-    /// A path inside the tab folder (`bin/backend`) or a bare program name
-    /// looked up on `PATH` (`node`, with the script in `args`).
-    pub command: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub args: Vec<String>,
+    /// The stdio protocol version the backend speaks: `1` (the versions a
+    /// Cadencr accepts are `SUPPORTED_BACKEND_PROTOCOLS`).
+    pub protocol: u32,
+    /// Platform key (`darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`) →
+    /// path of its native executable inside the tab folder. A platform left
+    /// out cannot run the backend.
+    pub binary: BTreeMap<String, String>,
     /// Shown to the user at consent time; required.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<String>,
 }
 
-/// Where a backend's `command` is found.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BackendTarget<'a> {
-    /// A path inside the tab folder, e.g. `bin/backend`.
-    FolderFile(&'a str),
-    /// A bare program name looked up on `PATH`, e.g. `node`.
-    Program(&'a str),
-}
-
 impl TabBackend {
-    /// A `command` holding a `/` is a path inside the tab folder.
-    pub fn target(&self) -> BackendTarget<'_> {
-        if self.command.contains('/') {
-            BackendTarget::FolderFile(&self.command)
-        } else {
-            BackendTarget::Program(&self.command)
-        }
+    /// The executable declared for `platform`, if any.
+    pub fn binary_for(&self, platform: TabPlatform) -> Option<&str> {
+        self.binary.get(platform.as_str()).map(String::as_str)
     }
 
-    /// `node backend/server.mjs`: the launch line as the user would type it.
-    pub fn command_line(&self) -> String {
-        std::iter::once(self.command.as_str())
-            .chain(self.args.iter().map(String::as_str))
-            .collect::<Vec<_>>()
-            .join(" ")
+    /// The declared platform keys, sorted, as written.
+    pub fn platform_keys(&self) -> impl Iterator<Item = &str> {
+        self.binary.keys().map(String::as_str)
     }
 }
 
@@ -250,8 +261,8 @@ mod tests {
         assert!(manifest.command("git").is_some());
         assert!(manifest.command("Git").is_none());
         manifest.backend = Some(TabBackend {
-            command: "node".into(),
-            args: vec!["backend/server.mjs".into()],
+            protocol: 1,
+            binary: BTreeMap::from([("linux-x86_64".into(), "bin/backend".into())]),
             reasoning: Some("ports".into()),
         });
         assert_eq!(manifest.access_level(), TabAccessLevel::Backend);
@@ -298,17 +309,28 @@ mod tests {
     }
 
     #[test]
-    fn a_backend_runs_a_folder_file_or_a_program_on_path() {
-        let backend = |command: &str, args: &[&str]| TabBackend {
-            command: command.into(),
-            args: args.iter().map(|arg| arg.to_string()).collect(),
-            reasoning: None,
-        };
-        let script = backend("node", &["backend/server.mjs", "--quiet"]);
-        assert_eq!(script.target(), BackendTarget::Program("node"));
-        assert_eq!(script.command_line(), "node backend/server.mjs --quiet");
-        let binary = backend("bin/backend", &[]);
-        assert_eq!(binary.target(), BackendTarget::FolderFile("bin/backend"));
-        assert_eq!(binary.command_line(), "bin/backend");
+    fn a_backend_names_one_binary_per_platform() {
+        let backend: TabBackend = serde_json::from_value(json!({
+            "protocol": 1,
+            "binary": {"linux-x86_64": "bin/linux/b", "darwin-aarch64": "bin/mac/b"},
+            "reasoning": "r"
+        }))
+        .unwrap();
+        assert_eq!(
+            backend.binary_for(TabPlatform::DarwinAarch64),
+            Some("bin/mac/b")
+        );
+        assert_eq!(backend.binary_for(TabPlatform::DarwinX86_64), None);
+        assert_eq!(
+            backend.platform_keys().collect::<Vec<_>>(),
+            ["darwin-aarch64", "linux-x86_64"]
+        );
+        for removed in [
+            json!({"protocol": 1, "binary": {}, "command": "node"}),
+            json!({"protocol": 1, "binary": {}, "args": []}),
+            json!({"binary": {}}),
+        ] {
+            assert!(serde_json::from_value::<TabBackend>(removed).is_err());
+        }
     }
 }

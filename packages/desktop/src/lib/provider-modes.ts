@@ -12,7 +12,6 @@ import {
   Hammer,
   ShieldOff,
   Sparkles,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,15 +19,37 @@ import { PROVIDER_IDS, type ProviderId } from "./providers";
 import type { RuntimeProviderModeOption } from "@/api/agentRuntime";
 import { OPENCODE_AGENT_MODE_PREFIX, type PermissionMode } from "@/types/permission-mode";
 
+/**
+ * Provider-neutral autonomy level of a mode — what the agent may do without
+ * asking. Drives the mode control's gloss (DESIGN.md › Mode risk scale); the
+ * color stays the provider's own (`tone`).
+ */
+export type ModeRisk = "read" | "ask" | "edits" | "auto" | "bypass";
+
+/** Short, provider-neutral gloss shown under the mode label. */
+export const MODE_RISK_LABEL: Record<ModeRisk, string> = {
+  read: "Read-only",
+  ask: "Asks before acting",
+  edits: "Edits without asking",
+  auto: "Acts on its own",
+  bypass: "No guardrails",
+};
+
 export interface ProviderMode {
   /** Wire value sent to the backend. */
   id: PermissionMode;
+  risk: ModeRisk;
   /** Chip label. */
   label: string;
   icon: LucideIcon;
   /**
-   * Tailwind classes for the chip in its selected state. Hover variant
-   * included; matches the existing chip pattern in MetaBar.
+   * The mode's color — the one the provider's own UI uses, so a user moving
+   * between the CLI and Cadencr recognizes the mode at a glance.
+   */
+  tone: string;
+  /**
+   * Tailwind classes for the tinted chip in its selected state (hover
+   * included). Same hue as `tone`.
    */
   chipClass: string;
   /** Tooltip + a11y description. */
@@ -41,17 +62,18 @@ export interface ProviderMode {
   optIn?: boolean;
 }
 
-// Chips route through theme tokens (defined per theme in index.css) so
-// contrast holds in both Dracula and Aurora. We use `--chip-*` for chip
-// identities that fall outside the canonical Dracula palette (violet,
-// fuchsia, blue) and `--acc-*` for the ones that already match (green,
-// yellow, red, pink, cyan).
+// Mode colors route through theme tokens (defined per theme in index.css) so
+// contrast holds in every theme. `--chip-*` covers identities outside the
+// canonical Dracula palette (violet, fuchsia, blue), `--acc-*` the ones that
+// already match (green, yellow, red, cyan).
 
 const CLAUDE_CODE_MODES: ProviderMode[] = [
   {
     id: "auto",
     label: "Auto",
     icon: Sparkles,
+    risk: "auto",
+    tone: "var(--acc-yellow)",
     chipClass: "bg-[var(--acc-yellow)]/15 text-[var(--acc-yellow)] hover:bg-[var(--acc-yellow)]/25",
     description:
       "Classifier-backed: safe actions auto-run, risky ones blocked. Requires Sonnet 4.6 / Opus 4.6+.",
@@ -60,6 +82,8 @@ const CLAUDE_CODE_MODES: ProviderMode[] = [
     id: "acceptEdits",
     label: "Auto-Accept Edits",
     icon: FileEditIcon,
+    risk: "edits",
+    tone: "var(--chip-violet-fg)",
     chipClass:
       "bg-[var(--chip-violet-bg)]/15 text-[var(--chip-violet-fg)] hover:bg-[var(--chip-violet-bg)]/25",
     description: "Auto-approve file edits in the working directory.",
@@ -68,6 +92,8 @@ const CLAUDE_CODE_MODES: ProviderMode[] = [
     id: "plan",
     label: "Plan",
     icon: ClipboardList,
+    risk: "read",
+    tone: "var(--acc-green)",
     chipClass: "bg-[var(--acc-green)]/15 text-[var(--acc-green)] hover:bg-[var(--acc-green)]/25",
     description: "Research and propose changes without editing source.",
   },
@@ -75,6 +101,8 @@ const CLAUDE_CODE_MODES: ProviderMode[] = [
     id: "bypassPermissions",
     label: "Bypass",
     icon: ShieldOff,
+    risk: "bypass",
+    tone: "var(--acc-red)",
     chipClass: "bg-[var(--acc-red)]/15 text-[var(--acc-red)] hover:bg-[var(--acc-red)]/25",
     description: "Dangerous: skip Claude Code permission prompts and checks.",
     optIn: true,
@@ -86,6 +114,8 @@ const OPENCODE_MODES: ProviderMode[] = [
     id: "acceptEdits",
     label: "Build",
     icon: Hammer,
+    risk: "edits",
+    tone: "var(--chip-fuchsia-fg)",
     chipClass:
       "bg-[var(--chip-fuchsia-bg)]/15 text-[var(--chip-fuchsia-fg)] hover:bg-[var(--chip-fuchsia-bg)]/25",
     description: "Default OpenCode agent with all tools enabled.",
@@ -94,6 +124,8 @@ const OPENCODE_MODES: ProviderMode[] = [
     id: "plan",
     label: "Plan",
     icon: ClipboardList,
+    risk: "read",
+    tone: "var(--acc-yellow)",
     chipClass: "bg-[var(--acc-yellow)]/15 text-[var(--acc-yellow)] hover:bg-[var(--acc-yellow)]/25",
     description: "Restricted OpenCode agent for analysis without changes.",
   },
@@ -103,7 +135,11 @@ const CODEX_MODES: ProviderMode[] = [
   {
     id: "default",
     label: "Default",
-    icon: Zap,
+    icon: Hammer,
+    risk: "ask",
+    // Grey in the composer: on Codex only Plan is a "mode". The compact chip
+    // (other surfaces) keeps its historical blue.
+    tone: "var(--muted-foreground)",
     chipClass:
       "bg-[var(--chip-blue-bg)]/15 text-[var(--chip-blue-fg)] hover:bg-[var(--chip-blue-bg)]/25",
     description: "Workspace-write sandbox with on-request approvals.",
@@ -112,6 +148,8 @@ const CODEX_MODES: ProviderMode[] = [
     id: "plan",
     label: "Plan",
     icon: ClipboardList,
+    risk: "read",
+    tone: "var(--chip-fuchsia-fg)",
     chipClass:
       "bg-[var(--chip-fuchsia-bg)]/15 text-[var(--chip-fuchsia-fg)] hover:bg-[var(--chip-fuchsia-bg)]/25",
     description: "Plan first; sandbox/approvals match Default.",
@@ -123,6 +161,8 @@ const CURSOR_MODES: ProviderMode[] = [
     id: "default",
     label: "Default",
     icon: Hammer,
+    risk: "ask",
+    tone: "var(--chip-blue-fg)",
     chipClass:
       "bg-[var(--chip-blue-bg)]/15 text-[var(--chip-blue-fg)] hover:bg-[var(--chip-blue-bg)]/25",
     description: "Cursor's default mode with full coding tools.",
@@ -131,6 +171,8 @@ const CURSOR_MODES: ProviderMode[] = [
     id: "plan",
     label: "Plan",
     icon: ClipboardList,
+    risk: "read",
+    tone: "var(--acc-yellow)",
     chipClass: "bg-[var(--acc-yellow)]/15 text-[var(--acc-yellow)] hover:bg-[var(--acc-yellow)]/25",
     description: "Cursor read-only planning mode.",
   },
@@ -138,6 +180,8 @@ const CURSOR_MODES: ProviderMode[] = [
     id: "ask",
     label: "Ask",
     icon: Bot,
+    risk: "read",
+    tone: "var(--acc-green)",
     chipClass: "bg-[var(--acc-green)]/15 text-[var(--acc-green)] hover:bg-[var(--acc-green)]/25",
     description: "Cursor read-only Q&A mode without edits or command execution.",
   },
@@ -186,6 +230,9 @@ function cursorCatalogMode(
     id: mode.id,
     label: mode.label,
     icon: Bot,
+    // Unknown catalog modes make no claim about autonomy: the neutral level.
+    risk: "ask",
+    tone: "var(--acc-cyan)",
     chipClass: "bg-[var(--acc-cyan)]/15 text-[var(--acc-cyan)] hover:bg-[var(--acc-cyan)]/25",
     description: mode.description ?? `Use Cursor's ${mode.label} mode.`,
   };
@@ -196,6 +243,8 @@ function opencodeCatalogMode(mode: RuntimeProviderModeOption): ProviderMode {
     id: mode.id,
     label: mode.label,
     icon: Bot,
+    risk: "ask",
+    tone: "var(--acc-cyan)",
     chipClass: "bg-[var(--acc-cyan)]/15 text-[var(--acc-cyan)] hover:bg-[var(--acc-cyan)]/25",
     description: mode.description ?? `Use the OpenCode ${mode.label} agent.`,
   };

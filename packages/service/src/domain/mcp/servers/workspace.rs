@@ -12,6 +12,7 @@ use rmcp::{
 use serde_json::json;
 
 use crate::domain::mcp::context::McpContext;
+use crate::domain::mcp::settings_tool::SettingsTool;
 use crate::domain::mcp::tools::workspace::run_workspace_tool;
 
 use super::server_info;
@@ -26,13 +27,15 @@ impl WorkspaceServer {
     }
 }
 
-const WORKSPACE_TOOL_NAMES: [&str; 6] = [
+const WORKSPACE_TOOL_NAMES: [&str; 8] = [
     "workspace_list_projects",
     "workspace_read_session",
     "workspace_read_sessions",
     "workspace_session_graph",
     "workspace_recent_activity",
     "workspace_send_session_message",
+    "workspace_get_settings",
+    "workspace_update_settings",
 ];
 
 fn make_tool(name: &'static str, description: &'static str, schema: serde_json::Value) -> Tool {
@@ -61,6 +64,12 @@ fn tool_description(name: &str) -> &'static str {
         "workspace_recent_activity" => "Read recent CadencR activity across projects.",
         "workspace_send_session_message" => {
             "Send a provenance-tracked message to a session in any CadencR project. Delivery steers the active target turn by default; request next_turn explicitly only when delayed handling is intentional."
+        }
+        "workspace_get_settings" => {
+            super::settings_schema::get_description(SettingsTool::Workspace)
+        }
+        "workspace_update_settings" => {
+            super::settings_schema::update_description(SettingsTool::Workspace)
         }
         _ => "Search CadencR workspace history.",
     }
@@ -122,6 +131,10 @@ fn tool_schema(name: &str) -> serde_json::Value {
         "workspace_send_session_message" => super::send_message_schema::schema(
             "Target session id in any CadencR project, including a cross-project worker.",
         ),
+        "workspace_get_settings" => super::settings_schema::get_schema(SettingsTool::Workspace),
+        "workspace_update_settings" => {
+            super::settings_schema::update_schema(SettingsTool::Workspace)
+        }
         _ => json!({ "type": "object", "properties": {} }),
     };
     document_schema(name, schema)

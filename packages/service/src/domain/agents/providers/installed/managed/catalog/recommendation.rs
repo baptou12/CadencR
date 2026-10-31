@@ -1,5 +1,6 @@
 //! Release selection policy is host-owned, never part of the signed catalog.
 
+use super::super::validation::ships_for_platform;
 use super::super::ManagedProviderPackage;
 use semver::Version;
 use std::collections::BTreeMap;
@@ -19,12 +20,7 @@ pub(super) fn recommended_versions(
             .compatibility
             .supports(app_version)
             .unwrap_or(false)
-            || !package
-                .agent
-                .distribution
-                .as_ref()
-                .and_then(|distribution| distribution.binary.as_ref())
-                .is_some_and(|binary| binary.contains_key(platform))
+            || !ships_for_platform(package, Some(platform))
         {
             continue;
         }

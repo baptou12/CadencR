@@ -3,14 +3,16 @@ import { createHash } from "node:crypto";
 import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { buildRuntime } from "./build.mjs";
 import { CandidateInputError, readCandidateFile } from "./read-candidate-file.mjs";
 import { sourceReadiness } from "./source-readiness.mjs";
+import { PI_VERSION, PREPARED_TARGETS } from "./targets.mjs";
+import { isMain } from "./entrypoint.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = "plugins/providers/pi";
-const version = "0.4.0";
+const version = "0.4.1";
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 class CandidateError extends Error {}
 let stage = "arguments";
@@ -75,8 +77,8 @@ function parseArgs(args) {
   if (names.some((name) => !parsed[name])) fail("All candidate preparation options are required");
   if (!/^[a-f0-9]{40}$/.test(parsed["source-commit"])) fail("Expected full source commit");
   if (!/^[a-f0-9]{64}$/.test(parsed["cli-sha256"])) fail("Expected exact CLI checksum");
-  if (!["darwin-aarch64", "darwin-x86_64"].includes(parsed["candidate-target"])) {
-    fail("Explicit macOS candidate target required; no platform is qualified");
+  if (!PREPARED_TARGETS.includes(parsed["candidate-target"])) {
+    fail("Explicit macOS or Linux candidate target required; preparation does not qualify it");
   }
   if (parsed.runtime !== "external-node-pi")
     fail("Only the existing external Node/Pi candidate is prepared");
@@ -198,7 +200,7 @@ function committedPrerequisites(repo, commit) {
     metadata.version !== version ||
     metadata.engines?.node !== ">=22.19.0 <23.0.0" ||
     pins.length !== 1 ||
-    pins[0][1] !== "0.85.1"
+    pins[0][1] !== PI_VERSION
   ) {
     fail("Committed Pi version/runtime prerequisite changed; review the candidate contract");
   }
@@ -350,7 +352,7 @@ async function prepare(args) {
   process.stdout.write(`${JSON.stringify(receipt)}\n`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isMain(import.meta.url)) {
   try {
     await prepare(process.argv.slice(2));
   } catch (error) {

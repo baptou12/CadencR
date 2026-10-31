@@ -36,6 +36,7 @@ pub async fn remember_session_selection(
         (model_key, Some(model_id.to_string())),
     ]))
     .await
+    .map(drop)
 }
 
 #[cfg(test)]

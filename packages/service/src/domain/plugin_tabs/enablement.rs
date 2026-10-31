@@ -2,7 +2,7 @@
 //!
 //! Effective for a project = project row ?? global row ?? off, **and** a
 //! consent whose hash equals the current permissions hash, **and** a valid
-//! manifest (`docs/CUSTOM_TABS.md` §4.1).
+//! manifest (`docs/CUSTOM_TABS.md` §4.1), **and** no revocation blocking it.
 
 use std::collections::HashMap;
 
@@ -10,7 +10,7 @@ use axum::http::StatusCode;
 use sqlx::SqlitePool;
 
 use super::consent;
-use super::models::PluginTabEnablement;
+use super::models::{PluginTabEnablement, PluginTabProjectOverride};
 use super::registry::{self, LocalTab};
 use crate::error::AppError;
 
@@ -53,6 +53,29 @@ pub async fn stored_all(
     Ok(group(rows))
 }
 
+/// Every project override of every plugin, keyed by plugin id, in project order.
+pub async fn project_overrides_all(
+    pool: &SqlitePool,
+) -> Result<HashMap<String, Vec<PluginTabProjectOverride>>, AppError> {
+    let rows: Vec<(String, i64, bool)> = sqlx::query_as(
+        "SELECT plugin_id, project_id, enabled FROM plugin_tab_enablements \
+         WHERE project_id IS NOT NULL ORDER BY project_id",
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut grouped = HashMap::<String, Vec<PluginTabProjectOverride>>::new();
+    for (plugin_id, project_id, enabled) in rows {
+        grouped
+            .entry(plugin_id)
+            .or_default()
+            .push(PluginTabProjectOverride {
+                project_id,
+                enabled,
+            });
+    }
+    Ok(grouped)
+}
+
 fn group(rows: Vec<(String, Option<i64>, bool)>) -> HashMap<String, StoredEnablement> {
     let mut grouped = HashMap::<String, StoredEnablement>::new();
     for (plugin_id, row_project, enabled) in rows {
@@ -88,7 +111,10 @@ pub fn from_stored(
     PluginTabEnablement {
         global: stored.global,
         project: stored.project,
-        effective: switched_on && consent_current && tab.valid_manifest().is_some(),
+        effective: switched_on
+            && consent_current
+            && tab.valid_manifest().is_some()
+            && tab.blocked.is_none(),
         consent_required: !consent_current,
     }
 }

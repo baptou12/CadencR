@@ -18,7 +18,9 @@ impl ManagedStorage {
     }
 
     pub fn production() -> Self {
-        Self::new(settings_store::dir::sibling_dir("provider-installations"))
+        Self::new(settings_store::dir::data_sibling_dir(
+            "provider-installations",
+        ))
     }
 
     pub fn root(&self) -> &Path {

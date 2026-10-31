@@ -2,11 +2,12 @@ use chrono::{SecondsFormat, Utc};
 use serde_json::{Map, Value};
 
 use crate::error::RegistryError;
-use crate::index::validate_index;
+use crate::index::validate_index_with;
 use crate::json::canonical_json_bytes;
+use crate::marketplace::Rules;
 use crate::package::valid_identifier;
 
-use super::DOCUMENT_LIMIT;
+use super::{PayloadCheck, DOCUMENT_LIMIT};
 
 pub fn validate_signing_key_id(key_id: &str) -> Result<(), RegistryError> {
     if valid_identifier(key_id) {
@@ -16,17 +17,43 @@ pub fn validate_signing_key_id(key_id: &str) -> Result<(), RegistryError> {
     }
 }
 
+/// The payload about to be signed: only what this build supports.
 pub(crate) fn validate_signing_payload(
     value: &Value,
     allow_expired: bool,
 ) -> Result<Vec<u8>, RegistryError> {
-    validate_signing_payload_at(value, allow_expired, Utc::now())
+    validate_payload_at(
+        value,
+        PayloadCheck {
+            allow_expired,
+            now: Utc::now(),
+            rules: Rules::Publish,
+        },
+    )
 }
 
-pub fn validate_signing_payload_at(
+/// A signed catalog payload as the app consumes it: closed and bounded like
+/// [`validate_signing_payload`], but a tab backend for a platform or
+/// protocol this build does not know is accepted as "not installable here"
+/// instead of failing the whole catalog. Returns its canonical bytes.
+pub fn validate_catalog_payload_at(
     value: &Value,
     allow_expired: bool,
     now: chrono::DateTime<Utc>,
+) -> Result<Vec<u8>, RegistryError> {
+    validate_payload_at(
+        value,
+        PayloadCheck {
+            allow_expired,
+            now,
+            rules: Rules::Consume,
+        },
+    )
+}
+
+pub(crate) fn validate_payload_at(
+    value: &Value,
+    check: PayloadCheck,
 ) -> Result<Vec<u8>, RegistryError> {
     let canonical = canonical_json_bytes(value);
     if canonical.len() as u64 > DOCUMENT_LIMIT {
@@ -36,7 +63,7 @@ pub fn validate_signing_payload_at(
     }
     validate_canonical_timestamps(value)?;
     validate_optional_fields(value)?;
-    validate_index(value, now, allow_expired)?;
+    validate_index_with(value, check.now, check.allow_expired, check.rules)?;
     Ok(canonical)
 }
 

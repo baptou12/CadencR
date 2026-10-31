@@ -1,7 +1,8 @@
 import { chmod, copyFile, mkdir, readdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { CONNECTOR_VERSION } from "../src/version.mjs";
+import { isMain } from "./entrypoint.mjs";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export async function buildRuntime({
   outputDirectory = resolve(root, "bin"),
@@ -27,7 +28,7 @@ export async function buildRuntime({
   await chmod(resolve(outputDirectory, "provider"), 0o755);
   return emitted;
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isMain(import.meta.url)) {
   await buildRuntime();
   console.log(`Built ${resolve(root, "bin/provider")}`);
 }

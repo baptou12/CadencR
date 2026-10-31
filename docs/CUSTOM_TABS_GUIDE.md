@@ -28,7 +28,10 @@ tab appears, so you always know what you are allowing.
 Whatever the level, the tab's access to Cadencr itself stays limited to its
 permissions: even a native backend gets its own scoped token, never yours.
 Only allow a "Runs commands" tab you trust, and a "Native code" tab only if
-you would install it as an app. Marketplace tabs cannot ship native code.
+you would install it as an app. A marketplace tab may ship native code too:
+its listing says "Runs native code with your rights" before you install it, its
+binary is signed into the catalog and checked before every launch, and a
+blocked tab's backend is stopped.
 
 ## Using a custom tab
 
@@ -166,6 +169,29 @@ The client also has the following:
 `@cadencr/tab-sdk/testing` provides a fake host so you can unit-test a tab
 without Cadencr.
 
+### Keyboard shortcuts
+
+A tab can declare the keys it handles while it has focus, and receive them
+with `useShortcut`:
+
+```json
+"shortcuts": [
+  { "id": "refresh", "keys": ["mod", "alt", "r"], "description": "Refresh the graph" }
+]
+```
+
+```tsx
+useShortcut("refresh", () => void refresh());
+```
+
+`mod` is ⌘ on macOS and Ctrl elsewhere, and `mod`, `ctrl` or `alt` must be
+held. Cadencr's own shortcuts — the command palette, the pane switches, Git
+actions and the rest — always win over a focused tab, so a declared shortcut
+on the same keys never fires. Settings → Custom tabs lists such a shortcut as
+not available and names the Cadencr shortcut that takes it. The keyboard
+shortcuts cheatsheet (⌘⇧?) lists the shortcuts that can fire. The format is
+in [CUSTOM_TABS.md](CUSTOM_TABS.md#3-manifest--tabjson).
+
 ### Look native
 
 Import the kit once:
@@ -203,26 +229,172 @@ anything. A tab that needs one ships a backend instead.
 ### Shipping a native backend
 
 When a tab needs a long-running process, its own dependencies or many tools,
-declare a backend:
+it ships a backend: a **native executable** per platform, inside the tab
+folder. Scripts (`#!`), interpreters and programs on your `PATH` are refused
+— the user consents to that file, so it has to be the program itself.
+Declare it with a reason and one binary per platform you support:
 
 ```json
 "backend": {
-  "command": "node",
-  "args": ["backend/server.mjs"],
-  "reasoning": "Lists the processes listening on local ports."
+  "reasoning": "Lists the processes listening on local ports.",
+  "protocol": 1,
+  "binary": {
+    "darwin-aarch64": "bin/darwin-aarch64/my-backend",
+    "darwin-x86_64": "bin/darwin-x86_64/my-backend",
+    "linux-x86_64": "bin/linux-x86_64/my-backend"
+  }
 }
 ```
 
-`command` is a file in the tab folder (`bin/backend`) or a program on your
-`PATH`. Cadencr starts it, with the tab folder as working directory, on the
-tab's first `client.backend.request(method, params)`, keeps it running as
-long as the tab stays open — hidden or idle included — and stops it once the
-tab is closed. It speaks JSON lines on stdio: the first line it reads is a
-`hello` with the conversation, its folder and a Cadencr API token limited to
-the tab's permissions; then `request` lines it answers with `response` lines;
-stderr is its log. [CUSTOM_TABS.md §4.7](./CUSTOM_TABS.md#47-native-backend-backendrequest)
-has the protocol; [`examples/custom-tabs/port-monitor`](../examples/custom-tabs/port-monitor)
-is a working one.
+Cadencr runs the binary of the platform it runs on, directly — no shell, no
+arguments, the tab folder as working directory — on the tab's first
+`client.backend.request(method, params)`, keeps it running as long as the
+tab stays in its conversation's tab strip (hidden, idle, or while you are in
+another conversation or Settings) and stops it 30–50 s after the tab closes
+(a 30 s grace, checked every 10 s). On a platform you leave out,
+the rest of the tab still works and requests fail with
+`PLUGIN_BACKEND_UNAVAILABLE_ON_PLATFORM`. Windows has no platform key yet.
+
+The backend talks to Cadencr in JSON lines on stdin/stdout: a `hello` with
+the conversation, its folder, a writable `state_dir` and a Cadencr API token
+limited to the tab's permissions; its `ready` answer within 5 s; then
+`request` lines it answers with `response` lines, in any order. stderr is its
+log, shown in **Activity…**. The full contract is
+[TAB_BACKEND_PROTOCOL.md](./TAB_BACKEND_PROTOCOL.md);
+[CUSTOM_TABS.md §4.7](./CUSTOM_TABS.md#47-native-backend-backendrequest)
+covers how Cadencr starts, checks and stops it.
+
+#### Write it in Rust
+
+Rust is the recommended language: the
+[`cadencr-tab-backend`](../packages/tab-backend-sdk-rs/README.md) crate does
+the handshake, framing, concurrency and error handling, so a backend is one
+function. A crate next to your UI code, say `backend/`:
+
+```toml
+# backend/Cargo.toml
+[package]
+name = "my-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cadencr-tab-backend = "0.1"
+serde_json = "1"
+
+[dev-dependencies]
+cadencr-tab-backend = { version = "0.1", features = ["conformance"] }
+```
+
+Until the crate is on crates.io, depend on it by path from a Cadencr checkout
+(`{ path = "<checkout>/packages/tab-backend-sdk-rs", version = "0.1" }`), as
+the example does.
+
+```rust
+// backend/src/main.rs
+use std::process::ExitCode;
+
+use cadencr_tab_backend::{serve, Context, Error};
+use serde_json::{json, Value};
+
+fn handle(cx: &Context) -> Result<Value, Error> {
+    match cx.method() {
+        "greet" => {
+            let name: String = cx.params()?;
+            Ok(json!(format!("hello, {name}")))
+        }
+        other => Err(Error::unknown_method(other)),
+    }
+}
+
+fn main() -> ExitCode {
+    serve(handle)
+}
+```
+
+```ts
+const greeting = await client.backend.request<string>("greet", "Ada");
+```
+
+Some rules the crate cannot enforce for you:
+
+- **Write only under `cx.state_dir()`.** The tab folder is read-only for a
+  marketplace tab. `state_dir` is kept across runs and updates, and is shared
+  by the tab's backends in every conversation: use a sub-folder per
+  `cx.hello().feature_id`, or locks.
+- **Keep stdout for the protocol.** `serve` already redirects stray
+  `println!` output to the log on Unix; log with `eprintln!`.
+- **Call Cadencr with the backend's own token** (feature `api`,
+  `cx.api()?.get(…)`); it carries only the tab's permissions.
+
+`testing::TestHost` (in the crate) drives a handler in-process for unit
+tests, and the `conformance` feature checks the built binary the way Cadencr
+drives it — see the example's `backend/tests/conformance.rs`.
+
+#### Build it for each platform
+
+`cargo build --release` builds for the machine you are on; copy the result to
+the path `tab.json` names for that platform and keep it executable:
+
+```sh
+cargo build --release --manifest-path backend/Cargo.toml
+mkdir -p bin/darwin-aarch64
+rm -f bin/darwin-aarch64/my-backend
+cp backend/target/release/my-backend bin/darwin-aarch64/my-backend
+```
+
+Remove the old binary before copying the new one: macOS remembers the code
+signature of an executable it has run, and kills a file rewritten in place on
+its next launch (`exited with signal: 9`, a crash in Activity).
+
+For the other platforms, add the Rust target and pass `--target`; the binary
+lands in `backend/target/<triple>/release/`:
+
+| Platform key     | Rust target                                               | Notes                                                                                                |
+| ---------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `darwin-aarch64` | `aarch64-apple-darwin`                                    | Builds from any Mac (`rustup target add aarch64-apple-darwin`).                                      |
+| `darwin-x86_64`  | `x86_64-apple-darwin`                                     | Builds from any Mac (`rustup target add x86_64-apple-darwin`).                                       |
+| `linux-x86_64`   | `x86_64-unknown-linux-gnu` or `x86_64-unknown-linux-musl` | Build on Linux, or cross-compile with a Linux linker (for example `cargo-zigbuild`). musl is static. |
+
+An Apple-silicon (`darwin-aarch64`) binary must carry a code signature, or
+Cadencr refuses it (`PLUGIN_BACKEND_UNSIGNED`) — macOS would kill it anyway.
+The Apple linker that `cargo` uses signs arm64 output ad hoc, so a fresh
+build is fine; after anything that rewrites the file (some `strip` runs,
+patchers), re-sign it with `codesign -s - <file>`. `bin/` and
+`backend/target/` are build output: gitignore them.
+
+#### Check it
+
+`cadencr plugin validate <folder> --kind tab` checks the manifest, reports
+every platform's binary that is missing or not native, and runs this
+platform's binary through the protocol conformance checks: `ready` in time
+and with the right protocol, an error for an unknown method, surviving
+malformed lines, two concurrent requests, a clean exit when stdin closes, and
+nothing but protocol messages on stdout. A failed check fails the command
+(`TAB_BACKEND_CONFORMANCE_FAILED`, with each check's result and the
+backend's last stderr lines); a binary not built yet is only a warning. Pass
+`--no-run` where the binary cannot be executed, such as a CI machine of
+another platform. From a Cadencr checkout:
+
+```sh
+pnpm rust -- run -q -p cadencr-cli -- plugin validate ~/.cadencr/plugins/tabs/my-tab --kind tab
+```
+
+#### Other languages
+
+Any toolchain that produces a native executable works — Go, Zig, C, C++… —
+as long as it implements [TAB_BACKEND_PROTOCOL.md](./TAB_BACKEND_PROTOCOL.md).
+`cadencr plugin validate` checks it the same way, whatever it is written in.
+
+[`examples/custom-tabs/port-monitor`](../examples/custom-tabs/port-monitor)
+is a complete one: a Rust backend that lists listening ports and stops
+servers started in the conversation's folder, with `npm run build:backend`
+building it into `bin/<platform>/`.
+[`examples/custom-tabs/native-starter`](../examples/custom-tabs/native-starter)
+is the one to start from in your own repository: it builds against the
+published crate and npm packages, and its GitHub Actions workflow builds the
+three platforms, validates the tab and packs the archives below into a
+release.
 
 ### Network access and secrets
 
@@ -252,8 +424,6 @@ private network addresses, are refused.
 - Desktop only. The phone and remote views show a placeholder.
 - At most six custom tabs stay alive at once; a hidden one beyond that is
   unloaded and comes back, with its `state`, when shown again.
-- While a custom tab has keyboard focus, only the pane shortcuts
-  (⌘⇧A/T/G/E/B) reach Cadencr.
 - Every plugin route is `proposed`: it may still change before custom tabs can
   be published. The SDK and kit are versioned `0.x` and ship vendored inside the
   starter until they are published on npm.
@@ -319,6 +489,45 @@ cadencr registry pack-tab --directory ./staging --output ./tab.tar.gz
 
 For release preparation, add `--package ./marketplace-package.json` to bind the
 compiled manifest's identity, version and API version to reviewed schema-2 metadata.
+
+### Publishing a tab with a native backend
+
+A backend tab is published as one web archive plus one backend archive per
+platform. **Prepare a custom tab bundle** refuses them, so use the CLI:
+
+1. Stage `tab.json`, the icon and your built web root only (no `bin/`), then
+   `cadencr registry pack-tab --directory ./stage --output out/tab.tar.gz`.
+2. For each platform in `tab.json`'s `backend.binary` (on that platform's CI
+   runner if you like):
+
+   ```sh
+   cadencr registry pack-tab-backend --directory ./my-tab \
+     --target <darwin-aarch64|darwin-x86_64|linux-x86_64> \
+     --output out/tab-backend-<platform>.tar.gz
+   ```
+
+   It checks that the executable is a regular native file (code-signed on
+   Apple silicon: `codesign -s -`, which the Rust linker already does), at most
+   128 MiB and outside your web root, then writes a deterministic archive
+   (at most 64 MiB) holding just that file, mode `0755`. It prints the values
+   step 4 needs.
+3. Upload `tab.tar.gz` and every `tab-backend-<platform>.tar.gz` to the **same**
+   GitHub release.
+4. In your schema-2 metadata, add `"backend": {"protocol": 1, "reasoning": "…"}`
+   to `tab` (the same reasoning as `tab.json`) and, under
+   `tab.distribution.binary.<platform>`, the `archive` URL you uploaded plus the
+   `sha256`, `size`, `cmd`, `executable_sha256` and `executable_size` that
+   `pack-tab-backend` printed.
+5. Check it: `cadencr registry pack-tab --directory ./stage --package
+   metadata.json --output out/check.tar.gz` binds the metadata to `tab.json`;
+   `cadencr registry validate-submission` and `cadencr registry
+   plan-publication` should show one `backend-<platform>` target per platform.
+
+Users only see the platforms you shipped; elsewhere the listing shows "Not
+available on this platform". The `executable_sha256` is signed into the catalog
+and checked again before every launch, so any binary change needs a new
+version, and users are asked to consent again before it runs. The first version
+that adds a backend to an existing tab is reviewed like a new tab.
 
 Marketplace tabs share the mixed catalog source and signing trust already used
 by themes (`CADENCR_MANAGED_THEME_INDEX_URL`); no separate signing key is needed.

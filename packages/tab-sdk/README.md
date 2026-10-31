@@ -79,6 +79,7 @@ Cadencr custom tab).
 | `context`, `onContextChange(cb)`                                      | Project, feature, pull request and session of the tab (`TabContext`).                                                                                                  |
 | `theme`, `onThemeChange(cb)`                                          | The Cadencr theme (`ThemeSnapshot`: `id`, `appearance`, `tokens`).                                                                                                     |
 | `visible`, `onVisibilityChange(cb)`                                   | Whether the tab is shown. Pause expensive work while hidden.                                                                                                           |
+| `shortcuts`, `onShortcut(cb)`                                         | The ids of the manifest's `shortcuts` that can fire (Cadencr's own shortcuts take any on the same keys), and presses of them while the tab has focus.                  |
 | `instanceId`, `plugin`, `apiVersion`                                  | From the handshake.                                                                                                                                                    |
 | `capabilities.list`, `capabilities.isSupported(name)`                 | Capabilities the host announced.                                                                                                                                       |
 | `api.request({ method, path, query?, body? })`                        | Call the plugin surface of the Cadencr service. Resolves an `ApiResponse` for every status.                                                                            |
@@ -113,6 +114,23 @@ Every failure is a `CadencrError` with a `code`: `PLUGIN_API_UNSUPPORTED`,
 `HOST_ERROR` — or, from `api.*` helpers, the service's own stable code. HTTP
 errors also carry `status`.
 
+Some `backend.request` failures Cadencr reports to the user itself, with a link
+to the tab's Activity: the ones that keep the backend from running at all
+(`HOST_REPORTED_BACKEND_CODES` — unsigned or tampered binary, no build for
+this platform, crash loop, …). `isReportedByHost(error)` tells them apart, so a
+page doesn't show them twice; everything else (`TIMEOUT`, a busy or exited
+backend, the backend's own errors) is the page's to show.
+
+```ts
+import { isReportedByHost, toCadencrError } from "@cadencr/tab-sdk";
+
+try {
+  await client.backend.request("ports");
+} catch (error) {
+  if (!isReportedByHost(error)) showError(toCadencrError(error).message);
+}
+```
+
 ### Theme
 
 The theme arrives as tokens (`background`, `primary`, `muted-foreground`, …).
@@ -129,6 +147,7 @@ components that already read them. `applyTheme`, `themeVariables` and
 | `<CadencrProvider fallback? errorFallback? connectOptions?>`            | Connects on mount, closes on unmount. Without `errorFallback` a failure renders a built-in, theme-aware "Can't reach Cadencr" message (`role="alert"`, the error's message and code). |
 | `useCadencr()`                                                          | The client.                                                                                                                                                                           |
 | `useTabContext()`, `useTheme()`, `useVisibility()`                      | Live values.                                                                                                                                                                          |
+| `useShortcut(id, handler)`                                              | Runs `handler` each time the manifest shortcut `id` is pressed while the tab has focus.                                                                                               |
 | `useStream(topic, handler, { params?, onResync?, onError?, enabled? })` | One subscription for the component's lifetime; inline callbacks are fine.                                                                                                             |
 | `useStorage(key, initial)`                                              | `{ value, loading, error, set(value) }` for one storage key.                                                                                                                          |
 

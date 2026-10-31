@@ -45,7 +45,24 @@ pub(crate) fn kind(value: &Value) -> &str {
     marketplace_package_kind(value).unwrap_or("provider")
 }
 
+/// How the index rules treat what a newer registry may sign.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Rules {
+    /// The registry, the publisher, submissions and the author CLI: only
+    /// what this build supports is accepted.
+    Publish,
+    /// The app reading a signed catalog: a tab backend for an unknown
+    /// platform or protocol is still a well-formed (closed, bounded) entry —
+    /// one this host cannot install ([`crate::signed_tab_backend`] refuses
+    /// it) — never a reason to reject the whole catalog.
+    Consume,
+}
+
 pub(crate) fn validate(value: &Value, label: &str, errors: &mut Diagnostics) {
+    validate_with(value, label, Rules::Publish, errors);
+}
+
+pub(crate) fn validate_with(value: &Value, label: &str, rules: Rules, errors: &mut Diagnostics) {
     let Some(object) = value.as_object() else {
         errors.push(format!("{label} must be an object"));
         return;
@@ -60,7 +77,7 @@ pub(crate) fn validate(value: &Value, label: &str, errors: &mut Diagnostics) {
         package::validate_provider_content(content, label, errors);
         return;
     }
-    validate_content(content, kind, label, errors);
+    validate_content(content, kind, label, rules, errors);
 }
 
 pub fn valid_theme_id(id: &str) -> bool {
@@ -74,7 +91,46 @@ pub fn valid_theme_id(id: &str) -> bool {
         })
 }
 
-fn validate_content(content: &Value, kind: &str, label: &str, errors: &mut Diagnostics) {
+/// The descriptor fields every theme and tab declares, beside its version
+/// field (and a tab's `backend`).
+/// What a theme's and a tab's descriptors differ in: a tab declares its
+/// plugin API version and may ship a native backend (`backend` and
+/// `distribution.binary`), a theme declares its document version.
+struct KindFields {
+    version: &'static str,
+    descriptor: &'static [&'static str],
+    distribution: &'static [&'static str],
+}
+
+const THEME_FIELDS: KindFields = KindFields {
+    version: "document_version",
+    descriptor: &[],
+    distribution: &[],
+};
+
+const TAB_FIELDS: KindFields = KindFields {
+    version: "api_version",
+    descriptor: &["backend"],
+    distribution: &["binary"],
+};
+
+const DESCRIPTOR_FIELDS: [&str; 7] = [
+    "id",
+    "name",
+    "description",
+    "version",
+    "repository",
+    "license",
+    "distribution",
+];
+
+fn validate_content(
+    content: &Value,
+    kind: &str,
+    label: &str,
+    rules: Rules,
+    errors: &mut Diagnostics,
+) {
     let Some(object) = content.as_object() else {
         errors.push(format!("{label}.package must be an object"));
         return;
@@ -84,27 +140,17 @@ fn validate_content(content: &Value, kind: &str, label: &str, errors: &mut Diagn
         errors.push(format!("{label}.{kind} must be an object"));
         return;
     };
-    package::reject_unknown(
-        theme,
-        &[
-            "id",
-            "name",
-            "description",
-            "version",
-            "repository",
-            "license",
-            if kind == "tab" {
-                "api_version"
-            } else {
-                "document_version"
-            },
-            "distribution",
-        ],
-        label,
-        errors,
-    );
+    let tab = kind == "tab";
+    let fields = if tab { &TAB_FIELDS } else { &THEME_FIELDS };
+    let version_field = fields.version;
+    let allowed: Vec<&str> = DESCRIPTOR_FIELDS
+        .into_iter()
+        .chain([version_field])
+        .chain(fields.descriptor.iter().copied())
+        .collect();
+    package::reject_unknown(theme, &allowed, label, errors);
     if theme.get("id").and_then(Value::as_str).is_none_or(|id| {
-        if kind == "tab" {
+        if tab {
             !cadencr_plugin_core::tab::is_valid_tab_id(id)
                 || cadencr_plugin_core::tab::RESERVED_IDS.contains(&id)
         } else {
@@ -138,15 +184,13 @@ fn validate_content(content: &Value, kind: &str, label: &str, errors: &mut Diagn
             "{label}.{kind}.repository must be a canonical HTTPS GitHub repository"
         ));
     }
-    let version_field = if kind == "tab" {
-        "api_version"
-    } else {
-        "document_version"
-    };
     if theme.get(version_field) != Some(&Value::from(1)) {
         errors.push(format!("{label}.{kind}.{version_field} must equal 1"));
     }
-    validate_theme_distribution(theme, kind, label, errors);
+    validate_theme_distribution(theme, kind, fields, label, errors);
+    if tab {
+        crate::tab_backend::validate_descriptor(theme, label, rules, errors);
+    }
     validate_theme_host(content, label, errors);
 }
 
@@ -172,6 +216,7 @@ pub fn theme_distribution_repository(
 fn validate_theme_distribution(
     theme: &serde_json::Map<String, Value>,
     kind: &str,
+    fields: &KindFields,
     label: &str,
     errors: &mut Diagnostics,
 ) {
@@ -179,12 +224,11 @@ fn validate_theme_distribution(
         errors.push(format!("{label}.{kind}.distribution must be an object"));
         return;
     };
-    package::reject_unknown(
-        distribution,
-        &["archive", "sha256", "repository"],
-        label,
-        errors,
-    );
+    let allowed: Vec<&str> = ["archive", "sha256", "repository"]
+        .into_iter()
+        .chain(fields.distribution.iter().copied())
+        .collect();
+    package::reject_unknown(distribution, &allowed, label, errors);
     if let Err(error) = theme_distribution_repository(
         distribution
             .get("archive")
@@ -197,11 +241,7 @@ fn validate_theme_distribution(
     if !distribution
         .get("sha256")
         .and_then(Value::as_str)
-        .is_some_and(|s| {
-            s.len() == 64
-                && s.bytes()
-                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-        })
+        .is_some_and(crate::digest::is_lower_sha256)
     {
         errors.push(format!(
             "{label}.{kind}.distribution.sha256 must be lowercase SHA256"
@@ -226,7 +266,7 @@ fn validate_theme_host(content: &Value, label: &str, errors: &mut Diagnostics) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use serde_json::json;
     pub(crate) fn theme() -> Value {

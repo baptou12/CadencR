@@ -1,6 +1,7 @@
 //! The custom tab levels past the page, end to end through the real router
 //! (`docs/CUSTOM_TABS.md` §4.6, §4.7): a tab running a declared command, and a
-//! tab whose native backend (a real Node process) answers requests, calls the
+//! tab whose native backend (the shared native fixture,
+//! `tests/fixtures/native_tab_backend`) answers requests, calls the
 //! Cadencr API with its own scoped token, crashes and is stopped — plus the
 //! Activity the user sees for both.
 //!
@@ -8,6 +9,8 @@
 //! (the plugins dir derives from the settings dir).
 
 mod common;
+#[path = "fixtures/native_tab_backend/install.rs"]
+mod native_tab_backend;
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -34,39 +37,6 @@ const TOKEN: &str = "plugin-runtime-fixture-token";
 const PROJECT: i64 = 1;
 const FEATURE: i64 = 10;
 const OTHER_FEATURE: i64 = 20;
-
-/// A backend speaking the §4.7 stdio protocol.
-const BACKEND: &str = r#"
-import { createInterface } from "node:readline";
-const lines = createInterface({ input: process.stdin });
-let hello = null;
-const send = (message) => process.stdout.write(JSON.stringify(message) + "\n");
-lines.on("line", async (line) => {
-  const message = JSON.parse(line);
-  if (message.type === "hello") { hello = message; console.error("backend ready"); return; }
-  if (message.type !== "request") return;
-  const { id, method, params } = message;
-  if (method === "echo") return send({ type: "response", id, result: params });
-  if (method === "context") {
-    return send({ type: "response", id, result: {
-      feature_id: hello.feature_id, worktree: hello.worktree, cwd: process.cwd(),
-      scopes: hello.scopes, leaked: process.env.CADENCR_AUTH_TOKEN ?? null,
-    } });
-  }
-  if (method === "api") {
-    const status = (path) => fetch(hello.api.base_url + path, {
-      headers: { [hello.api.token_header]: hello.api.token },
-    }).then((response) => response.status);
-    return send({ type: "response", id, result: {
-      own: await status(`/api/features/${hello.feature_id}`),
-      other: await status(`/api/features/${params.other}`),
-    } });
-  }
-  if (method === "fail") return send({ type: "response", id, error: { code: "NOPE", message: "refused" } });
-  if (method === "crash") { console.error("about to crash"); process.exit(3); }
-});
-lines.on("close", () => process.exit(0));
-"#;
 
 struct Reply {
     status: StatusCode,
@@ -205,6 +175,16 @@ impl Fixture {
     }
 }
 
+/// The `backend.binary` key of the platform the tests run on.
+fn current_platform() -> &'static str {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "aarch64") => "darwin-aarch64",
+        ("macos", "x86_64") => "darwin-x86_64",
+        ("linux", "x86_64") => "linux-x86_64",
+        other => panic!("custom tab backends do not run on {other:?}"),
+    }
+}
+
 fn write_tab(tabs: &Path, id: &str, extra: Value) {
     let dir = tabs.join(id);
     std::fs::create_dir_all(dir.join("dist")).unwrap();
@@ -234,9 +214,13 @@ async fn fixture() -> Fixture {
     write_tab(
         &tabs,
         "native",
-        json!({"backend": {"command": "node", "args": ["backend.mjs"], "reasoning": "Answers test requests."}}),
+        json!({"backend": {
+            "protocol": 1,
+            "binary": {current_platform(): "bin/backend"},
+            "reasoning": "Answers test requests."
+        }}),
     );
-    std::fs::write(tabs.join("native/backend.mjs"), BACKEND).unwrap();
+    native_tab_backend::install(&tabs.join("native"), "bin/backend");
     let repo = root.path().join("repo");
     std::fs::create_dir(&repo).unwrap();
     common::create_test_repo(&repo);
@@ -321,7 +305,12 @@ async fn summaries(fixture: &Fixture) {
         .await
         .json();
     assert_eq!(native["access_level"], "backend");
-    assert_eq!(native["backend"]["command"], "node");
+    assert_eq!(
+        native["backend"]["binary"],
+        json!({ current_platform(): "bin/backend" })
+    );
+    assert_eq!(native["backend_availability"], "available");
+    assert_eq!(native["warnings"], json!([]));
 }
 
 async fn commands(fixture: &Fixture) {
@@ -450,6 +439,9 @@ async fn backend(fixture: &Fixture) {
         fixture.tabs.join("native")
     );
     assert_eq!(context["scopes"], json!(["features:read"]));
+    let state_dir = std::path::PathBuf::from(context["state_dir"].as_str().unwrap());
+    assert!(state_dir.is_dir() && state_dir.ends_with("tab-state/native"));
+    assert!(!state_dir.starts_with(&fixture.tabs));
     assert_eq!(context["leaked"], Value::Null);
     // Its own token reaches its conversation, and only that.
     let api = call(fixture, &token, "api", json!({"other": OTHER_FEATURE}))
@@ -529,6 +521,39 @@ async fn presence(fixture: &Fixture) {
         )
         .await;
     assert_eq!(malformed.status, StatusCode::BAD_REQUEST);
+    // A conversation deleted from another client: its tabs there still renew.
+    let deleted = fixture
+        .send(Method::PUT, lease, None, Some(json!({ "feature_id": 999 })))
+        .await;
+    assert_eq!(deleted.status, StatusCode::NOT_FOUND);
+    assert_eq!(deleted.code(), "PLUGIN_TAB_CONVERSATION_NOT_FOUND");
+    // Archived, renewals are refused; unarchived, they take the lease again.
+    let other = "/api/plugin-tabs/native/presence/5c1d0e7a-0b9e-4d2c";
+    let other_body = || Some(json!({ "feature_id": OTHER_FEATURE }));
+    let status = format!("/api/features/{OTHER_FEATURE}/status");
+    for (status_body, expected, code) in [
+        (
+            "archived",
+            StatusCode::CONFLICT,
+            Some("PLUGIN_TAB_CONVERSATION_ARCHIVED"),
+        ),
+        ("active", StatusCode::NO_CONTENT, None),
+    ] {
+        let updated = fixture
+            .send(
+                Method::PUT,
+                &status,
+                None,
+                Some(json!({ "status": status_body })),
+            )
+            .await;
+        assert_eq!(updated.status, StatusCode::OK);
+        let renewed = fixture.send(Method::PUT, other, None, other_body()).await;
+        assert_eq!(renewed.status, expected);
+        if let Some(code) = code {
+            assert_eq!(renewed.code(), code);
+        }
+    }
     fixture.enable("runner").await;
     let token = fixture.token("runner").await;
     let by_a_tab = fixture.send(Method::PUT, lease, Some(&token), body()).await;

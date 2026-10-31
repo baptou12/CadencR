@@ -46,10 +46,20 @@ pub enum TabIssueCode {
     CommandDuplicate,
     CommandNotAllowed,
     CommandReasoningRequired,
-    BackendCommandInvalid,
-    BackendArgsInvalid,
+    /// `backend.command`/`backend.args` (a launch line, possibly a script on
+    /// `PATH`) were replaced by `protocol` + per-platform native `binary`.
+    BackendCommandRemoved,
+    BackendProtocolUnsupported,
+    BackendBinaryRequired,
+    BackendPlatformUnknown,
     BackendReasoningRequired,
     BackendUnavailable,
+    ShortcutsTooMany,
+    ShortcutIdInvalid,
+    ShortcutIdDuplicate,
+    ShortcutKeysInvalid,
+    ShortcutKeysDuplicate,
+    ShortcutDescriptionInvalid,
 }
 
 impl TabIssueCode {
@@ -91,10 +101,18 @@ impl TabIssueCode {
             Self::CommandDuplicate => "COMMAND_DUPLICATE",
             Self::CommandNotAllowed => "COMMAND_NOT_ALLOWED",
             Self::CommandReasoningRequired => "COMMAND_REASONING_REQUIRED",
-            Self::BackendCommandInvalid => "BACKEND_COMMAND_INVALID",
-            Self::BackendArgsInvalid => "BACKEND_ARGS_INVALID",
+            Self::BackendCommandRemoved => "BACKEND_COMMAND_REMOVED",
+            Self::BackendProtocolUnsupported => "BACKEND_PROTOCOL_UNSUPPORTED",
+            Self::BackendBinaryRequired => "BACKEND_BINARY_REQUIRED",
+            Self::BackendPlatformUnknown => "BACKEND_PLATFORM_UNKNOWN",
             Self::BackendReasoningRequired => "BACKEND_REASONING_REQUIRED",
             Self::BackendUnavailable => "BACKEND_UNAVAILABLE",
+            Self::ShortcutsTooMany => "SHORTCUTS_TOO_MANY",
+            Self::ShortcutIdInvalid => "SHORTCUT_ID_INVALID",
+            Self::ShortcutIdDuplicate => "SHORTCUT_ID_DUPLICATE",
+            Self::ShortcutKeysInvalid => "SHORTCUT_KEYS_INVALID",
+            Self::ShortcutKeysDuplicate => "SHORTCUT_KEYS_DUPLICATE",
+            Self::ShortcutDescriptionInvalid => "SHORTCUT_DESCRIPTION_INVALID",
         }
     }
 }

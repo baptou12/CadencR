@@ -2,8 +2,9 @@ import { spawn } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { qaClient, stopChild } from "./qa-client.mjs";
+import { isMain } from "./entrypoint.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const provider = resolve(root, "bin/provider");
@@ -85,7 +86,7 @@ function initializeParams() {
   return {
     protocolVersion: 1,
     clientCapabilities: {},
-    clientInfo: { name: "pi-cadencr-resume-qa", version: "0.4.0" },
+    clientInfo: { name: "pi-cadencr-resume-qa", version: "0.4.1" },
   };
 }
 
@@ -122,6 +123,6 @@ function startClient(sessionDirectoryPath, { env, spawnImpl }) {
   };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isMain(import.meta.url)) {
   await runResumeQa();
 }

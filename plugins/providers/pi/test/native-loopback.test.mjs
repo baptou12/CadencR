@@ -10,6 +10,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { serializeJsonLine } from "../src/jsonl.mjs";
 import { qaClient, stopChild } from "../scripts/qa-client.mjs";
+import { PI_VERSION } from "../scripts/targets.mjs";
 import { startLoopbackModelServer } from "./helpers/loopback-model-server.mjs";
 
 const command = process.env.CADENCR_PI_NATIVE_TEST_COMMAND;
@@ -126,7 +127,11 @@ test(
         timeout: 15_000,
         maxBuffer: 4096,
       });
-      assert.equal(version.stdout.trim(), "0.85.1", "native qualification requires Pi 0.85.1");
+      assert.equal(
+        version.stdout.trim(),
+        PI_VERSION,
+        `native qualification requires Pi ${PI_VERSION}`,
+      );
       stage = "model discovery";
       const discovery = await promisify(execFile)(
         provider,
@@ -169,6 +174,11 @@ test(
         "native output usage must match the fixture",
       );
       assert.equal(active.permissions.length, 0, "first inert turn must never request model tools");
+      stage = "never-prompted session creation";
+      // Pi persists a session only after its first message. The managed conformance gate (and a
+      // user who opens a session, never prompts and restarts) must still be able to resume it.
+      const unprompted = await active.request("session/new", { cwd: workspace, mcpServers: [] });
+      await active.request("session/close", { sessionId: unprompted.sessionId });
       await active.stop();
       active = null;
       stage = "durable resume initialization";
@@ -184,6 +194,18 @@ test(
         resumed.configOptions.find((option) => option.category === "model").currentValue,
         model,
       );
+      stage = "never-prompted durable resume";
+      const resumedUnprompted = await active.request("session/resume", {
+        sessionId: unprompted.sessionId,
+        cwd: workspace,
+        mcpServers: [],
+      });
+      assert.equal(
+        resumedUnprompted.configOptions.find((option) => option.category === "model").currentValue,
+        model,
+      );
+      await active.request("session/close", { sessionId: unprompted.sessionId });
+      stage = "durable resume turn";
       await completeTurn(
         active,
         session.sessionId,

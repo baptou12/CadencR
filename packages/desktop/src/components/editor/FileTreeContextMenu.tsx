@@ -11,6 +11,12 @@ import {
 import { ContextMenuActionButton, type ContextMenuIcon } from "@/components/ContextMenuActionItem";
 import { FileTreeContextMenuPortal } from "@/components/file-tree/FileTreeContextMenuPortal";
 import { isDocumentFile } from "@/lib/document-file";
+import type { ShortcutKey } from "@/lib/shortcuts/registry";
+
+// Mirrors the tree's plain-Enter rename handler (`useFileTreeController`).
+const RENAME_KEYS: ShortcutKey[] = ["enter"];
+// Mirrors the tree's Mod+Backspace handler (`useFileTreeController`).
+const MOVE_TO_TRASH_KEYS: ShortcutKey[] = ["mod", "backspace"];
 
 export type FileTreeContextMenuItem = ContextMenuItem;
 export type FileTreeContextMenuOpenContext = ContextMenuOpenContext;
@@ -27,7 +33,7 @@ export type FileTreeMenuAction =
 interface MenuItemSpec {
   label: string;
   icon: ContextMenuIcon;
-  shortcut?: string;
+  shortcut?: ShortcutKey[];
   destructive?: boolean;
   onSelect: () => void;
 }
@@ -94,13 +100,13 @@ function buildMenuItems(
     {
       label: "Rename",
       icon: PencilIcon,
-      shortcut: "↵",
+      shortcut: RENAME_KEYS,
       onSelect: () => onAction("rename", item, context),
     },
     {
       label: "Move to Trash",
       icon: Trash2Icon,
-      shortcut: "⌘⌫",
+      shortcut: MOVE_TO_TRASH_KEYS,
       destructive: true,
       onSelect: () => onAction("delete", item, context),
     },
@@ -152,14 +158,14 @@ function MenuRow({
 }: {
   label: string;
   icon: ContextMenuIcon;
-  shortcut?: string;
+  shortcut?: ShortcutKey[];
   destructive?: boolean;
   onSelect: () => void;
 }): React.JSX.Element {
   return (
     <ContextMenuActionButton
       icon={icon}
-      shortcutLabel={shortcut}
+      shortcutKeys={shortcut}
       destructive={destructive}
       className="py-1"
       onSelect={onSelect}

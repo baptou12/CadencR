@@ -121,6 +121,16 @@ exit "\${FAKE_CURL_EXIT:-0}"
       "1.2.3-dev.123456.2.extra",
     ].map((version) => devPin.replaceAll(devVersion, version)),
   ];
+  // A stable cli-release.yml pin binds the same namespace to a plain X.Y.Z.
+  const stablePin = validPin + "CADENCR_RELEASE_TAG=cli/v1.2.3\n";
+  badDevPins.push(
+    ...["v1.2.3", "cli/v1.2.4", "cli/v1.2.3/asset", "cli/1.2.3"].map((tag) =>
+      stablePin.replace("CADENCR_RELEASE_TAG=cli/v1.2.3", `CADENCR_RELEASE_TAG=${tag}`),
+    ),
+    ...["1.2.3-rc.1", "01.2.3", "1.2.3-dev.1"].map((version) =>
+      stablePin.replaceAll("1.2.3", version),
+    ),
+  );
   for (const pin of badDevPins) {
     const result = await run(pin);
     assert.equal(result.status, 2, result.stderr);
@@ -195,7 +205,16 @@ exit "\${FAKE_CURL_EXIT:-0}"
   assert.equal(devSuccess.status, 0, devSuccess.stderr);
   assert.equal(devSuccess.stdout, `${await realpath(devSuccess.target)}/cadencr\n`);
   assert.equal(await readFile(marker, "utf8"), "version\n");
+  await rm(marker);
+  const stableSuccess = await run(stablePin);
+  assert.equal(stableSuccess.status, 0, stableSuccess.stderr);
+  assert.equal(stableSuccess.stdout, `${await realpath(stableSuccess.target)}/cadencr\n`);
+  assert.equal(await readFile(marker, "utf8"), "version\n");
   const args = await readFile(requests, "utf8");
+  assert.match(
+    args,
+    /https:\/\/github.com\/merkr-software\/CadencR\/releases\/download\/cli\/v1\.2\.3\/cadencr-v1\.2\.3-x86_64-unknown-linux-gnu/,
+  );
   assert.match(
     args,
     /https:\/\/github.com\/merkr-software\/CadencR\/releases\/download\/cli\/v1\.2\.3-dev\.123456\.2\/cadencr-v1\.2\.3-dev\.123456\.2-x86_64-unknown-linux-gnu/,

@@ -29,7 +29,8 @@ function scheduleEviction(sessionId: string, entry: RetentionEntry): void {
       scheduleEviction(sessionId, entry);
       return;
     }
-    useWsSessionStore.getState().disconnect(sessionId);
+    // Release, not disconnect: the backend decides when the runtime may stop.
+    useWsSessionStore.getState().release(sessionId);
     entries.delete(sessionId);
   }, WS_SESSION_EVICTION_MS);
 }

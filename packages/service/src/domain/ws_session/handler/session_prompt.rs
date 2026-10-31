@@ -19,6 +19,8 @@ mod prompt_send_entry;
 mod prompt_status;
 mod prompt_validation;
 mod prompt_worktree;
+mod runtime_hold;
+pub(super) mod runtime_hold_registry;
 mod runtime_mcp;
 mod stream_diagnostics;
 mod stream_reader;
@@ -46,6 +48,7 @@ pub(crate) use control_dispatch::{
     dispatch_control_prompt, dispatch_control_prompt_with_message_uuid,
 };
 pub(crate) use prompt_send_entry::handle_prompt_send;
+pub(super) use prompt_status::mark_agent_running;
 pub(crate) use prompt_status::{
     persist_and_publish_user_message, publish_user_message, CanonicalUserMessageMode,
     CanonicalUserMessageRequest,

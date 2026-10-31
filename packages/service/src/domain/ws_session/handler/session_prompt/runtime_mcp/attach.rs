@@ -104,9 +104,16 @@ fn attach_stdio_mcp(
     env: Option<HashMap<String, String>>,
 ) -> Result<(), String> {
     let db_path = absolute_db_path(db_path)?;
+    // Forward the settings dir explicitly: the child could only derive it from
+    // the database path, which matches the real one on macOS (`~/.cadencr/…`)
+    // but not on Linux, where settings sit under `$XDG_CONFIG_HOME` and the
+    // database under `$XDG_DATA_HOME`.
+    let settings_dir = crate::domain::settings_store::dir::global_dir();
     let mut args = vec![
         "--db-path".to_string(),
         db_path,
+        "--settings-dir".to_string(),
+        settings_dir.to_string_lossy().into_owned(),
         "mcp-serve".to_string(),
         "--agent-type".to_string(),
         agent_type.short_name().to_string(),
@@ -202,6 +209,10 @@ mod tests {
         let mut args = vec![
             "--db-path".to_string(),
             db_path,
+            "--settings-dir".to_string(),
+            crate::domain::settings_store::dir::global_dir()
+                .to_string_lossy()
+                .into_owned(),
             "mcp-serve".to_string(),
             "--agent-type".to_string(),
             agent_type.to_string(),

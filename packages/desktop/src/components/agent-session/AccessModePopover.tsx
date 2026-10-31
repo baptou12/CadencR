@@ -21,6 +21,8 @@ interface AccessModePopoverProps {
   description?: string;
   /** Badge beside the current mode, for the same reason. */
   selectedHint?: string;
+  /** `instrument`: the composer card's instrument row — neutral ink, colored icon. */
+  variant?: "chip" | "instrument";
 }
 
 export function AccessModePopover({
@@ -32,6 +34,7 @@ export function AccessModePopover({
   options,
   description,
   selectedHint = "New default",
+  variant = "chip",
 }: AccessModePopoverProps): React.JSX.Element | null {
   const [open, setOpen] = useState(false);
   const providerConfig = providerAccessModeConfig(providerId);
@@ -47,9 +50,15 @@ export function AccessModePopover({
           type="button"
           title={activeCopy?.description ?? activeMode.description}
           aria-label={`${providerConfig.providerLabel} access mode: ${activeCopy?.label ?? activeMode.label}. ${activeCopy?.description ?? activeMode.description}`}
-          className={cn(META_BAR_CHIP, activeMode.chipClass)}
+          className={
+            variant === "instrument"
+              ? "composer-instrument gap-1.5 text-foreground/85"
+              : cn(META_BAR_CHIP, activeMode.chipClass)
+          }
         >
-          <activeMode.icon className="size-3" />
+          <activeMode.icon
+            className={variant === "instrument" ? cn("size-3.5", activeMode.textClass) : "size-3"}
+          />
           {activeCopy?.label ?? activeMode.label}
         </button>
       </PopoverTrigger>

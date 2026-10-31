@@ -4,7 +4,8 @@ import { loadDevEnv } from "./env";
 import { clearRegisteredFilePaths, registerIpc, registerThemeEvents } from "./ipc";
 import { installApplicationMenu } from "./menu";
 import { registerPower, shutdownPower } from "./power";
-import { setRuntimeConfig } from "./runtime-config";
+import { refreshBrowserOriginPolicy, setRuntimeConfig } from "./runtime-config";
+import { installServiceTransport } from "./service-transport";
 import { initAutoUpdater, registerAutoUpdaterIpc, shutdownAutoUpdater } from "./updater";
 import {
   createDevSidecarHandle,
@@ -26,12 +27,14 @@ import type { BrowserManager } from "./browser-manager";
 import { handleStartupRecoveryAction } from "./startup-recovery-actions";
 import { buildStartupRecovery, type StartupRecoveryState } from "./startup-recovery";
 import { installDefaultRendererCrashRecovery } from "./renderer-crash-recovery";
+import { configureLinuxOzonePlatform } from "./linux-ozone-platform";
 import { installCsp, rendererLoadTarget, secureWebContents } from "./renderer-window-security";
 import { registerNotchIpc } from "./notch-ipc";
 import type { NotchController } from "./notch-window";
 import { PLUGIN_TAB_PRIVILEGED_SCHEME } from "./plugin-tabs/plugin-tab-ids";
 import { registerPluginTabIpc } from "./plugin-tabs/plugin-tab-ipc";
 import type { PluginTabManager } from "./plugin-tabs/plugin-tab-manager";
+import { windowIconOption } from "./app-icon";
 let mainWindow: BrowserWindow | null = null;
 let splash: SplashHandle | null = null;
 let sidecar: SidecarHandle | null = null;
@@ -74,6 +77,7 @@ async function prepareRuntime(): Promise<void> {
   if (!app.isPackaged && browserBridge)
     await registerBrowserBridgeWithService(sidecar, browserBridge);
   setRuntimeConfig({ baseUrl: sidecar.baseUrl, authToken: sidecar.authToken });
+  await refreshBrowserOriginPolicy();
 }
 
 async function registerBrowserBridgeWithService(
@@ -128,7 +132,14 @@ function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
-    titleBarStyle: "hiddenInset",
+    ...(process.platform === "linux"
+      ? { frame: false }
+      : { titleBarStyle: "hiddenInset" as const }),
+    ...windowIconOption({
+      appPath: app.getAppPath(),
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+    }),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       contextIsolation: true,
@@ -136,6 +147,7 @@ function createWindow(): BrowserWindow {
       sandbox: true,
     },
   });
+  installServiceTransport(win.webContents.session, () => mainWindow);
   secureWebContents(win.webContents);
   installContextMenu(win, win.webContents);
   installDefaultRendererCrashRecovery(win);
@@ -146,6 +158,10 @@ function createWindow(): BrowserWindow {
     pendingQuit = false;
     sendToWindow(win, "app:close-requested");
   });
+  // The window's own focus, which stays put while a guest view (a custom tab,
+  // a browser pane) has it; the renderer's document reports that as a blur.
+  win.on("focus", () => sendToWindow(win, "window:focus-changed", true));
+  win.on("blur", () => sendToWindow(win, "window:focus-changed", false));
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
     // Guests belong to this window's placeholders; the window (and so the
@@ -286,6 +302,8 @@ if (!app.isPackaged) {
 // Electron accepts exactly one privileged-scheme registration, before `ready`:
 // every privileged scheme belongs in this single call.
 protocol.registerSchemesAsPrivileged([PLUGIN_TAB_PRIVILEGED_SCHEME]);
+
+configureLinuxOzonePlatform(app.commandLine, process.platform);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();

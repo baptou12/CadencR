@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { EventEmitter, once } from "node:events";
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { access, chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { PassThrough } from "node:stream";
 import { dirname, join, resolve } from "node:path";
@@ -21,7 +21,7 @@ const provider = resolve(root, "src/provider.mjs");
 const fakePi = resolve(root, "test/fixtures/fake-pi-rpc");
 
 test("parses the Cadencr executable contract", () => {
-  assert.equal(CONNECTOR_VERSION, "0.4.0");
+  assert.equal(CONNECTOR_VERSION, "0.4.1");
   assert.deepEqual(parseInvocation(["version"]), { command: "version" });
   assert.deepEqual(
     parseInvocation([
@@ -38,6 +38,20 @@ test("parses the Cadencr executable contract", () => {
     command: "run",
     piArgs: ["--offline"],
   });
+});
+
+test("resumes by exact session id so never-persisted sessions can be reopened", () => {
+  assert.deepEqual(runtimeArgs([], "/connector/permissions.mjs", "native-id").slice(0, 4), [
+    "--mode",
+    "rpc",
+    "--session-id",
+    "native-id",
+  ]);
+  assert.equal(runtimeArgs([], "/connector/permissions.mjs").includes("--session-id"), false);
+  assert.throws(
+    () => runtimeArgs(["--session-id", "foreign"], "/connector/permissions.mjs"),
+    /conflicts with the connector/,
+  );
 });
 
 test("uses one connector-owned Pi argument policy for runtime and discovery", async () => {
@@ -405,19 +419,65 @@ test("native Pi RPC sessions support stable resume and legacy load across restar
           message.params.update.content?.text === "durable-memory",
       ),
     );
-    await assert.rejects(
-      resumed.client.request("session/resume", {
-        sessionId: encodeSessionId(root, "missing-session"),
-        cwd: root,
-        mcpServers: [],
-      }),
-      // A fast native startup exit can close stdin before stderr is delivered.
-      // Both failures must be surfaced as ACP errors, without killing the provider.
-      /No session found matching 'missing-session'|Pi RPC input failed: write EPIPE|could not write Pi get_.* request: write EPIPE/,
-    );
+    // Exact-id resume matches real Pi's `--session-id`: an id with no persisted history opens an
+    // empty session under that id instead of failing the restore.
+    const emptySessionId = encodeSessionId(root, "never-persisted-session");
+    const empty = await resumed.client.request("session/resume", {
+      sessionId: emptySessionId,
+      cwd: root,
+      mcpServers: [],
+    });
+    assert.equal(empty.configOptions[0].currentValue, "fake/small");
+    await resumed.client.request("session/close", { sessionId: emptySessionId });
     await resumed.client.request("session/close", { sessionId: created.sessionId });
   } finally {
     await stopProvider(resumed.child);
+  }
+});
+
+test("resumes a session that was created but never prompted across a connector restart", async (t) => {
+  // Mirrors the managed conformance gate: initialize, session/new, set model, shut the connector
+  // down without prompting, then session/resume the same id in a fresh process. Pi persists a
+  // session file only after the first message, so a strict `--session <id>` resume exits 1.
+  await chmod(fakePi, 0o755);
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-cadencr-unprompted-"));
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+  const stateFile = join(temporaryDirectory, "session.json");
+  const env = { ...process.env, CADENCR_PI_COMMAND: fakePi, FAKE_PI_STATE_FILE: stateFile };
+
+  const first = spawnProvider(env);
+  let created;
+  let model;
+  try {
+    await first.client.request("initialize", { protocolVersion: 1, clientCapabilities: {} });
+    created = await first.client.request("session/new", { cwd: root, mcpServers: [] });
+    model = created.configOptions.find((option) => option.category === "model").currentValue;
+    await first.client.request("session/set_config_option", {
+      sessionId: created.sessionId,
+      configId: "model",
+      value: model,
+    });
+    await first.client.request("session/close", { sessionId: created.sessionId });
+  } finally {
+    await stopProvider(first.child);
+  }
+  await assert.rejects(access(stateFile), { code: "ENOENT" }, "no Pi session may be persisted");
+
+  const second = spawnProvider(env);
+  try {
+    await second.client.request("initialize", { protocolVersion: 1, clientCapabilities: {} });
+    const resumed = await second.client.request("session/resume", {
+      sessionId: created.sessionId,
+      cwd: root,
+      mcpServers: [],
+    });
+    assert.equal(
+      resumed.configOptions.find((option) => option.category === "model").currentValue,
+      model,
+    );
+    await second.client.request("session/close", { sessionId: created.sessionId });
+  } finally {
+    await stopProvider(second.child);
   }
 });
 

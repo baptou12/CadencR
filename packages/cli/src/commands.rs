@@ -1,4 +1,3 @@
-use std::io::{self, Write as _};
 use std::path::Path;
 
 use serde_json::json;
@@ -25,11 +24,12 @@ pub(crate) fn run(cli: &Cli) -> Result<Option<String>, Diagnostic> {
                     folder,
                     descriptor,
                     kind,
+                    no_run,
                 },
         }) => match kind {
             PluginKind::Provider => validate_provider(folder, descriptor.as_deref()),
             PluginKind::Theme => crate::theme::validate(folder, descriptor.as_deref()),
-            PluginKind::Tab => crate::tab::validate(folder, descriptor.as_deref()),
+            PluginKind::Tab => crate::tab::validate(folder, descriptor.as_deref(), !no_run),
         },
         Command::Registry(registry) => run_registry(&registry.command),
     }
@@ -63,6 +63,8 @@ fn validate_provider(
 fn run_registry(command: &RegistryCommand) -> Result<Option<String>, Diagnostic> {
     match command {
         RegistryCommand::Diagnostics(command) => crate::metadata::run(command),
+        RegistryCommand::TabBackend(command) => crate::tab_backend::run(command),
+        RegistryCommand::Policy(command) => crate::policy::run(command),
         RegistryCommand::Validate { base, candidate } => validate_registry(base, candidate),
         RegistryCommand::BuildIndex {
             schema_version,
@@ -137,18 +139,6 @@ fn run_registry(command: &RegistryCommand) -> Result<Option<String>, Diagnostic>
             root_key_id,
             minimum_generation,
         } => crate::trust::verify(manifest, root_public_key, root_key_id, *minimum_generation),
-        RegistryCommand::SignThemeBlocklist {
-            payload,
-            private_key,
-            key_id,
-            output,
-        } => signing::sign_theme_blocklist(payload, private_key, key_id, output),
-        RegistryCommand::VerifyThemeBlocklist {
-            index,
-            public_key,
-            key_id,
-            allow_expired,
-        } => signing::verify_theme_blocklist(index, public_key, key_id, *allow_expired),
         RegistryCommand::AssembleSignedIndex {
             payload,
             signature,
@@ -201,14 +191,13 @@ fn pack_provider(
             .build(),
     )
     .map_err(|error| operation_error("REGISTRY_PACKAGING_FAILED", error))?;
-    let mut receipt = serde_json::to_vec(&json!({
-        "target": packed.target, "archive": packed.archive,
-        "sha256": packed.sha256, "size": packed.size,
-    }))
-    .map_err(|error| operation_error("REGISTRY_PACKAGING_FAILED", error))?;
-    receipt.push(b'\n');
-    output::write_stdout(&receipt, &mut io::stdout().lock())?;
-    Ok(None)
+    output::write_receipt(
+        &json!({
+            "target": packed.target, "archive": packed.archive,
+            "sha256": packed.sha256, "size": packed.size,
+        }),
+        "REGISTRY_PACKAGING_FAILED",
+    )
 }
 
 fn plan_publication(
@@ -218,13 +207,7 @@ fn plan_publication(
 ) -> Result<Option<String>, Diagnostic> {
     let plan = cadencr_registry_core::create_publication_plan_from_file(submission, repository)
         .map_err(|error| operation_error("PUBLICATION_PLAN_FAILED", error))?;
-    let mut bytes = serde_json::to_vec_pretty(&plan)
-        .map_err(|error| operation_error("PUBLICATION_PLAN_FAILED", error))?;
-    bytes.push(b'\n');
-    output::publish(destination, |temporary| {
-        temporary.write_all(&bytes)?;
-        temporary.flush()
-    })?;
+    output::write_json_file(&plan, destination, "PUBLICATION_PLAN_FAILED")?;
     Ok(Some(format!("publication plan: {}", destination.display())))
 }
 

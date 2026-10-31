@@ -2,7 +2,6 @@
 use super::archive::invalid;
 use super::models::{Pointer, Receipt};
 use crate::error::AppError;
-use sha2::{Digest as _, Sha256};
 use std::path::{Path, PathBuf};
 
 pub fn staging() -> Result<tempfile::TempDir, AppError> {
@@ -36,7 +35,7 @@ pub fn root() -> PathBuf {
     ROOT_OVERRIDE
         .with(|slot| slot.borrow().clone())
         .unwrap_or_else(|| {
-            crate::domain::settings_store::dir::sibling_dir("plugins").join("managed-themes")
+            crate::domain::settings_store::dir::data_sibling_dir("plugins").join("managed-themes")
         })
 }
 pub fn valid_id(id: &str) -> bool {
@@ -61,10 +60,7 @@ pub fn revision(id: &str, version: &str, digest: &str) -> Result<PathBuf, AppErr
     Ok(owner(id)?.join(version).join(digest))
 }
 pub fn digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    crate::shared::file_digest::sha256_hex(bytes)
 }
 pub fn secure(path: &Path) -> Result<(), AppError> {
     if let Ok(metadata) = std::fs::symlink_metadata(path) {

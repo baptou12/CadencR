@@ -168,10 +168,10 @@ test("reviewed source mappings copy interpreted modules without running author b
   assert.match(f.run().stderr, /extra source content/);
 });
 
-test("checked-in official policy hashes match actual sources without granting publication or tab approval", () => {
+test("checked-in official policy hashes match actual sources and approve no tab", () => {
   const policy = JSON.parse(readFileSync("plugins/release-policy.json"));
   assert.equal(policy.schema_version, 2);
-  assert.equal(policy.publication, "PENDING");
+  assert.equal(policy.publication, "APPROVED");
   assert.deepEqual(Object.keys(policy.plugins).sort(), [
     "provider-pi",
     "theme-ember",
@@ -189,8 +189,8 @@ test("checked-in official policy hashes match actual sources without granting pu
     const identity = metadata.package[entry.kind === "provider" ? "agent" : entry.kind];
     assert.equal(identity.id, entry.id);
     assert.equal(identity.version, entry.version);
-    assert.equal(metadata.package.host.publisher, "PENDING");
-    assert.equal(metadata.package.host.compatibility.min_app_version, "PENDING");
+    assert.equal(metadata.package.host.publisher, "cadencr");
+    assert.equal(metadata.package.host.compatibility.min_app_version, "0.15.0");
     for (const payload of Object.values(entry.payloads))
       for (const [name, declaration] of Object.entries(payload.files))
         assert.equal(

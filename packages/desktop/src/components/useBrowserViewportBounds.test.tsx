@@ -41,6 +41,7 @@ function bridge(): CadencrBrowserBridge {
     onCloseRequested: vi.fn(() => () => undefined),
     confirmClose: vi.fn(),
     requestQuit: vi.fn(),
+    exportRendererDiagnostics: vi.fn(async () => ({ canceled: false })),
     reportRendererError: vi.fn(() => Promise.resolve()),
     notchCapabilities: vi.fn(() => Promise.resolve({ supported: false, hardware: false })),
     notchConfigure: vi.fn(() => Promise.resolve()),

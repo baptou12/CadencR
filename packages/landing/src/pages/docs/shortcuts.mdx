@@ -12,7 +12,6 @@ import pageImage from "@/assets/docs/v0.13.0/shortcuts.png";
 import DocCallout from "@/components/docs/DocCallout.astro";
 import ShortcutTable from "@/components/docs/ShortcutTable.astro";
 import Kbd from "@/components/ui/Kbd.astro";
-import ShiftIcon from "@/components/icons/ShiftIcon.astro";
 
 If CadencR is where you keep work moving, shortcuts help you spend less time reaching for the mouse.
 
@@ -77,12 +76,18 @@ The scopes you will meet most often:
 <ShortcutTable scope="browser" />
 
 <DocCallout title="Heads up: editor vs terminal" variant="note">
-  Both surfaces use <Kbd>⌘</Kbd> <Kbd>D</Kbd> / <Kbd>⌘</Kbd>{" "}
-  <Kbd>
-    <ShiftIcon />
-  </Kbd>{" "}
-  <Kbd>D</Kbd> for splits, but the directions are intentionally **opposite** — most people want
-  different defaults in each.
+  Both surfaces use <Kbd>⌘</Kbd> <Kbd>D</Kbd> / <Kbd>⌘</Kbd> <Kbd>⇧</Kbd> <Kbd>D</Kbd> for splits,
+  but the directions are intentionally **opposite** — most people want different defaults in each.
+</DocCallout>
+
+<DocCallout title="On Linux" variant="note">
+  <Kbd>Ctrl</Kbd> replaces <Kbd>⌘</Kbd>. Inside the terminal, a plain <Kbd>Ctrl</Kbd> + letter
+  always goes to the shell (<Kbd>Ctrl</Kbd> <Kbd>D</Kbd>, <Kbd>Ctrl</Kbd> <Kbd>W</Kbd>,{" "}
+  <Kbd>Ctrl</Kbd> <Kbd>R</Kbd>…), so terminal actions add a modifier: copy and paste with{" "}
+  <Kbd>Ctrl</Kbd> <Kbd>Shift</Kbd> <Kbd>C</Kbd> / <Kbd>V</Kbd>, split with <Kbd>Ctrl</Kbd>{" "}
+  <Kbd>Shift</Kbd> <Kbd>D</Kbd> / <Kbd>Ctrl</Kbd> <Kbd>Alt</Kbd> <Kbd>D</Kbd>, close a pane with{" "}
+  <Kbd>Ctrl</Kbd> <Kbd>Shift</Kbd> <Kbd>W</Kbd>, clear with <Kbd>Ctrl</Kbd> <Kbd>Alt</Kbd>{" "}
+  <Kbd>K</Kbd>, and delete the line with <Kbd>Ctrl</Kbd> <Kbd>Shift</Kbd> <Kbd>Backspace</Kbd>.
 </DocCallout>
 
 <ShortcutTable scope="unified-agents" heading="Unified agent list" />
@@ -99,7 +104,7 @@ Bindings are customizable in the app. These tables list registry defaults and al
 
 ## Three habits worth forming
 
-1. **Anchor on three keys**: <Kbd>⌘</Kbd> <Kbd>K</Kbd> for the command palette, <Kbd>⌘</Kbd> <Kbd>/</Kbd> for help, and <Kbd>⌘</Kbd> <Kbd><ShiftIcon /></Kbd> <Kbd>A</Kbd>/<Kbd>E</Kbd>/<Kbd>T</Kbd>/<Kbd>G</Kbd> for the four panes.
+1. **Anchor on three keys**: <Kbd>⌘</Kbd> <Kbd>K</Kbd> for the command palette, <Kbd>⌘</Kbd> <Kbd>/</Kbd> for help, and <Kbd>⌘</Kbd> <Kbd>⇧</Kbd> <Kbd>A</Kbd>/<Kbd>E</Kbd>/<Kbd>T</Kbd>/<Kbd>G</Kbd> for the four panes.
 2. **Move with the keyboard**, not just type with it. <Kbd>⌘</Kbd> <Kbd>⌥</Kbd> + arrows works almost everywhere there is something to move between. In the Browser, <Kbd>⌘</Kbd> <Kbd>L</Kbd> jumps straight to the address bar.
 3. **Use approval keys** when the agent pauses. <Kbd>⌘</Kbd> <Kbd>Y</Kbd> / <Kbd>⌘</Kbd> <Kbd>N</Kbd> / <Kbd>Esc</Kbd> is a much smoother review loop than reaching for the mouse on every prompt.
 

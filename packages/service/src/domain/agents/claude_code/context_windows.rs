@@ -33,7 +33,7 @@ pub(super) type LearnedWindows = BTreeMap<String, u64>;
 const LEARNED_WINDOWS_FILE: &str = "claude-code-context-windows.json";
 
 fn learned_windows_path() -> PathBuf {
-    settings_store::dir::sibling_dir("cache").join(LEARNED_WINDOWS_FILE)
+    settings_store::dir::cache_sibling_dir("cache").join(LEARNED_WINDOWS_FILE)
 }
 
 /// The persisted bank, or an empty one. A missing file is the normal first

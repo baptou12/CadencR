@@ -1,6 +1,7 @@
 import { matchesKeyboardEvent, parseHotkey } from "@tanstack/hotkeys";
 import { useEffect, useRef } from "react";
 import { expandCharacterHotkey } from "@/lib/shortcuts/character-hotkeys";
+import { shellOwnsKeyEvent } from "@/lib/shortcuts/shell-keys";
 
 interface GlobalShortcutOptions {
   /** When false, the listener is not attached. Default: true. */
@@ -49,8 +50,10 @@ export function useGlobalShortcut(
       })),
     );
     const handler = (e: KeyboardEvent) => {
-      if (!enabledRef.current) return;
+      if (!enabledRef.current || shellOwnsKeyEvent(e)) return;
       const matches = variants.some((variant) => {
+        // Keep navigation chords distinct from their Shift-modified variants.
+        if (e.shiftKey !== variant.parsed.shift) return false;
         if (variant.exactKeys && !variant.exactKeys.includes(e.key)) return false;
         return matchesKeyboardEvent(e, variant.parsed);
       });

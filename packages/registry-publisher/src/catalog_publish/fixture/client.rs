@@ -2,6 +2,7 @@ use crate::github::discovery::{DiscoveryClient, DiscoveryHead, SetDiscoveryReque
 use crate::github::{
     Asset, CreateDraftRequest, Release, ReleaseClient, UploadAssetRequest, VerifyAssetRequest,
 };
+use crate::test_support::ReadLag;
 use crate::PublisherError;
 use std::cell::RefCell;
 
@@ -34,6 +35,12 @@ struct State {
     drift_get: Option<u64>,
     drift_release: Option<u64>,
     foreign_lost: bool,
+    /// Reads served the pre-write head after the write lands (API lag).
+    discovery_lag: ReadLag<Option<DiscoveryHead>>,
+    /// The write is refused and never lands.
+    refuse_set: bool,
+    /// Another writer lands a foreign head when this read begins.
+    foreign_at: Option<u64>,
 }
 
 impl State {
@@ -147,6 +154,16 @@ impl Client {
         state.lost_set = true;
         state.foreign_lost = true;
     }
+    /// After the write lands, the next `reads` reads still see the old head.
+    pub(crate) fn lag_discovery_reads(&self, reads: u64) {
+        self.state.borrow().discovery_lag.set(reads);
+    }
+    pub(crate) fn refuse_discovery_set(&self) {
+        self.state.borrow_mut().refuse_set = true;
+    }
+    pub(crate) fn foreign_head_at_get(&self, get: u64) {
+        self.state.borrow_mut().foreign_at = Some(get);
+    }
     pub(crate) fn drift_discovery_at(&self, get: u64) {
         self.state.borrow_mut().drift_get = Some(get);
     }
@@ -181,6 +198,15 @@ impl DiscoveryClient for Client {
         assert_eq!(branch, "main");
         let mut state = self.state.borrow_mut();
         state.discovery_gets += 1;
+        if state.foreign_at == Some(state.discovery_gets) {
+            state.discovery = Some(DiscoveryHead {
+                sha: "e".repeat(40),
+                bytes: b"{}\n".to_vec(),
+            });
+        }
+        if let Some(stale) = state.discovery_lag.serve() {
+            return Ok(stale);
+        }
         let mut head = state.discovery.clone();
         if state.drift_get == Some(state.discovery_gets) {
             if let Some(value) = &mut head {
@@ -202,6 +228,10 @@ impl DiscoveryClient for Client {
             state.discovery.as_ref().map(|head| head.sha.as_str())
         );
         state.discovery_sets += 1;
+        if state.refuse_set {
+            return Err(PublisherError::new("refused discovery PUT"));
+        }
+        state.discovery_lag.landed(state.discovery.clone());
         state.discovery = Some(if state.foreign_lost {
             DiscoveryHead {
                 sha: "e".repeat(40),

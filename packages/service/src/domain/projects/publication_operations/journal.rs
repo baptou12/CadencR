@@ -28,7 +28,7 @@ pub(super) fn boot_id() -> &'static str {
     ID.get_or_init(|| uuid::Uuid::new_v4().to_string())
 }
 pub(super) async fn root(project_id: i64) -> Result<PathBuf, AppError> {
-    let parent = crate::domain::settings_store::dir::sibling_dir("publication-operations");
+    let parent = crate::domain::settings_store::dir::data_sibling_dir("publication-operations");
     tokio::task::spawn_blocking(move || {
         ensure_root(&parent)?;
         Ok(parent.join(project_id.to_string()))

@@ -19,9 +19,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { BrowserTabMetadata } from "@/lib/desktop-bridge";
-import { formatCombo } from "@/lib/shortcuts/format";
-import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
 import { BrowserExternalButton } from "./BrowserExternalButton";
+import { useShortcutLabel } from "@/hooks/useShortcutLabel";
 
 interface BrowserToolbarActionsProps {
   activeTab: BrowserTabMetadata | null;
@@ -128,7 +127,7 @@ export const BrowserToolbarActions = memo(function BrowserToolbarActions(
   const disabled = !props.activeTab;
   const zoomPercent = props.activeTab?.zoomPercent ?? 100;
   const responsive = props.activeTab?.responsive.enabled === true;
-  const devToolsShortcut = formatCombo(useResolvedShortcut("browser-devtools").keys).join("");
+  const devToolsShortcut = useShortcutLabel("browser-devtools");
   return (
     <>
       <div className="flex shrink-0 items-center rounded-md bg-muted/50 p-0.5 @max-[28rem]:hidden">

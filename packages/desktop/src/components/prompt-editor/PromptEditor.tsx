@@ -17,7 +17,9 @@ import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext
 import {
   $createParagraphNode,
   $getRoot,
+  $getSelection,
   $isElementNode,
+  $isRangeSelection,
   $isTextNode,
   $setSelection,
   type EditorState,
@@ -31,6 +33,7 @@ import { SlashCommandNode } from "./nodes/SlashCommandNode";
 import { SlashCommandPlugin } from "./plugins/SlashCommandPlugin";
 import { KeyboardShortcutsPlugin } from "./plugins/KeyboardShortcutsPlugin";
 import { ImagePastePlugin } from "./plugins/ImagePastePlugin";
+import { LongPastePlugin } from "./plugins/LongPastePlugin";
 import { ConversationReferencePlugin } from "./plugins/ConversationReferencePlugin";
 import { ConversationReferenceNode } from "./nodes/ConversationReferenceNode";
 import { $isShellCommandPrefixNode, ShellCommandPrefixNode } from "./nodes/ShellCommandPrefixNode";
@@ -50,6 +53,8 @@ export interface PromptEditorHandle {
   /** Set text. `moveSelection: false` populates without focusing the editor. */
   setText: (text: string, moveSelection?: boolean) => void;
   getText: () => string;
+  /** Insert text at the caret (or at the end when the editor has no selection). */
+  insertText: (text: string) => void;
   /** Exit shell mode while preserving the command text. */
   clearShellCommandMode: () => void;
 }
@@ -66,15 +71,21 @@ interface PromptEditorProps {
   promptCommandPolicy?: PromptCommandPolicy;
   /** Called when Enter pressed (no shift, no popover). Return true to consume. */
   onEnterSend?: () => boolean;
+  /** Called on ⌘/Ctrl+Enter (queue while the agent works). Return true to consume. */
+  onModEnterSend?: () => boolean;
   /** Called on ArrowUp at the document start for prompt history. */
   onArrowUp?: () => string | null;
   /** Called on ArrowDown at the document end for prompt history. */
   onArrowDown?: () => string | null;
+  /** True while an untouched history entry is shown (see KeyboardShortcutsPlugin). */
+  isBrowsingHistory?: () => boolean;
   disabled?: boolean;
   /** Initial text to populate the editor with (e.g. restored draft) */
   initialText?: string;
   /** Called when image files are pasted from the clipboard. */
   onPasteImages?: (files: File[]) => void;
+  /** Called instead of inserting a very long text paste (see `LongPastePlugin`). */
+  onPasteLongText?: (text: string) => void;
 }
 
 function EditorRefPlugin({
@@ -147,6 +158,18 @@ function usePromptEditorHandle(
       });
       return text;
     },
+    insertText(text: string) {
+      editorRef.current?.update(() => {
+        const selection = $getSelection();
+        if ($isRangeSelection(selection)) {
+          selection.insertText(text);
+          return;
+        }
+        const root = $getRoot();
+        root.selectEnd();
+        $getSelection()?.insertText(text);
+      });
+    },
     clearShellCommandMode() {
       editorRef.current?.update(removeShellCommandPrefix);
     },
@@ -209,10 +232,13 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
       slashCommandsLoading,
       promptCommandPolicy = DEFAULT_PROMPT_COMMAND_POLICY,
       onEnterSend,
+      onModEnterSend,
       onArrowUp,
       onArrowDown,
+      isBrowsingHistory,
       disabled,
       onPasteImages,
+      onPasteLongText,
     },
     ref,
   ) {
@@ -244,6 +270,8 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
               // Shell commands are not prose — suppress the red spellcheck squiggle.
               spellCheck={!shellCommandState.active}
               aria-disabled={disabled}
+              aria-label="Message to the agent"
+              aria-multiline
             />
           }
           placeholder={
@@ -280,11 +308,14 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
         )}
         <KeyboardShortcutsPlugin
           onEnterSend={onEnterSend}
+          onModEnterSend={onModEnterSend}
           onArrowUp={onArrowUp}
           onArrowDown={onArrowDown}
+          isBrowsingHistory={isBrowsingHistory}
           shellCommandsEnabled={promptCommandPolicy.userShell}
         />
         {!shellCommandState.active && <ImagePastePlugin onPasteImages={onPasteImages} />}
+        {!shellCommandState.active && <LongPastePlugin onPasteLongText={onPasteLongText} />}
       </>
     );
   },

@@ -84,9 +84,9 @@
 
 /* ── Prompt bar — the instrument the user actually plays ─────────────────
  * A raised card with a real hairline and a soft cast, instead of the
- * borderless muted wash. Focus keeps the same chrome (no emerald border or
- * glow). (The default `bg-muted/40` + `focus-within:bg-muted/55` classes lose
- * to these theme-scoped declarations.) */
+ * borderless muted wash. Focus tints the hairline with the whisper of emerald
+ * a focused pane gets — never a glow. (The default `bg-muted/40` +
+ * `focus-within:bg-muted/55` classes lose to these theme-scoped declarations.) */
 :root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
   [data-agent-prompt-bar]
   > .glass-surface {
@@ -95,7 +95,13 @@
   box-shadow: var(--prompt-shadow);
   transition:
     background-color 150ms ease,
+    border-color 150ms ease,
     box-shadow 200ms ease;
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-agent-prompt-bar]
+  > .glass-surface:focus-within {
+  border-color: var(--pane-border-focused);
 }
 
 /* ── Floating overlays ───────────────────────────────────────────────────

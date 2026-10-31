@@ -26,6 +26,13 @@ pub(super) fn load(
         return Err(invalid("package identity does not match project"));
     }
     let descriptor = &metadata["package"][kind];
+    if kind == "tab" && descriptor.get("backend").is_some() {
+        // This path uploads `tab.tar.gz` only; a native backend's per-platform
+        // archives would be missing from the release its metadata points at.
+        return Err(invalid(
+            "tabs with a native backend are published with `cadencr registry pack-tab` and `cadencr registry pack-tab-backend` (one archive per platform) and a release holding every archive, not from a local publication bundle",
+        ));
+    }
     let text = |field: &str| {
         descriptor[field]
             .as_str()
@@ -231,6 +238,23 @@ mod tests {
         assert!(String::from_utf8(documents.markdown)
             .unwrap()
             .contains("Custom tab version contribution"));
+    }
+    #[test]
+    fn a_bundle_for_a_backend_tab_is_refused_before_anything_is_uploaded() {
+        let root = tempfile::tempdir().unwrap();
+        let bundle_id = "00000000-0000-4000-8000-000000000003";
+        let bundle = root.path().join("1").join(bundle_id);
+        std::fs::create_dir_all(&bundle).unwrap();
+        let release = "https://github.com/acme/tabs/releases/download/v1.0.0";
+        let binary = json!({"archive":format!("{release}/backend-linux-x86_64.tar.gz"),"sha256":"b".repeat(64),"size":10,"cmd":"bin/linux-x86_64/ports","executable_sha256":"c".repeat(64),"executable_size":10});
+        let metadata = json!({"kind":"tab","package":{"tab":{"id":"ports","name":"Ports","description":"Ports","version":"1.0.0","api_version":1,"repository":"https://github.com/acme/tabs","license":"MIT","backend":{"protocol":1,"reasoning":"Lists ports."},"distribution":{"archive":format!("{release}/tab.tar.gz"),"sha256":"a".repeat(64),"binary":{"linux-x86_64":binary}}},"host":{"publisher":"acme","compatibility":{"min_app_version":"0.1.0"}}}});
+        cadencr_registry_core::validate_marketplace_package(&metadata).unwrap();
+        std::fs::write(bundle.join("package.json"), metadata.to_string()).unwrap();
+        std::fs::write(bundle.join("tab.tar.gz"), b"never read").unwrap();
+        let Err(error) = load(1, "ports".into(), bundle, bundle_id, "Release".into()) else {
+            panic!("a backend tab bundle must be refused");
+        };
+        assert!(error.to_string().contains("pack-tab-backend"), "{error}");
     }
 }
 

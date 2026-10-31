@@ -2,8 +2,9 @@ import { spawn } from "node:child_process";
 import { mkdtemp, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { qaClient, stopChild } from "./qa-client.mjs";
+import { isMain } from "./entrypoint.mjs";
 
 export const LIVE_QA_COMMAND = "printf PI_RPC_TOOL_OK";
 
@@ -81,7 +82,7 @@ export async function runLiveQa({ env = process.env, spawnImpl = spawn } = {}) {
     await request("initialize", {
       protocolVersion: 1,
       clientCapabilities: {},
-      clientInfo: { name: "pi-cadencr-live-qa", version: "0.4.0" },
+      clientInfo: { name: "pi-cadencr-live-qa", version: "0.4.1" },
     });
     const session = await request("session/new", { cwd: scratchDirectory, mcpServers: [] });
     const model = session.configOptions.find((option) => option.category === "model");
@@ -149,6 +150,6 @@ export async function runLiveQa({ env = process.env, spawnImpl = spawn } = {}) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isMain(import.meta.url)) {
   await runLiveQa();
 }

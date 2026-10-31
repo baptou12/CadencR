@@ -10,6 +10,7 @@ import { WelcomeStep } from "./steps/WelcomeStep";
 import { DiscoverCliStep } from "./steps/DiscoverCliStep";
 import { ChooseWorkspaceStep } from "./steps/ChooseWorkspaceStep";
 import { PickAgentStep } from "./steps/PickAgentStep";
+import { NotificationsStep } from "./steps/NotificationsStep";
 import { PreferencesStep } from "./steps/PreferencesStep";
 import { FirstPromptStep } from "./steps/FirstPromptStep";
 
@@ -105,6 +106,8 @@ function StepBody({ step, ...props }: OnboardingStepProps & { step: OnboardingSt
       return <ChooseWorkspaceStep {...props} />;
     case "pick_agent":
       return <PickAgentStep {...props} />;
+    case "notifications":
+      return <NotificationsStep {...props} />;
     case "preferences":
       return <PreferencesStep {...props} />;
     case "first_prompt":

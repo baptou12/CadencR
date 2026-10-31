@@ -88,14 +88,21 @@ sibling of `plugins/themes`. Cadencr rescans it on startup and watches it
   ],
   "commands": [{ "program": "git", "reasoning": "Reads who changed these files." }],
   "backend": {
-    "command": "node",
-    "args": ["backend/server.mjs"],
+    "protocol": 1,
+    "binary": {
+      "darwin-aarch64": "bin/darwin-aarch64/ports",
+      "darwin-x86_64": "bin/darwin-x86_64/ports",
+      "linux-x86_64": "bin/linux-x86_64/ports"
+    },
     "reasoning": "Lists the processes listening on local ports."
-  }
+  },
+  "shortcuts": [
+    { "id": "refresh", "keys": ["mod", "shift", "r"], "description": "Refresh the graph" }
+  ]
 }
 ```
 
-`commands` and `backend` are optional; most tabs declare neither.
+`commands`, `backend` and `shortcuts` are optional; most tabs declare none.
 
 Rules (validated by `cadencr-plugin-core::tab`, the service and
 `cadencr plugin validate --kind tab`):
@@ -128,20 +135,43 @@ Rules (validated by `cadencr-plugin-core::tab`, the service and
   `open`, `start`…), with or without a Windows suffix or a version suffix
   (`python3.12`, `node18`, `php-8.2`; `cadencr_plugin_core::tab::DENIED_PROGRAMS`). Listing a program names
   _which_ program runs, not what it does with its arguments.
-- `backend.command`: a clean relative path inside the tab folder (contains a
-  `/`, e.g. `bin/backend`) or a bare program name looked up on `PATH` (`node`,
-  with the script in `args`). `args` ≤ 32, each ≤ 4096 chars without NUL.
-  `reasoning` 1–280 chars, required. A folder command that is missing or not
-  executable is a warning (`BACKEND_UNAVAILABLE`), like an unbuilt entry.
+- `backend.protocol`: the stdio protocol version, `1` in this release
+  (`BACKEND_PROTOCOL_UNSUPPORTED` otherwise). `backend.binary`: at least one
+  entry (`BACKEND_BINARY_REQUIRED`) mapping a platform — `darwin-aarch64`,
+  `darwin-x86_64` or `linux-x86_64`; anything else, Windows included, is
+  `BACKEND_PLATFORM_UNKNOWN` — to a clean relative path inside the tab folder
+  (`PATH_INVALID`). `reasoning` 1–280 chars, required. Only the map's shape is
+  validated: this platform's binary missing or not a native executable is a
+  warning (`BACKEND_UNAVAILABLE`), like an unbuilt entry, and other platforms'
+  binaries are only reported by `cadencr plugin validate`, which also runs
+  this platform's built binary through the protocol conformance checks
+  (§4.7). A platform with no
+  entry cannot run the backend (the summary's `backend_availability` is
+  `unavailable_on_platform`). The former `command`/`args` launch line is
+  refused with `BACKEND_COMMAND_REMOVED` and how to migrate.
+- `shortcuts`: ≤ 16 entries (`SHORTCUTS_TOO_MANY`), each fired only while the
+  tab has focus (§5.1). `id` `^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$`, unique
+  (`SHORTCUT_ID_INVALID`, `SHORTCUT_ID_DUPLICATE`); `description` 1–80 chars
+  (`SHORTCUT_DESCRIPTION_INVALID`); `keys` in the desktop's shortcut tokens:
+  modifiers `mod` (⌘ on macOS, Ctrl elsewhere), `ctrl`, `alt`, `shift`, each
+  at most once, plus exactly one key — a lowercase letter, a digit, `f1`–`f12`,
+  `enter`, `escape`, `space`, `up`, `down`, `left`, `right`, `plus`, `minus`,
+  `comma`, `slash`, `backtick`, `backspace`, `lbracket` or `rbracket` — with
+  `mod`, `ctrl` or `alt` held, since a bare or Shift-only key is typing
+  (`SHORTCUT_KEYS_INVALID`); no two on the same keys
+  (`SHORTCUT_KEYS_DUPLICATE`). Colliding with a Cadencr shortcut is not a
+  validation error, as Cadencr's are rebindable: the host disables that one
+  (§5.1). Shortcuts are not permissions, so they leave the hash unchanged.
 - Unknown top-level keys are errors (the format is closed until it is published).
 
 **Permissions hash**: SHA-256 (hex) over the canonical JSON
 `{"permissions":[sorted],"allowed_origins":[sorted]}`, extended with
 `"commands":[sorted programs]` when `commands` is non-empty and
-`"backend":{"command":…,"args":[…]}` when a backend is declared (each key
-omitted otherwise, so a tab declaring neither keeps its hash). Consent is
-recorded against this hash; a widened manifest — a new scope, origin,
-program, or backend launch line — requires a new consent. Reasons, labels and
+`"backend":{"protocol":1,"binary":{<platform>:<path>, sorted by platform}}`
+when a backend is declared (each key omitted otherwise, so a tab declaring
+neither keeps its hash). Consent is recorded against this hash; a widened
+manifest — a new scope, origin, program, backend, or a platform's binary
+added or moved — requires a new consent. Reasons, labels and
 versions do not.
 
 ## 4. Service
@@ -189,8 +219,9 @@ icon_svg (string|null), api_version, entry, entry_present, permissions,
 network {allowed_origins, reasoning}, configuration, permissions_hash, status
 ("valid"|"invalid"), errors[], warnings[], dir, authoring_project_id|null,
 enablement {global: bool|null, project: bool|null, effective: bool,
-consent_required: bool}, commands[], backend|null, access_level
-("ui"|"commands"|"backend"|null)`.
+consent_required: bool}, commands[], backend|null, backend_availability
+("available"|"unavailable_on_platform"|null), access_level
+("ui"|"commands"|"backend"; "ui" when the manifest is unreadable)`.
 
 ### 4.3 Plugin API (grant token, `x-cadencr-plugin-token`)
 
@@ -352,25 +383,115 @@ refused request is recorded too.
 `POST /api/plugin-tabs/self/backend` `{method, params?, timeout_ms?}` (plugin
 token) relays one request to the tab's backend, starting it first if it is
 not running. One backend runs per tab and conversation, shared by that
-conversation's open instances.
+conversation's open instances. The stdio contract between Cadencr and the
+backend is specified, normatively, in
+[`TAB_BACKEND_PROTOCOL.md`](TAB_BACKEND_PROTOCOL.md); this section covers how
+the service resolves, starts, relays to and stops it.
 
-- 403 `PLUGIN_BACKEND_UNDECLARED` without a `backend` in the granted manifest;
-  403 `PLUGIN_BACKEND_UNSUPPORTED` for a marketplace (managed) tab, which may
-  not ship one (the installer refuses such packages too).
-- **Launch.** The program (folder path, or bare name on `PATH`) runs without
-  a shell, working directory = the tab folder, through the same direct-exec
-  policy as §4.6 (no `CADENCR_*`/`VITE_*` variables, resource limits, process
-  tree owned and terminated with it). 422 `PLUGIN_BACKEND_UNAVAILABLE` when it
-  cannot start.
-- **Stdio protocol** (version 1), one JSON object per line:
-  - host → backend, first line:
-    `{"type":"hello","protocol":1,"plugin":{"id","version"},"project_id","feature_id","worktree","scopes":[…],"api":{"base_url","token_header":"x-cadencr-plugin-token","token"}}`;
-  - host → backend: `{"type":"request","id":"<n>","method","params"}`;
-  - backend → host on stdout: `{"type":"response","id","result"}` or
-    `{"type":"response","id","error":{"code","message"}}` (any other line is
-    ignored and noted in the log; a line over 4 MiB is dropped);
-  - stderr is the backend's log: the last 200 lines are kept and shown;
-  - stdin closing means "exit now"; after 2 s the process tree is terminated.
+- 403 `PLUGIN_BACKEND_UNDECLARED` without a `backend` in the granted manifest.
+- **Marketplace tabs.** A signed tab package ships its backend as one
+  single-executable archive per platform (`tab.distribution.binary`); the
+  installer downloads only this platform's, verifies it against the signed
+  size and digests, and stores the executable (`0500`, read-only) at its
+  `cmd` in the immutable revision, beside `backend.tar.gz`. A package without
+  a binary for this platform is not installed (409
+  `MANAGED_TAB_PLATFORM_UNSUPPORTED`), nor is one whose backend speaks a
+  protocol, or ships for a platform, this Cadencr does not know (409
+  `MANAGED_TAB_NEEDS_NEWER_APP`: a newer Cadencr may install it).
+  Before each start the executable is hashed against its signed
+  `executable_sha256` (409 `PLUGIN_BACKEND_TAMPERED` when it differs); a
+  revision without this platform's binary is 422
+  `PLUGIN_BACKEND_UNAVAILABLE_ON_PLATFORM`, like a local tab's. A running
+  backend holds its revision,
+  so an update never removes the folder under it.
+- **Revocation.** Marketplace tabs have their own signed blocklist feed
+  (`CADENCR_MANAGED_TAB_BLOCKLIST_URL`, `kind: "tab-blocklist"`, see
+  `MARKETPLACE_RELEASE_CONFIG.md`), refreshed at startup, every 10 minutes and
+  on each tab catalog refresh; `GET /api/marketplace/tabs/policy` reports its
+  state (`not_configured`, `fresh`, `stale`, `missing`). An entry matches by
+  id, version range, archive or executable digest. A listed tab's summary is
+  `status: "blocked"` with `blocked_reason` (effective off); its running
+  backends are stopped first ("it was blocked" in Activity), then its grants
+  are revoked, and its assets, grant mint, enablement, configuration and
+  consent answer 403 `PLUGIN_TAB_BLOCKED`. Install and update of a listed
+  revision are 409 `MANAGED_TAB_BLOCKED`; removing it stays allowed. Any
+  authenticated cached policy blocks, even an expired one. When a feed is
+  configured but no fresh policy is cached, install, update and backend start
+  are 409 `MANAGED_TAB_POLICY_UNAVAILABLE` — the tab's page keeps working,
+  and a backend already running keeps serving.
+- **Binaries only.** A backend is a native executable shipped in the tab
+  folder, one per platform — never a script, an interpreter or a program on
+  `PATH`, so what the user consents to is that file. The former
+  `command`/`args` launch line is refused (`BACKEND_COMMAND_REMOVED`, §3).
+  Rust is the recommended language: the
+  [`cadencr-tab-backend`](../packages/tab-backend-sdk-rs/) crate implements
+  the protocol, so a backend is one handler function. Any toolchain that
+  produces a native binary and implements the protocol works.
+- **Manifest.** `"backend": {"reasoning", "protocol": 1, "binary": {…}}`,
+  `binary` mapping a platform key — `darwin-aarch64`, `darwin-x86_64`,
+  `linux-x86_64` — to a path relative to the tab folder (rules in §3).
+- **Platform resolution.** The service runs the `binary` entry of the platform
+  it was built for (`TabPlatform::current()`). A tab that declares none for
+  it — or a Cadencr running where tab backends are not supported (Windows,
+  Linux on ARM) — gets 422 `PLUGIN_BACKEND_UNAVAILABLE_ON_PLATFORM` and
+  nothing is spawned. The summary says so ahead of time:
+  `backend_availability` is `available` (a binary is declared here, which may
+  still be unbuilt or refused) or `unavailable_on_platform`.
+- **Checks before every start** (`cadencr_plugin_core::tab::check_backend_binary`,
+  shared with the folder inspection and `cadencr plugin validate`): the path
+  must resolve — symlinks followed — to a regular, executable file inside
+  the tab folder, native for the OS by its magic bytes: Mach-O, thin or
+  universal, for Darwin; ELF for Linux. For `darwin-aarch64` its arm64 code
+  must also carry a code signature (ad hoc is enough; the Apple linker, so
+  `cargo build`, signs arm64 output by default), since macOS kills unsigned
+  arm64 code on launch. Refusals: 422 `PLUGIN_BACKEND_NOT_NATIVE` (a `#!`
+  script, a foreign format, a malformed Mach-O), 422
+  `PLUGIN_BACKEND_UNSIGNED`, 422 `PLUGIN_BACKEND_UNAVAILABLE` (not built
+  yet, not executable, outside the folder, its state folder cannot be
+  created, or it cannot start; 503 while Cadencr is quitting). Each refusal
+  is also written to the backend's log in Activity. A refused start spawns
+  nothing, but checks (and, for a marketplace tab, hashes) the binary again:
+  after 3 refusals within 60 s the next starts are answered 503
+  `PLUGIN_BACKEND_START_FAILING` without checking, until the oldest refusal
+  ages out of the window or the user allows a restart from the Activity
+  dialog. The Activity status (`GET …/activity`, `backend`) names the last
+  refusal (`start_error`) and says when starts are held (`restart_held`: this,
+  a crash loop or a protocol mismatch), which is when the dialog offers
+  **Allow restart**. These checks run off the supervisor's
+  lock: a slow one holds up only that tab in that conversation.
+- **Process.** No shell, no arguments; working directory = the tab folder
+  (canonical). The backend must treat that folder as read-only: a
+  marketplace tab's is an immutable revision, published read-only even for
+  its owner (folders and executables `0500`, other files `0400`; retention
+  restores the owner's write bit on the folders it has proven are its own
+  before reclaiming them). Its writable place is
+  `state_dir`, sent in `hello`: `~/.cadencr/plugins/tab-state/<plugin_id>`,
+  outside the tab folder, created with mode `0700` before the backend starts
+  and kept across runs and updates. It is per tab, not per conversation: the
+  tab's backends in other conversations see the same folder and must
+  coordinate. The same direct-exec policy as §4.6 applies (no
+  `CADENCR_*`/`VITE_*` variables, the memory limit, its own process tree,
+  owned and terminated with it) except the CPU-time limit: a backend lives
+  as long as its tab stays open, for days if need be, and `exec.run`'s
+  one-hour CPU ceiling would kill a busy one.
+- **Handshake.** The host writes `hello` (the conversation, its folder,
+  `state_dir`, the scopes and the backend's own API token) and requires
+  `{"type":"ready","protocol":<backend.protocol>}` as the first stdout line
+  within 5 s; no request is written before it. (Host leniency: the first
+  start of a given binary file in a Cadencr process — a new install, a
+  rebuild — gets 20 s, since macOS assesses a freshly written executable on
+  its first launch; authors must still meet 5 s.) No `ready` in time is 504
+  `PLUGIN_BACKEND_NOT_READY`; the process is stopped and the run counts as a
+  crash. Any other first line or protocol is 502
+  `PLUGIN_BACKEND_PROTOCOL_MISMATCH`: the process is stopped, and since the
+  same binary would fail the same way, no further start is attempted until
+  the user allows a restart from the Activity dialog
+  (`DELETE …/backends/{feature_id}`).
+- **Requests.** `{"type":"request","id":"<n>","method","params"}` lines;
+  `{"type":"response","id","result"|"error"}` lines back, in any order. Any
+  other stdout line is ignored and noted in the log; a line over 4 MiB is
+  dropped. stderr is the log: the last 200 lines are kept and shown in
+  Activity.
 - **Its own Cadencr access.** `api.token` is a grant minted for the backend:
   the tab's consented scopes, bound to the conversation and its project,
   checked by the same policy table (§4.3, §6.1). It is never the main token,
@@ -379,20 +500,89 @@ conversation's open instances.
 - **Answers.** 200 `{result}` or `{error: {code, message}}` — the backend's
   own error, passed through. Relay failures: 429 `PLUGIN_BACKEND_BUSY` (≤ 16
   in flight), 504 `PLUGIN_BACKEND_TIMEOUT` (`timeout_ms` 1–120 000, default
-  30 000), 502 `PLUGIN_BACKEND_EXITED` (it exited before answering). `method`
-  is 1–128 chars, `params` ≤ 1 MiB of JSON.
+  30 000, counted from the request, the whole start of a backend not yet
+  running included), 502 `PLUGIN_BACKEND_EXITED` (it exited before answering). 400
+  for a `method` outside 1–128 chars or `params` over 1 MiB of JSON.
 - **Lifecycle.** An open instance of a tab with a backend holds a presence
   lease (`PUT /api/plugin-tabs/{id}/presence/{lease_id}` `{feature_id}`, main
-  token): the desktop takes it when the tab opens, renews it every minute
-  while the tab stays open — shown or hidden, idle or not — and releases it
-  (`DELETE`) when the tab closes; unrenewed, it lapses after 3 minutes. The
-  backend is stopped when no instance of the tab has held a lease in its
-  conversation for 30 s, when its grant is revoked (permissions changed, tab
-  turned off or removed), or from the Activity dialog; the Activity says which
-  (`exit_reason`: "its tab was closed", "its permissions changed", "stopped
-  from the tab's Activity", "exited with status N", …). After 3 crashes within
-  a minute it is not restarted (503 `PLUGIN_BACKEND_CRASHING`) until the user
-  clears it from the Activity dialog (`DELETE …/backends/{feature_id}`).
+  token). The desktop window holds one per open tab instance (conversation
+  and tab) — owned by the tab strip, not by the tab's on-screen view: taken
+  when the tab is placed, renewed every minute while it stays in its
+  conversation's tab strip — shown or hidden, its conversation on screen or
+  not (another conversation, Settings), idle or not — and released (`DELETE`)
+  when the tab is closed, or once it may not run (turned off, blocked,
+  removed, invalid, no build for this platform). Deleting a conversation
+  (or its project) or archiving it releases every lease held in it, from
+  every client. A window that still shows it gets no error: once it is
+  deleted, a renewal answers 404 `PLUGIN_TAB_CONVERSATION_NOT_FOUND` and the
+  desktop stops renewing; while it is archived, renewals answer 409
+  `PLUGIN_TAB_CONVERSATION_ARCHIVED` and go on, so unarchiving it takes the
+  lease back within a minute. After a restart, a
+  conversation's tabs take theirs when its saved layout is first loaded (its
+  first visit, which precedes any backend use); unrenewed, a lease lapses
+  after 3 minutes, so a window that quits leaves none behind. The
+  backend is stopped (stdin closed, then its process tree terminated after
+  2 s) when no instance of the tab has held a lease in its conversation for
+  30 s (checked every 10 s: 30–50 s after the tab closes in practice), when
+  its grant is revoked (permissions changed, tab turned off or removed), when
+  an accepted update replaces its revision, or from the Activity dialog; the
+  Activity says which (`exit_reason`: "its tab was closed", "its permissions
+  changed", "its tab was updated", "stopped from the tab's Activity", "its
+  tab was removed", "exited with status N",
+  …). Removing a marketplace tab stops its backends and waits for them to
+  exit, so its revision is reclaimed; one still running then releases it
+  when it exits. Exiting with status 0 after `ready` is a normal stop; a
+  non-zero status, a signal Cadencr did not send, or exiting before `ready`
+  (whatever the status) is a crash. After 3 crashes within a minute it is not restarted (503
+  `PLUGIN_BACKEND_CRASHING`) until the user clears it from the Activity
+  dialog (`DELETE …/backends/{feature_id}`).
+- **Consent.** The permissions hash (§3) covers the backend as
+  `{"protocol", "binary": {<platform>: <path>}}`: declaring a backend,
+  changing its protocol, or adding or moving a platform's binary asks for
+  consent again; its `reasoning` does not. A local tab's binaries are
+  identified by path only — the user consents to whatever its author builds
+  there, so a rebuild at the same path does not ask again. A marketplace
+  tab's hash also covers its signed binary for the platform Cadencr runs on,
+  as `"digests": {<platform>: <executable_sha256>}` beside `binary` (omitted
+  for local tabs, which keep their hash; a manifest cannot declare it, the
+  `backend` object is closed): a new binary asks again, a rebuild of another
+  platform's does not. An update that changes the hash of a tab the user
+  accepted is **staged** beside the installed revision, which keeps running:
+  the summary's `pending_update` lists what it would run (its
+  `backend_binary` — `platform`, `protocol`, `executable_sha256` — beside the
+  summary's own `backend_binary`, the installed one, so a binary-only update
+  shows what changed), consenting to its
+  `permissions_hash` (`PUT …/consent`) promotes it and restarts the backend
+  on it, and `DELETE /api/marketplace/tabs/{id}/pending` discards it.
+- **Validation.** `cadencr plugin validate <folder> --kind tab` reports every
+  platform's binary that is missing or not native, then runs this platform's
+  built binary through `cadencr_tab_backend::conformance` (the tab folder as
+  working directory, a temporary `state_dir`): `ready`, an error response
+  for an unknown method, survival of malformed lines, two concurrent
+  requests, exit with status 0 within 2 s of stdin closing, and a clean
+  stdout. A failed check fails the command with
+  `TAB_BACKEND_CONFORMANCE_FAILED` (the failed checks, the full report and
+  the backend's last stderr lines); an unbuilt binary stays a
+  `BACKEND_UNAVAILABLE` warning. `--no-run` skips the run, for machines that
+  cannot execute the binary.
+
+| Code                                     | Status | When                                                            |
+| ---------------------------------------- | ------ | --------------------------------------------------------------- |
+| `PLUGIN_BACKEND_UNDECLARED`              | 403    | The granted manifest has no `backend`.                          |
+| `PLUGIN_BACKEND_TAMPERED`                | 409    | A marketplace binary that differs from its signed digest.       |
+| `PLUGIN_BACKEND_UNAVAILABLE_ON_PLATFORM` | 422    | No binary for this platform (declared or installed).            |
+| `PLUGIN_BACKEND_NOT_NATIVE`              | 422    | A script, a foreign format or a malformed Mach-O.               |
+| `PLUGIN_BACKEND_UNSIGNED`                | 422    | Unsigned arm64 code on Apple silicon.                           |
+| `PLUGIN_BACKEND_UNAVAILABLE`             | 422    | Missing, not executable, outside the folder, cannot start.      |
+| `PLUGIN_BACKEND_NOT_READY`               | 504    | No `ready` within 5 s (20 s on a first start); a crash.         |
+| `PLUGIN_BACKEND_PROTOCOL_MISMATCH`       | 502    | Wrong first line or protocol; no start until reset in Activity. |
+| `PLUGIN_BACKEND_EXITED`                  | 502    | It exited before answering.                                     |
+| `PLUGIN_BACKEND_CRASHING`                | 503    | 3 crashes within 60 s; no start until reset in Activity.        |
+| `PLUGIN_BACKEND_START_FAILING`           | 503    | 3 refused starts within 60 s; none checked until one ages out.  |
+| `PLUGIN_BACKEND_BUSY`                    | 429    | 16 requests already in flight.                                  |
+| `PLUGIN_BACKEND_TIMEOUT`                 | 504    | No answer within `timeout_ms`.                                  |
+| `PLUGIN_TAB_BLOCKED`                     | 403    | The tab is on the signed tab blocklist.                         |
+| `MANAGED_TAB_POLICY_UNAVAILABLE`         | 409    | A blocklist feed is configured but no fresh policy is cached.   |
 
 The backend is **not sandboxed**: it can do anything the user can. The policy
 table bounds only what it can reach _through Cadencr_.
@@ -424,10 +614,25 @@ table bounds only what it can reach _through Cadencr_.
   never receives a port.
 - Instance ids match `^[A-Za-z0-9_.:-]{1,200}$`. The renderer bridge is
   `desktopBridge.pluginTabs` (`open`, `setBounds`, `setVisible`, `reload`,
-  `close`, `openDevTools`, `focus`, `setTheme`, `onEvent`); shared types live in
+  `close`, `openDevTools`, `focus`, `setTheme`, `setAppShortcuts`,
+  `setTabShortcuts`, `onEvent`, `onAppShortcut`); shared types live in
   `packages/desktop/src/shared/plugin-tab-host.ts`.
-- Pane chords (⌘⇧A/T/G/E/B) pressed in a focused guest are relayed to the
-  renderer; other renderer shortcuts are not.
+- **Keyboard.** A focused guest receives its keys before the renderer, so
+  the main process matches each key down first (`before-input-event`,
+  `plugin-tab-shortcuts.ts`), with the renderer's layout-aware matcher:
+  1. Cadencr's shortcuts win. Every shortcut of the `global`, `feature` and
+     `feature-panes` scopes holding `mod`, `ctrl` or `alt`, as currently
+     bound (`setAppShortcuts`, `lib/plugin-tabs/tab-shortcuts.ts`), is taken
+     from the page: focus returns to the renderer, which dispatches the same
+     key from its body, so it runs exactly as if pressed there. `⌘Q` stays
+     with the application menu.
+  2. The tab's own `shortcuts` (`setTabShortcuts`, per instance) are taken
+     from the page too and delivered to it as a `shortcut {id}` event (§7).
+     One on the same keys as a Cadencr shortcut never fires: it is left out
+     of `hello.shortcuts`, and Settings → Custom tabs lists it as not
+     available, naming the Cadencr shortcut. The cheatsheet (`⌘⇧?`) lists
+     the active ones of the current project's tabs.
+  3. Every other key reaches the page.
 
 ### 5.2 Asset responses
 
@@ -547,7 +752,7 @@ The user is told at every step:
 
 - **Consent** (Settings): the dialog leads with the level, lists the programs
   with their reasons and what running them means, and for native code shows
-  the launch line, says it is not sandboxed, and requires ticking "I trust
+  the backend's binaries, says it is not sandboxed, and requires ticking "I trust
   this code to run on my computer with my rights" before **Allow**.
 - **Settings card**: a level badge (Read-only / Runs commands / Native code)
   beside the status badge; the permissions block repeats the consent lists.
@@ -556,10 +761,15 @@ The user is told at every step:
 - **Activity** (**+** menu → **Activity…** on a focused commands or native
   tab): every command run or refused in this conversation, and the backend's
   state, pid, exit reason and stderr tail, with **Stop**.
-- `cadencr plugin validate --kind tab` prints the level.
+- `cadencr plugin validate --kind tab` prints the level, and fails when this
+  platform's built backend does not pass the protocol conformance checks
+  (§4.7).
 
-A marketplace tab may declare `commands` but not a `backend` (no verified
-publisher review exists yet).
+A marketplace tab may declare `commands` and a native `backend`. Its install
+screen says it runs native code with the user's rights, with the backend's
+`reasoning` and the platforms it ships for; the Enable consent dialog keeps
+the native-code checkbox. An update that would run something new waits for
+review (§4.7) instead of replacing the accepted revision.
 
 ## 7. Wire protocol (guest ⇄ broker)
 
@@ -609,7 +819,11 @@ on the same port (React StrictMode re-mounts). The SDK sets
 Events: `context.changed {context}`, `theme.changed {theme}`,
 `visibility.changed {visible}`, `stream.event {subscriptionId, seq, data:
 {domain, action, payload}}`, `stream.resync {subscriptionId}` (the plugin
-should refetch), `stream.error {subscriptionId, error}`.
+should refetch), `stream.error {subscriptionId, error}`, `shortcut {id}` (one
+of the manifest's `shortcuts`, pressed while the tab had focus; §5.1). Events
+are additive: a guest ignores one it does not know (`@cadencr/tab-sdk` from
+0.2; 0.1 reports it as a `HOST_ERROR`). `hello` also answers `shortcuts`: the
+ids of the manifest's shortcuts that can fire.
 
 Error codes: `PLUGIN_API_UNSUPPORTED`, `CAPABILITY_DENIED`,
 `PLUGIN_SCOPE_DENIED`, `PLUGIN_BINDING_DENIED`, `PLUGIN_NETWORK_DENIED`,
@@ -667,7 +881,8 @@ folder holding `entry` (`dist/` in the scaffold) reloads live instances.
 
 - `@cadencr/tab-sdk` (`packages/tab-sdk`): `connect()`, context, theme,
   `api` (+ a generated, typed client of the plugin surface), `streams`,
-  `storage`, `state`, `config`, `net.fetch`, `ui`, `capabilities`; React
+  `storage`, `state`, `config`, `net.fetch`, `ui`, `capabilities`,
+  `onShortcut`/`shortcuts` (React: `useShortcut(id, handler)`); React
   bindings in `@cadencr/tab-sdk/react`; a fake host in
   `@cadencr/tab-sdk/testing`; the wire types in `@cadencr/tab-sdk/protocol`
   (imported by the renderer broker). No runtime dependencies.

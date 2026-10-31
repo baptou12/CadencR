@@ -5,6 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { AgentSession, shallowEqualSkipFunctions } from "./agent-session";
 import type { AgentSessionProps } from "./agent-session";
 import type { AgentBlockData } from "./AgentBlock";
+import type { HotkeyCallback } from "@tanstack/hotkeys";
+import { invokeRegisteredHotkey } from "@/test/hotkeys";
 
 // Mock Virtuoso so JSDOM tests render all items synchronously instead of
 // relying on layout/IntersectionObserver. We don't need true virtualization
@@ -37,13 +39,13 @@ vi.mock("react-virtuoso", () => ({
 const hotkeyHandlers = new Map<string, (event: KeyboardEvent) => void>();
 
 vi.mock("@tanstack/react-hotkeys", () => ({
-  useHotkeys: vi.fn(
-    (definitions: Array<{ callback: (event: KeyboardEvent) => void; hotkey: string }>) => {
-      definitions.forEach((definition) => {
-        hotkeyHandlers.set(definition.hotkey, definition.callback);
-      });
-    },
-  ),
+  useHotkeys: vi.fn((definitions: Array<{ callback: HotkeyCallback; hotkey: string }>) => {
+    definitions.forEach((definition) => {
+      hotkeyHandlers.set(definition.hotkey, (event) =>
+        invokeRegisteredHotkey(definition.callback, definition.hotkey, event),
+      );
+    });
+  }),
 }));
 
 vi.mock("../api/generated", async (importOriginal) => ({

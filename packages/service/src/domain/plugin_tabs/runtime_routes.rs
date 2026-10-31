@@ -12,12 +12,17 @@ use utoipa::{IntoParams, ToSchema};
 
 use super::activity::PluginTabExecRecord;
 use super::backend::models::{PluginBackendRequest, PluginBackendResponse, PluginTabBackendStatus};
-use super::backend::BackendLaunch;
+use super::backend::{unavailable_on_platform, BackendLaunch, RunningBackend};
 use super::exec::{self, PluginExecRequest, PluginExecResult};
+use super::managed::policy;
+use super::models::installed_here;
 use super::plugin_routes::{granted_manifest, granted_tab};
 use super::policy::Scope;
+use super::presence::check_lease_id;
 use super::principal::PluginPrincipal;
+use super::registry::{self, CurrentRevision};
 use crate::app_state::AppState;
+use crate::domain::features::repository::is_feature_archived;
 use crate::domain::features::service::get_feature_cwd;
 use crate::error::AppError;
 
@@ -76,8 +81,12 @@ pub async fn plugin_tab_self_exec_handler(
 
 /// Send one request to the tab's native backend, starting it if it is not
 /// running (plugin token). A backend error is a 200 with `error`. 403
-/// `PLUGIN_BACKEND_UNDECLARED` / `PLUGIN_BACKEND_UNSUPPORTED`, 422
-/// `PLUGIN_BACKEND_UNAVAILABLE`, 429 `PLUGIN_BACKEND_BUSY`, 503
+/// `PLUGIN_BACKEND_UNDECLARED`, 422 `PLUGIN_BACKEND_UNAVAILABLE` /
+/// `PLUGIN_BACKEND_UNAVAILABLE_ON_PLATFORM`, 409 `PLUGIN_BACKEND_TAMPERED` (a
+/// marketplace binary that differs from its signed digest) /
+/// `MANAGED_TAB_POLICY_UNAVAILABLE` (a revocation feed is configured but no
+/// fresh policy is cached: the backend does not start), 429
+/// `PLUGIN_BACKEND_BUSY`, 503
 /// `PLUGIN_BACKEND_CRASHING`, 504 `PLUGIN_BACKEND_TIMEOUT`, 502
 /// `PLUGIN_BACKEND_EXITED`.
 #[utoipa::path(
@@ -91,6 +100,9 @@ pub async fn plugin_tab_self_backend_handler(
     principal: PluginPrincipal,
     Json(body): Json<PluginBackendRequest>,
 ) -> Result<Json<PluginBackendResponse>, AppError> {
+    if let Some(running) = reusable_backend(&state, &principal).await {
+        return Ok(Json(running.request(body).await?));
+    }
     let launch = backend_launch(&state, &principal).await?;
     Ok(Json(
         state
@@ -98,6 +110,46 @@ pub async fn plugin_tab_self_backend_handler(
             .request(&state.plugin_tab_grants, launch, body)
             .await?,
     ))
+}
+
+/// The backend already running for `principal`, when nothing a full launch
+/// checks has moved since it started, read cheaply: it runs under the
+/// principal's permissions hash, from the tab's current folder (a new
+/// marketplace revision is a new folder), a local tab's `tab.json` still
+/// hashes to it, and the revocation policy does not block its marketplace
+/// revision. A disabled or blocked tab's grants are revoked, which stops its
+/// backend and refuses the principal before this runs. Anything else —
+/// including an error reading the folder or the policy — takes the full
+/// launch, which re-checks everything and answers with why.
+async fn reusable_backend(state: &AppState, principal: &PluginPrincipal) -> Option<RunningBackend> {
+    let running = state
+        .plugin_tab_backends
+        .running(
+            &principal.plugin_id,
+            principal.feature_id,
+            &principal.permissions_hash,
+        )
+        .await?;
+    let current = registry::current_revision(&principal.plugin_id)
+        .await
+        .ok()?;
+    if current.directory() != running.plugin_dir() {
+        return None;
+    }
+    let still_valid = match (current, running.managed()) {
+        (
+            CurrentRevision::Local {
+                permissions_hash, ..
+            },
+            None,
+        ) => permissions_hash.as_deref() == Some(principal.permissions_hash.as_str()),
+        (CurrentRevision::Managed { .. }, Some((version, facts))) => policy::current()
+            .ok()?
+            .installed_blocked_reason(&principal.plugin_id, version, facts)
+            .is_none(),
+        _ => false,
+    };
+    still_valid.then_some(running)
 }
 
 async fn backend_launch(
@@ -112,25 +164,39 @@ async fn backend_launch(
             "this tab declares no `backend` in tab.json",
         ));
     };
-    if tab.is_managed() {
-        return Err(AppError::coded(
-            StatusCode::FORBIDDEN,
-            "PLUGIN_BACKEND_UNSUPPORTED",
-            "marketplace tabs cannot run a native backend",
-        ));
-    }
+    // A marketplace tab runs only the binary its signed package names for
+    // this platform, re-checked against that digest before it starts, from
+    // a revision its lease keeps on disk while it runs.
+    let expected_sha256 = if tab.is_managed() {
+        let installed = tab.facts().and_then(installed_here).ok_or_else(|| {
+            unavailable_on_platform(
+                "this marketplace tab has no backend binary installed for this platform".into(),
+            )
+        })?;
+        Some(installed.executable_sha256.clone())
+    } else {
+        None
+    };
     let worktree = get_feature_cwd(&state.read_pool, principal.feature_id).await?;
+    let (managed, lease) = tab
+        .managed
+        .map(|managed| (managed.facts, managed.lease))
+        .unzip();
     Ok(BackendLaunch {
         plugin_id: principal.plugin_id.clone(),
         plugin_version: manifest.version.clone(),
         project_id: principal.project_id,
         feature_id: principal.feature_id,
         plugin_dir: tab.report.directory,
+        state_dir: super::paths::state_dir(&principal.plugin_id),
         worktree: worktree.into(),
         backend,
         scopes: Scope::parse_all(&manifest.permissions),
         permissions_hash: principal.permissions_hash.clone(),
         api_base_url: format!("http://127.0.0.1:{}", state.port),
+        expected_sha256,
+        managed,
+        lease,
     })
 }
 
@@ -195,7 +261,11 @@ pub struct PluginTabPresenceRequest {
 /// Take or renew a presence lease: an instance of the tab is open in the
 /// conversation, so its backend keeps running, idle or not. The desktop
 /// renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
-/// malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases.
+/// malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases, 404
+/// `PLUGIN_TAB_CONVERSATION_NOT_FOUND` once the conversation is deleted and
+/// 409 `PLUGIN_TAB_CONVERSATION_ARCHIVED` while it is archived — possibly
+/// from another client, whose tabs still renew: every lease held in it goes
+/// too, so its backends stop.
 #[utoipa::path(
     put,
     path = "/api/plugin-tabs/{id}/presence/{lease_id}",
@@ -208,9 +278,29 @@ pub async fn plugin_tab_renew_presence_handler(
     Path((id, lease_id)): Path<(String, String)>,
     Json(body): Json<PluginTabPresenceRequest>,
 ) -> Result<StatusCode, AppError> {
+    let feature_id = body.feature_id;
+    check_lease_id(&lease_id)?;
+    let refusal = match is_feature_archived(&state.read_pool, feature_id).await {
+        Ok(false) => None,
+        Ok(true) => Some(AppError::coded(
+            StatusCode::CONFLICT,
+            "PLUGIN_TAB_CONVERSATION_ARCHIVED",
+            format!("conversation {feature_id} is archived"),
+        )),
+        Err(AppError::NotFound(_)) => Some(AppError::coded(
+            StatusCode::NOT_FOUND,
+            "PLUGIN_TAB_CONVERSATION_NOT_FOUND",
+            format!("conversation {feature_id} no longer exists"),
+        )),
+        Err(error) => return Err(error),
+    };
+    if let Some(refusal) = refusal {
+        state.plugin_tab_presence.release_features(&[feature_id]);
+        return Err(refusal);
+    }
     state
         .plugin_tab_presence
-        .renew(&lease_id, &id, body.feature_id)?;
+        .renew(&lease_id, &id, feature_id)?;
     Ok(StatusCode::NO_CONTENT)
 }
 

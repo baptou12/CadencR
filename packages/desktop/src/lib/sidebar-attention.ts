@@ -45,6 +45,11 @@ export function outranks(a: AttentionState, b: AttentionState): boolean {
   return RANK[a] > RANK[b];
 }
 
+/** Sort comparator: the more urgent state first. */
+export function compareAttention(a: AttentionState, b: AttentionState): number {
+  return RANK[b] - RANK[a];
+}
+
 /** Strong states ask for an action (answer, look at the error); quiet ones only inform. */
 export function isStrongAttention(state: AttentionState): boolean {
   return state === "waiting" || state === "failed";

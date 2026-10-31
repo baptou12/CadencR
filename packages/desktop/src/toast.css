@@ -89,6 +89,34 @@
   color: var(--muted-foreground);
 }
 
+/* Scope line (`scopedToastDescription`): which project — and conversation — an
+ * operation ran in. It heads the description so the title still sits beside
+ * the icon well. */
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] .toast-scope {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  font-size: 11.5px;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] .toast-scope-project {
+  flex-shrink: 0;
+  max-width: 60%;
+  overflow: hidden;
+  font-weight: 500;
+  color: var(--popover-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] .toast-scope-feature {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] .toast-scope-separator {
+  opacity: 0.6;
+}
+
 /* Buttons. The action mirrors the `raised` Button variant (a control sitting
  * on a popover); cancel is its ghost sibling. */
 [data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button] {

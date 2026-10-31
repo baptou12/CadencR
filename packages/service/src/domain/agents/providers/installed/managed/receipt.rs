@@ -1,12 +1,9 @@
 //! Immutable managed-package receipts and launch-integrity metadata.
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest as _, Sha256};
 
 use super::conformance::ManagedProbeOutcome;
 use super::{ManagedPackageAssets, SignedProviderCatalog};
@@ -144,28 +141,14 @@ pub fn write_receipt(path: &Path, receipt: &ManagedPackageReceipt) -> Result<(),
 }
 
 pub fn hash_regular_file(path: &Path) -> Result<String, AppError> {
-    let metadata = std::fs::symlink_metadata(path)
-        .map_err(|error| receipt_error(format!("inspect {}: {error}", path.display())))?;
-    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-        return Err(receipt_error(format!(
-            "managed executable {} is not a regular file",
-            path.display()
-        )));
-    }
-    let mut file = std::fs::File::open(path)
-        .map_err(|error| receipt_error(format!("open {}: {error}", path.display())))?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|error| receipt_error(format!("hash {}: {error}", path.display())))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(hex_lower(&hasher.finalize()))
+    crate::shared::file_digest::sha256_regular_file(path, u64::MAX)
+        .map(|(digest, _)| digest)
+        .map_err(|error| {
+            receipt_error(format!(
+                "managed executable {} cannot be hashed: {error}",
+                path.display()
+            ))
+        })
 }
 
 pub fn payload_manifest(payload: &Path) -> Result<Vec<ManagedPayloadFile>, AppError> {
@@ -257,7 +240,7 @@ fn file_mode(_metadata: &std::fs::Metadata) -> u32 {
 }
 
 pub fn signed_payload_sha256(bytes: &[u8]) -> String {
-    hex_lower(&Sha256::digest(bytes))
+    crate::shared::file_digest::sha256_hex(bytes)
 }
 
 pub fn receipt_path(payload_dir: &Path) -> Result<PathBuf, AppError> {
@@ -284,14 +267,6 @@ fn now() -> String {
 
 pub fn installed_now() -> String {
     now()
-}
-
-fn hex_lower(bytes: &[u8]) -> String {
-    let mut encoded = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        write!(&mut encoded, "{byte:02x}").expect("writing to a String cannot fail");
-    }
-    encoded
 }
 
 #[cfg(test)]

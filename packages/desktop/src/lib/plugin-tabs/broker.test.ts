@@ -3,9 +3,9 @@ import { AxiosError, type AxiosResponse } from "axios";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PluginTabBroker } from "./broker";
+import type { BackendFailureDeps } from "./broker-backend-failures";
 import type { GrantDeps } from "./broker-grant";
 import type { FetchLike } from "./broker-http";
-import type { PresenceDeps } from "./broker-presence";
 import type { SocketFactory } from "./broker-streams";
 import { FakePluginSocket } from "./plugin-socket-fixtures";
 import { usePluginTabRuntimeStore } from "./runtime-store";
@@ -72,26 +72,18 @@ function grantDeps(overrides: Partial<GrantDeps> = {}): GrantDeps {
   };
 }
 
-function presenceDeps(): PresenceDeps {
-  return {
-    renew: vi.fn(async () => undefined),
-    release: vi.fn(async () => undefined),
-    report: vi.fn(),
-    newLeaseId: () => "lease-1",
-  };
-}
-
 function createBroker(
   options: {
     instanceId?: string;
     fetch?: FetchLike;
     grant?: GrantDeps;
-    presence?: PresenceDeps;
+    backendFailures?: BackendFailureDeps;
     origins?: string[];
     hasCommands?: boolean;
     hasBackend?: boolean;
     socket?: SocketFactory;
     visible?: boolean;
+    shortcuts?: string[];
   } = {},
 ): PluginTabBroker {
   const broker = new PluginTabBroker(
@@ -105,13 +97,14 @@ function createBroker(
         allowedOrigins: options.origins ?? [],
         hasCommands: options.hasCommands ?? false,
         hasBackend: options.hasBackend ?? false,
+        shortcuts: options.shortcuts ?? [],
       },
       context: CONTEXT,
       visible: options.visible ?? true,
     },
     {
       grant: options.grant ?? grantDeps(),
-      presence: options.presence ?? presenceDeps(),
+      backendFailures: options.backendFailures ?? { report: vi.fn(), clear: vi.fn() },
       fetch: options.fetch ?? vi.fn(),
       theme: () => THEME,
       windowPorts: false,
@@ -176,6 +169,12 @@ describe("PluginTabBroker handshake", () => {
     const capabilities = (result as { capabilities: string[] }).capabilities;
     expect(capabilities).toContain("exec.run");
     expect(capabilities).toContain("backend.request");
+  });
+
+  it("names the active shortcuts in hello", async () => {
+    const guest = connect(createBroker({ shortcuts: ["refresh"] }));
+    const result = ok(await guest.request("hello", { sdkVersion: "0.1.0", apiVersions: [1, 1] }));
+    expect(result).toMatchObject({ shortcuts: ["refresh"] });
   });
 
   it("tells a page recreated while hidden that it is hidden", async () => {
@@ -477,6 +476,18 @@ describe("PluginTabBroker events", () => {
       }),
     );
   });
+
+  it("delivers presses of its active shortcuts only", async () => {
+    const broker = createBroker({ shortcuts: ["refresh"] });
+    const guest = connect(broker);
+    broker.pressShortcut("taken-by-cadencr");
+    broker.pressShortcut("refresh");
+    await vi.waitFor(() =>
+      expect(guest.events).toEqual([
+        expect.objectContaining({ event: "shortcut", payload: { id: "refresh" } }),
+      ]),
+    );
+  });
 });
 
 describe("PluginTabBroker guest lifecycle", () => {
@@ -624,35 +635,60 @@ describe("PluginTabBroker exec.run and backend.request", () => {
   });
 });
 
-describe("PluginTabBroker presence", () => {
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-  const identity = (hasBackend: boolean) => ({
-    id: "graph",
-    name: "Graph",
-    version: "0.1.0",
-    allowedOrigins: [],
-    hasCommands: false,
-    hasBackend,
+describe("PluginTabBroker backend failures", () => {
+  function failures() {
+    return {
+      report: vi.fn<BackendFailureDeps["report"]>(),
+      clear: vi.fn<BackendFailureDeps["clear"]>(),
+    };
+  }
+
+  it("tells the user once when the backend can't run, and still rejects the page", async () => {
+    let answer = (): Response =>
+      Response.json(
+        {
+          error: "the tab's backend `bin/x` is not a native executable",
+          code: "PLUGIN_BACKEND_NOT_NATIVE",
+        },
+        { status: 422 },
+      );
+    const fetch = vi.fn<FetchLike>(async () => answer());
+    const sink = failures();
+    const broker = createBroker({ fetch, hasBackend: true, backendFailures: sink });
+    const guest = connect(broker);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      expect(errorCode(await guest.request("backend.request", { method: "ports" }))).toBe(
+        "PLUGIN_BACKEND_NOT_NATIVE",
+      );
+    }
+    expect(sink.report).toHaveBeenCalledTimes(1);
+    expect(sink.report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instanceId: broker.instanceId,
+        title: "Graph: its backend is not a native executable",
+      }),
+    );
+    answer = () => Response.json({ result: [] });
+    ok(await guest.request("backend.request", { method: "ports" }));
+    expect(sink.clear).toHaveBeenCalledWith(broker.instanceId);
   });
 
-  it("holds a lease only while the tab declares a backend, and drops it on close", async () => {
-    const presence = presenceDeps();
-    const broker = createBroker({ presence });
-    expect(presence.renew).not.toHaveBeenCalled();
-    broker.setPlugin(identity(true));
-    expect(presence.renew).toHaveBeenCalledWith("graph", "lease-1", 7);
-    broker.setPlugin(identity(true));
-    expect(presence.renew).toHaveBeenCalledTimes(1);
-    broker.dispose();
-    await settle();
-    expect(presence.release).toHaveBeenCalledWith("graph", "lease-1");
-  });
-
-  it("releases the lease when the backend leaves tab.json", async () => {
-    const presence = presenceDeps();
-    const broker = createBroker({ presence, hasBackend: true });
-    broker.setPlugin(identity(false));
-    await settle();
-    expect(presence.release).toHaveBeenCalledTimes(1);
+  it("leaves the backend's own and transient errors, and other methods, to the page", async () => {
+    const fetch = vi.fn<FetchLike>(async () =>
+      Response.json({ error: "slow", code: "PLUGIN_BACKEND_TIMEOUT" }, { status: 504 }),
+    );
+    const sink = failures();
+    const guest = connect(
+      createBroker({ fetch, hasBackend: true, hasCommands: true, backendFailures: sink }),
+    );
+    expect(errorCode(await guest.request("backend.request", { method: "ports" }))).toBe(
+      "PLUGIN_BACKEND_TIMEOUT",
+    );
+    fetch.mockImplementation(async () =>
+      Response.json({ error: "x", code: "PLUGIN_BACKEND_UNAVAILABLE" }, { status: 422 }),
+    );
+    // Same code from another method: not the backend's launch.
+    errorCode(await guest.request("exec.run", { program: "git" }));
+    expect(sink.report).not.toHaveBeenCalled();
   });
 });

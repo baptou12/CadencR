@@ -13,6 +13,7 @@ use crate::domain::agents::adapter::{
 
 pub struct ClaudeCodeSession {
     pub(super) query: claude_agent_sdk_rs::Query,
+    pub(super) turn_control: std::sync::Arc<tokio::sync::Mutex<()>>,
     pub(super) prompt_receipts: std::sync::Arc<ClaudePromptReceipts>,
 }
 
@@ -21,6 +22,7 @@ impl ClaudeCodeSession {
     pub(crate) fn from_query(query: claude_agent_sdk_rs::Query) -> Self {
         Self {
             query,
+            turn_control: Default::default(),
             prompt_receipts: std::sync::Arc::new(ClaudePromptReceipts::default()),
         }
     }
@@ -212,6 +214,10 @@ impl AgentRuntimeSession for ClaudeCodeSession {
             self.prompt_receipts.discard(&client_message_id);
         }
         result
+    }
+
+    async fn turn_control_guard(&self) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        Some(self.turn_control.clone().lock_owned().await)
     }
 
     async fn interrupt(&self) -> Result<(), RuntimeError> {

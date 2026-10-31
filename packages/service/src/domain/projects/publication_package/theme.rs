@@ -34,6 +34,16 @@ pub(super) fn build(
     let files = if kind == "tab" {
         let files = cadencr_registry_core::snapshot_tab_folder(&project_root)
             .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        if metadata["package"]["tab"].get("backend").is_some()
+            || cadencr_registry_core::validate_tab_files(&files)
+                .map_err(|e| AppError::BadRequest(e.to_string()))?
+                .backend
+                .is_some()
+        {
+            return Err(AppError::BadRequest(
+                "tabs with a native backend are published with `cadencr registry pack-tab` and `cadencr registry pack-tab-backend` (one archive per platform), not Prepare publication".into(),
+            ));
+        }
         cadencr_registry_core::validate_tab_package_files(&metadata["package"], &files)
             .map_err(|error| AppError::BadRequest(error.to_string()))?;
         files
@@ -255,5 +265,28 @@ mod tests {
             files.keys().cloned().collect::<Vec<_>>(),
             ["dist/index.html", "tab.json"]
         );
+    }
+    #[test]
+    fn backend_tabs_are_refused_with_the_cli_route() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("ports");
+        std::fs::create_dir_all(project.join("dist")).unwrap();
+        std::fs::write(project.join("tab.json"), r#"{"schema_version":1,"kind":"tab","id":"ports","name":"Ports","version":"1.0.0","api_version":1,"entry":"dist/index.html","backend":{"protocol":1,"reasoning":"Lists ports.","binary":{"linux-x86_64":"bin/ports"}}}"#).unwrap();
+        std::fs::write(project.join("dist/index.html"), "<html>Ports</html>").unwrap();
+        let metadata = json!({"kind":"tab","package":{"tab":{"id":"ports","name":"Ports","description":"Ports","version":"1.0.0","api_version":1,"license":"MIT","repository":"https://github.com/acme/tabs","distribution":{"archive":"https://github.com/acme/tabs/releases/download/v1.0.0/tab.tar.gz","sha256":"0".repeat(64)}},"host":{"publisher":"acme","compatibility":{"min_app_version":"0.1.0"}}}});
+        let error = build(
+            1,
+            project,
+            "ports".into(),
+            temp.path().join("output"),
+            PreparePublicationPackageRequest {
+                metadata_json: metadata.to_string(),
+                target: String::new(),
+                staging_directory: String::new(),
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("pack-tab-backend"), "{error}");
+        assert!(!temp.path().join("output").exists());
     }
 }

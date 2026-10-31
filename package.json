@@ -28,6 +28,7 @@
     "format:check": "turbo run format:check",
     "start": "node scripts/dev.mjs --filter=@cadencr/desktop",
     "build:local": "node scripts/cargo-env.mjs turbo run build:local --filter=@cadencr/desktop",
+    "build:local:linux": "pnpm --filter @cadencr/desktop build:local:linux",
     "build": "node scripts/cargo-env.mjs turbo run build --filter=@cadencr/desktop",
     "rust": "node scripts/cargo-env.mjs cargo",
     "rust:storage": "node scripts/rust-storage.mjs status",
@@ -40,8 +41,8 @@
   },
   "devDependencies": {
     "husky": "^9.1.7",
-    "oxfmt": "^0.56.0",
-    "turbo": "^2.10.0"
+    "oxfmt": "^0.72.0",
+    "turbo": "^2.11.7"
   },
   "engines": {
     "node": ">=22.19.0 <23.0.0"

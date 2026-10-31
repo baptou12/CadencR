@@ -14,10 +14,10 @@ import {
 } from "@cadencr/tab-sdk/protocol";
 import { z } from "zod";
 
+import { BackendFailureWatch, type BackendFailureDeps } from "./broker-backend-failures";
 import { BrokerError, badRequest, toWireError } from "./broker-errors";
 import { GrantHolder, type GrantDeps } from "./broker-grant";
 import { createPluginHttp, type FetchLike } from "./broker-http";
-import { PresenceLease, type PresenceDeps } from "./broker-presence";
 import { DATA_METHODS } from "./broker-methods-data";
 import { RUN_METHODS } from "./broker-methods-run";
 import { UI_METHODS } from "./broker-methods-ui";
@@ -44,7 +44,7 @@ export interface PluginTabBrokerOptions {
 /** Seams for tests; production uses the real service, socket and theme. */
 export interface PluginTabBrokerDeps {
   grant?: GrantDeps;
-  presence?: PresenceDeps;
+  backendFailures?: BackendFailureDeps;
   fetch?: FetchLike;
   socket?: SocketFactory;
   theme?: () => ThemeSnapshot;
@@ -78,18 +78,15 @@ export class PluginTabBroker {
   private readonly methods: ReadonlyMap<string, MethodHandler>;
   private readonly theme: () => ThemeSnapshot;
   private readonly cleanups: Array<() => void> = [];
-  private readonly featureId: number;
-  private readonly presenceDeps: PresenceDeps | undefined;
-  /** Held while the plugin declares a backend: it runs while the tab is open. */
-  private presence: PresenceLease | null = null;
+  /** Tells the user when the backend can't run at all; the page still gets the error. */
+  private readonly backendFailures: BackendFailureWatch;
 
   constructor(options: PluginTabBrokerOptions, deps: PluginTabBrokerDeps = {}) {
     this.context = options.context;
     this.contextKey = JSON.stringify(options.context);
     this.visible = options.visible;
     this.theme = deps.theme ?? currentPluginTabTheme;
-    this.featureId = options.featureId;
-    this.presenceDeps = deps.presence;
+    this.backendFailures = new BackendFailureWatch(options.instanceId, deps.backendFailures);
     const grant = new GrantHolder(options.plugin.id, options.featureId, deps.grant);
     const streams = new PluginStreamSocket({
       instanceId: options.instanceId,
@@ -125,7 +122,6 @@ export class PluginTabBroker {
       );
     }
     this.cleanups.push(subscribePluginTabTheme((theme) => this.emit("theme.changed", { theme })));
-    this.syncPresence();
   }
 
   get instanceId(): string {
@@ -150,7 +146,6 @@ export class PluginTabBroker {
   /** Name/version/origins/levels after a manifest change (hot reload). */
   setPlugin(plugin: PluginIdentity): void {
     this.runtime.plugin = plugin;
-    this.syncPresence();
   }
 
   /** Pushes `context.changed` only when the context actually differs. */
@@ -166,6 +161,11 @@ export class PluginTabBroker {
     if (visible === this.visible) return;
     this.visible = visible;
     this.emit("visibility.changed", { visible });
+  }
+
+  /** One of the tab's active shortcuts was pressed while it had focus. */
+  pressShortcut(id: string): void {
+    if (this.runtime.plugin.shortcuts.includes(id)) this.emit("shortcut", { id });
   }
 
   /** The grant was revoked server-side (hot reload): mint a fresh one on next use. */
@@ -194,22 +194,9 @@ export class PluginTabBroker {
     this.detachPort();
     this.runtime.streams.dispose();
     this.runtime.grant.dispose();
-    this.presence?.dispose();
-    this.presence = null;
+    this.backendFailures.dispose();
     releasePluginTabInstance(this.instanceId);
     setPluginTabBadge(this.instanceId, null);
-  }
-
-  /** Take the lease when the plugin declares a backend, release it when it no longer does. */
-  private syncPresence(): void {
-    const { id, name, hasBackend } = this.runtime.plugin;
-    if (this.disposed || hasBackend === (this.presence !== null)) return;
-    if (hasBackend) {
-      this.presence = new PresenceLease(id, this.featureId, name, this.presenceDeps);
-    } else {
-      this.presence?.dispose();
-      this.presence = null;
-    }
   }
 
   private detachPort(): void {
@@ -224,12 +211,16 @@ export class PluginTabBroker {
     if (!isGuestToHost(data)) return;
     try {
       const outcome = await this.dispatch(data);
+      if (data.method === "backend.request") this.backendFailures.answered();
       this.post(
         port,
         { v: PROTOCOL_VERSION, kind: "response", id: data.id, result: outcome.result },
         outcome.transfer,
       );
     } catch (error) {
+      if (data.method === "backend.request" && !this.disposed) {
+        this.backendFailures.failed(this.runtime.plugin.name, error);
+      }
       this.post(port, {
         v: PROTOCOL_VERSION,
         kind: "response",
@@ -266,6 +257,7 @@ export class PluginTabBroker {
       capabilities: await this.capabilities(),
       // A page recreated while hidden (a rebuild) gets no visibility change.
       visible: this.visible,
+      shortcuts: [...this.runtime.plugin.shortcuts],
     };
     return { result };
   }

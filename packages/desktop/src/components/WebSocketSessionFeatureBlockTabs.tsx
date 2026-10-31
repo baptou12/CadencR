@@ -119,7 +119,7 @@ function useTerminalTab(args: UseSessionTabsArgs): FeatureTabDef {
     () => ({
       label: "Terminal",
       Icon: TerminalIcon,
-      shortcut: ["cmd", "shift", "T"],
+      shortcutId: "pane-terminal",
       content: terminalReady ? (
         <FeatureTerminalTab ref={refs.terminal} featureId={featureId} projectId={projectId} />
       ) : (
@@ -146,7 +146,7 @@ function useGitTab(args: UseSessionTabsArgs): FeatureTabDef {
     () => ({
       label: "Git",
       Icon: GitCompareArrowsIcon,
-      shortcut: ["cmd", "shift", "G"],
+      shortcutId: "pane-git",
       badge: <GitBadge featureId={featureId} gitBranch={data.gitBranch} />,
       content: gitReady ? (
         <FeatureGitTab
@@ -186,7 +186,7 @@ function useBrowserTab(args: UseSessionTabsArgs): FeatureTabDef {
     () => ({
       label: "Browser",
       Icon: GlobeIcon,
-      shortcut: ["cmd", "shift", "B"],
+      shortcutId: "pane-browser",
       badge: <AgentBrowserActivityDot featureId={featureId} />,
       content: browserReady ? (
         <Suspense fallback={null}>
@@ -227,7 +227,7 @@ function useEditorTab(args: UseSessionTabsArgs): FeatureTabDef {
     () => ({
       label: "Editor",
       Icon: CodeIcon,
-      shortcut: ["cmd", "shift", "E"],
+      shortcutId: "pane-editor",
       content: !editorReady ? (
         <DeferredTabContent label="Editor" />
       ) : projectPathOrCwd ? (

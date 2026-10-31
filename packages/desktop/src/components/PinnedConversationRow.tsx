@@ -114,8 +114,9 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
         data-nav-type="feature"
         data-nav-id={String(feature.id)}
         data-nav-project-id={String(feature.project_id)}
+        data-sidebar-pointed={state.isPointed || undefined}
         {...reorder}
-        className={`sidebar-row group/pinned relative flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md pl-2 pr-1.5 outline-none hover:bg-sidebar-accent ${
+        className={`sidebar-row group/pinned relative flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md pl-2 pr-1.5 outline-none transition-colors hover:bg-sidebar-accent ${
           isActive ? "bg-sidebar-accent" : ""
         }`}
         onClick={(e) => {

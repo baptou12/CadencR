@@ -1,6 +1,6 @@
 import type { ThemeSnapshot } from "@cadencr/tab-sdk/protocol";
 
-import { cssColorToRgb } from "@/lib/css-color";
+import { cssColorToHex } from "@/lib/css-color";
 import { THEME_OPTIONAL_TOKEN_KEYS, THEME_TOKEN_KEYS } from "@/lib/themes/tokens";
 
 const TOKEN_KEYS: readonly string[] = [...THEME_TOKEN_KEYS, ...THEME_OPTIONAL_TOKEN_KEYS];
@@ -35,8 +35,5 @@ export function readThemeSnapshot(root: HTMLElement = document.documentElement):
 export function opaqueBackground(value: string, appearance: ThemeSnapshot["appearance"]): string {
   const base = appearance === "light" ? "#ffffff" : "#000000";
   if (value === "") return base;
-  const rgb = cssColorToRgb(value, base);
-  if (!rgb) return value;
-  const channels = [rgb.red, rgb.green, rgb.blue];
-  return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+  return cssColorToHex(value, base) ?? value;
 }

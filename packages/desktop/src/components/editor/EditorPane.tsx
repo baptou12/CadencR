@@ -2,6 +2,8 @@ import type { EditorView } from "@codemirror/view";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useEditorStore, isUntitledPath } from "@/stores/editor-store";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
+import { useShortcutKeys } from "@/hooks/useShortcutLabel";
+import { KbdShortcut } from "@/components/KbdShortcut";
 import { isBinaryDocumentFile } from "@/lib/document-file";
 import { isExcalidrawFile, isImageFile } from "@/lib/file-language";
 import EditorSubTabs from "./EditorSubTabs";
@@ -248,9 +250,7 @@ export default function EditorPane({
                 projectId={projectId}
               />
             ) : (
-              <div className="flex items-center justify-center h-full px-4 text-muted-foreground text-sm text-center text-balance">
-                Open a file from the sidebar, press CMD+N for a new buffer, or use CMD+P
-              </div>
+              <EditorEmptyState />
             )}
           </div>
         </>
@@ -346,5 +346,19 @@ function EditorPaneContent({
         />
       )}
     </Suspense>
+  );
+}
+
+/** Empty pane hint; the keys follow the user's rebinds of the editor shortcuts. */
+function EditorEmptyState() {
+  const newBufferKeys = useShortcutKeys("editor-new");
+  const fuzzyKeys = useShortcutKeys("editor-fuzzy");
+  return (
+    <div className="flex items-center justify-center h-full px-4 text-muted-foreground text-sm text-center text-balance">
+      <p className="leading-7">
+        Open a file from the sidebar, press <KbdShortcut keys={newBufferKeys} variant="hint" /> for
+        a new buffer, or use <KbdShortcut keys={fuzzyKeys} variant="hint" />
+      </p>
+    </div>
   );
 }

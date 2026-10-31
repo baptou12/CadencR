@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
+import type { ShortcutId } from "@/lib/shortcuts/registry";
 import type { BuiltinTabKind, PluginTabKind, TabKind } from "@/stores/feature-layout-schema";
 
 /**
@@ -15,8 +16,8 @@ interface FeatureTabDefBase {
   label: string;
   /** Optional badge rendered inside the tab trigger (git stats, terminal pane count, …). */
   badge?: ReactNode;
-  /** Hotkey label shown in tooltip, e.g. ["cmd", "shift", "A"]. */
-  shortcut?: string[];
+  /** Registry shortcut whose live binding the tab tooltip shows (rebinds included). */
+  shortcutId?: ShortcutId;
   /** Tab body. Rendered once; portaled into the active pane. */
   content: ReactNode;
   /**

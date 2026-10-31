@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use serde_json::Value;
 
 use crate::package::identity;
-use crate::signing::{parse_public_key, verify_envelope_at};
+use crate::signing::{parse_public_key, verify_envelope_at, PayloadCheck};
 use crate::{PreparedSigningPayload, RegistryError};
 
 /// Authenticate the previous publication snapshot, including expired snapshots.
@@ -140,7 +140,12 @@ fn verified_baseline(
             )?;
         }
         None => {
-            verify_envelope_at(&baseline, &key, key_id, true, chrono::Utc::now())?;
+            verify_envelope_at(
+                &baseline,
+                &key,
+                key_id,
+                PayloadCheck::history(chrono::Utc::now()),
+            )?;
         }
     }
     super::validate_catalog_identities(

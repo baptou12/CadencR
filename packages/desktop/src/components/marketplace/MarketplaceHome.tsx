@@ -53,19 +53,19 @@ export function MarketplaceHome({
   const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null);
   const searched = useMemo(() => {
     const terms = sidebarFilterTerms(query);
-    return state.listings.filter((listing) => matchesListing(listing, terms));
-  }, [state.listings, query]);
+    return state.browsable.filter((listing) => matchesListing(listing, terms));
+  }, [state.browsable, query]);
   const summary = useMemo(
     () => ({
-      installed: state.listings.filter((l) => l.installed).length,
-      updates: state.listings.filter((l) => l.update).length,
-      inCatalog: state.listings.filter((l) => l.inCatalog).length,
+      installed: state.browsable.filter((l) => l.installed).length,
+      updates: state.browsable.filter((l) => l.update).length,
+      inCatalog: state.browsable.filter((l) => l.inCatalog).length,
     }),
-    [state.listings],
+    [state.browsable],
   );
   const installed = useMemo(() => searched.filter((l) => l.installed), [searched]);
   const updates = useMemo(() => searched.filter((l) => l.update), [searched]);
-  const spotlight = useMemo(() => spotlightListings(state.listings), [state.listings]);
+  const spotlight = useMemo(() => spotlightListings(state.browsable), [state.browsable]);
   const { publishedAt, refreshing, anyCatalog } = catalogStatus(state);
   const refresh = () => {
     state.providers.refresh.mutate();

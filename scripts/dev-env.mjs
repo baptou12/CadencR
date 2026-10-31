@@ -1,7 +1,17 @@
 // Shared, side-effect-light helpers for the two dev `.env` files, used by
 // scripts/setup-dev.mjs, scripts/doctor.mjs and scripts/configure-worktree-dev.mts.
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  constants,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  openSync,
+  closeSync,
+  fchmodSync,
+  fstatSync,
+  ftruncateSync,
+} from "node:fs";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
 
@@ -19,7 +29,12 @@ export const REQUIRED_SERVICE_KEYS = [
 export function readEnvFile(root, relativePath) {
   const filePath = join(root, relativePath);
   if (!existsSync(filePath)) return null;
-  return parseEnv(readFileSync(filePath, "utf8"));
+  const fd = openPrivateEnv(filePath, false);
+  try {
+    return parseEnv(readFileSync(fd, "utf8"));
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /** Missing, blank, or still the `.env.example` placeholder (`replace-with-…`). */
@@ -67,10 +82,53 @@ export function setEnvValues(text, values) {
   return next;
 }
 
-/** Read-modify-write `values` into an existing `.env` file (see `setEnvValues`). */
+/** Open without following a final symlink and tighten before reading/writing. */
+function openPrivateEnv(filePath, create) {
+  const fd = openSync(
+    filePath,
+    constants.O_RDWR |
+      (constants.O_NOFOLLOW ?? 0) |
+      (constants.O_NONBLOCK ?? 0) |
+      (create ? constants.O_CREAT : 0),
+    0o600,
+  );
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.nlink !== 1)
+      throw new Error(`Not a regular private env file: ${filePath}`);
+    if (process.platform !== "win32" && (stat.mode & 0o7777) !== 0o600) fchmodSync(fd, 0o600);
+    return fd;
+  } catch (error) {
+    closeSync(fd);
+    throw error;
+  }
+}
+
+/** Write at 0600 from creation; preserve existing permissions before writing. */
+export function writePrivateEnv(filePath, content) {
+  const fd = openPrivateEnv(filePath, true);
+  try {
+    // Truncate through the checked descriptor only after tightening its mode.
+    writeFileSync(fd, content);
+    // writeFileSync(fd) does not truncate existing files.
+    const bytes = Buffer.byteLength(content);
+    ftruncateSync(fd, bytes);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Read-modify-write values while retaining comments and unrelated keys. */
 export function updateEnvFile(root, relativePath, values) {
   const filePath = join(root, relativePath);
-  writeFileSync(filePath, setEnvValues(readFileSync(filePath, "utf8"), values));
+  const fd = openPrivateEnv(filePath, false);
+  let text;
+  try {
+    text = readFileSync(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
+  writePrivateEnv(filePath, setEnvValues(text, values));
 }
 
 /** A TCP port number, or null for anything else (unset, blank, out of range). */

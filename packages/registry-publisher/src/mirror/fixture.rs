@@ -6,6 +6,7 @@ use sha2::{Digest as _, Sha256};
 
 use super::*;
 use crate::github::{Asset, CreateDraftRequest, Release, UploadAssetRequest, VerifyAssetRequest};
+use crate::test_support::ReadLag;
 use crate::{DownloadRequest, Downloaded, Downloader, StageRequest};
 
 const REPOSITORY: &str = "cadencr/registry";
@@ -45,6 +46,10 @@ pub(crate) struct FakeClient {
     pub(crate) promote_on_second_find: bool,
     pub(crate) corrupt_verify: bool,
     pub(crate) drift_assets_after: Cell<Option<u64>>,
+    /// Listings served the pre-upload set after an upload lands (API lag).
+    pub(crate) upload_lag: ReadLag<Vec<Asset>>,
+    /// Listings report every asset one byte larger than uploaded.
+    pub(crate) skew_listed_size: bool,
 }
 
 impl FakeClient {
@@ -108,11 +113,18 @@ impl ReleaseClient for FakeClient {
                 asset.id = 999;
             }
         }
+        if let Some(stale) = self.upload_lag.serve() {
+            return Ok(stale);
+        }
         Ok(self
             .assets
             .borrow()
             .iter()
-            .map(|(asset, _)| asset.clone())
+            .map(|(asset, _)| {
+                let mut asset = asset.clone();
+                asset.size += u64::from(self.skew_listed_size);
+                asset
+            })
             .collect())
     }
 
@@ -130,6 +142,13 @@ impl ReleaseClient for FakeClient {
             ),
             size: bytes.len() as u64,
         };
+        self.upload_lag.landed(
+            self.assets
+                .borrow()
+                .iter()
+                .map(|(asset, _)| asset.clone())
+                .collect(),
+        );
         self.assets.borrow_mut().push((asset.clone(), bytes));
         if self.lose_upload {
             Err(PublisherError::new("lost upload response"))

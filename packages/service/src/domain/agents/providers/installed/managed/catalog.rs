@@ -11,7 +11,9 @@ use serde::Serialize;
 
 use super::trust::{ManagedTrustStore, VerifiedManagedProviderIndex};
 use super::SignedProviderCatalog;
+use crate::domain::themes::managed::models::TabVersionUnavailable;
 
+mod availability;
 mod cache;
 mod recommendation;
 
@@ -51,6 +53,13 @@ pub struct ManagedCatalogResponse {
     /// Host-compatible recommendation per provider, outside the signed payload.
     #[serde(default)]
     pub recommended_versions: std::collections::BTreeMap<String, String>,
+    /// Provider versions that cannot install on this host, by provider id then
+    /// version: the installer would find no binary for it. Never recommended.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub unavailable_versions: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, TabVersionUnavailable>,
+    >,
     pub error_code: Option<String>,
     pub error: Option<String>,
 }
@@ -87,6 +96,7 @@ impl ManagedCatalogResponse {
             expires_at: None,
             index: None,
             recommended_versions: Default::default(),
+            unavailable_versions: Default::default(),
             error_code,
             error: message,
         }
@@ -98,6 +108,7 @@ impl ManagedCatalogResponse {
         fallback_error: Option<ManagedCatalogError>,
     ) -> Self {
         let index = catalog.index();
+        let host = crate::domain::agents::providers::installed::descriptor::current_binary_target();
         Self {
             source_configured: pinned_catalog_url().is_some(),
             cache_status: ManagedCatalogCacheStatus::Verified,
@@ -110,8 +121,9 @@ impl ManagedCatalogResponse {
             recommended_versions: recommendation::recommended_versions(
                 &index.packages,
                 env!("CARGO_PKG_VERSION"),
-                crate::domain::agents::providers::installed::descriptor::current_binary_target(),
+                host,
             ),
+            unavailable_versions: availability::unavailable_versions(&index.packages, host),
             error_code: fallback_error
                 .as_ref()
                 .map(|error| error.code.as_str().into()),

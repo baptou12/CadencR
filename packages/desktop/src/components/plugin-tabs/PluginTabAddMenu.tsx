@@ -39,7 +39,7 @@ import {
 
 import { PluginTabAccessMark } from "./PluginTabAccess";
 import { PluginTabIcon } from "./PluginTabIcon";
-import { ACCESS_LEVEL_COPY } from "./plugin-tab-access";
+import { ACCESS_LEVEL_COPY, backendUnavailableHere, UNAVAILABLE_HERE } from "./plugin-tab-access";
 import { usePlacedPluginTabsKey, useProjectPluginTabs } from "./usePluginTabDefs";
 import { usePluginTabNavigation, type PluginTabNavigation } from "./usePluginTabNavigation";
 
@@ -89,6 +89,7 @@ function PluginTabMenuBody({
   const focusedPluginId = focusedTab ? pluginIdOfTab(focusedTab) : null;
   const focused = query.data?.find((tab) => tab.id === focusedPluginId) ?? null;
   const placedIds = new Set(placed.split("|"));
+  // A blocked tab is never effective.
   const enabledTabs = query.data?.filter((tab) => tab.enablement.effective) ?? [];
 
   return (
@@ -160,10 +161,15 @@ function AvailableTabs({
   }
   return tabs.map((tab) => {
     const placed = isPlaced(tab);
+    // Listed, so the user sees why it does not open; an already placed one
+    // still jumps to its tab, which explains the same.
+    const unavailable = backendUnavailableHere(tab);
+    const note = unavailable ? UNAVAILABLE_HERE : tab.description;
     return (
       <DropdownMenuItem
         key={tab.id}
         onSelect={() => onSelect(tab)}
+        disabled={unavailable && !placed}
         className="items-start"
         aria-label={placed ? `${tab.label} (open)` : tab.label}
       >
@@ -173,9 +179,7 @@ function AvailableTabs({
             <span className="truncate">{tab.label}</span>
             <PluginTabAccessMark level={tab.access_level} />
           </span>
-          {tab.description ? (
-            <span className="line-clamp-2 text-xs text-muted-foreground">{tab.description}</span>
-          ) : null}
+          {note ? <span className="line-clamp-2 text-xs text-muted-foreground">{note}</span> : null}
         </span>
         {placed ? <CheckIcon className="mt-0.5 size-4" aria-hidden /> : null}
       </DropdownMenuItem>

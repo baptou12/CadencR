@@ -22,6 +22,7 @@ async fn test_health_check() {
 #[tokio::test]
 async fn loopback_anonymous_flood_does_not_starve_authenticated_requests() {
     const GENERAL_LIMIT: usize = 6000;
+    const AUTH_FAILURE_LIMIT: usize = 20;
 
     let server = start_test_server().await;
     let unauthenticated_client = reqwest::Client::new();
@@ -35,8 +36,13 @@ async fn loopback_anonymous_flood_does_not_starve_authenticated_requests() {
             .expect("loopback request")
             .status();
         assert_eq!(
-            status, 401,
-            "request {request_number} should reach authentication"
+            status,
+            if request_number <= AUTH_FAILURE_LIMIT {
+                401
+            } else {
+                429
+            },
+            "request {request_number} should respect the failed-authentication budget"
         );
     }
 

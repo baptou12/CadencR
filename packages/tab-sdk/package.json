@@ -1,23 +1,23 @@
 {
   "name": "@cadencr/tab-sdk",
-  "version": "0.14.0",
+  "version": "0.1.2",
   "description": "SDK for Cadencr custom tabs: connect to the host, read context and theme, call the plugin API, subscribe to streams.",
+  "keywords": [
+    "cadencr",
+    "custom-tab",
+    "plugin"
+  ],
   "license": "Apache-2.0",
-  "type": "module",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/merkr-software/CadencR.git",
     "directory": "packages/tab-sdk"
   },
-  "keywords": [
-    "cadencr",
-    "plugin",
-    "custom-tab"
-  ],
-  "sideEffects": false,
   "files": [
     "dist"
   ],
+  "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -42,8 +42,6 @@
     "./package.json": "./package.json"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true,
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
@@ -66,7 +64,9 @@
         "import": "./dist/protocol.js"
       },
       "./package.json": "./package.json"
-    }
+    },
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -80,6 +80,21 @@
     "vendor": "node ../../scripts/vendor-tab-packages.mjs",
     "generate:api": "node ../../scripts/cargo-env.mjs cargo run --quiet --manifest-path ../service/Cargo.toml --bin dump-openapi -- --plugin-surface openapi.plugin.json && orval --config ./orval.config.ts && oxfmt src/generated/"
   },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "happy-dom": "21.0.4",
+    "knip": "^6.41.0",
+    "orval": "8.41.0",
+    "oxfmt": "^0.72.0",
+    "oxlint": "^1.87.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "^5.7.0",
+    "vitest": "4.1.12"
+  },
   "peerDependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
@@ -91,20 +106,5 @@
     "react-dom": {
       "optional": true
     }
-  },
-  "devDependencies": {
-    "@testing-library/react": "^16.3.2",
-    "@types/node": "^22.10.0",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "happy-dom": "20.14.5",
-    "knip": "^6.22.0",
-    "orval": "8.26.0",
-    "oxfmt": "^0.56.0",
-    "oxlint": "^1.71.0",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "typescript": "^5.7.0",
-    "vitest": "4.1.11"
   }
 }

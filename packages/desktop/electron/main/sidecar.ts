@@ -2,11 +2,15 @@ import { spawn, type ChildProcessByStdio } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import type { Readable } from "node:stream";
+import { resolveConfigDir, resolveDatabasePath } from "./app-paths";
+import { childProcessEnv } from "./child-env";
+import { ensureLinuxSidecarExecutable } from "./sidecar-executable";
 import { createStartupWatchdog, recordStartupProgress, waitForHealthy } from "./sidecar-health";
 import { NEWER_DATABASE_RECOVERY_DETAIL, isNewerDatabaseStartupFailure } from "./startup-recovery";
+
+export { ensureLinuxSidecarExecutable } from "./sidecar-executable";
 
 const SIDECAR_PORT = 5004;
 const DEFAULT_DEV_API_BASE_URL = "http://127.0.0.1:5005";
@@ -92,8 +96,14 @@ export async function waitForDevSidecar(
 }
 
 export function productionDbPath(): string {
-  const dbPath = path.join(os.homedir(), ".cadencr", "database", "cadencr.db");
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  const dbPath = resolveDatabasePath();
+  const dir = path.dirname(dbPath);
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error);
+    throw new Error(`Cadencr can't initialize its data directory at ${dir}: ${cause}`);
+  }
   return dbPath;
 }
 
@@ -142,8 +152,10 @@ export async function spawnProductionSidecar(
   await assertPortAvailable(SIDECAR_PORT);
   reportStatus({ phase: "starting_service" });
 
+  const binary = productionBinaryPath();
+  ensureLinuxSidecarExecutable(binary, process.platform);
   const child = spawnService(
-    productionBinaryPath(),
+    binary,
     productionDbPath(),
     authToken,
     options.appVersion,
@@ -225,7 +237,7 @@ export function serviceEnv(
   browserBridge?: BrowserBridgeSidecarEnv,
 ): NodeJS.ProcessEnv {
   return {
-    ...process.env,
+    ...childProcessEnv(process.env),
     CADENCR_AUTH_TOKEN: authToken,
     ...(browserBridge
       ? {
@@ -241,18 +253,25 @@ export function serviceArgs(
   appVersion?: string,
   rendererDir?: string | null,
 ): string[] {
-  // Settings JSON files live alongside the database under ~/.cadencr/settings
-  // (sibling of database/). Pass it explicitly so the service doesn't re-derive
-  // the layout; the service creates the dir on startup.
-  const settingsDir = path.join(path.dirname(path.dirname(dbPath)), "settings");
+  const settingsDir = resolveSettingsDir(dbPath);
 
   const args = ["--db-path", dbPath, "--settings-dir", settingsDir, "--port", String(SIDECAR_PORT)];
   if (appVersion) args.push("--app-version", appVersion);
-  // Lets the service serve the SPA over the remote-access listener. Loopback
-  // (the local window) loads from file:// regardless, so this only enables the
-  // network path.
+  // Enables remote-access serving; the local window still loads file://.
   if (rendererDir) args.push("--renderer-dir", rendererDir);
   return args;
+}
+
+export function resolveSettingsDir(
+  dbPath: string,
+  platform: NodeJS.Platform = process.platform,
+  configDir?: string,
+): string {
+  if (platform === "linux") {
+    return path.join(configDir ?? resolveConfigDir(), "settings");
+  }
+  // Preserve the legacy macOS layout beside ~/.cadencr/database.
+  return path.join(path.dirname(path.dirname(dbPath)), "settings");
 }
 
 export function describeStartupFailure(

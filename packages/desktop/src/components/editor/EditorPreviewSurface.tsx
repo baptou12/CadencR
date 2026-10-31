@@ -15,6 +15,8 @@ import { Markdown } from "@/components/Markdown";
 import { MarkdownImageProvider } from "@/components/markdown-image";
 import { CheckerboardBackdrop } from "./CheckerboardBackdrop";
 import { PreviewImageProvider, PreviewMarkdownImage } from "./PreviewMarkdownImage";
+import { buildHtmlPreviewDocument, buildSvgPreviewDocument } from "./editor-preview-document";
+import { previewCloseKey } from "./preview-shortcut";
 
 interface EditorPreviewSurfaceProps {
   kind: PreviewKind;
@@ -42,17 +44,13 @@ export const EditorPreviewSurface = memo(function EditorPreviewSurface({
   }, [filePath, projectId, featureId]);
 
   useEffect(() => {
-    function handleMessage(event: MessageEvent<PreviewShortcutMessage>): void {
+    function handleMessage(event: MessageEvent<unknown>): void {
       if (event.source !== previewFrameRef.current?.contentWindow) return;
-      if (!isPreviewShortcutMessage(event.data)) return;
+      const closeKey = previewCloseKey(event.data);
+      if (!closeKey) return;
       window.dispatchEvent(
         new KeyboardEvent("keydown", {
-          key: event.data.key,
-          code: event.data.code,
-          metaKey: event.data.metaKey,
-          ctrlKey: event.data.ctrlKey,
-          shiftKey: event.data.shiftKey,
-          altKey: event.data.altKey,
+          ...closeKey,
           bubbles: true,
           cancelable: true,
         }),
@@ -85,6 +83,7 @@ export const EditorPreviewSurface = memo(function EditorPreviewSurface({
             title="HTML preview"
             srcDoc={htmlDocument}
             sandbox="allow-scripts"
+            referrerPolicy="no-referrer"
             className="w-full h-full border-0 bg-background"
           />
         </div>
@@ -99,6 +98,7 @@ export const EditorPreviewSurface = memo(function EditorPreviewSurface({
               title="SVG preview"
               srcDoc={svgDocument}
               sandbox="allow-scripts"
+              referrerPolicy="no-referrer"
               className="h-full w-full border-0 bg-transparent"
             />
           </CheckerboardBackdrop>
@@ -116,187 +116,3 @@ export const EditorPreviewSurface = memo(function EditorPreviewSurface({
     }
   }
 });
-
-interface PreviewShortcutMessage {
-  type: "cadencr-preview-shortcut";
-  shortcut: "editor-close";
-  key: string;
-  code: string;
-  metaKey: boolean;
-  ctrlKey: boolean;
-  shiftKey: boolean;
-  altKey: boolean;
-}
-
-function isPreviewShortcutMessage(value: unknown): value is PreviewShortcutMessage {
-  if (!value || typeof value !== "object") return false;
-  const message = value as Record<string, unknown>;
-  return message.type === "cadencr-preview-shortcut" && message.shortcut === "editor-close";
-}
-
-const PREVIEW_CLOSE_BRIDGE_SCRIPT = String.raw`
-      window.addEventListener("keydown", (event) => {
-        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "w") {
-          event.preventDefault();
-          window.parent.postMessage({
-            type: "cadencr-preview-shortcut",
-            shortcut: "editor-close",
-            key: event.key,
-            code: event.code || "KeyW",
-            metaKey: event.metaKey,
-            ctrlKey: event.ctrlKey,
-            shiftKey: event.shiftKey,
-            altKey: event.altKey,
-          }, "*");
-        }
-      });
-`;
-
-function buildHtmlPreviewDocument(content: string): string {
-  const bridge = `<script>${PREVIEW_CLOSE_BRIDGE_SCRIPT}</script>`;
-  if (/<\/body\s*>/i.test(content)) {
-    return content.replace(/<\/body\s*>/i, `${bridge}</body>`);
-  }
-  return `${content}${bridge}`;
-}
-
-const SVG_PREVIEW_STYLES = String.raw`
-      html,
-      body {
-        margin: 0;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background: transparent;
-      }
-
-      #preview-stage {
-        position: fixed;
-        inset: 0;
-        overflow: hidden;
-      }
-
-      #preview-root {
-        position: absolute;
-        left: 0;
-        top: 0;
-        transform-origin: 0 0;
-        will-change: transform;
-      }
-
-      svg {
-        display: block;
-        max-width: none;
-        max-height: none;
-      }
-`;
-
-const SVG_PREVIEW_SCRIPT = `
-      (() => {
-        const MIN_SCALE = 0.05;
-        const MAX_SCALE = 16;
-        const PINCH_SENSITIVITY = 0.01;
-        const stage = document.getElementById("preview-stage");
-        const root = document.getElementById("preview-root");
-        if (!stage || !root) return;
-
-        let view = null;
-        let contentWidth = 0;
-        let contentHeight = 0;
-
-        function clamp(value, min, max) {
-          return Math.min(max, Math.max(min, value));
-        }
-
-        function measureContent() {
-          root.style.transform = "translate(0px, 0px) scale(1)";
-          const rect = root.getBoundingClientRect();
-          contentWidth = Math.max(1, rect.width);
-          contentHeight = Math.max(1, rect.height);
-        }
-
-        function computeFitView() {
-          const rect = stage.getBoundingClientRect();
-          const scale = Math.min(rect.width / contentWidth, rect.height / contentHeight, 1);
-          return {
-            scale,
-            tx: (rect.width - contentWidth * scale) / 2,
-            ty: (rect.height - contentHeight * scale) / 2,
-          };
-        }
-
-        function clampView(next) {
-          const rect = stage.getBoundingClientRect();
-          const renderedWidth = contentWidth * next.scale;
-          const renderedHeight = contentHeight * next.scale;
-          const tx = renderedWidth <= rect.width
-            ? (rect.width - renderedWidth) / 2
-            : Math.min(0, Math.max(rect.width - renderedWidth, next.tx));
-          const ty = renderedHeight <= rect.height
-            ? (rect.height - renderedHeight) / 2
-            : Math.min(0, Math.max(rect.height - renderedHeight, next.ty));
-          return { scale: next.scale, tx, ty };
-        }
-
-        function applyView(next) {
-          view = clampView(next);
-          root.style.transformOrigin = "0 0";
-          root.style.transform = "translate(" + view.tx + "px, " + view.ty + "px) scale(" + view.scale + ")";
-        }
-
-        function resetToFit() {
-          measureContent();
-          applyView(computeFitView());
-        }
-
-        stage.addEventListener("wheel", (event) => {
-          const isPinch = event.ctrlKey || event.metaKey;
-          if (!isPinch && event.deltaX === 0 && event.deltaY === 0) return;
-          event.preventDefault();
-
-          const base = view || computeFitView();
-          let next;
-          if (isPinch) {
-            const rect = stage.getBoundingClientRect();
-            const cx = event.clientX - rect.left;
-            const cy = event.clientY - rect.top;
-            const newScale = clamp(
-              base.scale * Math.exp(-event.deltaY * PINCH_SENSITIVITY),
-              MIN_SCALE,
-              MAX_SCALE,
-            );
-            const ratio = newScale / base.scale;
-            next = {
-              scale: newScale,
-              tx: cx - (cx - base.tx) * ratio,
-              ty: cy - (cy - base.ty) * ratio,
-            };
-          } else {
-            next = { scale: base.scale, tx: base.tx - event.deltaX, ty: base.ty - event.deltaY };
-          }
-          applyView(next);
-        }, { passive: false });
-
-        stage.addEventListener("dblclick", resetToFit);
-        window.addEventListener("resize", resetToFit);
-        ${PREVIEW_CLOSE_BRIDGE_SCRIPT}
-
-        resetToFit();
-      })();
-`;
-
-function buildSvgPreviewDocument(content: string): string {
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>${SVG_PREVIEW_STYLES}</style>
-  </head>
-  <body>
-    <div id="preview-stage">
-      <div id="preview-root">${content}</div>
-    </div>
-    <script>${SVG_PREVIEW_SCRIPT}</script>
-  </body>
-</html>`;
-}

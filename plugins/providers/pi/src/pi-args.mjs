@@ -35,6 +35,6 @@ export function validatePiArgs(args) {
 
 export function runtimeArgs(extraArgs, extensionPath, resumeSessionId) {
   validatePiArgs(extraArgs);
-  const sessionArgs = resumeSessionId ? ["--session", resumeSessionId] : [];
+  const sessionArgs = resumeSessionId ? ["--session-id", resumeSessionId] : [];
   return ["--mode", "rpc", ...sessionArgs, "--approve", "--extension", extensionPath, ...extraArgs];
 }

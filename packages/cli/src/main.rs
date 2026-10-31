@@ -10,9 +10,11 @@ mod commands;
 mod metadata;
 mod output;
 mod pipeline;
+mod policy;
 mod publication;
 mod signing;
 mod tab;
+mod tab_backend;
 mod theme;
 mod trust;
 

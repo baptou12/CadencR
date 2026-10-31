@@ -158,6 +158,7 @@ mod tests {
             await_result: Some(true),
             target_project_id: Some(7),
             target_project_path: None,
+            start_archived: false,
         };
 
         let message_id = insert_initial_message(&state, &source, 888, &body)
@@ -210,6 +211,7 @@ mod tests {
             await_result: None,
             target_project_id: Some(7),
             target_project_path: None,
+            start_archived: false,
         };
         let runtime = SpawnRuntimeSelection {
             model: body.model.clone(),

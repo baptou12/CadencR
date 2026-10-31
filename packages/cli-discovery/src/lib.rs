@@ -188,6 +188,8 @@ pub async fn detect_nvim() -> bool {
         well_known_absolute: vec![
             "/opt/homebrew/bin".to_string(),
             "/usr/local/bin".to_string(),
+            "/usr/bin".to_string(),
+            "/snap/bin".to_string(),
         ],
         version_args: vec!["--version".to_string()],
         version_must_contain: Some("NVIM".to_string()),

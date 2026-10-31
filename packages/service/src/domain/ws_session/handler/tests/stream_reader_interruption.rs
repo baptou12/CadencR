@@ -128,6 +128,15 @@ async fn assert_benign_stop_state(app_state: &AppState, session_id: i64) {
     .await
     .unwrap();
     assert_eq!(state, ("completed".into(), 0, "armed".into()));
+    // The transcript says the user stopped the turn, exactly once.
+    let markers: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM agent_messages WHERE session_id = ? AND message_type = 'turn_interrupted'",
+    )
+    .bind(session_id)
+    .fetch_one(&app_state.write_pool)
+    .await
+    .unwrap();
+    assert_eq!(markers, 1);
 }
 
 #[tokio::test]
@@ -354,4 +363,60 @@ async fn replacement_reader_cannot_consume_an_old_interruption_or_receive_its_en
     .await
     .unwrap();
     assert_eq!(state, ("running".into(), "armed".into()));
+}
+
+#[tokio::test]
+async fn closing_question_marks_stopped_turn_and_keeps_parent_wait_armed() {
+    let app_state = make_test_app_state().await;
+    let sdk_sessions = Arc::new(Mutex::new(HashMap::new()));
+    let (ws_tx, mut ws_rx) = mpsc::unbounded_channel();
+    sqlx::raw_sql("CREATE TABLE agent_session_message_queue (id INTEGER, target_session_id INTEGER, status TEXT, error TEXT, claim_token TEXT, claimed_at TEXT, attempt_count INTEGER, source_session_id INTEGER, content TEXT, message_uuid TEXT);")
+        .execute(&app_state.write_pool).await.unwrap();
+    let session_id = 616;
+    sqlx::query("INSERT INTO agent_sessions (id, feature_id, status, pending_permission) VALUES (?, 1, 'awaiting_user', ?)")
+        .bind(session_id)
+        .bind(serde_json::json!({ "request_id": "question-350", "tool_name": "AskUserQuestion", "tool_input": { "questions": [] } }).to_string())
+        .execute(&app_state.write_pool).await.unwrap();
+    sdk_sessions
+        .lock()
+        .await
+        .insert(session_id, make_in_place_effort_handle(1));
+    app_state
+        .active_turns
+        .begin_turn(session_id, &sdk_sessions)
+        .await;
+    seed_armed_reply_wait(&app_state, session_id).await;
+    dispatch_envelope(
+        make_envelope(
+            "session",
+            "gate.close",
+            serde_json::json!({
+                "session_id": session_id.to_string(),
+                "request_id": "question-350", "reason": "escape"
+            }),
+        ),
+        &ws_tx,
+        &sdk_sessions,
+        &app_state,
+    )
+    .await;
+    let (msg_tx, msg_rx) = mpsc::channel(2);
+    msg_tx.send(Ok(message_start())).await.unwrap();
+    msg_tx.send(Ok(interrupted_error_result())).await.unwrap();
+    spawn_test_stream_reader(
+        &app_state,
+        session_id,
+        1,
+        msg_rx,
+        ws_tx,
+        sdk_sessions,
+        DEFAULT_PROVIDER,
+    );
+    let actions = drain_actions(&mut ws_rx).await;
+    assert!(actions.iter().any(|(action, _)| action == "gate.closed"));
+    assert!(actions
+        .iter()
+        .any(|(action, payload)| action == "ended" && payload["reason"] == "turn_interrupted"));
+    assert!(actions.iter().all(|(action, _)| action != "error"));
+    assert_benign_stop_state(&app_state, session_id).await;
 }

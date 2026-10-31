@@ -47,6 +47,7 @@ describe("SlashCommandPopover", () => {
   it("does not show popover when closed", () => {
     render(
       <SlashCommandPopover
+        listId="cmds"
         open={false}
         items={commands}
         selectedIndex={0}
@@ -60,6 +61,7 @@ describe("SlashCommandPopover", () => {
   it("shows commands when open", () => {
     const { container } = render(
       <SlashCommandPopover
+        listId="cmds"
         open={true}
         items={commands}
         selectedIndex={0}
@@ -69,12 +71,13 @@ describe("SlashCommandPopover", () => {
     );
     expect(screen.getByText("/commit")).toBeInTheDocument();
     expect(screen.getByText("/plan")).toBeInTheDocument();
-    expect(container.querySelector(".glass-surface")).toHaveClass("py-0");
+    expect(container.querySelector("[data-composer-popover]")).toBeInTheDocument();
   });
 
   it("applies viewport-aware maxHeight", () => {
     const { container } = render(
       <SlashCommandPopover
+        listId="cmds"
         open={true}
         items={commands}
         selectedIndex={0}
@@ -89,6 +92,7 @@ describe("SlashCommandPopover", () => {
   it("does not render command kind badges", () => {
     render(
       <SlashCommandPopover
+        listId="cmds"
         open={true}
         items={commands}
         selectedIndex={0}
@@ -100,9 +104,10 @@ describe("SlashCommandPopover", () => {
     expect(screen.queryByText("skill")).not.toBeInTheDocument();
   });
 
-  it("uses selected-item contrast for selected command descriptions", () => {
+  it("slides only the highlighted row's description", () => {
     render(
       <SlashCommandPopover
+        listId="cmds"
         open={true}
         items={commands}
         selectedIndex={0}
@@ -110,46 +115,52 @@ describe("SlashCommandPopover", () => {
         isLoading={false}
       />,
     );
-
-    // The description text lives in SlidingText's inner span; the color class
-    // sits on its wrapper (the parent), since text color is inherited.
+    // SlidingText wraps its text in an inner span; the static rows truncate.
     expect(screen.getByText("Commit changes").parentElement).toHaveClass(
       "text-accent-foreground/80",
     );
-    expect(screen.getByText("Create a plan").parentElement).toHaveClass("text-muted-foreground");
+    expect(screen.getByText("Create a plan")).toHaveClass("truncate", "text-muted-foreground");
   });
 
-  it("uses subtle idle and consistent hover and selected colors for Cadencr commands", () => {
-    const renderPopover = (selectedIndex: number) => (
+  it("groups contiguous kinds under labelled headers with listbox semantics", () => {
+    render(
       <SlashCommandPopover
+        listId="cmds"
         open={true}
-        items={[commands[0], cadencrCommand]}
-        selectedIndex={selectedIndex}
+        items={[cadencrCommand, commands[1], commands[0]]}
+        selectedIndex={1}
         onSelect={vi.fn()}
         isLoading={false}
-      />
+      />,
     );
-    const { rerender } = render(renderPopover(0));
+    expect(screen.getByRole("listbox", { name: "Commands" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Cadencr orchestration" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Skills" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Commands" })).toBeInTheDocument();
+    const options = screen.getAllByRole("option");
+    expect(options.map((option) => option.id)).toEqual(["cmds-opt-0", "cmds-opt-1", "cmds-opt-2"]);
+    expect(options[1]).toHaveAttribute("aria-selected", "true");
+  });
 
-    const cadencrRow = screen.getByRole("button", { name: /cadencr:review/i });
-    expect(cadencrRow).toHaveClass(
-      "bg-primary/[0.08]",
-      "text-popover-foreground",
-      "hover:bg-primary/20",
+  it("drops headers when ranking interleaves kinds", () => {
+    render(
+      <SlashCommandPopover
+        listId="cmds"
+        open={true}
+        items={[commands[0], commands[1], { ...commands[0], name: "compact" }]}
+        selectedIndex={0}
+        onSelect={vi.fn()}
+        isLoading={false}
+      />,
     );
-
-    rerender(renderPopover(1));
-
-    expect(cadencrRow).toHaveClass("bg-primary/20", "text-popover-foreground");
-    expect(screen.getByText("Review this worktree").parentElement).toHaveClass(
-      "text-popover-foreground/80",
-    );
-    expect(screen.getByText("[focus]")).toHaveClass("text-popover-foreground/70");
+    expect(screen.queryByRole("group")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("option")).toHaveLength(3);
   });
 
   it("renders skill trigger prefix when provided", () => {
     render(
       <SlashCommandPopover
+        listId="cmds"
         open={true}
         items={[commands[1]]}
         selectedIndex={0}
@@ -164,6 +175,7 @@ describe("SlashCommandPopover", () => {
   it("shows loading state", () => {
     render(
       <SlashCommandPopover
+        listId="cmds"
         open={true}
         items={[]}
         selectedIndex={0}
@@ -177,6 +189,7 @@ describe("SlashCommandPopover", () => {
   it("shows empty message when no commands", () => {
     render(
       <SlashCommandPopover
+        listId="cmds"
         open={true}
         items={[]}
         selectedIndex={0}
@@ -191,6 +204,7 @@ describe("SlashCommandPopover", () => {
     const onSelect = vi.fn();
     const { user } = render(
       <SlashCommandPopover
+        listId="cmds"
         open={true}
         items={commands}
         selectedIndex={0}
@@ -200,5 +214,27 @@ describe("SlashCommandPopover", () => {
     );
     await user.pointer({ keys: "[MouseLeft>]", target: screen.getByText("/commit") });
     expect(onSelect).toHaveBeenCalledWith("commit");
+  });
+
+  it("keeps a standalone Cadencr skill usable while the MCP servers are off", () => {
+    render(
+      <SlashCommandPopover
+        listId="cmds"
+        open={true}
+        items={[cadencrCommand, { ...cadencrCommand, name: "cadencr:side", standalone: true }]}
+        selectedIndex={0}
+        onSelect={vi.fn()}
+        isLoading={false}
+        cadencrDisabled
+      />,
+    );
+    expect(screen.getByText("/cadencr:review").closest("[role=option]")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByText("/cadencr:side").closest("[role=option]")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 });

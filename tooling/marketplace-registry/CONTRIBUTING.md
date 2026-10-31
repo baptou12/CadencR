@@ -5,8 +5,9 @@
 The next milestone populates reviewed themes and Pi before a separately authorized
 desktop activation. Local validation is not publication authority. All business
 validation/packaging/publication uses the Rust CLI, not registry JavaScript.
-The standalone preflight and expiry commands need the **next qualified CLI release**;
-`0.13.1-dev.39108033875.1` supports existing CI commands but not those additions.
+Standalone preflight and expiry commands are included in the locally selected,
+qualified `0.15.2`. Selection does not deploy the production
+workflow or grant publication authority.
 See [runtime and deployment gates](README.md#status-and-runtime).
 
 ## First submission
@@ -21,17 +22,30 @@ See [runtime and deployment gates](README.md#status-and-runtime).
 5. Validate the complete candidate against the accepted base with trusted Rust
    tooling, then request maintainer ownership/provenance and security review.
 
-| Kind              | Validate locally                                                  | Package                                                                                                                                           |
-| ----------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ACP provider      | `cadencr plugin validate <folder> --descriptor <descriptor.json>` | `cadencr registry pack-provider --package <metadata.json> --target <target> --directory <staging> --output <new.tar.gz>` for each declared target |
-| Declarative theme | `cadencr plugin validate <folder> --kind theme`                   | `cadencr registry pack-theme --directory <staging> --output <new.tar.gz>`                                                                         |
-| Custom tab        | `cadencr plugin validate <folder> --kind tab`                     | `cadencr registry pack-tab --directory <compiled-staging> --output <new.tar.gz>`                                                                  |
+| Kind                             | Validate locally                                                                                                     | Package                                                                                                                                                                                      |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ACP provider                     | `cadencr plugin validate <folder> --descriptor <descriptor.json>`                                                    | `cadencr registry pack-provider --package <metadata.json> --target <target> --directory <staging> --output <new.tar.gz>` for each declared target                                            |
+| Declarative theme                | `cadencr plugin validate <folder> --kind theme`                                                                      | `cadencr registry pack-theme --directory <staging> --output <new.tar.gz>`                                                                                                                    |
+| Custom tab                       | `cadencr plugin validate <folder> --kind tab`                                                                        | `cadencr registry pack-tab --directory <compiled-staging> --output <new.tar.gz>`                                                                                                             |
+| Custom tab with a native backend | `cadencr plugin validate <folder> --kind tab` (runs this platform's backend through the protocol conformance checks) | `pack-tab` for the web archive, then `cadencr registry pack-tab-backend --directory <tab-folder> --target <platform> --output <new.tar.gz>` for each platform in `tab.json` `backend.binary` |
 
 Providers must implement the documented executable/ACP contract and pass native
 runtime/conformance tests on every declared platform. A theme remains declarative
 with no ACP execution surface. A tab declares reviewed permissions/origins and
 contains its built distribution, not an arbitrary source checkout. Packaging is
 inert; it does not run a build or prove a plugin safe.
+
+A tab with a native backend runs native code with the user's rights, so it
+follows the provider regime: the submission pins the source repository, full
+commit and tag; the web archive and every backend archive are `.tar.gz` assets
+of that one author release (`tab.distribution.binary.<platform>` = `{archive,
+sha256, size, cmd, executable_sha256, executable_size}`, copied from
+`pack-tab-backend`'s output); `tab.backend` repeats `tab.json`'s `protocol` and
+`reasoning`. Platforms are `darwin-aarch64`, `darwin-x86_64` and
+`linux-x86_64`; a backend archive is at most 64 MiB and its executable at most
+128 MiB. Staging verifies each archive's digests, its single 0755 entry and its
+native format (signed arm64 code on Apple silicon) without executing it. Build
+attestation is recommended but advisory in v1.
 
 ```sh
 # Next qualified release required for the standalone submission command.
@@ -62,12 +76,19 @@ checks continuity against the authenticated prior signed catalog.
 
 - IDs use `^[a-z][a-z0-9-]*$`; normalized collisions and reserved identities fail.
 - New identities require proof of authority over the linked source project.
+- The `host.publisher` value `cadencr` (any letter case) is reserved for the
+  official `merkr-software` GitHub organisation. A package or submission that
+  claims it from any other source repository fails validation and is never
+  signed into the catalog.
 - A normal version PR cannot silently transfer publisher/source ownership.
   Transfers need a separate explicit administrative procedure and independent
   evidence; there is no ordinary contribution bypass.
 - Declare the required license/provenance and include the distributable license
   and documentation. Review dependencies, privileges, setup and all target bytes.
 - Acceptance is not a safety certificate or a promise of permanent listing.
+- The first version that introduces `backend` for an existing tab id needs
+  new-identity review (source authority, build provenance, every platform's
+  binary), as if the tab were new: it turns a page into native code.
 
 After approval, the protected registry publisher mirrors the exact archives to
 registry-owned GitHub Releases and publishes the signed catalog. Authors do not

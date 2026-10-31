@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { $getRoot, $getSelection, $isRangeSelection, $isTextNode, type TextNode } from "lexical";
 import { $createSlashCommandNode } from "../nodes/SlashCommandNode";
 import {
+  SLASH_COMMAND_GROUP_ORDER,
   SlashCommandPopover,
   slashCommandPopoverMaxHeight,
 } from "@/components/SlashCommandPopover";
 import { useSlashCommand } from "@/hooks/useSlashCommand";
 import { useProjectMcpEnabled, useWorkspaceMcpEnabled } from "@/lib/mcp-settings";
 import type { PromptCommandTriggerChar } from "@/lib/prompt-command-policy";
-import type { SlashCommand } from "@/lib/slash-command";
+import { isSlashCommandDisabled, type SlashCommand } from "@/lib/slash-command";
 import {
   CursorPopover,
   getTriggerMatch,
@@ -91,10 +92,19 @@ export function SlashCommandPlugin({
     setAtPromptStart(value);
   }, []);
   const allowedCommandKinds = atPromptStart ? commandKindsAtPromptStart : commandKindsMidPrompt;
+  // Group order first (stable within a group), so the unfiltered list reads
+  // as Cadencr → skills → commands and keyboard order matches visual order.
   const filteredCommands = useMemo(
-    () => commands?.filter((command) => allowedCommandKinds.includes(command.kind)),
+    () =>
+      commands
+        ?.filter((command) => allowedCommandKinds.includes(command.kind))
+        .toSorted(
+          (a, b) =>
+            SLASH_COMMAND_GROUP_ORDER.indexOf(a.kind) - SLASH_COMMAND_GROUP_ORDER.indexOf(b.kind),
+        ),
     [commands, allowedCommandKinds],
   );
+  const listId = useId();
   // Cadencr virtual skills call both the project MCP (spawn/link/gates) and
   // the workspace MCP (session graph, project listing) tools, so both must be
   // on. When either is off the skills are shown but disabled (non-selectable)
@@ -103,7 +113,7 @@ export function SlashCommandPlugin({
   const { enabled: workspaceMcpEnabled } = useWorkspaceMcpEnabled();
   const cadencrEnabled = projectMcpEnabled && workspaceMcpEnabled;
   const isDisabled = useCallback(
-    (command: SlashCommand | undefined) => command?.kind === "cadencr" && !cadencrEnabled,
+    (command: SlashCommand | undefined) => isSlashCommandDisabled(command, cadencrEnabled),
     [cadencrEnabled],
   );
   const slash = useSlashCommand(filteredCommands, triggerChar);
@@ -147,7 +157,14 @@ export function SlashCommandPlugin({
     return item && !isDisabled(item) ? item.name : undefined;
   }, [isDisabled]);
 
-  usePopoverKeyboardCommands(editor, slash.isOpen, slashRef, getSelectedValue, handleSelect);
+  usePopoverKeyboardCommands(
+    editor,
+    slash.isOpen,
+    slashRef,
+    getSelectedValue,
+    handleSelect,
+    listId,
+  );
 
   const popoverOpen = slash.isOpen && (!!isLoading || slash.filteredItems.length > 0);
   const anchorRect = useEditorAnchorRect(editor, popoverOpen);
@@ -157,6 +174,7 @@ export function SlashCommandPlugin({
   return (
     <CursorPopover cursorRect={anchorRect} matchWidth>
       <SlashCommandPopover
+        listId={listId}
         open={true}
         items={slash.filteredItems}
         selectedIndex={slash.selectedIndex}

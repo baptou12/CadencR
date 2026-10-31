@@ -12,7 +12,8 @@ use axum::routing::{delete, get, post, put};
 use axum::{Extension, Json, Router};
 
 use super::models::{
-    PairRequest, PairResponse, PairingCodeResponse, RemoteStatus, TunnelHostRequest,
+    PairRequest, PairResponse, PairingCodeResponse, RemoteBrowserOrigins, RemoteStatus,
+    TunnelHostRequest,
 };
 use super::{repo, tokens};
 use crate::app_state::AppState;
@@ -77,6 +78,7 @@ fn device_label_from_user_agent(ua: Option<&str>) -> String {
 pub fn loopback_router() -> Router<AppState> {
     Router::new()
         .route("/api/remote/status", get(status_handler))
+        .route("/api/remote/browser-origins", get(browser_origins_handler))
         .route("/api/remote/enable", post(enable_handler))
         .route("/api/remote/disable", post(disable_handler))
         .route("/api/remote/pairing-code", post(pairing_code_handler))
@@ -100,15 +102,15 @@ fn lan_urls(info: &RemoteInfo) -> Vec<String> {
 /// comes first so the QR/link defaults to it: a device that needs a tunnel is
 /// most likely off the LAN, so pointing it at a LAN IP by default wouldn't even
 /// reach the host. The LAN addresses follow as in-network fallbacks.
-async fn pairing_urls(state: &AppState, info: &RemoteInfo, code: &str) -> Vec<String> {
+fn pairing_urls(info: &RemoteInfo, code: &str) -> Vec<String> {
     let mut urls: Vec<String> = Vec::new();
-    if let Some(host) = load_tunnel_host(&state.read_pool).await {
-        urls.push(format!("https://{host}/?code={code}"));
+    if let Some(host) = &info.tunnel_host {
+        urls.push(format!("https://{host}/#code={code}"));
     }
     urls.extend(
         info.lan_ips
             .iter()
-            .map(|ip| format!("https://{ip}:{}/?code={code}", info.port)),
+            .map(|ip| format!("https://{ip}:{}/#code={code}", info.port)),
     );
     urls
 }
@@ -117,7 +119,10 @@ async fn current_status(state: &AppState) -> Result<RemoteStatus, AppError> {
     let info = state.remote.status().await;
     let devices = repo::list_active_devices(&state.read_pool).await?;
     let audit_tail = repo::recent_audit(&state.read_pool, AUDIT_TAIL_LIMIT).await?;
-    let tunnel_host = load_tunnel_host(&state.read_pool).await;
+    let tunnel_host = match &info {
+        Some(info) => info.tunnel_host.clone(),
+        None => load_tunnel_host(&state.read_pool).await,
+    };
     let (port, fingerprint, lan_urls) = match &info {
         Some(info) => (
             Some(info.port),
@@ -142,6 +147,18 @@ async fn current_status(state: &AppState) -> Result<RemoteStatus, AppError> {
 #[utoipa::path(get, path = "/api/remote/status", responses((status = 200, body = RemoteStatus)))]
 pub async fn status_handler(State(state): State<AppState>) -> Result<Json<RemoteStatus>, AppError> {
     Ok(Json(current_status(&state).await?))
+}
+
+/// Keep per-action browser authorization independent of device/audit database reads.
+#[utoipa::path(get, path = "/api/remote/browser-origins", responses((status = 200, body = RemoteBrowserOrigins)))]
+pub async fn browser_origins_handler(State(state): State<AppState>) -> Json<RemoteBrowserOrigins> {
+    let info = state.remote.status().await;
+    Json(RemoteBrowserOrigins {
+        enabled: info.is_some(),
+        port: info.as_ref().map(|info| info.port),
+        lan_urls: info.as_ref().map(lan_urls).unwrap_or_default(),
+        tunnel_host: info.and_then(|info| info.tunnel_host),
+    })
 }
 
 #[utoipa::path(post, path = "/api/remote/enable", responses((status = 200, body = RemoteStatus)))]
@@ -175,7 +192,7 @@ pub async fn pairing_code_handler(
         .await
         .ok_or_else(|| AppError::Conflict("Enable remote access before pairing".into()))?;
     let minted = state.remote.pairing().mint();
-    let urls = pairing_urls(&state, &info, &minted.code).await;
+    let urls = pairing_urls(&info, &minted.code);
     Ok(Json(PairingCodeResponse {
         code: minted.code,
         expires_in_secs: minted.expires_in_secs,
@@ -276,6 +293,53 @@ pub async fn pair_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn browser_origin_metadata_does_not_query_device_or_audit_storage() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let state = AppState::with_pool(pool.clone());
+        // A closed pool makes accidental device/audit queries fail immediately.
+        pool.close().await;
+        let Json(origins) = browser_origins_handler(State(state)).await;
+        assert!(!origins.enabled);
+        assert!(origins.port.is_none());
+        assert!(origins.lan_urls.is_empty());
+        let json = serde_json::to_value(origins).unwrap();
+        assert_eq!(json.as_object().unwrap().len(), 4);
+        assert!(json.get("devices").is_none());
+        assert!(json.get("audit_tail").is_none());
+    }
+
+    #[tokio::test]
+    async fn browser_origins_keep_the_effective_tunnel_when_settings_change_or_break() {
+        use crate::domain::settings_store;
+        use crate::remote::{RemoteConfig, RemoteController};
+        let renderer = tempfile::tempdir().unwrap();
+        std::fs::write(renderer.path().join("index.html"), "<!doctype html>").unwrap();
+        let data = tempfile::tempdir().unwrap();
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let mut state = AppState::with_pool(pool);
+        state.remote = std::sync::Arc::new(RemoteController::new(RemoteConfig {
+            renderer_dir: Some(renderer.path().to_owned()),
+            remote_port: 0,
+            data_dir: data.path().to_owned(),
+        }));
+        settings_store::global_set(REMOTE_TUNNEL_HOST_SETTING, "old.example.test")
+            .await
+            .unwrap();
+        let started = state.remote.start(&state).await.unwrap();
+        settings_store::global_set(REMOTE_TUNNEL_HOST_SETTING, "new.example.test")
+            .await
+            .unwrap();
+        let path = settings_store::dir::global_dir().join("settings.json");
+        settings_store::file::write_atomic(&path, "{ invalid JSON").unwrap();
+        let Json(origins) = browser_origins_handler(State(state.clone())).await;
+        assert!(origins.enabled);
+        assert_eq!(origins.port, Some(started.port));
+        assert_eq!(origins.tunnel_host.as_deref(), Some("old.example.test"));
+        assert!(pairing_urls(&started, "code")[0].starts_with("https://old.example.test/#code="));
+        state.remote.stop().await;
+    }
 
     const IPHONE_SAFARI: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) \
         AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1";

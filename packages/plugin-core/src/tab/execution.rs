@@ -4,20 +4,20 @@
 //! conversation's folder. Listing one names *which* program, not what it does
 //! with its arguments, so the general-purpose launchers (shells, interpreters,
 //! package runners, privilege tools) are refused outright: allowing `bash` or
-//! `node` would allow everything. A backend is a native process the tab ships
-//! and Cadencr starts; it runs with the user's rights and is not limited here
-//! beyond the shape of its launch line.
+//! `node` would allow everything. A backend is a native executable the tab
+//! ships for each platform it supports and Cadencr starts; it runs with the
+//! user's rights and is not limited here beyond where its files are.
 
 use std::collections::BTreeSet;
 
 use super::issues::{TabFindings, TabIssueCode as Code};
-use super::manifest::{BackendTarget, TabBackend, TabCommand};
+use super::manifest::{TabBackend, TabCommand};
+use super::platform::TabPlatform;
 use super::validate::{is_clean_relative_path, text_within};
+use super::SUPPORTED_BACKEND_PROTOCOLS;
 
 pub const MAX_COMMANDS: usize = 16;
 pub const MAX_REASONING_CHARS: usize = 280;
-pub const MAX_BACKEND_ARGS: usize = 32;
-pub const MAX_BACKEND_ARG_CHARS: usize = 4096;
 const MAX_PROGRAM_CHARS: usize = 64;
 
 /// Programs that run whatever they are handed. Compared case-insensitively,
@@ -103,6 +103,22 @@ pub const DENIED_PROGRAMS: &[&str] = &[
     "regsvr32",
     "systemd-run",
     "script",
+    // Linux launchers, sandbox escapes, and scheduling wrappers
+    "xdg-open",
+    "gio",
+    "setsid",
+    "pkexec",
+    "busybox",
+    "flatpak-spawn",
+    "nsenter",
+    "unshare",
+    "chroot",
+    "firejail",
+    "stdbuf",
+    "ionice",
+    "taskset",
+    "chrt",
+    "flock",
 ];
 
 /// `^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`: a file name, never a path.
@@ -170,29 +186,46 @@ pub(super) fn validate_commands(commands: &[TabCommand], findings: &mut TabFindi
 }
 
 pub(super) fn validate_backend(backend: &TabBackend, findings: &mut TabFindings) {
-    let launchable = match backend.target() {
-        BackendTarget::FolderFile(path) => is_clean_relative_path(path),
-        BackendTarget::Program(program) => is_valid_program_name(program),
-    };
-    if !launchable {
+    if !SUPPORTED_BACKEND_PROTOCOLS.contains(&backend.protocol) {
         findings.error(
-            Code::BackendCommandInvalid,
-            "backend.command",
-            "must be a path inside the tab folder (`bin/backend`) or a bare program name (`node`)",
-        );
-    }
-    let bad_arg = backend
-        .args
-        .iter()
-        .any(|arg| arg.contains('\0') || arg.chars().count() > MAX_BACKEND_ARG_CHARS);
-    if backend.args.len() > MAX_BACKEND_ARGS || bad_arg {
-        findings.error(
-            Code::BackendArgsInvalid,
-            "backend.args",
+            Code::BackendProtocolUnsupported,
+            "backend.protocol",
             format!(
-                "at most {MAX_BACKEND_ARGS} arguments of at most {MAX_BACKEND_ARG_CHARS} characters, without NUL"
+                "this Cadencr speaks backend protocol {}; got {}",
+                supported_backend_protocols(),
+                backend.protocol
             ),
         );
+    }
+    if backend.binary.is_empty() {
+        findings.error(
+            Code::BackendBinaryRequired,
+            "backend.binary",
+            format!(
+                "declare at least one native executable, keyed by platform ({})",
+                TabPlatform::list()
+            ),
+        );
+    }
+    for (key, path) in &backend.binary {
+        let field = format!("backend.binary.{key}");
+        if TabPlatform::parse(key).is_none() {
+            findings.error(
+                Code::BackendPlatformUnknown,
+                field.as_str(),
+                format!(
+                    "`{key}` is not a supported platform; use {} (Windows is not supported yet)",
+                    TabPlatform::list()
+                ),
+            );
+        }
+        if !is_clean_relative_path(path) {
+            findings.error(
+                Code::PathInvalid,
+                field,
+                "must be a normalized relative path inside the tab folder, without `..`, `.`, backslashes or a leading `/`",
+            );
+        }
     }
     if !reasoning_ok(backend.reasoning.as_deref()) {
         findings.error(
@@ -203,8 +236,19 @@ pub(super) fn validate_backend(backend: &TabBackend, findings: &mut TabFindings)
     }
 }
 
-fn reasoning_ok(reasoning: Option<&str>) -> bool {
-    reasoning.is_some_and(|text| text_within(text, MAX_REASONING_CHARS))
+/// `1`, or `1, 2`: the protocol versions this host speaks, for messages.
+pub fn supported_backend_protocols() -> String {
+    SUPPORTED_BACKEND_PROTOCOLS
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// A consent-time reasoning: 1–[`MAX_REASONING_CHARS`] characters of text
+/// once trimmed, without NUL.
+pub fn reasoning_ok(reasoning: Option<&str>) -> bool {
+    reasoning.is_some_and(|text| text_within(text, MAX_REASONING_CHARS) && !text.contains('\0'))
 }
 
 #[cfg(test)]
@@ -225,17 +269,34 @@ mod tests {
         findings
     }
 
-    fn check_backend(command: &str, args: &[&str], reasoning: Option<&str>) -> TabFindings {
+    fn check_backend(
+        protocol: u32,
+        binary: &[(&str, &str)],
+        reasoning: Option<&str>,
+    ) -> TabFindings {
         let mut findings = TabFindings::default();
         validate_backend(
             &TabBackend {
-                command: command.into(),
-                args: args.iter().map(|arg| arg.to_string()).collect(),
+                protocol,
+                binary: binary
+                    .iter()
+                    .map(|(key, path)| (key.to_string(), path.to_string()))
+                    .collect(),
                 reasoning: reasoning.map(str::to_string),
             },
             &mut findings,
         );
         findings
+    }
+
+    #[test]
+    fn reasoning_is_bounded_text_without_nul() {
+        assert!(reasoning_ok(Some("Lists ports.")));
+        assert!(reasoning_ok(Some(&"x".repeat(MAX_REASONING_CHARS))));
+        for refused in [None, Some(" "), Some("a\0b")] {
+            assert!(!reasoning_ok(refused), "{refused:?}");
+        }
+        assert!(!reasoning_ok(Some(&"x".repeat(MAX_REASONING_CHARS + 1))));
     }
 
     #[test]
@@ -280,6 +341,16 @@ mod tests {
         for windows in ["pythonw.exe", "wscript", "mshta.exe", "rundll32.EXE"] {
             assert!(is_denied_program(windows), "{windows}");
         }
+        for linux in [
+            "xdg-open",
+            "pkexec",
+            "flatpak-spawn",
+            "nsenter",
+            "BusyBox",
+            "setsid",
+        ] {
+            assert!(is_denied_program(linux), "{linux}");
+        }
         assert!(!is_denied_program("gitk"));
         assert!(!is_denied_program("nodemon-free"));
     }
@@ -315,30 +386,40 @@ mod tests {
     }
 
     #[test]
-    fn backends_launch_a_folder_path_or_a_program() {
-        assert!(check_backend("bin/backend", &[], Some("r")).is_valid());
-        assert!(check_backend("node", &["backend/server.mjs"], Some("r")).is_valid());
-        for command in [
+    fn backends_name_a_native_binary_per_known_platform() {
+        let all = [
+            ("darwin-aarch64", "bin/darwin-aarch64/backend"),
+            ("darwin-x86_64", "bin/darwin-x86_64/backend"),
+            ("linux-x86_64", "bin/linux-x86_64/backend"),
+        ];
+        assert!(check_backend(1, &all, Some("r")).is_valid());
+        assert!(check_backend(1, &all[2..], Some("r")).is_valid());
+        let unsupported = check_backend(2, &all, Some("r"));
+        assert_eq!(codes(&unsupported.errors), ["BACKEND_PROTOCOL_UNSUPPORTED"]);
+        assert!(unsupported.errors[0].message.contains("protocol 1; got 2"));
+        assert_eq!(
+            codes(&check_backend(1, &[], None).errors),
+            ["BACKEND_BINARY_REQUIRED", "BACKEND_REASONING_REQUIRED"]
+        );
+        let windows = check_backend(1, &[("windows-x86_64", "bin/b.exe")], Some("r"));
+        assert_eq!(codes(&windows.errors), ["BACKEND_PLATFORM_UNKNOWN"]);
+        assert_eq!(
+            windows.errors[0].field.as_deref(),
+            Some("backend.binary.windows-x86_64")
+        );
+        for path in [
             "../escape",
             "/usr/bin/node",
             "bin\\x.exe",
-            "node server.mjs",
+            "C:/x",
             "",
+            "bin/",
         ] {
             assert_eq!(
-                codes(&check_backend(command, &[], Some("r")).errors),
-                ["BACKEND_COMMAND_INVALID"],
-                "{command:?}"
+                codes(&check_backend(1, &[("linux-x86_64", path)], Some("r")).errors),
+                ["PATH_INVALID"],
+                "{path:?}"
             );
         }
-        assert_eq!(
-            codes(&check_backend("node", &["a\0b"], None).errors),
-            ["BACKEND_ARGS_INVALID", "BACKEND_REASONING_REQUIRED"]
-        );
-        let many = vec!["x"; 33];
-        assert_eq!(
-            codes(&check_backend("node", &many, Some("r")).errors),
-            ["BACKEND_ARGS_INVALID"]
-        );
     }
 }

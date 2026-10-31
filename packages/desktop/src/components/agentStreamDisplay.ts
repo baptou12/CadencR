@@ -23,6 +23,7 @@ const FLOW_BREAKING_TYPES = new Set<AgentBlockData["type"]>([
   "tool_summary",
   "compact_divider",
   "clear_divider",
+  "turn_interrupted",
 ]);
 
 function isFlowEligible(block: AgentBlockData): boolean {

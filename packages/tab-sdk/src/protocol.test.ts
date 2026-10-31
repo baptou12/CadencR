@@ -46,7 +46,8 @@ describe("protocol", () => {
       event("stream.event", { subscriptionId: "s", seq: "1", data: { domain: "g", action: "a" } }),
       event("stream.error", { subscriptionId: "s", error: {} }),
       event("context.changed", { context: { project: {} } }),
-      event("made.up", {}),
+      event("shortcut", { id: 3 }),
+      event("made.up", "not a payload"),
     ];
     for (const message of bad) expect(isHostToGuest(message), JSON.stringify(message)).toBe(false);
     expect(
@@ -55,6 +56,8 @@ describe("protocol", () => {
       ),
     ).toBe(true);
     expect(isHostToGuest(event("visibility.changed", { visible: false }))).toBe(true);
+    // A newer host's event reaches the client, which ignores it.
+    expect(isHostToGuest(event("made.up", {}))).toBe(true);
   });
 
   it("lists every method", () => {

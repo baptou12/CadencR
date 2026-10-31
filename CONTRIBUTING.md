@@ -12,16 +12,9 @@ Setup (prerequisites, `pnpm setup:dev`, `pnpm doctor`, worktrees) lives in the [
 
 ## Common Commands
 
-```bash
-pnpm dev             # run desktop app + backend service (the usual)
-pnpm start           # desktop only (skips the service watcher)
-pnpm test            # run all tests (vitest + cargo test --workspace + repo scripts)
-pnpm run lint        # provider boundaries + oxlint + clippy (all Rust crates)
-pnpm run format      # auto-format (oxfmt + rustfmt)
-pnpm run format:check
-pnpm doctor          # check Node, pnpm, Rust, watcher, .env files, Electron
-pnpm setup:dev       # idempotent first-run setup of a main checkout
-```
+The shared [command reference](./AGENTS.md#commands) lists development, build,
+test, lint, format, and diagnostic commands. Use package-scoped checks while
+iterating; the examples below supplement that reference.
 
 Run only the desktop tests that cover the files you touched (paths relative to
 `packages/desktop`):
@@ -126,7 +119,7 @@ Troubleshoot the effective configuration with:
 
 ```bash
 echo "${CARGO_TARGET_DIR:-<unset>}"
-cargo metadata --no-deps --format-version 1 | jq -r .target_directory
+pnpm rust -- metadata --no-deps --format-version 1 | jq -r .target_directory
 pnpm rust:storage
 ```
 
@@ -134,13 +127,23 @@ pnpm rust:storage
 
 ## Project Conventions
 
-The full ruleset for code style, file/function size limits, and architectural boundaries lives in [`.claude/rules/`](./.claude/rules/). Claude Code loads those files directly (each rule's `paths:` frontmatter scopes it to the files it applies to); for Codex and OpenCode they are mirrored into the auto-generated `## Rules` section of [`AGENTS.md`](./AGENTS.md) by `pnpm build:agents-md`. Read them before opening a PR.
+[`AGENTS.md`](./AGENTS.md) is the short agent entry point: essential constraints, commands, validation, and an index of applicable rules. Detailed rules have one source in [`.claude/rules/`](./.claude/rules/). This guide covers contributor setup and Git/release workflows; it is read when needed, not imported into every agent session.
 
-The three rules contributors hit most often:
+### Agent instruction setup
 
-- Use **pnpm**, not `npm` or `yarn`.
-- When the Rust API surface changes, regenerate the frontend API client with `pnpm --filter @cadencr/desktop run generate:api` and commit `packages/desktop/src/api/generated/index.ts`.
-- Keep files under **400 lines** and functions under **100 lines**; extract modules before crossing those limits.
+| Agent       | Repository instructions                                                                                         | Shared skills                                |
+| ----------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Cursor      | Root/scoped `AGENTS.md` indexes; read the linked rules for the task                                             | `.agents/skills/`                            |
+| Claude Code | `CLAUDE.md` imports `AGENTS.md`; unscoped rules load at startup, path-scoped rules when matching files are used | `.claude/skills/` links to `.agents/skills/` |
+| Codex       | `AGENTS.md` from root to working directory; read the linked rules and deeper instructions for edited files      | `.agents/skills/`                            |
+
+Edit shared guidance in `AGENTS.md`, rules in `.claude/rules/`, and skills in `.agents/skills/`. Keep `CLAUDE.md` as the single `@AGENTS.md` import. `pnpm build:agents-md` generates source links and scopes, not copies of rule bodies: Claude's native loader and agents reading a source see the same text. Already-loaded rules need not be read again. The two critical database/rollback constraints are intentionally summarized at the entry point; other detailed policies belong in their rule files. Preserve the Turbo-managed block outside the generated index.
+
+After editing rules, run `pnpm build:agents-md`, then `pnpm build:agents-md --check`; pre-commit and CI check the indexes too. Start a new session after instruction changes. In Claude Code, `/context` shows loaded memory files. For Cursor/Codex, check that the agent opens the applicable rule sources before edits; links are discovery instructions, not automatic imports. The default Codex instruction budget is 32 KiB, which is a ceiling, not a target.
+
+Loading conventions: [Cursor rules](https://cursor.com/docs/rules), [Cursor skills](https://cursor.com/docs/skills), [Claude Code imports](https://code.claude.com/docs/en/memory#import-additional-files), and [Codex instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
+
+Keep persistent instructions short, concrete, and based on observed mistakes. Put occasional procedures in skills or linked docs; do not repeat linter rules or maintain parallel `.cursor/rules/` copies. See [Claude Code best practices](https://code.claude.com/docs/en/best-practices#write-an-effective-claudemd), [Cursor rule guidance](https://cursor.com/docs/rules#best-practices), and [Codex best practices](https://learn.chatgpt.com/guides/best-practices#make-guidance-reusable-with-agentsmd). These are context-management recommendations, not a measured guarantee that a particular model will perform better.
 
 ---
 
@@ -187,7 +190,9 @@ feature release:
 Release tags (`vX.Y.Z`) are always cut from `main`. Pushing a tag triggers
 [`desktop-release.yml`](./.github/workflows/desktop-release.yml), which notarizes the app, publishes the
 GitHub release, and updates the Homebrew cask — so a tag reaches users immediately and its version number
-is spent for good.
+is spent for good. Linux ships as an alpha, by hand: once the release is published,
+[`desktop-linux-release.yml`](./.github/workflows/desktop-linux-release.yml) builds the same tag for Linux
+and attaches the packages to it (`gh workflow run desktop-linux-release.yml -f release_tag=vX.Y.Z`).
 
 **Why a version branch.** A feature is usually merged before it is polished. When the integration branch
 is also the release source, that half-finished feature blocks every unrelated fix from shipping until the
@@ -275,6 +280,32 @@ The branch and release tag intentionally use the same name, so the branch must b
 tagging; otherwise Git commands can become ambiguous between `refs/heads/vX.Y.Z` and
 `refs/tags/vX.Y.Z`.
 
+### Releasing the SDKs and the CLI
+
+The SDKs and the `cadencr` CLI have their own semver, independent of the app: an app release never sets
+them to the app version, and they need not ship with one. To release one, bump its version in a normal
+PR, let it land on `main` with green CI, then dispatch its workflow from `main`. Each workflow:
+
+- is a dry run unless you untick `dry_run`;
+- publishes from a protected environment with required reviewers;
+- refuses a version that already exists.
+
+The release skill does all of it. `release --tools [tool …]` releases only the tools. `release vX.Y.Z` also
+detects which tools changed since their last release, and offers to release them after the app.
+`node scripts/release-tools.mjs` shows that state on its own.
+
+| Artifact                                                 | Version lives in                                                        | Workflow                                       | Tag                    |
+| -------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------- | ---------------------- |
+| Desktop app                                              | the app manifests (bumped by the release skill)                         | `desktop-release.yml`, on pushing a `v*` tag   | `vX.Y.Z`               |
+| crates.io: `cadencr-tab-backend`, `cadencr-provider-sdk` | the crate's `Cargo.toml`                                                | `crates-release.yml` (environment `crates-io`) | `<crate>-v<version>`   |
+| npm: `@cadencr/tab-sdk`, `@cadencr/tab-kit`              | the package's `package.json` (tab-sdk: also `SDK_VERSION`)              | `npm-release.yml` (environment `npm`)          | `<package>-v<version>` |
+| CLI `cadencr` (Linux x86_64 binary + `SHA256SUMS`)       | `packages/cli/Cargo.toml`, `packages/cli/package.json` and `Cargo.lock` | `cli-release.yml` (environment `cli-release`)  | `cli/v<version>`       |
+
+`cli-release.yml` takes the reviewed `main`-tip SHA as input, like the development CLI workflow
+(`cli-dev-release.yml`, tags `cli/vX.Y.Z-dev.<run>.<attempt>`). Its GitHub release is never marked
+"Latest", so the desktop auto-updater and the landing download page keep resolving the app's release. App
+releases up to `v0.14.0` also carried the CLI; their assets stay where they are.
+
 ## Commit Convention
 
 Commits follow **[Conventional Commits](https://www.conventionalcommits.org/)**:
@@ -308,7 +339,7 @@ output and stopping at the first failure with the exact command to rerun:
 | `packages/brand/src/**`                                                                                                                                               | desktop and landing checks too, tracing desktop tests that import the brand file         |
 | `packages/service/src`, `packages/desktop/src`                                                                                                                        | provider-boundary scan                                                                   |
 | Rust: `packages/service`, any `packages/*-rs`, `packages/cli-discovery`, `Cargo.toml`/`Cargo.lock`, `rust-toolchain.toml`                                             | `@cadencr/service` `format:check`, `lint` (clippy), `test` for the whole Cargo workspace |
-| release scripts, `homebrew/**`, `desktop-release.yml`                                                                                                                 | `pnpm run test:release-scripts`                                                          |
+| release scripts, `homebrew/**`, `desktop-release.yml`, `desktop-linux-release.yml`                                                                                    | `pnpm run test:release-scripts`                                                          |
 | root tooling: `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `turbo.json`, `.oxlintrc.json`, `.oxfmtrc.json`, `.npmrc`, `.nvmrc`, `.husky/**`, `patches/**` | everything                                                                               |
 
 Preview the plan without running it, or force the full workspace check (also

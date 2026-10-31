@@ -243,6 +243,7 @@ function FeatureHeaderChrome({
         // platform constant `SidebarHeader` keys its height on).
         data-feature-header
         data-mac-controls={HAS_MAC_WINDOW_CONTROLS ? "true" : undefined}
+        data-window-control-safe
         className={cn(
           draggable && "titlebar-drag",
           // Same height collapsed or not: the traffic lights move onto this

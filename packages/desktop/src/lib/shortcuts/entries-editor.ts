@@ -233,4 +233,13 @@ export const EDITOR_SHORTCUTS = [
     description: "Format document",
     scope: "editor-buffer",
   },
+  {
+    // Same chord as the Terminal's: "hand this to the agent". Lands in the
+    // conversation composer's context tray, not sent.
+    id: "editor-add-selection-to-prompt",
+    keys: ["mod", "shift", "enter"],
+    description: "Add selection to the agent prompt",
+    scope: "editor",
+    aliases: ["context", "agent", "prompt"],
+  },
 ] as const satisfies readonly Shortcut[];

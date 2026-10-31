@@ -201,6 +201,7 @@ async fn provider_catalog_entries_with_origin_live_for_cwd(
             provider,
             origin: registered.origin(),
             profile_capability,
+            steering_acknowledged: adapter.supports_prompt_receipts(),
         }
     }))
     .await

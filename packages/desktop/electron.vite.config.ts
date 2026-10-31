@@ -10,6 +10,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { TanStackRouterVite } from "@tanstack/router-vite-plugin";
 import {
   rendererCsp,
+  rendererDevelopmentHeaders,
   resolveRendererCspDevelopment,
   type RendererCspDevelopmentEndpoints,
 } from "./electron/main/csp";
@@ -18,7 +19,11 @@ import {
   type ElectronBundleContract,
 } from "./electron/bundle-contract";
 import { macNativeAddonPlugin } from "./electron/mac-native-addon";
+import { devServiceProxy } from "./electron/dev-service-proxy";
+import { rendererBuildInfo } from "./electron/renderer-build-info";
 import pkg from "./package.json" with { type: "json" };
+
+const rendererDiagnostics = rendererBuildInfo(pkg.version);
 
 const excalidrawFontsDir = path.join(
   path.dirname(createRequire(import.meta.url).resolve("@excalidraw/excalidraw")),
@@ -26,6 +31,32 @@ const excalidrawFontsDir = path.join(
 );
 
 const pdfjsDir = path.dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"));
+
+/**
+ * `visual-lib:<name>`: the prebuilt bundle of a library HTML visuals inline as
+ * text (`src/lib/visuals/visual-assets.ts`), served as a virtual module whose
+ * default export is the source. Not an alias with `?raw`: the packages don't
+ * export these files, and Vite's dependency optimizer pre-bundles an aliased
+ * `node_modules` path and breaks the `?raw` query.
+ */
+function visualLibrariesPlugin(): Plugin {
+  const require = createRequire(import.meta.url);
+  const files: Record<string, string> = {
+    "visual-lib:d3": path.resolve(path.dirname(require.resolve("d3")), "../dist/d3.min.js"),
+    "visual-lib:chart.js": path.join(path.dirname(require.resolve("chart.js")), "chart.umd.min.js"),
+  };
+  return {
+    name: "cadencr-visual-libraries",
+    enforce: "pre",
+    resolveId: (id) => (id in files ? `\0${id}` : null),
+    load(id) {
+      const file = id.startsWith("\0") ? files[id.slice(1)] : undefined;
+      if (!file) return null;
+      this.addWatchFile(file);
+      return `export default ${JSON.stringify(fs.readFileSync(file, "utf8"))};`;
+    },
+  };
+}
 
 /** MIME types for the static assets served below; anything else gets none. */
 const STATIC_ASSET_TYPES: Record<string, string> = {
@@ -158,6 +189,11 @@ const electronBundleContracts = {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, "VITE_");
   const development = resolveRendererCspDevelopment(env);
+  const serviceProxy = devServiceProxy(
+    `http://127.0.0.1:${development.frontendPort}`,
+    env.VITE_API_URL || "http://127.0.0.1:5005",
+    env.VITE_API_TOKEN || "",
+  );
   return {
     main: {
       plugins: [
@@ -192,14 +228,17 @@ export default defineConfig(({ mode }) => {
     renderer: {
       root: ".",
       envDir: __dirname,
-      envPrefix: "VITE_",
+      envPrefix: ["VITE_API_URL", "VITE_FRONTEND_PORT", "VITE_INTERNAL_MARKETPLACE"],
       server: {
         host: "127.0.0.1",
         port: development.frontendPort,
         strictPort: true,
+        headers: rendererDevelopmentHeaders(development),
+        proxy: serviceProxy.proxy,
       },
       define: {
         __APP_VERSION__: JSON.stringify(pkg.version),
+        __APP_BUILD_ID__: JSON.stringify(rendererDiagnostics.buildId),
         __APP_BUILD_BRANCH__: JSON.stringify(resolveBuildBranch()),
       },
       resolve: {
@@ -214,6 +253,9 @@ export default defineConfig(({ mode }) => {
         exclude: ["@silurus/ooxml"],
       },
       plugins: [
+        rendererDiagnostics.plugin,
+        serviceProxy.plugin,
+        visualLibrariesPlugin(),
         react(),
         tailwindcss(),
         staticAssetDirsPlugin(STATIC_ASSET_DIRS),
@@ -225,6 +267,8 @@ export default defineConfig(({ mode }) => {
         }),
       ],
       build: {
+        // Opt-in diagnostics: retain mappings without automatic browser downloads.
+        sourcemap: process.env.CADENCR_RENDERER_SOURCEMAPS === "1" ? "hidden" : false,
         rollupOptions: {
           input: {
             index: path.resolve(__dirname, "index.html"),

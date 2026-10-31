@@ -32,6 +32,9 @@ pub async fn archive_feature_handler(
     Json(body): Json<ArchiveRequest>,
 ) -> Result<Json<ArchiveResponse>, AppError> {
     let response = service::archive(&state.write_pool, id, body).await?;
+    state
+        .plugin_tab_presence
+        .release_features(&response.archived_ids);
     for archived_id in &response.archived_ids {
         state
             .feature_events_tx
@@ -49,6 +52,9 @@ pub async fn archive_project_sessions_handler(
     Path(id): Path<i64>,
 ) -> Result<Json<ArchiveProjectSessionsResponse>, AppError> {
     let response = service::archive_project_sessions(&state.write_pool, id).await?;
+    state
+        .plugin_tab_presence
+        .release_features(&response.archived_ids);
     for archived_id in &response.archived_ids {
         state
             .feature_events_tx

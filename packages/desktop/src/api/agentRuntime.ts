@@ -30,6 +30,8 @@ export interface RuntimeProviderOption {
   access_modes?: RuntimeProviderAccessModeOption[];
   default_model: string | null;
   profile_capability?: ProviderCatalogResponseEntry["profile_capability"];
+  /** Mid-turn prompts are delivered into the running turn and acknowledged. */
+  steering_acknowledged?: boolean;
 }
 
 export interface RuntimeProviderModeOption {

@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { ArrowUpCircle, Check, CircleAlert, RotateCw } from "lucide-react";
+import { ArrowUpCircle, Ban, Check, CircleAlert, RotateCw, ShieldAlert } from "lucide-react";
 import type { MarketplaceListing, PluginKind } from "@/lib/marketplace-listings";
 import { Badge } from "@/components/ui/badge";
 import { ProviderIconGraphic, useProviderMetadata } from "@/lib/provider-icons";
@@ -84,7 +84,58 @@ const STATE_TONES = {
   muted: "bg-foreground/7 text-muted-foreground",
 } as const;
 
+interface ListingState {
+  tone: string;
+  icon: React.JSX.Element;
+  label: string;
+}
+
 /** The one state that matters most for a listing, most actionable first. */
+function stateOf(listing: MarketplaceListing): ListingState | null {
+  const installed = listing.installed;
+  if (installed?.blocked)
+    return { tone: STATE_TONES.error, icon: <Ban aria-hidden="true" />, label: "Blocked" };
+  if (installed?.error)
+    return {
+      tone: STATE_TONES.error,
+      icon: <CircleAlert aria-hidden="true" />,
+      label: "Needs attention",
+    };
+  if (listing.pendingVersion && listing.pendingBlocked)
+    return {
+      tone: STATE_TONES.error,
+      icon: <Ban aria-hidden="true" />,
+      label: `Update ${listing.pendingVersion} blocked`,
+    };
+  if (listing.pendingVersion)
+    return {
+      tone: STATE_TONES.restart,
+      icon: <ShieldAlert aria-hidden="true" />,
+      label: `Review update ${listing.pendingVersion}`,
+    };
+  if (installed?.restartRequired)
+    return {
+      tone: STATE_TONES.restart,
+      icon: <RotateCw aria-hidden="true" />,
+      label: "Restart to apply",
+    };
+  if (listing.update)
+    return {
+      tone: STATE_TONES.primary,
+      icon: <ArrowUpCircle aria-hidden="true" />,
+      label: `Update ${listing.update}`,
+    };
+  if (installed?.active)
+    return {
+      tone: STATE_TONES.primary,
+      icon: <span className="size-1.5 rounded-full bg-primary" />,
+      label: listing.kind === "theme" ? "In use" : "Active",
+    };
+  if (installed)
+    return { tone: STATE_TONES.muted, icon: <Check aria-hidden="true" />, label: "Installed" };
+  return null;
+}
+
 export function PluginStateBadge({
   listing,
   className,
@@ -92,34 +143,7 @@ export function PluginStateBadge({
   listing: MarketplaceListing;
   className?: string;
 }): React.JSX.Element | null {
-  const installed = listing.installed;
-  const state = installed?.error
-    ? {
-        tone: STATE_TONES.error,
-        icon: <CircleAlert aria-hidden="true" />,
-        label: "Needs attention",
-      }
-    : installed?.restartRequired
-      ? {
-          tone: STATE_TONES.restart,
-          icon: <RotateCw aria-hidden="true" />,
-          label: "Restart to apply",
-        }
-      : listing.update
-        ? {
-            tone: STATE_TONES.primary,
-            icon: <ArrowUpCircle aria-hidden="true" />,
-            label: `Update ${listing.update}`,
-          }
-        : installed?.active
-          ? {
-              tone: STATE_TONES.primary,
-              icon: <span className="size-1.5 rounded-full bg-primary" />,
-              label: listing.kind === "theme" ? "In use" : "Active",
-            }
-          : installed
-            ? { tone: STATE_TONES.muted, icon: <Check aria-hidden="true" />, label: "Installed" }
-            : null;
+  const state = stateOf(listing);
   if (!state) return null;
   return (
     <Badge variant="ghost" className={cn("h-5 px-2 text-[11px]", state.tone, className)}>

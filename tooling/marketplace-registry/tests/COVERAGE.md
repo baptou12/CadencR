@@ -62,6 +62,40 @@ directories; they are observations, not a second executable implementation.
 - `contribution-runtime-retention.test.mjs` tests wrapper state retention and
   exact argument forwarding using an inert subprocess, not a business fallback.
 - Workflow/bootstrap suites test protected orchestration and released CLI trust.
+- `registry-renewal-workflow.test.mjs` checks the unattended renewal workflow
+  statically (daily schedule, no inputs, shared `marketplace-publication` lane,
+  distinct `protected-marketplace-renewal` environment, minimal permissions, secrets
+  only in the key and renewal steps, pinned actions and CLI) and executes
+  `scripts/ci/registry-feeds.sh`: inert/partial gating, URL refusal, request
+  construction, status-checked bounded downloads (fake curl) and the renewal-only guard (any publication, submission file,
+  symlink, schema upgrade, unknown field or foreign repository aborts before the CLI).
+  The CLI is a stub there; the request shape was also accepted by the real pipeline up to its first network call.
+  The same suite covers the revocation policy renewal: per-policy 8-day planning
+  (independent, expired included), URL/domain refusals (a policy must sit on the
+  catalog's own branch), the plan guard and the `fetch-policy`/`renew-policy`/
+  `publish-policy --renewal` call sequence (no bootstrap, baseline read through
+  the API, token absent from the signing call, every due policy attempted after a
+  failure). A step-condition simulation proves the catalog and policy stages are
+  independent in both directions and that any failure still fails the job. Real renewal and
+  publication behavior is covered by `cli/tests/policy.rs` and
+  `registry-core/src/policy_renewal.rs`, `registry-publisher/src/policy_publish/`.
+- `policy-bootstrap-workflow.test.mjs` checks the dispatch-only
+  `bootstrap-revocation-policies` workflow statically (single `confirm` input,
+  default-branch gating, secret-free preflight, reviewed
+  `protected-marketplace-publisher` environment, shared `marketplace-publication`
+  lane, pinned checkout/actions/CLI selector, key and token only in their steps, key
+  removal under `always()`) and executes `registry-feeds.sh bootstrap-check` and
+  `bootstrap-policies` with a fake CLI: exact confirmation and URL/branch refusals,
+  per-kind empty payloads (no `kind` for the provider policy, 13-day window), the
+  `fetch-policy`/`sign-*`/`verify-*`/`publish-policy --bootstrap` argv, token absent
+  from signing and verification, skip of an already published policy, every policy
+  attempted after a failure, and an old pinned CLI named. The payloads were also
+  signed and verified once with the real CLI; the publication itself is covered by
+  `registry-publisher/src/policy_publish/`.
+- `registry-expiry-watch.test.mjs` checks the read-only, secret-free daily watch
+  and runs `check-expiry` against signed fixtures with the real Rust CLI: 72-hour
+  boundary, expired, tampered, wrong-key, missing and malformed feeds all fail, and the
+  provider policy is verified for signature and domain like the other feeds.
 - `check-metadata-expiry.test.mjs` invokes Rust `registry check-metadata-expiry`:
   relative healthy/default renewal/expired states, explicit warning thresholds,
   catalogs and both policy envelopes, malformed/unsafe/bounded inputs, and exact

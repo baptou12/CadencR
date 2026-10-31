@@ -1,7 +1,8 @@
 //! Bounded inspection of the normalized declarative archive, without extraction.
+use crate::gzip::{gunzip_bounded, GunzipError};
 use crate::RegistryError;
 use cadencr_plugin_core::theme::{parse_distributed_document, validate_distributed_asset};
-use std::{collections::BTreeMap, io::Read as _, path::Path};
+use std::{collections::BTreeMap, path::Path};
 const LIMIT: u64 = 32 * 1024 * 1024;
 
 pub fn verify_theme_archive(path: &Path) -> Result<(), RegistryError> {
@@ -21,15 +22,10 @@ pub fn read_theme_archive_bytes(
     if compressed.len() as u64 > LIMIT {
         return Err(invalid());
     }
-    let mut decoded = Vec::new();
-    let mut decoder = flate2::bufread::GzDecoder::new(compressed);
-    (&mut decoder)
-        .take(LIMIT + 1)
-        .read_to_end(&mut decoded)
-        .map_err(|e| RegistryError::single(format!("invalid theme gzip: {e}")))?;
-    if decoded.len() as u64 > LIMIT || !decoder.get_ref().is_empty() {
-        return Err(invalid());
-    }
+    let decoded = gunzip_bounded(compressed, LIMIT).map_err(|error| match error {
+        GunzipError::Invalid(e) => RegistryError::single(format!("invalid theme gzip: {e}")),
+        GunzipError::OversizedOrTrailing => invalid(),
+    })?;
     let files = read_tar(&decoded, 2, false)?;
     let bytes = files.get("theme.json").ok_or_else(invalid)?;
     let document = parse_distributed_document(bytes).map_err(|issues| {
@@ -62,6 +58,15 @@ pub(crate) fn read_tar(
     max_files: usize,
     nested: bool,
 ) -> Result<BTreeMap<String, Vec<u8>>, RegistryError> {
+    read_tar_with_mode(bytes, max_files, nested, 0o644)
+}
+/// [`read_tar`] for regular files of exactly `mode` (0755 for a tab backend's executable).
+pub(crate) fn read_tar_with_mode(
+    bytes: &[u8],
+    max_files: usize,
+    nested: bool,
+    mode: usize,
+) -> Result<BTreeMap<String, Vec<u8>>, RegistryError> {
     let mut files = BTreeMap::new();
     let mut offset = 0;
     while offset + 512 <= bytes.len() {
@@ -76,7 +81,7 @@ pub(crate) fn read_tar(
             || &header[257..263] != b"ustar\0"
             || &header[263..265] != b"00"
             || header[156] != b'0'
-            || octal(&header[100..108])? != 0o644
+            || octal(&header[100..108])? != mode
             || octal(&header[108..116])? != 0
             || octal(&header[116..124])? != 0
             || header[157..257].iter().any(|b| *b != 0)
