@@ -18,12 +18,14 @@ import {
   type Feature,
 } from "@/api/generated";
 import { invalidateScheduleLists } from "@/lib/schedules/invalidate";
+import { invalidatePromptQueue } from "@/lib/prompt-queue";
 import { GLOBAL_FEATURE_LIST_URLS, invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { isViewingFeature, notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
 import { openingClearsForMe } from "@/stores/for-me-ack";
 import { useUnreadStore } from "@/stores/unread-store";
 import { handleGitEnvelope } from "@/stores/ws-git-status-handler";
 import { showRemoteConnectedToast } from "@/lib/remote/connection-toast";
+import { handleAgentArchived } from "@/lib/agent-archived";
 import { applyStorageMaintenanceEvent } from "@/stores/storage-maintenance-store";
 import { applyProviderUpdatesEvent } from "@/stores/provider-updates";
 import type { LiveAgentStatus, PendingKind } from "@/types/agent";
@@ -347,6 +349,10 @@ export function handleAppEnvelope(
     handleGitEnvelope(action, payload);
     return true;
   }
+  if (domain === "app" && action === "agent_archived") {
+    handleAgentArchived(payload);
+    return true;
+  }
   if (domain === "app" && action === "remote_connected") {
     showRemoteConnectedToast();
     return true;
@@ -388,6 +394,11 @@ export function handleAppEnvelope(
     // The same file holds the label the theme's project is named after, so the
     // sidebar's list is refetched with it.
     scheduleThemeInvalidation(queryClient, typeof payload.id === "string" ? payload.id : undefined);
+    return true;
+  }
+  if (domain === "app" && action === "prompt_queue_changed") {
+    // Bare ping ({session_id}, or nothing after a lagged stream): re-fetch.
+    invalidatePromptQueue(typeof payload.session_id === "number" ? payload.session_id : undefined);
     return true;
   }
   if (domain === "app" && action === "plugin_tab_changed") {

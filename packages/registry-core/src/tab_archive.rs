@@ -1,9 +1,9 @@
 //! A tab distribution contains its manifest, optional icon and compiled web root.
+use crate::gzip::{gunzip_bounded, GunzipError};
 use crate::{archive, RegistryError};
 use cadencr_plugin_core::tab::{is_clean_relative_path, validate_manifest, TabManifest};
 use std::{
     collections::BTreeMap,
-    io::Read as _,
     path::{Path, PathBuf},
 };
 
@@ -73,15 +73,7 @@ pub fn snapshot_tab_folder(directory: &Path) -> Result<BTreeMap<String, Vec<u8>>
         }
         crate::safe_io::read_bounded_regular(&path, limit).map_err(|e| invalid(e.to_string()))
     };
-    let manifest_bytes = read("tab.json", cadencr_plugin_core::tab::MAX_MANIFEST_BYTES)?;
-    let manifest: TabManifest = serde_json::from_value(
-        crate::parse_json_bytes(&manifest_bytes).map_err(|e| invalid(e.to_string()))?,
-    )
-    .map_err(|e| invalid(e.to_string()))?;
-    let findings = validate_manifest(&manifest);
-    if !findings.is_valid() {
-        return Err(invalid(findings.describe_errors()));
-    }
+    let (manifest, manifest_bytes) = read_folder_manifest(&root)?;
     let (web_root, _) = manifest
         .entry
         .rsplit_once('/')
@@ -119,6 +111,23 @@ pub fn snapshot_tab_folder(directory: &Path) -> Result<BTreeMap<String, Vec<u8>>
     Ok(files)
 }
 
+/// The valid `tab.json` of the canonical tab folder `root`, and its bytes.
+pub(crate) fn read_folder_manifest(root: &Path) -> Result<(TabManifest, Vec<u8>), RegistryError> {
+    let path = root.join(cadencr_plugin_core::tab::MANIFEST_FILE_NAME);
+    let bytes =
+        crate::safe_io::read_bounded_regular(&path, cadencr_plugin_core::tab::MAX_MANIFEST_BYTES)
+            .map_err(|e| invalid(format!("cannot read tab.json: {e}")))?;
+    let manifest: TabManifest = serde_json::from_value(
+        crate::parse_json_bytes(&bytes).map_err(|e| invalid(e.to_string()))?,
+    )
+    .map_err(|e| invalid(e.to_string()))?;
+    let findings = validate_manifest(&manifest);
+    if !findings.is_valid() {
+        return Err(invalid(findings.describe_errors()));
+    }
+    Ok((manifest, bytes))
+}
+
 pub fn verify_tab_archive(path: &Path) -> Result<(), RegistryError> {
     let bytes = crate::safe_io::read_bounded_regular(path, MAX_TAB_BYTES)
         .map_err(|e| invalid(e.to_string()))?;
@@ -129,15 +138,10 @@ pub fn read_tab_archive_bytes(bytes: &[u8]) -> Result<BTreeMap<String, Vec<u8>>,
     if bytes.len() as u64 > MAX_TAB_BYTES {
         return Err(invalid("tab archive exceeds 32 MiB"));
     }
-    let mut decoder = flate2::bufread::GzDecoder::new(bytes);
-    let mut decoded = Vec::new();
-    (&mut decoder)
-        .take(MAX_TAB_BYTES + 1)
-        .read_to_end(&mut decoded)
-        .map_err(|e| invalid(e.to_string()))?;
-    if decoded.len() as u64 > MAX_TAB_BYTES || !decoder.get_ref().is_empty() {
-        return Err(invalid("invalid or oversized tab gzip"));
-    }
+    let decoded = gunzip_bounded(bytes, MAX_TAB_BYTES).map_err(|error| match error {
+        GunzipError::Invalid(e) => invalid(e.to_string()),
+        GunzipError::OversizedOrTrailing => invalid("invalid or oversized tab gzip"),
+    })?;
     let files = crate::theme_verify::read_tar(&decoded, 4096, true)?;
     validate_tab_files(&files)?;
     Ok(files)
@@ -182,6 +186,15 @@ pub fn validate_tab_files(files: &BTreeMap<String, Vec<u8>>) -> Result<TabManife
                 || manifest.icon.as_ref() == Some(name)
                 || name.starts_with(&prefix))
         {
+            if manifest
+                .backend
+                .as_ref()
+                .is_some_and(|backend| backend.binary.values().any(|cmd| cmd == name))
+            {
+                return Err(invalid(format!(
+                    "backend executable {name} belongs in its own archive (cadencr registry pack-tab-backend), not the web archive"
+                )));
+            }
             return Err(invalid(format!(
                 "unexpected or oversized tab payload: {name}"
             )));
@@ -199,11 +212,20 @@ pub fn validate_tab_files(files: &BTreeMap<String, Vec<u8>>) -> Result<TabManife
     }
     Ok(manifest)
 }
-/// Bind the compiled runtime manifest to its signed marketplace identity.
+/// Bind the compiled runtime manifest to its signed marketplace identity,
+/// native backend included.
 pub fn validate_tab_package_files(
     package: &serde_json::Value,
     files: &BTreeMap<String, Vec<u8>>,
 ) -> Result<TabManifest, RegistryError> {
+    validate_tab_package_binding(package, files).map(|(manifest, _)| manifest)
+}
+/// [`validate_tab_package_files`], also returning the signed backend
+/// (`package` is the `{tab, host}` body) the manifest is bound to.
+pub fn validate_tab_package_binding(
+    package: &serde_json::Value,
+    files: &BTreeMap<String, Vec<u8>>,
+) -> Result<(TabManifest, Option<crate::SignedTabBackend>), RegistryError> {
     let manifest = validate_tab_files(files)?;
     if package["tab"]["id"] != manifest.id
         || package["tab"]["version"] != manifest.version
@@ -212,7 +234,9 @@ pub fn validate_tab_package_files(
     {
         return Err(invalid("signed tab metadata differs from tab.json"));
     }
-    Ok(manifest)
+    let backend = crate::tab_backend::signed_tab_backend(package)?;
+    crate::tab_backend::bind(&manifest, backend.as_ref(), files)?;
+    Ok((manifest, backend))
 }
 fn invalid(message: impl Into<String>) -> RegistryError {
     RegistryError::single(message)

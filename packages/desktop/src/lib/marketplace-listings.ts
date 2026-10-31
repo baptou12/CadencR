@@ -5,11 +5,19 @@ import type {
   ManagedThemeCatalogResponse,
   ManagedTabInventoryEntry,
   PluginTabSummary,
+  TabVersionUnavailable,
 } from "@/api/generated";
-import { tabPackageSchema, type TabMarketplacePackage } from "./marketplace-tab-package";
+import {
+  groupTabPackages,
+  runtimeNativeCode,
+  tabNativeCode,
+  type TabMarketplacePackage,
+  type TabNativeCode,
+} from "./marketplace-tab-package";
 import { z } from "zod";
 import { groupPackages, installedRevision, providerCatalogPackages } from "./marketplace";
 import { matchesSidebarFilter } from "./sidebar-filter";
+import { compareVersions, sortVersions } from "./marketplace-versions";
 import {
   groupThemePackages,
   type managedThemeEntrySchema,
@@ -29,8 +37,17 @@ interface ListingVersion {
   version: string;
   minApp: string;
   maxApp?: string | null;
-  /** Provider binary targets (`darwin-aarch64`, …); empty for themes and custom tabs. */
+  /** Provider or tab backend binary targets (`darwin-aarch64`, …); empty for themes. */
   platforms: string[];
+  /**
+   * Why it can't be installed on this computer — a provider or tab backend with
+   * no binary for this platform, or a newer backend protocol. Absent: it can.
+   */
+  unavailable?: TabVersionUnavailable;
+  /** Custom tab: the native backend this exact version ships (`null`: none). */
+  nativeCode?: TabNativeCode | null;
+  /** Custom tab: why Cadencr's revocation policy blocks this exact version here. */
+  blocked?: string;
   /** Theme archive digest — keys verified previews to this exact archive. */
   sha256?: string;
 }
@@ -47,6 +64,8 @@ interface InstalledState {
   selected?: boolean;
   restartRequired: boolean;
   error?: string | null;
+  /** Custom tab: on Cadencr's revocation list, with its reason. */
+  blocked?: string | null;
   installedAt?: string;
   updatedAt?: string;
 }
@@ -77,6 +96,14 @@ export interface MarketplaceListing {
   /** The recommended version when it is newer than the installed one. */
   update?: string;
   inCatalog: boolean;
+  /** Some catalog version installs on this computer (true when none is listed). */
+  availableHere: boolean;
+  /** Custom tab: the native backend of the installed revision, as Cadencr runs it. */
+  installedNativeCode?: TabNativeCode | null;
+  /** Custom tab: a verified update staged beside the installed revision, awaiting review. */
+  pendingVersion?: string | null;
+  /** Custom tab: why the revocation policy blocks that staged update (it can only be discarded). */
+  pendingBlocked?: string | null;
 }
 
 /** The version a listing currently stands for: installed, else the one on offer. */
@@ -89,36 +116,12 @@ export function offeredVersion(listing: MarketplaceListing): string {
   return listing.update ?? listing.installed?.version ?? listing.recommended ?? "";
 }
 
-type ParsedVersion = { core: number[]; pre?: string } | null;
-
-function parseVersion(value: string): ParsedVersion {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+.*)?$/.exec(value.trim());
-  return match
-    ? { core: [Number(match[1]), Number(match[2]), Number(match[3])], pre: match[4] }
-    : null;
-}
-
-function compareParsed(left: ParsedVersion, right: ParsedVersion): number | null {
-  if (!left || !right) return null;
-  for (let i = 0; i < 3; i++) {
-    if (left.core[i] !== right.core[i]) return left.core[i] - right.core[i];
-  }
-  if (left.pre === right.pre) return 0;
-  if (!left.pre) return 1;
-  if (!right.pre) return -1;
-  return left.pre.localeCompare(right.pre, undefined, { numeric: true });
-}
-
-/** Semver-ish ordering; `null` when either side does not parse, so no update is claimed. */
-export function compareVersions(a: string, b: string): number | null {
-  return compareParsed(parseVersion(a), parseVersion(b));
-}
-
-function sortVersions(versions: ListingVersion[]): ListingVersion[] {
-  return versions
-    .map((entry) => ({ entry, parsed: parseVersion(entry.version) }))
-    .sort((a, b) => compareParsed(b.parsed, a.parsed) ?? 0)
-    .map(({ entry }) => entry);
+/**
+ * The update a user can still download: one already staged (downloaded and
+ * verified) only waits for its review, which its badge asks for instead.
+ */
+export function downloadableUpdate(listing: MarketplaceListing): string | undefined {
+  return listing.update === listing.pendingVersion ? undefined : listing.update;
 }
 
 function updateFor(recommended?: string, installed?: string | null): string | undefined {
@@ -189,7 +192,20 @@ function baseListing(
     installed,
     update: updateFor(recommended, installed?.version),
     inCatalog: versions.length > 0,
+    availableHere: versions.length === 0 || versions.some((entry) => !entry.unavailable),
   };
+}
+
+function providerVersion(item: ManagedProviderPackage, catalog?: ManagedCatalogResponse) {
+  // The service decides what installs here, with the installer's own check.
+  const unavailable = catalog?.unavailable_versions?.[item.agent.id]?.[item.agent.version];
+  return {
+    version: item.agent.version,
+    minApp: item.host.compatibility.min_app_version,
+    maxApp: item.host.compatibility.max_app_version,
+    platforms: Object.keys(item.agent.distribution?.binary ?? {}),
+    ...(unavailable ? { unavailable } : {}),
+  } satisfies ListingVersion;
 }
 
 function providerListing(
@@ -197,18 +213,14 @@ function providerListing(
   versions: ManagedProviderPackage[] = [],
   entry: ManagedProviderInventoryEntry | undefined,
   recommended: string | undefined,
+  catalog?: ManagedCatalogResponse,
 ): MarketplaceListing {
   const meta = pickMeta(versions, (item) => item.agent.version, recommended);
   return {
     ...baseListing(
       "provider",
       id,
-      versions.map((item) => ({
-        version: item.agent.version,
-        minApp: item.host.compatibility.min_app_version,
-        maxApp: item.host.compatibility.max_app_version,
-        platforms: Object.keys(item.agent.distribution?.binary ?? {}),
-      })),
+      versions.map((item) => providerVersion(item, catalog)),
       recommended,
       entry && providerInstalled(entry),
     ),
@@ -253,16 +265,24 @@ function themeListing(
   };
 }
 
+function tabVersion(item: TabMarketplacePackage, catalog?: ManagedThemeCatalogResponse) {
+  // The service decides what installs here; it parsed the signed entry.
+  const unavailable = catalog?.unavailable_versions?.[item.tab.id]?.[item.tab.version];
+  const blocked = catalog?.blocked_versions?.[item.tab.id]?.[item.tab.version];
+  return {
+    ...(blocked ? { blocked } : {}),
+    version: item.tab.version,
+    minApp: item.host.compatibility.min_app_version,
+    maxApp: item.host.compatibility.max_app_version,
+    platforms: Object.keys(item.tab.distribution.binary ?? {}),
+    ...(unavailable ? { unavailable } : {}),
+    sha256: item.tab.distribution.sha256,
+    nativeCode: tabNativeCode(item),
+  } satisfies ListingVersion;
+}
+
 function tabListings(sources: ListingSources): MarketplaceListing[] {
-  const groups = new Map<string, TabMarketplacePackage[]>();
-  for (const raw of sources.tabCatalog?.index?.signed.packages ?? []) {
-    const entry = z.object({ kind: z.string(), package: z.unknown() }).parse(raw);
-    if (entry.kind !== "tab") continue;
-    const item = tabPackageSchema.parse(entry.package);
-    const versions = groups.get(item.tab.id);
-    if (versions) versions.push(item);
-    else groups.set(item.tab.id, [item]);
-  }
+  const groups = groupTabPackages(sources.tabCatalog);
   const entries = new Map((sources.tabInventory ?? []).map((item) => [item.id, item]));
   return [...new Set([...groups.keys(), ...entries.keys()])].map((id) => {
     const versions = groups.get(id) ?? [];
@@ -274,13 +294,7 @@ function tabListings(sources: ListingSources): MarketplaceListing[] {
       ...baseListing(
         "tab",
         id,
-        versions.map((item) => ({
-          version: item.tab.version,
-          minApp: item.host.compatibility.min_app_version,
-          maxApp: item.host.compatibility.max_app_version,
-          platforms: [],
-          sha256: item.tab.distribution.sha256,
-        })),
+        versions.map((item) => tabVersion(item, sources.tabCatalog)),
         recommended,
         installed
           ? {
@@ -290,6 +304,9 @@ function tabListings(sources: ListingSources): MarketplaceListing[] {
               usable: !installed.error && runtime?.status === "valid",
               restartRequired: false,
               error: installed.error,
+              blocked:
+                installed.blocked ??
+                (runtime?.status === "blocked" ? (runtime.blocked_reason ?? "Blocked") : null),
             }
           : undefined,
       ),
@@ -299,6 +316,9 @@ function tabListings(sources: ListingSources): MarketplaceListing[] {
       repository: meta?.tab.repository,
       license: meta?.tab.license,
       authors: [],
+      installedNativeCode: installed && runtime ? runtimeNativeCode(runtime) : null,
+      pendingVersion: installed?.pending_version ?? null,
+      pendingBlocked: runtime?.pending_update?.blocked_reason ?? null,
     };
   });
 }
@@ -337,6 +357,7 @@ export function buildListings(sources: ListingSources): MarketplaceListing[] {
         providerGroups.get(id),
         providerEntries.get(id),
         sources.providerCatalog?.recommended_versions?.[id],
+        sources.providerCatalog,
       ),
     ),
     ...[...themeIds].map((id) =>

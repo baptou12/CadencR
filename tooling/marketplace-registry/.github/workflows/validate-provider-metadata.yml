@@ -28,9 +28,6 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           path: candidate-registry
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22.19.0
       - name: Validate inert contribution metadata
         run: >-
           sh trusted-registry/scripts/ci/validate-provider-contribution.sh
@@ -62,9 +59,6 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           path: candidate-registry
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22.19.0
       - name: Validate and build unsigned index with the pinned released CLI
         run: >-
           sh trusted-registry/scripts/ci/validate-provider-contribution.sh

@@ -10,7 +10,11 @@ import { getPluginTabs } from "@/stores/feature-layout-tree";
 import { usePluginTabRuntimeStore } from "@/lib/plugin-tabs/runtime-store";
 import { render, screen } from "@/test-utils";
 
-import { createPluginTabsBridgeMock, pluginTabSummary } from "./plugin-tab-fixtures";
+import {
+  createPluginTabsBridgeMock,
+  linuxOnlyBackendTab,
+  pluginTabSummary,
+} from "./plugin-tab-fixtures";
 import { PluginTabAddMenu } from "./PluginTabAddMenu";
 
 const mocks = vi.hoisted(() => ({
@@ -69,6 +73,16 @@ describe("PluginTabAddMenu", () => {
     expect(screen.getByText("GitLab pipelines")).toBeInTheDocument();
     expect(screen.queryByText("Disabled tab")).not.toBeInTheDocument();
     expect(setBrowserSuppressed).toHaveBeenLastCalledWith(true);
+  });
+
+  it("lists a tab whose backend can't run here as unavailable, and won't add it", async () => {
+    mocks.tabs = [linuxOnlyBackendTab({ id: "ports", label: "Ports" })];
+    const { user } = await openMenu();
+    const item = screen.getByRole("menuitem", { name: "Ports" });
+    expect(item).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByText("Unavailable on this platform")).toBeInTheDocument();
+    await user.click(item);
+    expect(placedTabs()).toEqual([]);
   });
 
   it("adds a tab to the layout, and activates instead of duplicating a placed one", async () => {

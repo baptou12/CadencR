@@ -48,6 +48,11 @@ pub trait AgentRuntimeSession: Send + Sync {
         self.available_mcp_servers().await
     }
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError>;
+    /// The live runtime is temporarily unable to accept steering input.
+    /// The host keeps user prompts in its durable queue until the turn ends.
+    fn requires_prompt_queue(&self) -> bool {
+        false
+    }
     async fn stream_input_with_client_message_id(
         &self,
         content: Value,
@@ -62,6 +67,13 @@ pub trait AgentRuntimeSession: Send + Sync {
         Err(RuntimeError::new(
             "provider-native user shell commands are not supported by this runtime",
         ))
+    }
+    /// Optional barrier for runtimes whose prompt method returns after input
+    /// acceptance. Held by dispatch through input delivery, and by cancellation
+    /// through readiness publication. Runtimes that await the entire turn must
+    /// leave this unset so controls can run concurrently with their prompt.
+    async fn turn_control_guard(&self) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        None
     }
     async fn interrupt(&self) -> Result<(), RuntimeError>;
     async fn compact(&self) -> Result<(), RuntimeError> {

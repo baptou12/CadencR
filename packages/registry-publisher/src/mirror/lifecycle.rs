@@ -44,21 +44,18 @@ pub(super) fn mirror_locked(
         revalidate_release(client, &release, registry_commit, &binding.body)?;
         verify_tag(client, &binding.tag, registry_commit)?;
         validate_local_artifact(artifact)?;
-        let _ = upload_one(
-            client,
-            release.id,
-            artifact,
-            &binding.expected,
-            directory,
-            policy,
-        )?;
-        // Detect foreign assets before the next mutation, retaining this snapshot.
-        assets = artifacts::validated_assets_with_policy(
-            client.list_assets(release.id)?,
-            &binding.expected,
-            false,
-            policy,
-        )?;
+        // The settled listing also detects foreign assets before the next
+        // mutation, retaining this snapshot.
+        assets = upload_one()
+            .client(client)
+            .release_id(release.id)
+            .artifact(artifact)
+            .expected(&binding.expected)
+            .directory(directory)
+            .policy(policy)
+            .pacing(&crate::convergence::ReadBack::production())
+            .call()?
+            .assets;
     }
     let final_assets = artifacts::validated_assets_with_policy(
         client.list_assets(release.id)?,

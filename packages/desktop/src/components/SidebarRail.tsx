@@ -15,13 +15,12 @@ import { useProjectColor } from "@/hooks/useProjectColor";
 import { useRouteFeatureIds } from "@/hooks/useRouteFeatureIds";
 import { SIDEBAR_EXPANDED_PROJECTS_KEY, usePersistedIdSet } from "@/hooks/usePersistedIdSet";
 import type { ProjectAttentionCounts, ResolvedAttention } from "@/hooks/useResolvedAttention";
-import { formatCombo } from "@/lib/shortcuts/format";
-import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
 import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
 import { ATTENTION_LABEL, needsUser } from "@/lib/sidebar-attention";
 import { cn } from "@/lib/utils";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { SidebarSurfaceContext } from "@/stores/sidebar-surface-store";
+import { useShortcutLabel } from "@/hooks/useShortcutLabel";
 
 /**
  * The collapsed sidebar's 48px rail (A3), so collapsing never hides what
@@ -33,8 +32,8 @@ import { SidebarSurfaceContext } from "@/stores/sidebar-surface-store";
 export function SidebarRail({ onExpand }: { onExpand: () => void }): ReactElement | null {
   const content = useSidebarOption("rail");
   const { featureId: activeFeatureId } = useRouteFeatureIds();
-  const { keys } = useResolvedShortcut("toggle-sidebar");
-  const { keys: settingsKeys } = useResolvedShortcut("open-settings");
+  const toggleSidebarCombo = useShortcutLabel("toggle-sidebar");
+  const settingsCombo = useShortcutLabel("open-settings");
   if (content === "none") return null;
   return (
     <TooltipProvider delayDuration={300}>
@@ -57,7 +56,7 @@ export function SidebarRail({ onExpand }: { onExpand: () => void }): ReactElemen
           variant="ghost"
           size="icon"
           className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
-          title={`Expand sidebar (${formatCombo(keys).join("")})`}
+          title={`Expand sidebar (${toggleSidebarCombo})`}
           aria-label="Expand sidebar"
           onClick={onExpand}
         >
@@ -82,7 +81,7 @@ export function SidebarRail({ onExpand }: { onExpand: () => void }): ReactElemen
           variant="ghost"
           size="icon"
           className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
-          title={`Settings (${formatCombo(settingsKeys).join("")})`}
+          title={`Settings (${settingsCombo})`}
         >
           <Link to="/settings" aria-label="Settings">
             <Settings className="size-4" />

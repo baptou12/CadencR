@@ -82,34 +82,25 @@ pub(crate) async fn handle_interrupt(
         // terminal events) as benign. The reply wait deliberately remains
         // armed: a later instruction may resume this same child and should be
         // the result eventually reported to its parent.
+        let q = query.read().await;
+        let _barrier = q.turn_control_guard().await;
         let interrupted_generation = app_state
             .active_turns
             .request_interruption(db_session_id, &query)
             .await;
-        let q = query.read().await;
-        if let Err(e) = q.interrupt().await {
-            let terminal_event_consumed = if let Some(generation) = interrupted_generation {
-                !app_state
-                    .active_turns
-                    .clear_interruption(db_session_id, generation, &query)
-                    .await
-            } else {
-                false
-            };
-            if terminal_event_consumed {
-                // Some providers close their control channel while completing
-                // the requested stop. The stream reader already consumed the
-                // interruption marker and ended the turn cleanly, so the
-                // user's goal succeeded despite the late control error.
-                tracing::info!(
-                    db_session_id,
-                    error = %e,
-                    "interrupt control ended after the runtime had already stopped"
-                );
-            } else {
-                error!(db_session_id, error = %e, "interrupt failed");
-                send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
-            }
+        let result = q.interrupt().await;
+        drop(q);
+        if let Err(error) = super::finish_interruption(
+            result,
+            &query,
+            app_state,
+            db_session_id,
+            interrupted_generation,
+        )
+        .await
+        {
+            error!(db_session_id, %error, "interrupt failed");
+            send_error(sender, &envelope.id, "SDK_ERROR", &error.to_string());
         }
     } else {
         send_error(sender, &envelope.id, "INVALID_STATE", "Session not active");

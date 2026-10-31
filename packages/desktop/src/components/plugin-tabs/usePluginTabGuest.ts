@@ -9,7 +9,7 @@ import { PluginTabBroker } from "@/lib/plugin-tabs/broker";
 import type { PluginIdentity } from "@/lib/plugin-tabs/broker-runtime";
 import { registerLivePluginTab, reloadLivePluginTab } from "@/lib/plugin-tabs/live-instances";
 import { ensurePluginTabThemeSync } from "@/lib/plugin-tabs/theme-sync";
-import type { PluginTabEvent } from "@/shared/plugin-tab-host";
+import type { PluginTabEventType, PluginTabOwnShortcut } from "@/shared/plugin-tab-host";
 
 /** Where the guest view of a live instance stands. */
 export type GuestPhase =
@@ -21,14 +21,18 @@ export type GuestPhase =
 
 const LOADING: GuestPhase = { kind: "loading" };
 
-function phaseOf(event: PluginTabEvent): GuestPhase {
-  switch (event.type) {
+/** The phase a lifecycle event moves the guest to. */
+function phaseOf(
+  type: Exclude<PluginTabEventType, "shortcut">,
+  detail: string | undefined,
+): GuestPhase {
+  switch (type) {
     case "loaded":
       return { kind: "ready" };
     case "load-failed":
-      return { kind: "failed", detail: event.detail ?? null };
+      return { kind: "failed", detail: detail ?? null };
     case "crashed":
-      return { kind: "crashed", detail: event.detail ?? null };
+      return { kind: "crashed", detail: detail ?? null };
     case "recycled":
       return { kind: "recycled" };
   }
@@ -57,6 +61,8 @@ export interface PluginTabGuestOptions {
   visible: boolean;
   /** The placeholder element the native view is laid over. */
   placeholder: HTMLDivElement | null;
+  /** The tab's active `tab.json` shortcuts (`plugin.shortcuts` names their ids). */
+  shortcuts: readonly PluginTabOwnShortcut[];
 }
 
 export interface PluginTabGuest {
@@ -89,11 +95,15 @@ function startGuest({
   setPhase(LOADING);
   const offEvents = bridge.onEvent((event) => {
     if (event.instanceId !== instanceId) return;
+    if (event.type === "shortcut") {
+      if (event.detail !== undefined) broker.pressShortcut(event.detail);
+      return;
+    }
     // The page is gone (destroyed under the live-guest cap, crashed, or never
     // loaded): free its socket, subscriptions and grant until a new page
     // brings a new port.
     if (event.type !== "loaded") broker.suspend();
-    setPhase(phaseOf(event));
+    setPhase(phaseOf(event.type, event.detail));
   });
   const reloadGuest = (): void => {
     void bridge.reload(instanceId).catch((error: unknown) => {
@@ -133,7 +143,7 @@ function startGuest({
  * the placeholder's overlay is what the user sees.
  */
 export function usePluginTabGuest(options: PluginTabGuestOptions): PluginTabGuest {
-  const { instanceId, featureId, plugin, context, live, visible, placeholder } = options;
+  const { instanceId, featureId, plugin, context, live, visible, placeholder, shortcuts } = options;
   const [phase, setPhase] = useState<GuestPhase>(LOADING);
   const brokerRef = useRef<PluginTabBroker | null>(null);
   const latest = useRef({ plugin, context, visible });
@@ -159,6 +169,14 @@ export function usePluginTabGuest(options: PluginTabGuestOptions): PluginTabGues
   useEffect(() => {
     brokerRef.current?.setPlugin(plugin);
   }, [plugin]);
+
+  // Matched in the main process, which forgets them when the guest closes.
+  useEffect(() => {
+    if (!live) return;
+    void desktopBridge.pluginTabs
+      .setTabShortcuts(instanceId, shortcuts)
+      .catch((error: unknown) => reportBridgeError(error, "its shortcuts could not be set"));
+  }, [instanceId, live, shortcuts]);
 
   // Over the live-guest cap a hidden guest is destroyed; showing it again
   // recreates it.

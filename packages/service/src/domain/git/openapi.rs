@@ -58,6 +58,7 @@ use super::{models, routes};
         super::forge::routes::get_pr_statuses_handler,
         super::forge::routes::get_pr_handler,
         super::forge::routes::get_pr_comments_handler,
+        super::forge::pr_lookup::lookup_feature_repo_pr,
         super::linked_branches::routes::link_feature_branch_handler,
         super::linked_branches::routes::unlink_feature_branch_handler,
     ),

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { BrowserWindow, WebContents } from "electron";
 import type { ManagedTab, TabEventHost } from "./browser-tab-events";
 import { browserAutomationAccess } from "./browser-policy";
+import { isCadencrBrowserUrl } from "./browser-self-origin-policy";
 import {
   browserPartitionForProfile,
   createBrowserProfile,
@@ -44,7 +45,12 @@ export function originOf(url: string): string | null {
  * a tab that later navigates elsewhere (link click, redirect) re-locks itself.
  */
 export function externalAutomationMatches(liveUrl: string, unlockedOrigin: string | null): boolean {
-  return unlockedOrigin !== null && originOf(liveUrl) === unlockedOrigin;
+  return (
+    unlockedOrigin !== null &&
+    /^https?:/.test(liveUrl) &&
+    !isCadencrBrowserUrl(liveUrl) &&
+    originOf(liveUrl) === unlockedOrigin
+  );
 }
 
 // One ⌘+/⌘- step multiplies the guest page's own zoom factor (independent of
@@ -82,17 +88,11 @@ export function reclaimFocusForShortcut(
 
 /**
  * Hand the renderer a chord a focused guest view swallowed (the renderer
- * listens on `browser:shortcut`). `alwaysReclaimFocus` is for guests whose every
- * relayed chord switches away from them (custom tabs); a Browser guest reclaims
- * focus only for chords that land on renderer chrome.
+ * listens on `browser:shortcut`), reclaiming focus only for chords that land
+ * on renderer chrome.
  */
-export function relayGuestShortcut(
-  win: BrowserWindow | null,
-  shortcut: BrowserShortcut,
-  options: { alwaysReclaimFocus?: boolean } = {},
-): void {
-  if (options.alwaysReclaimFocus) win?.webContents.focus();
-  else reclaimFocusForShortcut(win, shortcut);
+export function relayGuestShortcut(win: BrowserWindow | null, shortcut: BrowserShortcut): void {
+  reclaimFocusForShortcut(win, shortcut);
   sendToWindow(win, "browser:shortcut", shortcut);
 }
 

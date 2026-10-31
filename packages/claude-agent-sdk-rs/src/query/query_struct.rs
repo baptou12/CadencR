@@ -17,7 +17,7 @@ use crate::messages::SdkMessage;
 use crate::types::McpServerStatus;
 
 use super::turn_state::TurnState;
-use super::wire::{InterruptAck, PendingControl};
+use super::wire::PendingControl;
 
 /// A running Claude Code CLI query with streaming output and turn management.
 ///
@@ -65,9 +65,6 @@ pub struct Query {
 
     /// Background reader task handle (for cleanup).
     pub(super) reader_task: Option<tokio::task::JoinHandle<()>>,
-
-    /// Channel to ask the reader task to send SIGINT to the CLI process.
-    pub(super) interrupt_tx: mpsc::Sender<InterruptAck>,
 
     /// Channel to signal the reader task to gracefully kill the CLI process.
     pub(super) kill_tx: mpsc::Sender<()>,
@@ -176,7 +173,6 @@ impl Query {
     pub fn new_test_stub(session_id: Option<String>) -> Self {
         let (msg_tx, message_rx) = mpsc::channel(1);
         drop(msg_tx); // close immediately so stream_input will fail
-        let (interrupt_tx, _interrupt_rx) = mpsc::channel::<InterruptAck>(1);
         let (kill_tx, _kill_rx) = mpsc::channel(1);
         Self {
             message_rx,
@@ -188,7 +184,6 @@ impl Query {
             pending_control: Arc::new(Mutex::new(HashMap::new())),
             control_request_counter: Arc::new(AtomicU64::new(0)),
             reader_task: None,
-            interrupt_tx,
             kill_tx,
             _cancel_token: None,
             pid: None,

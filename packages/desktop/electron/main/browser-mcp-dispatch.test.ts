@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { dispatchBrowserMcpTool, type BrowserMcpTarget } from "./browser-mcp-dispatch";
 import type { BrowserTabMetadata } from "./browser-types";
 
+vi.mock("./runtime-config", () => ({ refreshBrowserOriginPolicy: vi.fn(async () => undefined) }));
+
 function tabMeta(): BrowserTabMetadata {
   return {
     id: "tab-1",
@@ -45,6 +47,8 @@ function target(): BrowserMcpTarget {
     automation: { state, assert: vi.fn(), guard: vi.fn(() => vi.fn()) },
     openUrl: vi.fn(async () => tabMeta()),
     openExternalUrl: vi.fn(async () => tabMeta()),
+    restoreScopeMetadata: vi.fn(async () => state()),
+    closeTabsForScope: vi.fn(async () => ({ ...state(), tabs: [] })),
     inspection: {
       snapshot: vi.fn(async () => ({ found: true, outline: "[e1] button" })),
       screenshot: vi.fn(async () => "fullpng"),
@@ -91,8 +95,10 @@ describe("dispatchBrowserMcpTool", () => {
     fake.automation.assert = vi.fn(() => {
       if (!shared) throw new Error("Browser tab is not shared with the agent.");
     });
+    fake.automation.guard = vi.fn(() => () => fake.automation.assert("tab-1", null));
     fake.inspection.snapshot = vi.fn(() => new Promise((resolve) => (finish = resolve)));
     const pending = dispatchBrowserMcpTool(fake, "browser_get_snapshot", {});
+    await vi.waitFor(() => expect(fake.inspection.snapshot).toHaveBeenCalledOnce());
     shared = false;
     finish({ secret: "must not escape" });
 
@@ -127,6 +133,7 @@ describe("dispatchBrowserMcpTool", () => {
         }),
     );
     const pending = dispatchBrowserMcpTool(fake, "browser_click", { ref: "e1" });
+    await vi.waitFor(() => expect(fake.inspection.clickTarget).toHaveBeenCalledOnce());
     shared = false;
     expect(() => finish()).toThrow("not shared");
 
@@ -168,6 +175,22 @@ describe("dispatchBrowserMcpTool", () => {
       newTab: false,
       scopeId: 42,
     });
+  });
+
+  it("closes every tab of the given feature scope for archive cleanup", async () => {
+    const fake = target();
+    vi.mocked(fake.restoreScopeMetadata).mockResolvedValue({
+      ...fake.state(),
+      tabs: [tabMeta(), tabMeta()],
+    });
+    await expect(dispatchBrowserMcpTool(fake, "browser_close_scope_tabs", {}, 42)).resolves.toEqual(
+      { text: JSON.stringify({ closed_tabs: 2 }) },
+    );
+    expect(fake.restoreScopeMetadata).toHaveBeenCalledWith(42);
+    expect(fake.closeTabsForScope).toHaveBeenCalledWith(42);
+    await expect(dispatchBrowserMcpTool(fake, "browser_close_scope_tabs", {})).rejects.toThrow(
+      "needs a feature scope",
+    );
   });
 
   it("routes browser_open_external_url to the external opener", async () => {

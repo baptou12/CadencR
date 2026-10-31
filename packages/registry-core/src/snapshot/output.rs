@@ -1,18 +1,11 @@
+pub(super) use crate::digest::sha256_hex as digest;
 use chrono::Utc;
-use sha2::{Digest as _, Sha256};
 
 use super::{required_timestamp, signed, CatalogSnapshot, CATALOG_LIMIT};
 use crate::error::RegistryError;
 use crate::index::validate_fresh_window;
 use crate::json::canonical_json_bytes;
 use serde_json::Value;
-
-pub(super) fn digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
 
 pub(super) fn assemble_snapshot(
     envelope: Value,

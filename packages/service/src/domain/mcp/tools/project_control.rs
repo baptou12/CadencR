@@ -5,13 +5,17 @@ use crate::api::middleware::MCP_CONTROL_HEADER;
 use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::helpers::require_i64;
 
+mod archive_session;
 mod create_schedule;
 mod manage_schedule;
 mod send_message;
+mod settings;
 
+pub(crate) use archive_session::archive_session;
 pub(crate) use create_schedule::create_schedule;
 pub(crate) use manage_schedule::{delete_schedule, update_schedule};
 pub(crate) use send_message::{send_session_message, send_workspace_session_message};
+pub(crate) use settings::{get_settings, update_settings};
 
 const SERVICE_URL_ENV: &str = "CADENCR_SERVICE_URL";
 const CONTROL_TOKEN_ENV: &str = "CADENCR_MCP_CONTROL_TOKEN";
@@ -197,6 +201,25 @@ pub async fn respond_gate(
 fn require_source_session(ctx: &McpContext, tool: &str) -> Result<i64, String> {
     ctx.source_session_id
         .ok_or_else(|| format!("{tool} requires a source session id"))
+}
+
+/// The caller's identity every control request starts from.
+fn source_request(ctx: &McpContext, tool: &str) -> Result<serde_json::Value, String> {
+    let source_session_id = require_source_session(ctx, tool)?;
+    Ok(json!({
+        "source_feature_id": ctx.feature_id,
+        "source_session_id": source_session_id,
+    }))
+}
+
+/// Copy the optional `fields` the agent passed, as it sent them: the service's
+/// typed request rejects a wrong type instead of reading it as absent.
+fn relay_fields(args: &serde_json::Value, request: &mut serde_json::Value, fields: &[&str]) {
+    for field in fields {
+        if let Some(value) = args.get(*field) {
+            request[*field] = value.clone();
+        }
+    }
 }
 
 pub async fn spawn_session_with_client(

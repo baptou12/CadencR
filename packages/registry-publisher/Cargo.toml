@@ -1,11 +1,12 @@
 [package]
 name = "cadencr-registry-publisher"
-version = "0.14.0"
+version = "0.15.1"
 edition = "2021"
 license.workspace = true
 
 [dependencies]
 base64 = "0.23.1"
+chrono = "0.4"
 bon.workspace = true
 bytes = "1"
 futures = "0.3"
@@ -27,5 +28,4 @@ workspace = true
 [dev-dependencies]
 axum = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
-chrono = "0.4"
-cadencr-plugin-core = { path = "../plugin-core" }
+cadencr-plugin-core = { path = "../plugin-core", features = ["test-support"] }

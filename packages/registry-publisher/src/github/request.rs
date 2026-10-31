@@ -72,10 +72,6 @@ impl Requester {
         })
     }
 
-    pub(super) fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, PublisherError> {
-        self.send::<(), T>(Method::GET, path, None, StatusCode::OK)
-    }
-
     pub(super) fn get_with_deadline<T: DeserializeOwned>(
         &self,
         path: &str,
@@ -101,6 +97,40 @@ impl Requester {
         limit: u64,
         deadline: Option<Instant>,
     ) -> Result<T, PublisherError> {
+        let request = self.bounded_get(path, deadline)?;
+        let result = decode_bounded(request.send().map_err(network)?, StatusCode::OK, limit);
+        check_deadline(deadline)?;
+        result
+    }
+
+    pub(super) fn get_optional<T: DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<Option<T>, PublisherError> {
+        self.get_optional_with_deadline(path, None)
+    }
+
+    pub(super) fn get_optional_with_deadline<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        deadline: Option<Instant>,
+    ) -> Result<Option<T>, PublisherError> {
+        let response = self.bounded_get(path, deadline)?.send().map_err(network)?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let result = decode(response, StatusCode::OK).map(Some);
+        check_deadline(deadline)?;
+        result
+    }
+
+    /// A GET whose own timeout is the time left until `deadline`, at most the
+    /// client timeout.
+    fn bounded_get(
+        &self,
+        path: &str,
+        deadline: Option<Instant>,
+    ) -> Result<reqwest::blocking::RequestBuilder, PublisherError> {
         let mut request = self
             .client
             .get(format!("{}{path}", self.base))
@@ -112,25 +142,7 @@ impl Requester {
                 .ok_or_else(|| error("GitHub discovery verification deadline exceeded"))?;
             request = request.timeout(remaining.min(TIMEOUT));
         }
-        let result = decode_bounded(request.send().map_err(network)?, StatusCode::OK, limit);
-        check_deadline(deadline)?;
-        result
-    }
-
-    pub(super) fn get_optional<T: DeserializeOwned>(
-        &self,
-        path: &str,
-    ) -> Result<Option<T>, PublisherError> {
-        let response = self
-            .client
-            .get(format!("{}{path}", self.base))
-            .headers(self.headers.clone())
-            .send()
-            .map_err(network)?;
-        if response.status() == StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
-        decode(response, StatusCode::OK).map(Some)
+        Ok(request)
     }
 
     pub(super) fn post<B: Serialize, T: DeserializeOwned>(
@@ -295,7 +307,7 @@ mod tests {
 
             let (base, observed) = serve(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}");
             requester.base = base;
-            requester.get::<serde_json::Value>("/json").unwrap();
+            requester.get_with_deadline::<serde_json::Value>("/json", None).unwrap();
             let request = observed.join().unwrap();
             let accepts: Vec<_> = request
                 .lines()
@@ -334,7 +346,7 @@ mod tests {
         let (base, _) = serve(b"HTTP/1.1 500 Nope\r\nContent-Length: 15\r\n\r\nvery-secret body");
         let error = Requester::fixture("very-secret", base)
             .unwrap()
-            .get::<serde_json::Value>("/failure")
+            .get_with_deadline::<serde_json::Value>("/failure", None)
             .unwrap_err()
             .to_string();
         assert!(!error.contains("very-secret"));
@@ -350,7 +362,7 @@ mod tests {
         let (base, _) = serve(leaked);
         let error = Requester::fixture("token", base)
             .unwrap()
-            .get::<serde_json::Value>("/large")
+            .get_with_deadline::<serde_json::Value>("/large", None)
             .unwrap_err();
         assert!(error.to_string().contains("byte limit"));
     }

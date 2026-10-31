@@ -1,3 +1,4 @@
+import { persistBrowserDiagnostic, exportBrowserDiagnostics } from "./renderer-diagnostics-browser";
 import { isSafeExternalUrl, isUserOpenableUrl } from "@/lib/safe-url";
 import type { PluginTabsBridge } from "@/shared/plugin-tab-host";
 import type { CadencrBrowserBridge, DesktopTheme } from "./desktop-bridge-types";
@@ -74,11 +75,15 @@ export const noopPluginTabs: PluginTabsBridge = {
   openDevTools: () => Promise.resolve(),
   focus: () => Promise.resolve(),
   setTheme: () => Promise.resolve(),
+  setAppShortcuts: () => Promise.resolve(),
+  setTabShortcuts: () => Promise.resolve(),
   onEvent: () => () => undefined,
+  onAppShortcut: () => () => undefined,
 };
 
 const browserBridge: CadencrBrowserBridge = {
   isElectron: false,
+  usesCustomWindowControls: false,
   runtimeConfig: () => unavailable("runtimeConfig"),
   readFileBase64: () => unavailable("readFileBase64"),
   suppressNextNativeContextMenu: () => undefined,
@@ -124,7 +129,11 @@ const browserBridge: CadencrBrowserBridge = {
   onCloseRequested: () => () => undefined,
   confirmClose: () => Promise.resolve(),
   requestQuit: () => Promise.resolve(),
-  reportRendererError: () => Promise.resolve(),
+  windowMinimize: () => unavailable("windowMinimize"),
+  windowToggleMaximize: () => unavailable("windowToggleMaximize"),
+  windowClose: () => unavailable("windowClose"),
+  reportRendererError: persistBrowserDiagnostic,
+  exportRendererDiagnostics: exportBrowserDiagnostics,
   setZoom: () => Promise.resolve(),
   setTrafficLightsCenter: () => Promise.resolve(),
   currentTheme: () => Promise.resolve(browserTheme()),

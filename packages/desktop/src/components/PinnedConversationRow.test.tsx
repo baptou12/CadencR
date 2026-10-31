@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@/test-utils";
 import type { Feature } from "@/api/generated";
 import { ShortcutHintsProvider } from "@/hooks/useNavShortcutHints";
 import { PLATFORM_IS_MAC } from "@/lib/shortcuts/format";
 import { dispatchSidebarRowAction, type SidebarRowAction } from "@/lib/sidebar-row-actions";
+import { useSidebarPointedFeatureStore } from "@/stores/sidebar-pointed-feature-store";
 import { PinnedConversationRow } from "./PinnedConversationRow";
 
 const mocks = vi.hoisted(() => ({
@@ -65,6 +66,22 @@ describe("pinned sidebar identity", () => {
     expect(row.querySelector("[data-nav-shortcut-badge]")).toHaveAttribute("data-visible", "true");
     fireEvent.keyDown(window, { key: "1", ...modifier });
     expect(onNavigate).toHaveBeenCalledWith(feature);
+  });
+});
+
+describe("pointed conversation", () => {
+  afterEach(() => useSidebarPointedFeatureStore.getState().setPointedFeature(null));
+
+  it("lights the row up while its conversation is pointed at elsewhere", () => {
+    render(<PinnedConversationRow feature={feature} activeFeatureId={null} onNavigate={vi.fn()} />);
+    const row = screen.getByRole("button", { name: /Pinned conversation/ });
+    expect(row).not.toHaveAttribute("data-sidebar-pointed");
+
+    act(() => useSidebarPointedFeatureStore.getState().setPointedFeature(42));
+    expect(row).toHaveAttribute("data-sidebar-pointed");
+
+    act(() => useSidebarPointedFeatureStore.getState().setPointedFeature(7));
+    expect(row).not.toHaveAttribute("data-sidebar-pointed");
   });
 });
 

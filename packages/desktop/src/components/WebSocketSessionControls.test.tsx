@@ -34,6 +34,7 @@ vi.mock("@/hooks/useAccessModeSetting", () => ({
 vi.mock("@/components/WebSocketSessionPermissionMode", () => ({
   EMPTY_PROVIDER_MODES: [],
   usePermissionModeToggle: () => vi.fn(),
+  usePermissionModeSet: () => vi.fn(),
 }));
 
 import { useSessionControls } from "./WebSocketSessionControls";
@@ -71,6 +72,19 @@ describe("useSessionControls catalog scoping", () => {
       claudeProfilesError: false,
       handleClaudeProfileChange: vi.fn(),
     });
+  });
+
+  it("queues input during compaction and restores steering when it finishes", () => {
+    const session = { ...ws("codex_cli"), isCompacting: true };
+    mocks.useWebSocketSession.mockReturnValue(session);
+    mocks.useAgentCatalog.mockReturnValue({
+      data: { providers: [{ id: "codex_cli", steering_acknowledged: true, models: [] }] },
+    });
+    const { result, rerender } = renderHook(() => useSessionControls("session", 1, 1, "/work"));
+    expect(result.current.steeringAcknowledged).toBe(false);
+    mocks.useWebSocketSession.mockReturnValue({ ...session, isCompacting: false });
+    rerender();
+    expect(result.current.steeringAcknowledged).toBe(true);
   });
 
   it("deduplicates the runtime catalog with the unscoped base query when no profile is selected", () => {

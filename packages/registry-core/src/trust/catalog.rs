@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use sha2::{Digest as _, Sha256};
 
 use super::{invalid, VerifiedRegistryTrust};
 
@@ -25,7 +24,7 @@ impl VerifiedRegistryTrust {
             && !checkpoints.is_empty()
             && checkpoints.contains(&Self::catalog_digest(envelope))
         {
-            return crate::validate_signing_payload_at(&envelope["signed"], allow_expired, now);
+            return crate::validate_catalog_payload_at(&envelope["signed"], allow_expired, now);
         }
         let id = envelope["signature"]["key_id"].as_str().unwrap_or("");
         let (key, retired_at) = self
@@ -46,11 +45,19 @@ impl VerifiedRegistryTrust {
                 ));
             }
         }
-        crate::signing::verify_envelope_at(envelope, key, id, allow_expired, now)
+        crate::signing::verify_envelope_at(
+            envelope,
+            key,
+            id,
+            crate::signing::PayloadCheck {
+                allow_expired,
+                now,
+                rules: crate::marketplace::Rules::Consume,
+            },
+        )
     }
 
     pub fn catalog_digest(envelope: &Value) -> String {
-        let digest = Sha256::digest(crate::canonical_json_bytes(envelope));
-        digest.iter().map(|byte| format!("{byte:02x}")).collect()
+        crate::digest::sha256_hex(&crate::canonical_json_bytes(envelope))
     }
 }

@@ -1,4 +1,5 @@
-import { Check, Loader2, Power } from "lucide-react";
+import { Ban, Check, Loader2, Power, type LucideIcon } from "lucide-react";
+import { BLOCKED_COPY } from "@/components/plugin-tabs/plugin-tab-access";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -7,22 +8,74 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { compareVersions, type MarketplaceListing } from "@/lib/marketplace-listings";
+import type { MarketplaceListing } from "@/lib/marketplace-listings";
+import { compareVersions } from "@/lib/marketplace-versions";
 import { useMarketplaceState } from "./MarketplaceContext";
 import { TabActivation } from "./TabActivation";
+import { TabInstallNote } from "./TabInstallNote";
 import { usePluginActions } from "./usePluginActions";
 
-type PrimaryAction =
-  | { state: "installed" | "choose" }
-  | { state: "install" | "update" | "change"; version: string };
+type ListingVersion = MarketplaceListing["versions"][number];
+
+/** A button that installs or moves to `version`. */
+interface Offer {
+  state: "install" | "update" | "change";
+  version: string;
+}
+
+/** Not an offer: a disabled button that says where the chosen version stands. */
+interface Settled {
+  state: "settled";
+  label: string;
+  icon: LucideIcon | null;
+}
 
 const LABELS = { install: "Install", update: "Update to", change: "Change to" } as const;
 
+const SETTLED = {
+  installed: { state: "settled", label: "Installed", icon: Check },
+  unavailable: { state: "settled", label: "Not available on this platform", icon: Ban },
+  outdated: { state: "settled", label: "Needs a newer Cadencr", icon: Ban },
+  blocked: { state: "settled", label: BLOCKED_COPY.title, icon: Ban },
+  choose: { state: "settled", label: "Choose a version", icon: null },
+} as const satisfies Record<string, Settled>;
+
+type VersionProblem = "outdated" | "unavailable" | "blocked";
+
+/** What keeps this exact version from installing here, if anything. */
+function versionProblem(entry: ListingVersion): VersionProblem | null {
+  if (entry.unavailable === "protocol") return "outdated";
+  if (entry.unavailable) return "unavailable";
+  // On Cadencr's revocation list: the service refuses it, so it is not offered.
+  if (entry.blocked) return "blocked";
+  return null;
+}
+
+const PROBLEM_NOTES: Record<VersionProblem, string> = {
+  outdated: " · needs a newer Cadencr",
+  unavailable: " · not for this platform",
+  blocked: " · blocked",
+};
+
+/** The version picker's suffix for the same problems. */
+function versionNote(entry: ListingVersion): string {
+  const problem = versionProblem(entry);
+  return problem ? PROBLEM_NOTES[problem] : "";
+}
+
 /** What the primary button offers for the chosen exact version. */
-function primaryAction(listing: MarketplaceListing, version: string): PrimaryAction {
+function primaryAction(listing: MarketplaceListing, version: string): Offer | Settled {
   const installed = listing.installed?.version;
-  if (installed && version === installed) return { state: "installed" };
-  if (!listing.versions.some((entry) => entry.version === version)) return { state: "choose" };
+  if (installed && version === installed) return SETTLED.installed;
+  const entry = listing.versions.find((item) => item.version === version);
+  if (entry?.unavailable === "protocol") return SETTLED.outdated;
+  if (!listing.availableHere) return SETTLED.unavailable;
+  if (!entry) return SETTLED.choose;
+  const problem = versionProblem(entry);
+  if (problem) return SETTLED[problem];
+  // Already downloaded and verified: what is left is the user's review.
+  if (version === listing.pendingVersion)
+    return { state: "settled", label: `Update ${version} staged`, icon: null };
   if (!installed) return { state: "install", version };
   const newer = (compareVersions(version, installed) ?? 0) > 0;
   return { state: newer ? "update" : "change", version };
@@ -39,7 +92,6 @@ export function PluginInstallPanel({
 }): React.JSX.Element {
   const actions = usePluginActions();
   const action = primaryAction(listing, version);
-  const offer = "version" in action ? action : null;
   const pending = actions.pending(listing);
   const installedVersion = listing.installed?.version;
   const orphan =
@@ -47,20 +99,16 @@ export function PluginInstallPanel({
   return (
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-center gap-2">
-        {offer ? (
+        {action.state === "settled" ? (
+          <SettledAction action={action} />
+        ) : (
           <Button
             className="min-w-36 rounded-lg"
             disabled={!actions.canInstall(listing) || actions.busy(listing)}
-            onClick={() => actions.install(listing, offer.version)}
+            onClick={() => actions.install(listing, action.version)}
           >
             {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
-            {pending ? "Applying…" : `${LABELS[offer.state]} ${offer.version}`}
-          </Button>
-        ) : (
-          // A settled state is not an offer: never a filled primary.
-          <Button variant="secondary" disabled className="min-w-36 rounded-lg">
-            {action.state === "installed" && <Check aria-hidden="true" />}
-            {action.state === "installed" ? "Installed" : "Choose a version"}
+            {pending ? "Applying…" : `${LABELS[action.state]} ${action.version}`}
           </Button>
         )}
         <SecondaryAction listing={listing} />
@@ -82,21 +130,37 @@ export function PluginInstallPanel({
                 <span className="font-mono">{entry.version}</span>
                 {entry.version === listing.recommended ? " · recommended" : ""}
                 {entry.version === installedVersion ? " · installed" : ""}
+                {entry.version === listing.pendingVersion ? " · awaiting review" : ""}
+                {versionNote(entry)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
+      <TabInstallNote listing={listing} version={version} />
       <p className="text-xs text-muted-foreground">
         {listing.recommended
           ? `Recommended for this machine: ${listing.recommended}.`
-          : "No compatible version is recommended for this machine — choose one explicitly."}{" "}
+          : listing.availableHere
+            ? "No compatible version is recommended for this machine — choose one explicitly."
+            : ""}{" "}
         {listing.installed ? "Nothing changes until you choose another version." : ""}
         {!actions.canInstall(listing) && listing.inCatalog
           ? " Installing needs a current verified catalog and a loaded inventory."
           : ""}
       </p>
     </div>
+  );
+}
+
+/** A settled state is not an offer: never a filled primary. */
+function SettledAction({ action }: { action: Settled }): React.JSX.Element {
+  const Icon = action.icon;
+  return (
+    <Button variant="secondary" disabled className="min-w-36 rounded-lg">
+      {Icon && <Icon aria-hidden="true" />}
+      {action.label}
+    </Button>
   );
 }
 

@@ -1,6 +1,8 @@
 import type { ReactElement } from "react";
 import {
+  BanIcon,
   CircleOffIcon,
+  CpuIcon,
   HammerIcon,
   MonitorIcon,
   RotateCwIcon,
@@ -13,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { TabIssueList } from "./TabIssueList";
+import { BLOCKED_COPY, unavailableReason } from "./plugin-tab-access";
 
 /** What the placeholder shows instead of (or until) the guest view. */
 export type PluginTabOverlayState =
@@ -20,6 +23,10 @@ export type PluginTabOverlayState =
   | { kind: "remote" }
   | { kind: "disabled" }
   | { kind: "invalid"; errors: readonly TabIssue[] }
+  /** On Cadencr's signed revocation list; `reason` is the list's own words. */
+  | { kind: "blocked"; reason: string | null }
+  /** Its backend ships no executable for this platform; `platforms` is where it runs. */
+  | { kind: "unavailable"; platforms: string }
   | { kind: "not-built"; dir: string; canOpenProject: boolean }
   | { kind: "failed"; detail: string | null }
   | { kind: "crashed"; detail: string | null };
@@ -72,6 +79,25 @@ export function PluginTabOverlay(props: PluginTabOverlayProps): ReactElement {
               <ManageButton onManage={props.onManage} />
             </div>
           }
+        />
+      );
+    case "blocked":
+      return (
+        <EmptyState
+          icon={<BanIcon className={ICON} aria-hidden />}
+          title={`${name} is blocked`}
+          description={`${BLOCKED_COPY.effect} ${BLOCKED_COPY.remedy}`}
+          detail={state.reason}
+          action={<ManageButton onManage={props.onManage} />}
+        />
+      );
+    case "unavailable":
+      return (
+        <EmptyState
+          icon={<CpuIcon className={ICON} aria-hidden />}
+          title={`${name} isn't available on this platform`}
+          description={unavailableReason(state.platforms)}
+          action={<ManageButton onManage={props.onManage} />}
         />
       );
     case "not-built":

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@/test-utils";
 import { DEFAULT_SIDEBAR_CONFIG } from "@/lib/sidebar-config";
 import { useSidebarConfigStore } from "@/stores/sidebar-config-store";
+import { formatCompactCombo } from "@/lib/shortcuts/format";
+import { getRegistryShortcut } from "@/lib/shortcuts/resolve";
 import { FeatureTopBar } from "./FeatureTopBar";
 
 function hideRail(): void {
@@ -54,6 +56,9 @@ let mockFeatureData: Record<string, unknown> = {
   created_at: "2024-01-01",
 };
 
+vi.mock("@/components/ToastScope", () => ({
+  scopedToastDescription: (scope: unknown, description?: unknown) => ({ scope, description }),
+}));
 vi.mock("@/api/generated", () => ({
   useGetFeature: vi.fn(() => ({ data: mockFeatureData })),
   useGetFeatureSettings: vi.fn(() => ({
@@ -77,6 +82,16 @@ vi.mock("@/api/generated", () => ({
   useListBranches: vi.fn(() => ({ data: [], isLoading: false, isError: false })),
   useUpdateTargetBranch: vi.fn(() => ({ mutateAsync: vi.fn() })),
   getCompareUrl: vi.fn(),
+}));
+
+// The embedded (unified-grid) header reads live attention; the full store
+// graph would need the whole generated API client.
+vi.mock("@/hooks/useFeatureAttention", () => ({
+  useFeatureAttention: () => ({ state: "idle", sourceFeatureId: 0 }),
+}));
+
+vi.mock("@/stores/session-status-selectors", () => ({
+  useFeatureStatus: () => ({ status: "idle", kind: null }),
 }));
 
 // CustomActionsBar pulls in network hooks we don't care about for these tests.
@@ -107,6 +122,9 @@ vi.mock("./ModelSelector", () => ({
 }));
 
 const mockSetCollapsed = vi.fn();
+const EXPAND_TITLE = `Expand sidebar (${formatCompactCombo(
+  getRegistryShortcut("toggle-sidebar").keys,
+)})`;
 let mockSidebarCollapsed = false;
 
 vi.mock("@/components/SidebarContext", () => ({
@@ -224,7 +242,7 @@ describe("FeatureTopBar", () => {
   it("leaves expand and settings to the rail when the sidebar is collapsed", () => {
     mockSidebarCollapsed = true;
     render(<FeatureTopBar featureId={1} projectId={1} />);
-    expect(screen.queryByTitle("Expand sidebar (⌘B)")).not.toBeInTheDocument();
+    expect(screen.queryByTitle(EXPAND_TITLE)).not.toBeInTheDocument();
     expect(screen.queryByText("Settings")).not.toBeInTheDocument();
     expect(screen.queryByText("Cadencr")).not.toBeInTheDocument();
   });
@@ -233,7 +251,7 @@ describe("FeatureTopBar", () => {
     mockSidebarCollapsed = true;
     hideRail();
     render(<FeatureTopBar featureId={1} projectId={1} />);
-    expect(screen.getByTitle("Expand sidebar (⌘B)")).toBeInTheDocument();
+    expect(screen.getByTitle(EXPAND_TITLE)).toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
   });
 
@@ -250,7 +268,7 @@ describe("FeatureTopBar", () => {
     rerender(<FeatureTopBar featureId={1} projectId={1} />);
 
     expect(header?.className).toBe(expandedClasses);
-    expect(screen.getByTitle("Expand sidebar (⌘B)")).toHaveClass("size-6");
+    expect(screen.getByTitle(EXPAND_TITLE)).toHaveClass("size-6");
     expect(screen.getByTitle("Settings")).toHaveClass("size-6");
   });
 
@@ -274,7 +292,7 @@ describe("FeatureTopBar", () => {
     const { default: userEvent } = await import("@testing-library/user-event");
     const user = userEvent.setup();
     render(<FeatureTopBar featureId={1} projectId={1} />);
-    await user.click(screen.getByTitle("Expand sidebar (⌘B)"));
+    await user.click(screen.getByTitle(EXPAND_TITLE));
     expect(mockSetCollapsed).toHaveBeenCalledWith(false);
   });
 });

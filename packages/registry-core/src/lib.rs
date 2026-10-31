@@ -3,10 +3,14 @@
 pub const MAX_CATALOG_BYTES: usize = 32 * 1024 * 1024;
 
 mod archive;
+mod blocklist;
+pub use blocklist::{Blocklist, PreparedBlocklist};
 mod catalog;
 mod diagnostics;
+mod digest;
 mod discovery;
 mod error;
+mod gzip;
 mod index;
 mod marketplace;
 mod metadata;
@@ -20,14 +24,22 @@ pub use marketplace::{
 };
 pub use marketplace_types::{
     parse_marketplace_package, MarketplaceAssets, MarketplaceCompatibility, MarketplaceHost,
-    MarketplacePackage, ProviderPackage, TabDescriptor, TabPackage, ThemeDescriptor,
-    ThemeDistribution, ThemePackage,
+    MarketplacePackage, ProviderPackage, TabBackendDescriptor, TabBinaryTarget, TabDescriptor,
+    TabDistribution, TabPackage, ThemeDescriptor, ThemeDistribution, ThemePackage,
 };
 mod json;
 mod package;
 mod pipeline_preflight;
+mod policy;
+pub use policy::{authenticate_policy, AuthenticatedPolicy, PolicyKind};
+mod policy_renewal;
+pub use policy_renewal::{renew_policy, RenewPolicyRequest};
+mod provider_blocklist;
 mod publication_plan;
 mod release_archive;
+mod reserved_publisher;
+#[cfg(test)]
+mod test_keys;
 pub use release_archive::{parse_github_release_archive_url, GitHubReleaseArchive};
 mod safe_io;
 mod signing;
@@ -43,7 +55,19 @@ pub use theme_blocklist::{
 mod tab_archive;
 pub use tab_archive::{
     pack_tab, read_tab_archive_bytes, snapshot_tab_folder, validate_tab_files,
-    validate_tab_package_files, verify_tab_archive, PackTabRequest, PackedTab,
+    validate_tab_package_binding, validate_tab_package_files, verify_tab_archive, PackTabRequest,
+    PackedTab, MAX_TAB_BYTES,
+};
+mod tab_backend;
+pub use tab_backend::{
+    pack_tab_backend, plan_target_platform, read_tab_backend_archive, signed_tab_backend,
+    PackTabBackendRequest, PackedTabBackend, SignedTabBackend, SignedTabBinary, TabBackendRefusal,
+    MAX_TAB_BACKEND_ARCHIVE_BYTES, MAX_TAB_BACKEND_EXECUTABLE_BYTES, TAB_BINARY_FIELDS,
+};
+mod tab_blocklist;
+pub use tab_blocklist::{
+    prepare_tab_blocklist, PreparedTabBlocklist, TabBlocklist, TabBlocklistEntry,
+    MAX_SIGNED_TAB_BLOCKLIST_BYTES, MAX_TAB_BLOCKLIST_BYTES,
 };
 mod theme_archive;
 mod theme_verify;
@@ -68,8 +92,8 @@ pub use catalog::{
     PreparedSigningPayload,
 };
 pub use discovery::{
-    assess_discovery_head, discovery_url, validate_discovery_branch, DISCOVERY_FILENAME,
-    MAX_DISCOVERY_BYTES,
+    assess_discovery_head, discovery_object_url, discovery_url, validate_discovery_branch,
+    DISCOVERY_FILENAME, MAX_DISCOVERY_BYTES,
 };
 pub use error::RegistryError;
 pub use index::build_index;
@@ -80,7 +104,7 @@ pub use publication_plan::{
 };
 pub use signing::{
     assemble_signed_index, sign_index, sign_index_payload, sign_prepared_index,
-    validate_signing_key_id, validate_signing_payload_at, verify_signed_index,
+    validate_catalog_payload_at, validate_signing_key_id, verify_signed_index,
 };
 pub use snapshot::{prepare_catalog_snapshot, CatalogSnapshot, PreviousCatalog};
 
@@ -100,13 +124,16 @@ pub fn validate_submission(value: &serde_json::Value) -> Result<(), RegistryErro
 use tree::{load_tree, Tree};
 
 /// Check authenticated catalog history without changing either signed payload.
-/// The caller establishes signature trust separately; this boundary validates shapes first.
+/// The caller establishes signature trust separately; this boundary validates
+/// shapes first, as the app consumes them (a tab backend for an unknown
+/// platform or protocol is not installable, not invalid).
 pub fn validate_catalog_continuity(
     previous: &serde_json::Value,
     candidate: &serde_json::Value,
 ) -> Result<(), RegistryError> {
-    index::validate_index(previous, chrono::Utc::now(), true)?;
-    index::validate_index(candidate, chrono::Utc::now(), true)?;
+    let consume = marketplace::Rules::Consume;
+    index::validate_index_with(previous, chrono::Utc::now(), true, consume)?;
+    index::validate_index_with(candidate, chrono::Utc::now(), true, consume)?;
     snapshot::continuity::validate_continuity(previous, candidate)
 }
 
@@ -232,6 +259,11 @@ fn validate_owners(base: &Tree, candidate: &Tree, errors: &mut Diagnostics) {
         let Some((id, version)) = identity(package) else {
             continue;
         };
+        if let Some(error) =
+            reserved_publisher::package_reserved_publisher_error(package, "host.publisher")
+        {
+            errors.push(format!("packages/{name}: {error}"));
+        }
         let Some(submission) = candidate.submissions.get(name) else {
             errors.push(format!(
                 "packages/{name}: new package versions require submissions/{name}"
@@ -293,7 +325,7 @@ fn validate_collisions(candidate: &Tree, errors: &mut Diagnostics) {
     }
 }
 
-pub use signing::{sign_theme_blocklist, verify_signed_theme_blocklist};
+pub use signing::{sign_policy, verify_policy};
 
 #[cfg(test)]
 mod tests {
@@ -346,5 +378,39 @@ mod tests {
             error.messages().last().unwrap(),
             "additional validation errors omitted"
         );
+    }
+
+    #[test]
+    fn contribution_reserves_the_official_publisher() {
+        let package = |publisher: &str, repository: &str| {
+            json!({"agent": {"id": "pi", "version": "1.0.0", "repository": repository},
+                "host": {"publisher": publisher}})
+        };
+        for (publisher, repository, reserved) in [
+            ("cadencr", "https://github.com/acme/pi", true),
+            ("Cadencr", "https://github.com/merkr-software-evil/pi", true),
+            ("cadencr", "https://github.com/merkr-software/pi", false),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let base = root.path().join("base");
+            let candidate = root.path().join("candidate");
+            std::fs::create_dir_all(base.join("packages")).unwrap();
+            std::fs::create_dir_all(candidate.join("packages")).unwrap();
+            std::fs::write(
+                candidate.join("packages/pi-1.0.0.json"),
+                serde_json::to_vec(&package(publisher, repository)).unwrap(),
+            )
+            .unwrap();
+            let error = validate_contribution(&base, &candidate)
+                .unwrap_err()
+                .to_string();
+            assert_eq!(
+                error.contains(&format!(
+                    "packages/pi-1.0.0.json: host.publisher {publisher:?} is reserved for merkr-software repositories"
+                )),
+                reserved,
+                "{publisher} {repository}: {error}"
+            );
+        }
     }
 }

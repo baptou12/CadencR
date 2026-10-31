@@ -69,6 +69,7 @@ function AgentTabContent({
         featureId={featureId}
         projectId={projectId}
         wsSessionId={sessionId}
+        sessionId={controls.ws.sessionDbId ?? undefined}
         blocks={controls.ws.blocks}
         rootBlocks={controls.ws.rootBlocks}
         toolResultMap={controls.ws.toolResultMap}
@@ -104,6 +105,9 @@ function AgentTabContent({
         onAccessModeChange={hasAccessModes ? controls.handleAccessModeChange : undefined}
         agentCatalog={controls.agentCatalog}
         onPermissionModeToggle={controls.handlePermissionModeToggle}
+        onPermissionModeSet={controls.handlePermissionModeSet}
+        modelSupportsAutoMode={controls.modelSupportsAutoMode}
+        steeringAcknowledged={controls.steeringAcknowledged}
         pendingPlanApproval={controls.ws.pendingPlanApproval}
         onPlanApprove={controls.ws.approvePlan}
         onPlanRequestChanges={controls.ws.requestPlanChanges}
@@ -174,7 +178,7 @@ export function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
     () => ({
       label: "Agent",
       Icon: BotIcon,
-      shortcut: ["cmd", "shift", "A"],
+      shortcutId: "pane-agent",
       content: <AgentTabContent args={args} onSend={onSend} hasAccessModes={hasAccessModes} />,
     }),
     [
@@ -254,6 +258,9 @@ function useAgentSendHandler(args: {
       // Awaiting delivery keeps the composer pending while the session
       // initializes; a rejection hands the text back to the composer.
       try {
+        if (controls.ws.isCompacting && attachments?.length) {
+          throw new Error("Keep attachments in the composer until compaction finishes.");
+        }
         await controls.ws.deliverPrompt(text, {
           attachments,
           branchSetup,

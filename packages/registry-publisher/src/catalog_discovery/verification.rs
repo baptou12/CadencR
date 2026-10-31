@@ -45,89 +45,29 @@ pub(super) fn verify_public_catalog(
     )
 }
 
+#[bon::builder]
 pub(super) fn verify_raw(
     snapshot: &cadencr_registry_core::CatalogSnapshot,
     branch: &str,
     directory: &Path,
     downloader: &impl crate::download::DiscoveryReader,
     revalidate: &impl Fn(std::time::Instant) -> Result<(), PublisherError>,
+    pacing: &crate::convergence::ReadBack,
 ) -> Result<(), PublisherError> {
-    verify_raw_with()
-        .snapshot(snapshot)
-        .branch(branch)
+    let url = cadencr_registry_core::discovery_url(snapshot.repository(), branch)?;
+    crate::public_read::verify_public_object()
+        .url(&url)
+        .file_name(cadencr_registry_core::DISCOVERY_FILENAME)
+        .sha256(snapshot.sha256())
+        .size(snapshot.size() as u64)
+        .max_bytes(cadencr_registry_core::MAX_DISCOVERY_BYTES as u64)
+        .maybe_previous_sha256(snapshot.previous_sha256())
         .directory(directory)
         .downloader(downloader)
         .revalidate(revalidate)
-        .budget(std::time::Duration::from_secs(30))
-        .pause(std::time::Duration::from_millis(250))
-        .wait(&std::thread::sleep)
+        .pacing(pacing)
         .call()
 }
-
-#[bon::builder]
-fn verify_raw_with(
-    snapshot: &cadencr_registry_core::CatalogSnapshot,
-    branch: &str,
-    directory: &Path,
-    downloader: &impl crate::download::DiscoveryReader,
-    revalidate: &impl Fn(std::time::Instant) -> Result<(), PublisherError>,
-    budget: std::time::Duration,
-    pause: std::time::Duration,
-    wait: &impl Fn(std::time::Duration),
-) -> Result<(), PublisherError> {
-    use crate::download::DiscoveryObservation;
-    let url = cadencr_registry_core::discovery_url(snapshot.repository(), branch)?;
-    let deadline = std::time::Instant::now() + budget;
-    for attempt in 0..4 {
-        if attempt > 0 {
-            wait(pause.min(deadline.saturating_duration_since(std::time::Instant::now())));
-            if std::time::Instant::now() >= deadline {
-                return Err(exhausted());
-            }
-            revalidate(deadline)?;
-        }
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            return Err(exhausted());
-        }
-        let temporary = OwnedDirectory::create(directory, ".discovery-public-")?;
-        let observed = downloader.observe(
-            DownloadRequest {
-                url: &url,
-                sha256: snapshot.sha256(),
-                output: temporary
-                    .path()
-                    .join(cadencr_registry_core::DISCOVERY_FILENAME),
-                max_bytes: cadencr_registry_core::MAX_DISCOVERY_BYTES as u64,
-            },
-            snapshot.previous_sha256(),
-            deadline.saturating_duration_since(std::time::Instant::now()),
-        );
-        let observed = combine_cleanup(observed, temporary.remove())?;
-        if std::time::Instant::now() >= deadline {
-            return Err(exhausted());
-        }
-        match observed {
-            DiscoveryObservation::Candidate(actual)
-                if actual.size == snapshot.size() as u64 && actual.sha256 == snapshot.sha256() =>
-            {
-                return Ok(())
-            }
-            DiscoveryObservation::Previous if snapshot.previous_sha256().is_some() => {}
-            _ => {
-                return Err(PublisherError::new(
-                    "public discovery: candidate size or digest does not match",
-                ))
-            }
-        }
-    }
-    Err(exhausted())
-}
-
-fn exhausted() -> PublisherError {
-    PublisherError::new("public discovery: convergence read budget exhausted")
-}
-
 fn verify_download(
     url: &str,
     sha256: &str,
@@ -158,7 +98,6 @@ fn verify_download(
         });
     combine_cleanup(result, temporary.remove())
 }
-
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
@@ -207,7 +146,7 @@ mod tests {
     fn deadline_covers_backoff_guard_and_body_and_cleanup_failure_is_terminal() {
         let (value, _) = super::super::fixture::setup_baseline();
         let previous = std::fs::read(value.directory.join("previous.json")).unwrap();
-        for mode in ["zero", "body", "guard", "backoff", "cleanup"] {
+        for mode in ["zero", "body", "guard", "persistent", "cleanup"] {
             let reader = Reader {
                 bytes: if mode == "body" {
                     value.snapshot.canonical_envelope()
@@ -230,28 +169,39 @@ mod tests {
                 }
                 Ok(())
             };
-            let wait = |duration| {
-                if mode == "backoff" {
-                    std::thread::sleep(duration);
-                }
-            };
-            let started = Instant::now();
-            let result = verify_raw_with()
-                .snapshot(&value.snapshot)
-                .branch("main")
-                .directory(&value.directory)
-                .downloader(&reader)
-                .revalidate(&guard)
+            // Only the guard mode leaves room for a second read; in every
+            // other mode the pause outlasts the budget and nothing is waited.
+            let pacing = crate::convergence::ReadBack::builder()
                 .budget(if mode == "zero" {
                     Duration::ZERO
                 } else {
                     Duration::from_millis(250)
                 })
-                .pause(Duration::from_millis(300))
-                .wait(&wait)
+                .pause(Duration::from_millis(if mode == "guard" {
+                    10
+                } else {
+                    300
+                }))
+                .attempts(24)
+                .clock(Instant::now)
+                .wait(|_| {})
+                .build();
+            let started = Instant::now();
+            let result = verify_raw()
+                .snapshot(&value.snapshot)
+                .branch("main")
+                .directory(&value.directory)
+                .downloader(&reader)
+                .revalidate(&guard)
+                .pacing(&pacing)
                 .call();
             assert!(result.is_err(), "{mode}");
-            if mode == "cleanup" {
+            if mode == "persistent" {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    "public discovery: convergence read budget exhausted"
+                );
+            } else if mode == "cleanup" {
                 assert!(result.unwrap_err().to_string().contains("identity changed"));
             }
             assert_eq!(reader.calls.get(), usize::from(mode != "zero"), "{mode}");
@@ -275,7 +225,11 @@ mod tests {
         let previous = std::fs::read(value.directory.join("previous.json")).unwrap();
         value.client.set_discovery_head(previous.clone());
         let raw = Sequence {
-            bodies: vec![previous.clone(), value.snapshot.canonical_envelope().into()],
+            bodies: [
+                vec![previous.clone(); 6],
+                vec![value.snapshot.canonical_envelope().into()],
+            ]
+            .concat(),
             calls: Cell::new(0),
         };
         let first = super::super::lifecycle::advance_with(
@@ -288,7 +242,7 @@ mod tests {
             &raw,
         )
         .unwrap();
-        assert_eq!(raw.calls.get(), 2);
+        assert_eq!(raw.calls.get(), 7);
         assert_eq!(value.client.discovery_counts().1, 1);
         let receipt_bytes =
             std::fs::read(value.directory.join(super::super::receipt::RECEIPT)).unwrap();
@@ -304,7 +258,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(first, replay);
-        assert_eq!(raw.calls.get(), 2);
+        assert_eq!(raw.calls.get(), 7);
         assert_eq!(value.client.discovery_counts().1, 1);
         assert_eq!(
             std::fs::read(value.directory.join(super::super::receipt::RECEIPT)).unwrap(),
@@ -313,9 +267,49 @@ mod tests {
     }
 
     #[test]
+    fn the_raw_read_back_outwaits_a_five_minute_cdn_cache_then_fails_closed() {
+        use super::super::fixture::Sequence;
+        for (stale, converges) in [(40, true), (1000, false)] {
+            let (value, _) = super::super::fixture::setup_baseline();
+            let previous = std::fs::read(value.directory.join("previous.json")).unwrap();
+            value.client.set_discovery_head(previous.clone());
+            let mut bodies = vec![previous; stale];
+            bodies.push(value.snapshot.canonical_envelope().into());
+            let raw = Sequence {
+                bodies,
+                calls: Cell::new(0),
+            };
+            let result = super::super::lifecycle::advance_with(
+                &value.snapshot,
+                &value.manifest,
+                &value.directory,
+                "main",
+                &value.client,
+                &value.downloader,
+                &raw,
+            );
+            if converges {
+                result.unwrap();
+                assert_eq!(raw.calls.get(), 41);
+            } else {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    "public discovery: convergence read budget exhausted"
+                );
+                assert_eq!(raw.calls.get(), 45, "the public attempt cap");
+                assert!(!value
+                    .directory
+                    .join(super::super::receipt::RECEIPT)
+                    .exists());
+            }
+            assert_eq!(value.client.discovery_counts().1, 1);
+        }
+    }
+
+    #[test]
     fn only_previous_bytes_can_delay_verification_and_never_skip_guards() {
         use super::super::fixture::Sequence;
-        for mode in "persistent tamper bootstrap drift expiry expiry_after".split_whitespace() {
+        for mode in "tamper bootstrap drift late_drift expiry expiry_after".split_whitespace() {
             let (value, _) = if mode == "bootstrap" {
                 super::super::fixture::setup()
             } else {
@@ -329,19 +323,18 @@ mod tests {
             if mode != "bootstrap" {
                 value.client.set_discovery_head(previous.clone());
             }
-            if mode == "drift" {
-                value.client.drift_discovery_at(4);
+            if mode == "drift" || mode == "late_drift" {
+                value
+                    .client
+                    .drift_discovery_at(if mode == "late_drift" { 8 } else { 4 });
             }
             let first = if mode == "tamper" {
                 b"tampered".to_vec()
             } else {
                 previous
             };
-            let bodies = if mode == "persistent" {
-                vec![first]
-            } else {
-                vec![first, value.snapshot.canonical_envelope().into()]
-            };
+            let mut bodies = vec![first; if mode == "late_drift" { 6 } else { 1 }];
+            bodies.push(value.snapshot.canonical_envelope().into());
             let raw = Sequence {
                 bodies,
                 calls: Cell::new(0),
@@ -367,13 +360,15 @@ mod tests {
                     .catalog_downloader(&value.downloader)
                     .discovery_downloader(&raw)
                     .freshness(&fresh)
+                    .pacing(&crate::convergence::ReadBack::production())
+                    .public_pacing(&crate::convergence::VirtualClock::new().public_read_back())
                     .call()
                     .is_err(),
                 "{mode}"
             );
             assert_eq!(
                 raw.calls.get(),
-                if mode == "persistent" { 4 } else { 1 },
+                if mode == "late_drift" { 5 } else { 1 },
                 "{mode}"
             );
             assert_eq!(value.client.discovery_counts().1, 1);

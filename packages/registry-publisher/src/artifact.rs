@@ -81,6 +81,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let digest = crate::hex(&Sha256::digest(b"same"));
         let target = Target {
+            target: "asset".into(),
             asset: "asset".into(),
             source_url: "unused".into(),
             destination_url: "unused".into(),

@@ -10,7 +10,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { KbdShortcut } from "@/components/KbdShortcut";
+import { KbdShortcut, ResolvedShortcutHint } from "@/components/KbdShortcut";
 import { ProjectTree } from "@/components/ProjectTree";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarRowActionsProvider } from "@/components/SidebarRowActionsProvider";
@@ -60,6 +60,7 @@ import { SampleScope } from "@/components/SidebarSampleProvider";
 import { SidebarSampleProvider } from "@/components/SidebarSampleProvider";
 import { useSidebarShowsSamples } from "@/stores/sidebar-preview-store";
 import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
+import { useShortcutLabel } from "@/hooks/useShortcutLabel";
 
 export function Sidebar({ onSearch }: { onSearch: () => void }) {
   const { collapsed, setCollapsed } = useSidebarCollapsed();
@@ -177,7 +178,10 @@ function useSidebarActiveIds(selectedFeatureId: number | null): {
 
 function SidebarSearchButton({ onSearch }: { onSearch: () => void }): ReactElement {
   const terminalFocused = useIsTerminalFocusActive();
-  const title = terminalFocused ? "Search unavailable while terminal is focused" : "Search (⌘K)";
+  const searchCombo = useShortcutLabel("command-palette");
+  const title = terminalFocused
+    ? "Search unavailable while terminal is focused"
+    : `Search (${searchCombo})`;
   return (
     <button
       type="button"
@@ -194,7 +198,7 @@ function SidebarSearchButton({ onSearch }: { onSearch: () => void }): ReactEleme
       {terminalFocused ? (
         <InactiveShortcutHint />
       ) : (
-        <KbdShortcut keys={["cmd", "K"]} variant="hint" />
+        <ResolvedShortcutHint shortcutId="command-palette" />
       )}
     </button>
   );
@@ -225,13 +229,14 @@ function useIsTerminalFocusActive(): boolean {
 
 function InactiveShortcutHint(): ReactElement {
   return (
-    <kbd className="inline-flex items-center justify-center gap-px rounded border border-current/25 bg-transparent px-1 py-0.5 text-[10px] font-mono font-medium leading-none text-current opacity-50">
-      <span className="leading-none">--</span>
-    </kbd>
+    <span aria-hidden="true" className="shrink-0">
+      <KbdShortcut keys={[]} variant="hint" disabled />
+    </span>
   );
 }
 
 function SidebarHeader({ onCollapse }: { onCollapse: () => void }): ReactElement {
+  const toggleSidebarCombo = useShortcutLabel("toggle-sidebar");
   // Reserve a dedicated strip for the macOS traffic-light buttons (they sit
   // at ~y=12 inside `titleBarStyle: "hiddenInset"`) so the lockup below can
   // never overlap them. Browsers and other platforms have no window controls
@@ -252,7 +257,7 @@ function SidebarHeader({ onCollapse }: { onCollapse: () => void }): ReactElement
             variant="ghost"
             size="icon"
             className="size-7"
-            title="Collapse sidebar (⌘B)"
+            title={`Collapse sidebar (${toggleSidebarCombo})`}
             onClick={onCollapse}
           >
             <PanelLeftClose className="size-4" />

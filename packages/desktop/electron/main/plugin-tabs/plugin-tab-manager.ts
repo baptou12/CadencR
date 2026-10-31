@@ -1,19 +1,23 @@
 import type { BrowserWindow } from "electron";
 
 import {
+  PLUGIN_TAB_APP_SHORTCUT_CHANNEL,
   PLUGIN_TAB_EVENT_CHANNEL,
   type PluginTabBounds,
   type PluginTabEvent,
   type PluginTabEventType,
+  type PluginTabKeyInput,
+  type PluginTabOwnShortcut,
+  type PluginTabShortcutBinding,
   type PluginTabTheme,
 } from "../../../src/shared/plugin-tab-host";
 import { rendererBoundsToWindow } from "../browser-manager-layout";
-import { relayGuestShortcut } from "../browser-manager-utils";
 import { NativeViewAttachment } from "../browser-view-layout";
 import { sendToWindow } from "../safe-send";
 import type { PluginTabGuest, PluginTabGuestOptions } from "./plugin-tab-guest";
 import { GUEST_THEME_CHANNEL } from "./plugin-tab-ids";
 import { PluginTabPorts } from "./plugin-tab-ports";
+import { PluginTabShortcuts } from "./plugin-tab-shortcuts";
 
 export const MAX_LIVE_PLUGIN_TAB_GUESTS = 6;
 const NO_BOUNDS: PluginTabBounds = { x: 0, y: 0, width: 0, height: 0 };
@@ -36,6 +40,7 @@ export interface PluginTabManagerDeps {
   createGuest: (options: PluginTabGuestOptions) => PluginTabGuest;
   defaultBackground: () => string;
   ports?: PluginTabPorts;
+  shortcuts?: PluginTabShortcuts;
   maxLive?: number;
 }
 
@@ -53,6 +58,7 @@ export class PluginTabManager {
   private readonly instances = new Map<string, PluginTabInstance>();
   private readonly views: NativeViewAttachment;
   private readonly ports: PluginTabPorts;
+  private readonly shortcuts: PluginTabShortcuts;
   private readonly maxLive: number;
   private theme: PluginTabTheme | null = null;
   private clock = 0;
@@ -60,6 +66,7 @@ export class PluginTabManager {
   constructor(private readonly deps: PluginTabManagerDeps) {
     this.views = new NativeViewAttachment(deps.getMainWindow);
     this.ports = deps.ports ?? new PluginTabPorts();
+    this.shortcuts = deps.shortcuts ?? new PluginTabShortcuts();
     this.maxLive = deps.maxLive ?? MAX_LIVE_PLUGIN_TAB_GUESTS;
   }
 
@@ -120,6 +127,7 @@ export class PluginTabManager {
 
   close(instanceId: string): void {
     const instance = this.instances.get(instanceId);
+    this.shortcuts.forget(instanceId);
     if (!instance) return;
     this.destroyGuest(instance);
     this.instances.delete(instanceId);
@@ -176,6 +184,7 @@ export class PluginTabManager {
     this.instances.clear();
     this.ports.releaseAll();
     this.views.detachAll();
+    this.shortcuts.forgetAll();
   }
 
   private ensureLive(instance: PluginTabInstance): void {
@@ -207,13 +216,37 @@ export class PluginTabManager {
         crashed: (detail) => {
           if (current()) this.handleCrash(instance, detail);
         },
-        // Every relayed chord switches away from the custom tab, so OS focus
-        // must come back to the renderer before the guest view is hidden.
-        shortcut: (shortcut) =>
-          relayGuestShortcut(this.liveWindow(), shortcut, { alwaysReclaimFocus: true }),
+        keyDown: (input) => current() && this.handleKey(instance, input),
       },
     });
     instance.guest = guest;
+  }
+
+  setAppShortcuts(bindings: readonly PluginTabShortcutBinding[]): void {
+    this.shortcuts.setApp(bindings);
+  }
+
+  /** Kept across guest recreation; dropped when the instance closes. */
+  setTabShortcuts(instanceId: string, shortcuts: readonly PluginTabOwnShortcut[]): void {
+    this.shortcuts.setOwn(instanceId, shortcuts);
+  }
+
+  /**
+   * Cadencr's shortcuts go to the renderer, which runs them as if pressed
+   * there — OS focus comes back to it first, as most of them act outside
+   * the tab; the tab's own go to its page as a `shortcut` event.
+   */
+  private handleKey(instance: PluginTabInstance, input: PluginTabKeyInput): boolean {
+    const match = this.shortcuts.match(instance.instanceId, input);
+    if (!match) return false;
+    if (match.kind === "tab") {
+      this.emit(instance.instanceId, "shortcut", match.id);
+      return true;
+    }
+    const win = this.liveWindow();
+    win?.webContents.focus();
+    sendToWindow(win, PLUGIN_TAB_APP_SHORTCUT_CHANNEL, input);
+    return true;
   }
 
   private handleLoaded(instance: PluginTabInstance, guest: PluginTabGuest): void {

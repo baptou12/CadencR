@@ -1,4 +1,4 @@
-import { memo, type ReactElement, useState } from "react";
+import { memo, type ReactElement, useMemo, useState } from "react";
 import { contextUsageToShow, totalTokens, usageRatio, type ContextUsageState } from "@/types/agent";
 import { cn } from "@/lib/utils";
 import {
@@ -32,31 +32,23 @@ function ContextUsageTrigger({
   className?: string;
   isStreaming: boolean;
 }): ReactElement {
-  const [open, setOpen] = useState(false);
+  const hover = useHoverOpen();
   const used = totalTokens(usage);
-  const usedFormatted = used.toLocaleString();
   const ratio = usageRatio(usage);
   const percent = ratio == null ? null : Math.round(ratio * 100);
-  const ariaLabel =
-    percent == null
-      ? `Context usage: ${usedFormatted} tokens, window size not reported yet`
-      : `Context usage ${percent}%: ${usedFormatted} of ${usage.contextWindow?.toLocaleString()} tokens`;
 
   return (
     <div className={cn("flex items-center gap-2 px-3 py-1", className)}>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={hover.open} onOpenChange={hover.setOpen}>
         <PopoverTrigger asChild>
           <button
             type="button"
-            aria-label={ariaLabel}
+            aria-label={contextUsageAriaLabel(usage, ratio)}
             className={cn(
               "flex min-w-0 flex-1 cursor-help items-center gap-2 rounded-sm",
               "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             )}
-            onMouseEnter={() => setOpen(true)}
-            onMouseLeave={() => setOpen(false)}
-            onFocus={() => setOpen(true)}
-            onBlur={() => setOpen(false)}
+            {...hover.triggerProps}
           >
             <UsageMeter ratio={ratio} isStreaming={isStreaming} />
             <span className="shrink-0 text-[10.5px] font-medium tabular-nums text-muted-foreground">
@@ -80,8 +72,31 @@ function ContextUsageTrigger({
   );
 }
 
+/** Screen-reader reading of a context meter. */
+export function contextUsageAriaLabel(usage: ContextUsageState, ratio: number | null): string {
+  const used = totalTokens(usage).toLocaleString();
+  return ratio == null
+    ? `Context usage: ${used} tokens, window size not reported yet`
+    : `Context usage ${Math.round(ratio * 100)}%: ${used} of ${usage.contextWindow?.toLocaleString()} tokens`;
+}
+
+/** A details card opened by hovering or focusing its trigger (it never takes focus). */
+export function useHoverOpen() {
+  const [open, setOpen] = useState(false);
+  const triggerProps = useMemo(
+    () => ({
+      onMouseEnter: () => setOpen(true),
+      onMouseLeave: () => setOpen(false),
+      onFocus: () => setOpen(true),
+      onBlur: () => setOpen(false),
+    }),
+    [],
+  );
+  return { open, setOpen, triggerProps };
+}
+
 /** A measured window fills the track; an unknown one gets the pending meter. */
-function UsageMeter({
+export function UsageMeter({
   ratio,
   isStreaming,
   className,
@@ -186,7 +201,10 @@ function ContextUsageDetails({
 
 function PromptKeyboardHint(): ReactElement {
   return (
-    <span className="hidden shrink-0 items-center gap-1.5 text-[10px] font-medium text-muted-foreground md:inline-flex">
+    <span
+      data-prompt-keyboard-hint
+      className="hidden shrink-0 items-center gap-1.5 text-[10px] font-medium text-muted-foreground md:inline-flex"
+    >
       <KbdShortcut keys={["enter"]} variant="hint" />
       <span>send</span>
       <span className="text-muted-foreground">·</span>

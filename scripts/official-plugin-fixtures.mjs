@@ -50,12 +50,14 @@ function writeTools(root, realCli) {
   writeFileSync(
     join(root, "mock/git"),
     `#!/usr/bin/env python3
-import json,sys,os,hashlib,pathlib
+import json,sys,os,hashlib,pathlib,base64
 args=sys.argv[3:]; data=json.load(open('${root}/files.json')); files=data['files']; modes=data['modes']
 with open('${root}/git-calls','a') as log: log.write(json.dumps(args)+'\\n')
+def content(path):
+ value=files[path]; return base64.b64decode(value['base64']) if isinstance(value,dict) else value.encode()
 def object_id(path):
- b=files[path].encode(); return hashlib.sha1(b'blob '+str(len(b)).encode()+b'\\0'+b).hexdigest()
-objects={object_id(path):value.encode() for path,value in files.items()}
+ b=content(path); return hashlib.sha1(b'blob '+str(len(b)).encode()+b'\\0'+b).hexdigest()
+objects={object_id(path):content(path) for path in files}
 if args[0]=='remote': print(os.environ.get('MOCK_ORIGIN','https://github.com/merkr-software/CadencR.git'))
 elif args[0]=='rev-parse': print(os.environ.get('MOCK_TAG_COMMIT' if args[-1].startswith('refs/tags/') else 'MOCK_COMMIT','${commit}'))
 elif args[0]=='ls-tree':
@@ -72,8 +74,8 @@ elif args[0]=='cat-file' and '--batch' in args:
   sys.stdout.buffer.write((oid+' blob '+size+'\\n').encode()); sys.stdout.buffer.flush()
   if override.exists(): sys.exit(0)
   sys.stdout.buffer.write(content+b'\\n'); sys.stdout.buffer.flush()
-elif args[0]=='cat-file': print(len(files[args[-1].split(':',1)[1]].encode()))
-elif args[0]=='show': sys.stdout.write(files[args[-1].split(':',1)[1]])
+elif args[0]=='cat-file': print(len(content(args[-1].split(':',1)[1])))
+elif args[0]=='show': sys.stdout.buffer.write(content(args[-1].split(':',1)[1]))
 else: sys.exit(1)
 `,
     { mode: 0o700 },
@@ -87,13 +89,20 @@ args=sys.argv
 if pathlib.Path('${root}/bad-cli').exists():
  sys.stderr.write('error[INERT_FIXTURE_FAILURE]: PRIVATE_DIAG_MARKER '+('sensitive-marker'*6000)); sys.exit(1)
 with open('${root}/calls','a') as log: log.write(json.dumps(args[1:])+'\\n')
-if args[1]=='plugin': sys.exit(0)
+if args[1]=='plugin':
+ if args[args.index('--kind')+1]=='tab': assert '--no-run' in args
+ sys.exit(0)
 if args[2]=='plan-publication':
  pathlib.Path(args[args.index('--output')+1]).write_text('{}'); sys.exit(0)
 if args[2]=='pack-tab': assert '--package' in args
 p=pathlib.Path(args[args.index('--output')+1]); stage=pathlib.Path(args[args.index('--directory')+1])
 b=b''.join(str(f.relative_to(stage)).encode()+f.read_bytes() for f in sorted(stage.rglob('*')) if f.is_file()); p.write_bytes(b)
-key={'target':args[args.index('--target')+1]} if args[2]=='pack-provider' else {'kind':args[2][5:]}
+key={'target':args[args.index('--target')+1]} if args[2] in ('pack-provider','pack-tab-backend') else {'kind':args[2][5:]}
+if args[2]=='pack-tab-backend':
+ manifest=json.loads((stage/'tab.json').read_text()); cmd=manifest['backend']['binary'][key['target']]; executable=(stage/cmd).read_bytes()
+ key.update(kind='tab-backend',cmd=cmd,executable_sha256=hashlib.sha256(executable).hexdigest(),executable_size=len(executable))
+ corrupt=pathlib.Path('${root}/backend-receipt-field')
+ if corrupt.exists(): key[corrupt.read_text()]='untrusted'
 receipt=json.dumps(dict(key,archive=str(p),size=len(b),sha256=('0'*64 if pathlib.Path('${root}/bad-receipt').exists() else hashlib.sha256(b).hexdigest())))
 invalid=pathlib.Path('${root}/invalid-receipt-json')
 if invalid.exists():
@@ -111,12 +120,20 @@ case "$1" in */cli-qualification.env) printf '%s\\n' '${realCli ?? root + "/cli"
   );
 }
 
+function copyPreparation(root) {
+  for (const name of [
+    "official-plugin-release.sh",
+    "official-plugin-prepare.py",
+    "official_plugin_pack.py",
+  ])
+    cpSync(resolve("scripts", name), join(root, "scripts", name));
+}
+
 export function fixture(kind = "theme", realCli) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "official-release-test-")));
   for (const dir of ["scripts", "tooling/marketplace-registry/scripts/ci", "mock"])
     mkdirSync(join(root, dir), { recursive: true });
-  for (const name of ["official-plugin-release.sh", "official-plugin-prepare.py"])
-    cpSync(resolve("scripts", name), join(root, "scripts", name));
+  copyPreparation(root);
   const id = kind === "theme" ? "graphite" : kind === "provider" ? "pi" : "inert";
   const plugin = `${kind}-${id}`;
   const version = "1.0.0";
@@ -271,4 +288,71 @@ export function checkNamespacedTagBinding() {
     assert.equal(git(checkout, ["rev-list", "--count", expected]), "1");
     assert.equal(readFileSync(join(checkout, ".git/shallow"), "utf8").trim(), expected);
   }
+}
+
+// Reviewed prebuilt bytes only: ELF header, deliberately not a runnable program.
+export function nativeTabFixture(realCli) {
+  const f = fixture("tab", realCli);
+  const payload = f.entry.payloads.tab;
+  const manifest = JSON.parse(f.files[`${payload.directory}/tab.json`]);
+  const target = "linux-x86_64";
+  const cmd = `bin/${target}/backend`;
+  const reasoning = "Reports local fixture information.";
+  manifest.backend = { protocol: 1, reasoning, binary: { [target]: cmd } };
+  const manifestBytes = JSON.stringify(manifest);
+  f.files[`${payload.directory}/tab.json`] = manifestBytes;
+  payload.files["tab.json"].sha256 = hash(manifestBytes);
+  const bytes = Buffer.alloc(64);
+  bytes.set([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1]);
+  bytes.writeUInt16LE(2, 16);
+  bytes.writeUInt16LE(62, 18);
+  bytes.writeUInt32LE(1, 20);
+  // Same minimal Mach-O headers/load commands as plugin-core test support.
+  const macho = (cpu, signed) => {
+    const commands = [0x1b, 24, 0, 0, 0, 0, ...(signed ? [0x1d, 16, 0, 0] : [])];
+    const words = [0xfeedfacf, cpu, 0, 2, signed ? 2 : 1, commands.length * 4, 0, 0, ...commands];
+    const image = Buffer.alloc(words.length * 4);
+    words.forEach((word, index) => image.writeUInt32LE(word, index * 4));
+    return image;
+  };
+  const binaries = {
+    [target]: bytes,
+    "darwin-x86_64": macho(0x01000007, false),
+    "darwin-aarch64": macho(0x0100000c, true),
+  };
+  manifest.backend.binary = Object.fromEntries(
+    Object.keys(binaries).map((key) => [key, `bin/${key}/backend`]),
+  );
+  const finalManifest = JSON.stringify(manifest);
+  f.files[`${payload.directory}/tab.json`] = finalManifest;
+  payload.files["tab.json"].sha256 = hash(finalManifest);
+  const metadata = JSON.parse(f.files[f.entry.package]);
+  metadata.package.tab.backend = { protocol: 1, reasoning };
+  metadata.package.tab.distribution.binary = {};
+  for (const [platform, executable] of Object.entries(binaries)) {
+    const directory = `${f.entry.source_path}/prepared/backend-${platform}`;
+    const command = manifest.backend.binary[platform];
+    f.entry.payloads[`backend-${platform}`] = {
+      directory,
+      files: {
+        "tab.json": { mode: "100644", sha256: hash(finalManifest) },
+        [command]: { mode: "100755", sha256: hash(executable) },
+      },
+    };
+    f.files[`${directory}/tab.json`] = finalManifest;
+    f.files[`${directory}/${command}`] = { base64: executable.toString("base64") };
+    f.modes[`${directory}/${command}`] = "100755";
+    metadata.package.tab.distribution.binary[platform] = {
+      archive: "https://example.invalid/backend.tar.gz",
+      sha256: "0".repeat(64),
+      size: 1,
+      cmd: command,
+      executable_sha256: "0".repeat(64),
+      executable_size: 1,
+    };
+  }
+  f.files[f.entry.package] = JSON.stringify(metadata);
+  f.files["plugins/release-policy.json"] = JSON.stringify(f.policy);
+  f.save();
+  return { ...f, target, cmd, bytes, binaries };
 }

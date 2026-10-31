@@ -1,6 +1,6 @@
 [package]
 name = "cadencr-service"
-version = "0.14.0"
+version = "0.15.1"
 edition = "2021"
 license.workspace = true
 
@@ -10,6 +10,8 @@ bon.workspace = true
 cadencr-plugin-core = { path = "../plugin-core" }
 cadencr-registry-core = { path = "../registry-core" }
 cadencr-registry-publisher = { path = "../registry-publisher" }
+# The stdio protocol's reference types and limits (transport only).
+cadencr-tab-backend = { path = "../tab-backend-sdk-rs" }
 claude-agent-sdk-rs = { path = "../claude-agent-sdk-rs" }
 cli-discovery = { path = "../cli-discovery" }
 codex-app-server-sdk-rs = { path = "../codex-app-server-sdk-rs" }
@@ -30,7 +32,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive", "env"] }
 anyhow = "1"
 thiserror = "2"
-agent-client-protocol = "1.2.0"
+agent-client-protocol = "3.4.0"
 regex-lite = "0.1"
 dirs = "6"
 rand = "0.10"
@@ -55,7 +57,7 @@ trash = "5"
 flate2 = "1"
 sha2 = "0.11"
 tar = "0.4.46"
-zip = { version = "6.0.0", default-features = false, features = ["deflate", "bzip2"] }
+zip = { version = "9.0.5", default-features = false, features = ["deflate", "bzip2"] }
 # Document preview: recalculates workbooks saved without formula results
 # (openpyxl / xlsxwriter output). Pinned: the engine is 0.x and its results are
 # written into users' previews.
@@ -72,7 +74,7 @@ rcgen = "0.14"
 axum-server = { version = "0.8", features = ["tls-rustls"] }
 # Pin the `ring` crypto provider explicitly (installed at remote startup) so TLS
 # is deterministic regardless of what else pulls rustls into the tree.
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 subtle = "2.6"
 zeroize = "1.8"
 if-addrs = "0.15"
@@ -83,7 +85,7 @@ if-addrs = "0.15"
 web-push = { version = "0.11", default-features = false, features = ["hyper-client"] }
 jwt-simple = { version = "0.12", default-features = false, features = ["pure-rust"] }
 chrono-tz = { version = "0.10.4", features = ["serde"] }
-nvim-rs = { version = "0.6", features = ["use_tokio"] }
+nvim-rs = { version = "0.9", features = ["use_tokio"] }
 rmpv = "1"
 
 [target.'cfg(windows)'.dependencies]

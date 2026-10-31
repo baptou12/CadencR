@@ -2,12 +2,13 @@ use rmcp::model::Tool;
 use serde_json::{json, Value};
 
 use crate::domain::agents::providers::valid_provider_ids;
+use crate::domain::mcp::settings_tool::SettingsTool;
 
 #[path = "project_schema_descriptions.rs"]
 mod descriptions;
 
 use descriptions::{property_description, tool_description};
-const PROJECT_TOOL_NAMES: [&str; 17] = [
+const PROJECT_TOOL_NAMES: [&str; 20] = [
     "project_list_sessions",
     "project_read_session",
     "project_read_session_tail",
@@ -25,6 +26,9 @@ const PROJECT_TOOL_NAMES: [&str; 17] = [
     "project_list_schedules",
     "project_update_schedule",
     "project_delete_schedule",
+    "project_archive_session",
+    "project_get_settings",
+    "project_update_settings",
 ];
 pub(super) fn tools() -> Vec<Tool> {
     PROJECT_TOOL_NAMES
@@ -115,6 +119,9 @@ fn tool_schema(name: &str) -> Value {
         "project_create_schedule" | "project_update_schedule" | "project_delete_schedule" => {
             super::project_schedule_schema::schema(name)
         }
+        "project_archive_session" => super::project_archive_schema::schema(),
+        "project_get_settings" => super::settings_schema::get_schema(SettingsTool::Project),
+        "project_update_settings" => super::settings_schema::update_schema(SettingsTool::Project),
         _ => json!({ "type": "object", "properties": {} }),
     };
     document_schema(name, schema)

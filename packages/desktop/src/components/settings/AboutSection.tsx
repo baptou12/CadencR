@@ -1,3 +1,4 @@
+import { ExportDiagnosticsButton } from "../ExportDiagnosticsButton";
 import { CadencrLogo } from "@/components/CadencrLogo";
 import { Button } from "@/components/ui/button";
 import { APP_VERSION } from "@/lib/app-version";
@@ -12,9 +13,11 @@ export function AboutSection(): React.JSX.Element {
   const updateVersion = useUpdateStore((s) => s.version);
   const progress = useUpdateStore((s) => s.progress);
   const error = useUpdateStore((s) => s.error);
+  const unsupportedMessage = useUpdateStore((s) => s.unsupportedMessage);
   const checkForUpdates = useUpdateStore((s) => s.checkForUpdates);
   const installUpdate = useUpdateStore((s) => s.installUpdate);
   const checking = status === "checking" || status === "downloading";
+  const unsupported = status === "unsupported";
 
   return (
     <SettingsSection id="about" title="About" subtitle="Build · Diagnostics">
@@ -37,10 +40,15 @@ export function AboutSection(): React.JSX.Element {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={checking}
+                  disabled={checking || unsupported}
                   onClick={() => void checkForUpdates()}
+                  title={unsupported ? (unsupportedMessage ?? undefined) : undefined}
                 >
-                  {checking ? "Checking…" : "Check for updates"}
+                  {unsupported
+                    ? "Managed by package manager"
+                    : checking
+                      ? "Checking…"
+                      : "Check for updates"}
                 </Button>
               )}
             </div>
@@ -48,9 +56,22 @@ export function AboutSection(): React.JSX.Element {
         </div>
         {isDesktop && (
           <div role="status" aria-live="polite" className="mt-3 text-xs text-muted-foreground">
-            {updateStatusMessage(status, { progress, version: updateVersion, error })}
+            {updateStatusMessage(status, {
+              progress,
+              version: updateVersion,
+              error,
+              unsupportedMessage,
+            })}
           </div>
         )}
+      </SettingsCard>
+      <SettingsCard padded>
+        <h3 className="text-sm font-semibold">Diagnostics</h3>
+        <p className="my-2 text-xs text-muted-foreground">
+          Export recent errors and app activity to help investigate a problem, even after
+          restarting. The report is saved locally for you to share.
+        </p>
+        <ExportDiagnosticsButton />
       </SettingsCard>
     </SettingsSection>
   );
@@ -58,7 +79,12 @@ export function AboutSection(): React.JSX.Element {
 
 function updateStatusMessage(
   status: UpdateStatus,
-  detail: { progress: number; version: string | null; error: string | null },
+  detail: {
+    progress: number;
+    version: string | null;
+    error: string | null;
+    unsupportedMessage: string | null;
+  },
 ): string {
   switch (status) {
     case "checking":
@@ -73,6 +99,8 @@ function updateStatusMessage(
       return `Update v${detail.version ?? ""} available.`;
     case "error":
       return detail.error ? `Update check failed: ${detail.error}` : "Update check failed.";
+    case "unsupported":
+      return detail.unsupportedMessage ?? "In-app updates are unavailable for this install.";
     case "idle":
     default:
       return "";

@@ -31,7 +31,11 @@ const SUMMARY = pluginTabSummary({
   name: "Port monitor",
   access_level: "backend",
   commands: [{ program: "git", reasoning: "History." }],
-  backend: { command: "node", args: ["backend/server.mjs"], reasoning: "Ports." },
+  backend: {
+    protocol: 1,
+    binary: { "darwin-aarch64": "bin/darwin-aarch64/ports" },
+    reasoning: "Ports.",
+  },
 });
 
 afterEach(() => act(() => setPluginTabActivityOpen(null)));
@@ -71,6 +75,7 @@ describe("PluginTabActivityDialog", () => {
       ],
       backend: {
         state: "running",
+        restart_held: false,
         pid: 4242,
         started_at: new Date().toISOString(),
         starts: 1,
@@ -85,11 +90,68 @@ describe("PluginTabActivityDialog", () => {
     expect(within(commands).getByText("Refused")).toBeInTheDocument();
     expect(within(commands).getByText("git log -1")).toBeInTheDocument();
     expect(within(commands).getByText("Exit 0")).toBeInTheDocument();
-    expect(within(dialog).getByText("node backend/server.mjs")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("bin/darwin-aarch64/ports (darwin-aarch64)"),
+    ).toBeInTheDocument();
     expect(within(dialog).getByText(/Running as process 4242/)).toBeInTheDocument();
     expect(within(dialog).getByLabelText("Backend log")).toHaveTextContent("backend ready");
     await userEvent.click(within(dialog).getByRole("button", { name: "Stop" }));
     expect(mocks.stop).toHaveBeenCalledWith({ id: "monitor", featureId: 7 }, expect.anything());
+  });
+
+  it("shows a backend still getting ready as starting, with nothing to stop yet", async () => {
+    mocks.activity = {
+      commands: [],
+      backend: { state: "starting", restart_held: false, pid: 5151, starts: 1, stderr_tail: [] },
+    };
+    renderOpen();
+    const dialog = await screen.findByRole("dialog");
+    const status = await within(dialog).findByText(/^Starting…/);
+    expect(status).toHaveTextContent("Starting… waiting for process 5151 to be ready.");
+    expect(status).toHaveAttribute("role", "status");
+    expect(within(dialog).queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+
+  it("says why refused starts are held and offers to allow a restart", async () => {
+    mocks.activity = {
+      commands: [],
+      backend: {
+        state: "stopped",
+        restart_held: true,
+        start_error:
+          "the tab's backend /x/bin/ports differs from the binary its signed package names; reinstall the tab from the marketplace",
+        exited_at: new Date().toISOString(),
+        exit_reason: "its tab was closed",
+        starts: 6,
+        stderr_tail: ["[cadencr] the backend could not start: …"],
+      },
+    };
+    renderOpen();
+    const dialog = await screen.findByRole("dialog");
+    const headline = await within(dialog).findByText(/^Couldn't start:/);
+    expect(headline).toHaveTextContent(
+      "Couldn't start: the tab's backend /x/bin/ports differs from the binary its signed package names; reinstall the tab from the marketplace. Cadencr won't start it again until you allow a restart. Started 6 times.",
+    );
+    expect(within(dialog).queryByText(/its tab was closed/)).toBeNull();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Allow restart" }));
+    expect(mocks.stop).toHaveBeenCalledWith({ id: "monitor", featureId: 7 }, expect.anything());
+  });
+
+  it("offers no restart for a stopped backend whose starts aren't held", async () => {
+    mocks.activity = {
+      commands: [],
+      backend: {
+        state: "stopped",
+        restart_held: false,
+        exit_reason: "its tab was closed",
+        starts: 1,
+        stderr_tail: [],
+      },
+    };
+    renderOpen();
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText(/Stopped: its tab was closed\./)).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Allow restart" })).toBeNull();
   });
 
   it("says a backend that never started will start on the first request", async () => {

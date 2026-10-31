@@ -5,7 +5,7 @@ mod entries;
 mod types;
 
 pub use entries::CATALOG;
-pub(super) use entries::{HOMEBREW_WELL_KNOWN_ABSOLUTE, NPM_WELL_KNOWN_RELATIVE_TO_HOME};
+pub(super) use entries::{NPM_WELL_KNOWN_RELATIVE_TO_HOME, SYSTEM_WELL_KNOWN_ABSOLUTE};
 pub use types::{CatalogEntry, DownloadRecipe, PlatformSha256, ServerRole};
 
 /// Look up the *default* catalog entry serving a given LSP `languageId`.

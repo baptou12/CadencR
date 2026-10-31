@@ -6,6 +6,7 @@
  * reconnect cycle.
  */
 import { LSPClient } from "@codemirror/lsp-client";
+import { z } from "zod";
 import { openSession } from "@/api/generated";
 import { connectLspWs, type WebSocketLspTransport } from "./transport";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -60,10 +61,21 @@ export async function buildSession(
     extensions: [cadencrServerDiagnostics(bucketKey, clientRef)],
   });
   clientRef.current = client;
-  client.connect(transport);
-  if (!workspaceRef) {
+  try {
+    client.connect(transport);
+    // A connected WebSocket is not a ready language server. Await the LSP
+    // handshake before mounting plugins, whose didOpen assumes it succeeded.
+    await client.initializing;
+    if (!workspaceRef) throw new Error("LSP workspace was not initialised by the client");
+  } catch (error: unknown) {
+    client.disconnect();
     transport.close();
-    throw new Error("LSP workspace was not initialised by the client");
+    const response = z.object({ message: z.string().trim().min(1) }).safeParse(error);
+    throw new Error(
+      response.success
+        ? response.data.message
+        : apiErrorMessage(error, "Language server initialization failed"),
+    );
   }
   return { client, workspace: workspaceRef, transport };
 }

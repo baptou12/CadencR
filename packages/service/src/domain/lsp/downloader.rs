@@ -1,7 +1,8 @@
 //! On-demand install of catalog-managed LSP binaries.
 //!
-//! Storage layout is recipe-specific under
-//! `~/.cadencr/lsp/<lsp_id>/<version>/`. The directory is created with
+//! Storage layout is recipe-specific under `<data_dir>/lsp/<lsp_id>/<version>/`
+//! (`~/.cadencr/lsp` on macOS, `$XDG_DATA_HOME/cadencr/lsp` on Linux — see
+//! `shared::app_paths`). The directory is created with
 //! `0700` so a multi-user host can't read another user's installed binaries.
 //!
 //! Both native GitHub assets and npm package recipes are handled here so
@@ -22,13 +23,13 @@ use super::checksum::{current_platform_sha256, verify_sha256};
 use super::npm_installer;
 use super::platform::current_platform_tag;
 
-/// Directory under `~/.cadencr/lsp/<lsp_id>/<version>/` for a given recipe.
+/// Directory under `<data_dir>/lsp/<lsp_id>/<version>/` for a given recipe.
 /// Creates parent dirs if missing (mode `0700` on unix).
 pub fn install_dir(lsp_id: &str, version: &str) -> Result<PathBuf, AppError> {
-    let home = dirs::home_dir().ok_or_else(|| {
-        AppError::Internal("could not determine $HOME for LSP install directory".into())
+    let data = crate::shared::app_paths::data_dir().map_err(|e| {
+        AppError::Internal(format!("could not resolve the LSP install directory: {e}"))
     })?;
-    let dir = home.join(".cadencr").join("lsp").join(lsp_id).join(version);
+    let dir = data.join("lsp").join(lsp_id).join(version);
     create_dir_secure(&dir)?;
     Ok(dir)
 }

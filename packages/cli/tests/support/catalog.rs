@@ -24,7 +24,7 @@ impl Fixture {
             "packages": [package],
         });
         let payload =
-            cadencr_registry_core::validate_signing_payload_at(&signed, false, now).unwrap();
+            cadencr_registry_core::validate_catalog_payload_at(&signed, false, now).unwrap();
         std::fs::write(root.path().join("payload.json"), payload).unwrap();
         let output = Command::new("node")
             .args(["--input-type=module", "-e", r#"

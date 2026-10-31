@@ -16,6 +16,25 @@ pub(crate) async fn handle_prompt_send(
     let Some(prepared) = prepare_prompt(&envelope, sender, sdk_sessions, app_state).await else {
         return;
     };
+    match crate::domain::prompt_queue::acceptance::defer_if_required(
+        app_state,
+        prepared.db_session_id,
+        &prepared.payload,
+    )
+    .await
+    {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(error) => {
+            send_error(
+                sender,
+                &envelope.id,
+                "PROMPT_QUEUE_ERROR",
+                &error.to_string(),
+            );
+            return;
+        }
+    }
     if super::user_shell::maybe_handle_user_shell_prompt(
         &envelope,
         sender,

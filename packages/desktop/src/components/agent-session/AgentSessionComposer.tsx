@@ -4,9 +4,14 @@ import { contextUsageToShow } from "@/types/agent";
 import { AgentPromptBar, type AgentPromptBarHandle } from "../AgentPromptBar";
 import { ContextUsageBar } from "../ContextUsageBar";
 import type { AgentSessionProps } from "./types";
-import { MetaBar, type MetaBarHandle } from "./MetaBar";
-import { MetaBarSecondary } from "./MetaBarSecondary";
+import { MetaBar, type MetaBarHandle, type MetaBarSection } from "./MetaBar";
+import { findProviderMode } from "@/lib/provider-modes";
 import { useSessionSchedules } from "./SessionSchedules";
+import { LaunchManifest } from "../composer/LaunchManifest";
+import { AgentTodoList } from "../AgentTodoList";
+import { AutoScrollChip } from "./AutoScrollChip";
+import { useComposerSessionInfo } from "./ComposerSessionSlots";
+import { SideConversations } from "../side-conversation/SideConversations";
 
 export interface AgentSessionComposerProps {
   sessionProps: AgentSessionProps;
@@ -17,8 +22,6 @@ export interface AgentSessionComposerProps {
   onToggleAutoScroll: () => void;
   shouldShowPromptBar: boolean;
   hasMeta: boolean;
-  isNarrow: boolean;
-  hasSecondaryMeta: boolean;
   showAutoScrollChip: boolean;
   autoScrollEnabled: boolean;
   showWorktreeChip: boolean;
@@ -84,40 +87,65 @@ export const AgentSessionComposer = memo(function AgentSessionComposer(
 ): ReactElement {
   const { contextUsage } = props.sessionProps;
   const schedules = useSessionSchedules(props.sessionProps.featureId, props.sessionProps.projectId);
-  // A schedule banner above the chips reads better with the tighter row, so the
-  // bar drops to its standalone padding.
-  const scheduledActive = props.shouldShowPromptBar && schedules.armed.length > 0;
-  const metaBar = props.hasMeta ? (
-    <AgentSessionMeta {...props} metaVariant={scheduledActive ? "standalone" : "session"} />
+  const sessionInfo = useComposerSessionInfo(props);
+  // Everything lives inside the composer card: auto-scroll opens its bottom
+  // row, then the instruments (autonomy, model, access); the todos sit beside
+  // its menus, and the session details open from its "…" menu.
+  // Without a prompt bar the original strip above stands in.
+  const instruments = props.hasMeta ? (
+    <AgentSessionMeta {...props} metaVariant="session" section="instruments" />
   ) : null;
   const promptBar = props.shouldShowPromptBar ? (
-    <AgentSessionPrompt {...props} onScheduleRequest={schedules.requestSchedule} />
+    <AgentSessionPrompt
+      {...props}
+      instruments={instruments}
+      sessionInfo={sessionInfo}
+      onScheduleRequest={schedules.requestSchedule}
+    />
   ) : null;
-  const secondaryBar =
-    props.isNarrow && props.hasSecondaryMeta && props.shouldShowPromptBar ? (
-      <AgentSessionSecondary {...props} />
+  const utilities =
+    props.hasMeta && !promptBar ? (
+      <AgentSessionMeta {...props} metaVariant="session" section="utilities" />
     ) : null;
 
   return (
     <div className={props.collapsible ? COLLAPSIBLE_ROOT_CLASS : FULL_PAGE_ROOT_CLASS}>
       {props.shouldShowPromptBar && schedules.element}
-      {metaBar}
-      {promptBar}
-      {secondaryBar}
-      <ComposerContextUsage contextUsage={contextUsage} isAgentWorking={props.isAgentWorking} />
+      {utilities}
+      {promptBar ?? instruments}
+      {!promptBar && (
+        <ComposerContextUsage contextUsage={contextUsage} isAgentWorking={props.isAgentWorking} />
+      )}
     </div>
   );
 });
 
+/** Why the active mode won't hold with this model, or null when it will. */
+function modeIncompatibleReason(session: AgentSessionProps): string | null {
+  if (session.modelSupportsAutoMode !== false || !session.permissionMode) return null;
+  const mode = findProviderMode(
+    session.selection?.providerId,
+    session.permissionMode,
+    session.providerModes,
+  );
+  if (mode?.risk !== "auto") return null;
+  return `This model can't run ${mode.label}, so the session falls back to accepting edits only. Pick a model that supports it, or another mode.`;
+}
+
 function AgentSessionMeta(
-  props: AgentSessionComposerProps & { metaVariant: "session" | "standalone" },
+  props: AgentSessionComposerProps & {
+    metaVariant: "session" | "standalone";
+    section: MetaBarSection;
+  },
 ): ReactElement {
   const session = props.sessionProps;
   return (
     <MetaBar
-      ref={props.metaBarRef}
+      ref={props.section === "utilities" ? undefined : props.metaBarRef}
+      section={props.section}
+      onPermissionModeSet={session.onPermissionModeSet}
+      modeIncompatibleReason={modeIncompatibleReason(session)}
       variant={props.metaVariant}
-      secondaryBelow={props.isNarrow}
       showAutoScrollChip={props.showAutoScrollChip}
       autoScrollEnabled={props.autoScrollEnabled}
       onToggleAutoScroll={props.onToggleAutoScroll}
@@ -174,6 +202,8 @@ function AgentSessionMeta(
 
 function AgentSessionPrompt(
   props: AgentSessionComposerProps & {
+    instruments: ReactElement | null;
+    sessionInfo: ReturnType<typeof useComposerSessionInfo>;
     onScheduleRequest?: (prompt: string, onSaved: () => void) => void;
   },
 ): ReactElement {
@@ -205,6 +235,13 @@ function AgentSessionPrompt(
       session.worktreeMode,
       session.worktreeSelectedBranch,
     ],
+  );
+  const sideConversations = useMemo(
+    () =>
+      session.sessionId != null && props.projectPath ? (
+        <SideConversations sourceSessionId={session.sessionId} cwd={props.projectPath} />
+      ) : undefined,
+    [props.projectPath, session.sessionId],
   );
   return (
     <AgentPromptBar
@@ -238,6 +275,15 @@ function AgentSessionPrompt(
       providerId={props.activeProviderId}
       onToggleMaximize={session.onToggleMaximize}
       noTopPadding={props.hasMeta}
+      isFirstPrompt={session.blocks.length === 0}
+      contextUsage={session.contextUsage}
+      sessionInfo={props.sessionInfo}
+      instrumentStart={composerAutoScroll(props)}
+      instrumentTrailing={composerUtilities(props)}
+      steeringAcknowledged={session.steeringAcknowledged}
+      launchManifest={launchManifest(props)}
+      sideConversations={sideConversations}
+      instrumentLeading={props.instruments}
       slashCommandsOverride={session.slashCommandsOverride}
       slashCommandsLoading={session.slashCommandsLoading}
       promptCommandPolicy={session.promptCommandPolicy}
@@ -249,38 +295,40 @@ function AgentSessionPrompt(
   );
 }
 
-function AgentSessionSecondary(props: AgentSessionComposerProps): ReactElement {
+/** Where the first prompt will run (branch/worktree), atop the composer card. */
+function launchManifest(props: AgentSessionComposerProps): ReactElement | undefined {
   const session = props.sessionProps;
+  if (!props.showWorktreeChip) return undefined;
   return (
-    <MetaBarSecondary
-      showWorktreeChip={props.showWorktreeChip}
-      worktreeMode={session.worktreeMode}
-      onWorktreeModeChange={session.onWorktreeModeChange}
+    <LaunchManifest
       worktreeProjectId={session.worktreeProjectId}
       worktreeDefaultBranch={session.worktreeDefaultBranch}
       worktreeProjectPath={session.worktreeProjectPath}
+      worktreeMode={session.worktreeMode}
+      onWorktreeModeChange={session.onWorktreeModeChange}
       worktreeSelectedBranch={session.worktreeSelectedBranch}
       onWorktreeBranchChange={session.onWorktreeBranchChange}
-      showAutoScrollChip={props.showAutoScrollChip}
-      autoScrollEnabled={props.autoScrollEnabled}
-      onToggleAutoScroll={props.onToggleAutoScroll}
-      todos={session.todos}
-      runtimeProvider={session.runtimeProvider}
-      runtimeSessionId={session.runtimeSessionId}
-      featureId={session.featureId}
-      wsSessionId={session.wsSessionId}
-      projectPath={props.projectPath}
-      isRunning={session.status === "agent"}
-      onPause={session.onStop}
-      claudeProfile={props.claudeProfile}
-      claudeProfiles={props.claudeProfiles}
-      claudeProfilesLoading={props.claudeProfilesLoading}
-      claudeProfilesError={props.claudeProfilesError}
-      onClaudeProfileChange={props.onClaudeProfileChange}
-      activeClaudeProfile={props.activeClaudeProfile}
-      showProfileSelector={props.showClaudeProfileSelector}
     />
   );
+}
+
+/** Follow-output, opening the composer's instrument row. */
+function composerAutoScroll(props: AgentSessionComposerProps): ReactElement | undefined {
+  if (!props.hasMeta || !props.showAutoScrollChip) return undefined;
+  return (
+    <AutoScrollChip
+      variant="instrument"
+      enabled={props.autoScrollEnabled}
+      onToggle={props.onToggleAutoScroll}
+    />
+  );
+}
+
+/** The agent's todos, beside the composer's menus. */
+function composerUtilities(props: AgentSessionComposerProps): ReactElement | undefined {
+  const todos = props.sessionProps.todos;
+  if (!props.hasMeta || !todos || todos.length === 0) return undefined;
+  return <AgentTodoList todos={todos} variant="instrument" />;
 }
 
 function ComposerContextUsage({

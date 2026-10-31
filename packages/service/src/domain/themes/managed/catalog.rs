@@ -24,7 +24,7 @@ pub fn verify(
     }
     let payload = serde_json::to_value(&index.signed).map_err(invalid)?;
     let bytes =
-        cadencr_registry_core::validate_signing_payload_at(&payload, allow_expired, Utc::now())
+        cadencr_registry_core::validate_catalog_payload_at(&payload, allow_expired, Utc::now())
             .map_err(invalid)?;
     if allow_expired {
         return trust
@@ -147,18 +147,29 @@ pub(crate) fn ingest_trusted(
         &serde_json::to_string(index).map_err(invalid)?,
     )
 }
-pub fn recommended_for(index: &SignedMixedCatalog, kind: &str) -> BTreeMap<String, String> {
+/// A `kind` catalog entry's id and version.
+pub fn package_version<'a>(entry: &'a Value, kind: &str) -> Option<(&'a str, &'a str)> {
+    if entry["kind"] != kind {
+        return None;
+    }
+    let package = &entry["package"][kind];
+    Some((package["id"].as_str()?, package["version"].as_str()?))
+}
+/// The newest compatible version of each `kind` package (a release over a
+/// pre-release) among the entries `admit` accepts.
+pub fn recommended_for(
+    index: &SignedMixedCatalog,
+    kind: &str,
+    admit: impl Fn(&Value) -> bool,
+) -> BTreeMap<String, String> {
     let mut recommended: BTreeMap<&str, (&str, semver::Version)> = BTreeMap::new();
     for entry in &index.signed.packages {
-        if entry["kind"] != kind || ensure_compatible(&entry["package"]).is_err() {
-            continue;
-        }
-        let (Some(id), Some(version)) = (
-            entry["package"][kind]["id"].as_str(),
-            entry["package"][kind]["version"].as_str(),
-        ) else {
+        let Some((id, version)) = package_version(entry, kind) else {
             continue;
         };
+        if ensure_compatible(&entry["package"]).is_err() || !admit(entry) {
+            continue;
+        }
         let Ok(candidate) = semver::Version::parse(version) else {
             continue;
         };
@@ -175,12 +186,12 @@ pub fn recommended_for(index: &SignedMixedCatalog, kind: &str) -> BTreeMap<Strin
         .collect()
 }
 fn recommended_versions(index: &SignedMixedCatalog) -> BTreeMap<String, String> {
-    recommended_for(index, "theme")
+    recommended_for(index, "theme", |_| true)
 }
 pub use super::download::{download, download_archive};
 
 #[cfg(test)]
-pub(super) mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::domain::agents::providers::installed::managed::trust::TrustedIndexKey;
     use base64::Engine as _;
@@ -190,7 +201,7 @@ pub(super) mod tests {
         let payload = serde_json::json!({"schema_version":2,"generated_at":(now-chrono::Duration::minutes(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true),"expires_at":(now+chrono::Duration::hours(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true),"packages":[{"kind":"theme","package":{"theme":{"id":"midnight","name":"Midnight","description":"Dark theme","version":"1.0.0","repository":"https://github.com/acme/themes","license":"MIT","document_version":1,"distribution":{"archive":"https://github.com/acme/themes/releases/download/v1/theme.tar.gz","sha256":"a".repeat(64)}},"host":{"publisher":"acme","compatibility":{"min_app_version":"0.1.0"}}}}]});
         let key = SigningKey::from_bytes(&[19; 32]);
         let bytes =
-            cadencr_registry_core::validate_signing_payload_at(&payload, false, now).unwrap();
+            cadencr_registry_core::validate_catalog_payload_at(&payload, false, now).unwrap();
         let envelope = serde_json::json!({"signed":payload,"signature":{"algorithm":"ed25519","key_id":"test","value":base64::engine::general_purpose::STANDARD.encode(key.sign(&bytes).to_bytes())}});
         (
             serde_json::from_value(envelope).unwrap(),
@@ -205,6 +216,24 @@ pub(super) mod tests {
         catalog_checkpoints: Vec<String>,
         policy_checkpoints: Vec<String>,
     ) -> ManagedTrustStore {
+        rotation_trust_with(
+            cutoff,
+            revoked,
+            &[
+                ("recovery_catalog_sha256", catalog_checkpoints),
+                ("recovery_theme_policy_sha256", policy_checkpoints),
+            ],
+        )
+    }
+    /// Root-signed trust generation 2: `current-b` (seed 23) active, `test`
+    /// (seed 19) retired at `cutoff` (or revoked), with the given recovery
+    /// checkpoint lists (`recovery_tab_policy_sha256`, …); empty ones are
+    /// omitted, except the always-present catalog list.
+    pub(crate) fn rotation_trust_with(
+        cutoff: chrono::DateTime<Utc>,
+        revoked: bool,
+        checkpoints: &[(&str, Vec<String>)],
+    ) -> ManagedTrustStore {
         let public = |seed| {
             base64::engine::general_purpose::STANDARD.encode(
                 SigningKey::from_bytes(&[seed; 32])
@@ -217,9 +246,11 @@ pub(super) mod tests {
         if !revoked {
             keys.push(serde_json::json!({"key_id":"test","public_key_base64":public(19),"retired_at":cutoff.to_rfc3339()}));
         }
-        let mut payload = serde_json::json!({"schema_version":1,"kind":"registry-trust","generation":2,"keys":keys,"revoked_key_ids":if revoked {vec!["test"]} else {vec![]},"recovery_catalog_sha256":catalog_checkpoints});
-        if !policy_checkpoints.is_empty() {
-            payload["recovery_theme_policy_sha256"] = serde_json::json!(policy_checkpoints);
+        let mut payload = serde_json::json!({"schema_version":1,"kind":"registry-trust","generation":2,"keys":keys,"revoked_key_ids":if revoked {vec!["test"]} else {vec![]},"recovery_catalog_sha256":[]});
+        for (field, digests) in checkpoints {
+            if !digests.is_empty() {
+                payload[*field] = serde_json::json!(digests);
+            }
         }
         let root = SigningKey::from_bytes(&[99; 32]);
         let bytes = [

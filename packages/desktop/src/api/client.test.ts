@@ -105,7 +105,7 @@ describe("runtime config client", () => {
     clearDesktopBridgeOverrideForTests();
   });
 
-  it("falls back to env base URL and token when runtime config is unavailable", async () => {
+  it("uses the fallback base URL without reading the build-time bearer", async () => {
     vi.stubEnv("VITE_API_URL", "http://127.0.0.1:6123/");
     vi.stubEnv("VITE_API_TOKEN", "dev-token");
     const runtimeConfig = vi.fn(() => Promise.reject(new Error("runtime config unavailable")));
@@ -114,20 +114,20 @@ describe("runtime config client", () => {
     await preloadRuntimeConfig();
 
     expect(resolveApiBaseUrlSync()).toBe("http://127.0.0.1:6123");
-    expect(getAuthTokenSync()).toBe("dev-token");
+    expect(getAuthTokenSync()).toBeNull();
   });
 
-  it("coalesces a missing runtime auth token with the env fallback", async () => {
+  it("never reads a sidecar bearer even if runtime data or env contains it", async () => {
     vi.stubEnv("VITE_API_TOKEN", "dev-token");
     const runtimeConfig = vi.fn(() =>
       Promise.resolve({ baseUrl: "http://127.0.0.1:5005", authToken: null }),
     );
     setDesktopBridgeOverrideForTests(bridgeWithRuntime(runtimeConfig));
 
-    await preloadRuntimeConfig();
+    expect(await preloadRuntimeConfig()).toEqual({ baseUrl: "http://127.0.0.1:5005" });
 
     expect(resolveApiBaseUrlSync()).toBe("http://127.0.0.1:5005");
-    expect(getAuthTokenSync()).toBe("dev-token");
+    expect(getAuthTokenSync()).toBeNull();
   });
 });
 

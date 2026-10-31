@@ -11,7 +11,7 @@ use tokio::process::Command;
 
 use crate::error::AppError;
 
-use super::catalog::{CatalogEntry, HOMEBREW_WELL_KNOWN_ABSOLUTE, NPM_WELL_KNOWN_RELATIVE_TO_HOME};
+use super::catalog::{CatalogEntry, NPM_WELL_KNOWN_RELATIVE_TO_HOME, SYSTEM_WELL_KNOWN_ABSOLUTE};
 use super::downloader;
 
 const NPM_MIN_RELEASE_AGE_DAYS: i64 = 14;
@@ -68,12 +68,10 @@ async fn resolve_npm() -> Result<PathBuf, AppError> {
 }
 
 fn npm_well_known_absolute() -> Vec<String> {
-    let mut dirs: Vec<String> = HOMEBREW_WELL_KNOWN_ABSOLUTE
+    SYSTEM_WELL_KNOWN_ABSOLUTE
         .iter()
         .map(|value| (*value).to_string())
-        .collect();
-    dirs.push("/usr/bin".to_string());
-    dirs
+        .collect()
 }
 
 async fn run_npm_install(npm: &Path, dir: &Path, packages: &[&str]) -> Result<(), AppError> {

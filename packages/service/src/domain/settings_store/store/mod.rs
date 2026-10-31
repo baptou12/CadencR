@@ -67,23 +67,38 @@ pub(super) async fn set_value(path: &Path, key: &str, value: &str) -> Result<(),
         &BTreeMap::from([(key.to_string(), Some(value.to_string()))]),
     )
     .await
+    .map(drop)
 }
 
 /// Set or remove several scalar keys in one atomic write (`None` removes the
 /// key, so its in-code default applies again). Every other key is preserved.
+/// Returns each touched key's previous stored value, read under the same lock.
 pub(super) async fn set_values(
     path: &Path,
     entries: &BTreeMap<String, Option<String>>,
-) -> Result<(), AppError> {
+) -> Result<BTreeMap<String, Option<String>>, AppError> {
     let _guard = lock::write_lock().lock().await;
     let mut doc = load_document_for_write(path)?;
-    for (key, value) in entries {
-        match value {
-            Some(value) => doc.insert(key.clone(), serde_json::Value::String(value.clone())),
-            None => doc.remove(key),
-        };
+    let previous = entries
+        .iter()
+        .map(|(key, value)| {
+            let old = match value {
+                Some(value) => doc.insert(key.clone(), serde_json::Value::String(value.clone())),
+                None => doc.remove(key),
+            };
+            (key.clone(), old.map(stored_text))
+        })
+        .collect();
+    file::write_atomic(path, &file::serialize_document(&doc))?;
+    Ok(previous)
+}
+
+/// A stored value as the text a scalar setting holds.
+fn stored_text(value: serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text,
+        other => other.to_string(),
     }
-    file::write_atomic(path, &file::serialize_document(&doc))
 }
 
 /// Validate and atomically write a full settings document (the "Edit JSON" save
@@ -165,7 +180,14 @@ mod tests {
             ("sidebar_density".to_string(), None),
             ("sidebar_row_diff".to_string(), Some("false".to_string())),
         ]);
-        set_values(&path, &entries).await.unwrap();
+        let previous = set_values(&path, &entries).await.unwrap();
+        assert_eq!(
+            previous,
+            BTreeMap::from([
+                ("sidebar_density".to_string(), Some("compact".to_string())),
+                ("sidebar_row_diff".to_string(), None),
+            ])
+        );
 
         let (map, _w) = load(&path, Scope::Workspace);
         assert_eq!(map.get("sidebar_density"), None);

@@ -32,6 +32,7 @@ import {
   listenForNotificationFailures,
   listenForNotificationFallbacks,
 } from "@/lib/notify-agent-done";
+import { forgetFeatureProject } from "@/lib/plugin-tabs/feature-projects";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { listenForPushNavigation } from "@/lib/remote/push-register";
 import { isInCodeMirrorEditor, isInTerminalFocusZone } from "@/lib/shortcuts/dom-targets";
@@ -120,6 +121,7 @@ function useRootFeatureActions(route: RootRouteState) {
       onSuccess: (_data, variables) => {
         removeFeatureFromCachedLists(queryClient, variables.id);
         closeFeatureSession(variables.id);
+        forgetFeatureProject(variables.id);
         invalidateFeatures();
         if (route.activeProjectId == null) return;
         const targetId = deleteNavTargetRef.current;

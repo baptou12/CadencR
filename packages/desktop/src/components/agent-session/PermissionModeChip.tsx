@@ -10,6 +10,7 @@ import { type ReactElement } from "react";
 import { cn } from "@/lib/utils";
 import { SlidingText } from "@/components/SlidingText";
 import { ShortcutTooltip } from "../ShortcutTooltip";
+import { useShortcutKeys, useShortcutLabel } from "@/hooks/useShortcutLabel";
 import { findProviderMode, getVisibleModes } from "@/lib/provider-modes";
 import type { RuntimeProviderModeOption } from "@/api/agentRuntime";
 import type { PermissionMode } from "@/types/permission-mode";
@@ -42,6 +43,8 @@ export function PermissionModeChip({
   onToggle,
   showShortcut = true,
 }: PermissionModeChipProps): ReactElement | null {
+  const cycleKeys = useShortcutKeys("agent-permission-mode");
+  const cycleLabel = useShortcutLabel("agent-permission-mode");
   if (!onToggle || !permissionMode) return null;
   const visibleModes = getVisibleModes(providerId, enabledOptInModes ?? [], providerModes);
   if (visibleModes.length < 2) return null;
@@ -54,7 +57,9 @@ export function PermissionModeChip({
       type="button"
       onClick={onToggle}
       title={
-        showShortcut ? `${displayMode.description} (Shift+Tab to cycle)` : displayMode.description
+        showShortcut
+          ? `${displayMode.description} (${cycleLabel} to cycle)`
+          : displayMode.description
       }
       aria-label={displayMode.ariaLabel}
       className={cn(META_BAR_CHIP, displayMode.chipClass, "min-w-0")}
@@ -66,7 +71,7 @@ export function PermissionModeChip({
 
   if (!showShortcut) return chip;
   return (
-    <ShortcutTooltip label={`${displayMode.label} mode`} keys={["shift", "Tab"]}>
+    <ShortcutTooltip label={`${displayMode.label} mode`} keys={cycleKeys}>
       {chip}
     </ShortcutTooltip>
   );

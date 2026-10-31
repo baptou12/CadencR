@@ -7,6 +7,7 @@ import { useTrafficLightsAnchor } from "@/hooks/useTrafficLightsAnchor";
 import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
 import { cn } from "@/lib/utils";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
+import { useShortcutLabel } from "@/hooks/useShortcutLabel";
 
 interface SidebarCollapsedChromeProps {
   visible: boolean;
@@ -74,6 +75,7 @@ function MobileMenuButton({ onExpand }: { onExpand: () => void }): ReactElement 
 }
 
 function TitlebarActions({ onExpand }: { onExpand: () => void }): ReactElement {
+  const toggleSidebarCombo = useShortcutLabel("toggle-sidebar");
   const actionButtonSize = HAS_MAC_WINDOW_CONTROLS ? "icon-xs" : "icon";
   const actionButtonClass = cn(
     "text-muted-foreground hover:text-foreground",
@@ -93,7 +95,7 @@ function TitlebarActions({ onExpand }: { onExpand: () => void }): ReactElement {
           variant="ghost"
           size={actionButtonSize}
           className={actionButtonClass}
-          title="Expand sidebar (⌘B)"
+          title={`Expand sidebar (${toggleSidebarCombo})`}
           onClick={onExpand}
         >
           <PanelLeft className="size-4" />

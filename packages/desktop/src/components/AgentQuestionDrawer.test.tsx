@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { useHotkeys } from "@tanstack/react-hotkeys";
+import { invokeRegisteredHotkey } from "@/test/hotkeys";
 import { AgentQuestionDrawer, parseAskUserQuestions } from "./AgentQuestionDrawer";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 
@@ -20,7 +21,8 @@ interface RegisteredHotkey {
 function registeredHotkeys(): RegisteredHotkey[] {
   return mockedUseHotkeys.mock.calls.flatMap(([definitions]) =>
     definitions.map((definition) => ({
-      callback: definition.callback as (event: KeyboardEvent) => void,
+      callback: (event: KeyboardEvent) =>
+        invokeRegisteredHotkey(definition.callback, String(definition.hotkey), event),
       hotkey: String(definition.hotkey),
       ignoreInputs: definition.options?.ignoreInputs,
     })),

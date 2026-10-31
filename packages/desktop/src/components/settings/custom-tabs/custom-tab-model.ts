@@ -1,4 +1,5 @@
 import type { PluginTabSummary } from "@/api/generated";
+import { backendUnavailableHere } from "@/components/plugin-tabs/plugin-tab-access";
 
 /**
  * Pure helpers behind the Custom tabs settings section: what a tab's status,
@@ -46,12 +47,27 @@ export function describeScope(scope: string): { title: string; description: stri
   );
 }
 
-export type CustomTabStatus = "valid" | "invalid" | "not-built";
+export type CustomTabStatus = "blocked" | "valid" | "invalid" | "unavailable" | "not-built";
 
-/** A broken manifest outranks a missing build: fixing `tab.json` comes first. */
+/**
+ * A revoked (blocked) tab outranks everything: nothing on this computer makes
+ * it run again. Then a broken manifest: fixing `tab.json` comes first. A
+ * backend with no build for this platform outranks a missing page build,
+ * which would not make the tab run here.
+ */
 export function customTabStatus(tab: PluginTabSummary): CustomTabStatus {
+  if (tab.status === "blocked") return "blocked";
   if (tab.status === "invalid") return "invalid";
+  if (backendUnavailableHere(tab)) return "unavailable";
   return tab.entry_present ? "valid" : "not-built";
+}
+
+/**
+ * Whether a switch may turn the tab on. An invalid or blocked tab can be
+ * switched off, never (back) on: the service would refuse it.
+ */
+export function canTurnOn(tab: Pick<PluginTabSummary, "status">): boolean {
+  return tab.status === "valid";
 }
 
 /** A project override: `true`/`false` when set, `null` when it follows the global switch. */

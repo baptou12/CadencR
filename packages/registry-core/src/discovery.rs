@@ -1,6 +1,6 @@
-use sha2::{Digest as _, Sha256};
+use crate::digest::sha256_hex as digest;
 
-use crate::{valid_publication_repository, CatalogSnapshot, RegistryError};
+use crate::{valid_publication_repository, CatalogSnapshot, PolicyKind, RegistryError};
 
 pub const DISCOVERY_FILENAME: &str = "managed-index.json";
 pub const MAX_DISCOVERY_BYTES: usize = crate::MAX_CATALOG_BYTES;
@@ -20,12 +20,29 @@ pub fn validate_discovery_branch(branch: &str) -> Result<(), RegistryError> {
 }
 
 pub fn discovery_url(repository: &str, branch: &str) -> Result<String, RegistryError> {
+    discovery_object_url(repository, branch, DISCOVERY_FILENAME)
+}
+
+/// The raw URL of `file` on a discovery branch: the catalog or one of the
+/// three revocation policies, nothing else.
+pub fn discovery_object_url(
+    repository: &str,
+    branch: &str,
+    file: &str,
+) -> Result<String, RegistryError> {
     if !valid_publication_repository(repository) {
         return Err(RegistryError::single("discovery repository is invalid"));
     }
     validate_discovery_branch(branch)?;
+    let known = file == DISCOVERY_FILENAME
+        || [PolicyKind::Provider, PolicyKind::Theme, PolicyKind::Tab]
+            .iter()
+            .any(|kind| kind.file_name() == file);
+    if !known {
+        return Err(RegistryError::single("discovery object name is invalid"));
+    }
     Ok(format!(
-        "https://raw.githubusercontent.com/{repository}/refs/heads/{branch}/{DISCOVERY_FILENAME}"
+        "https://raw.githubusercontent.com/{repository}/refs/heads/{branch}/{file}"
     ))
 }
 
@@ -64,13 +81,6 @@ pub fn assess_discovery_head(
             "discovery does not match the signed baseline",
         ))
     }
-}
-
-fn digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 #[cfg(test)]

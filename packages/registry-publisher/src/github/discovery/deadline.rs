@@ -1,11 +1,64 @@
 use super::*;
 
+/// A file state the caller already holds, by blob.
+#[derive(Clone, Copy)]
+pub(super) enum Known<'a> {
+    Absent,
+    Blob(&'a str),
+}
+
+impl<'a> Known<'a> {
+    pub(super) fn of(head: Option<&'a DiscoveryHead>) -> Self {
+        head.map_or(Self::Absent, |head| Self::Blob(&head.sha))
+    }
+}
+
 impl GitHubClient {
-    pub(super) fn read_discovery(
+    /// The blob of `file` on `branch`, resolved through the branch's commit
+    /// tree so every request is pinned to one commit.
+    pub(super) fn read_discovery_file(
         &self,
         branch: &str,
+        file: &str,
         deadline: Option<Instant>,
     ) -> Result<Option<DiscoveryHead>, PublisherError> {
+        let (commit_sha, entry) = self.resolve_entry(branch, file, deadline)?;
+        entry
+            .map(|entry| self.fetch_entry(&commit_sha, &entry, file, deadline))
+            .transpose()
+    }
+
+    /// Like [`Self::read_discovery_file`] for a caller that holds `known`:
+    /// when the tree still shows exactly that state, the contents are not
+    /// fetched.
+    pub(super) fn read_discovery_entry(
+        &self,
+        branch: &str,
+        file: &str,
+        deadline: Option<Instant>,
+        known: Option<Known<'_>>,
+    ) -> Result<Observed, PublisherError> {
+        let (commit_sha, entry) = self.resolve_entry(branch, file, deadline)?;
+        let Some(entry) = entry else {
+            return Ok(match known {
+                Some(Known::Absent) => Observed::Unchanged,
+                _ => Observed::Head(None),
+            });
+        };
+        if matches!(known, Some(Known::Blob(sha)) if sha == entry.sha) {
+            return Ok(Observed::Unchanged);
+        }
+        self.fetch_entry(&commit_sha, &entry, file, deadline)
+            .map(|head| Observed::Head(Some(head)))
+    }
+
+    /// The commit at the head of `branch` and the tree entry of `file` in it.
+    fn resolve_entry(
+        &self,
+        branch: &str,
+        file: &str,
+        deadline: Option<Instant>,
+    ) -> Result<(String, Option<RawTreeEntry>), PublisherError> {
         validate_discovery_branch(branch)?;
         let reference: RawRef = self.request.get_with_deadline(
             &format!("/repos/{}/git/ref/heads/{branch}", self.repository),
@@ -21,9 +74,17 @@ impl GitHubClient {
             &format!("/repos/{}/git/trees/{tree_sha}", self.repository),
             deadline,
         )?;
-        let Some(entry) = tree.validate(&tree_sha)? else {
-            return Ok(None);
-        };
+        let entry = tree.validate(&tree_sha, file)?;
+        Ok((commit_sha, entry))
+    }
+
+    fn fetch_entry(
+        &self,
+        commit_sha: &str,
+        entry: &RawTreeEntry,
+        file: &str,
+        deadline: Option<Instant>,
+    ) -> Result<DiscoveryHead, PublisherError> {
         // Contents responses omit base64 data above 1 MiB; pin the Git blob
         // discovered in the reviewed commit tree instead, retaining SHA checks.
         if entry.size > 1024 * 1024 {
@@ -31,16 +92,16 @@ impl GitHubClient {
                 &format!("/repos/{}/git/blobs/{}", self.repository, entry.sha),
                 deadline,
             )?;
-            return blob.validate(&entry).map(Some);
+            return blob.validate(entry, file);
         }
         let content: RawContent = self.request.get_with_deadline(
             &format!(
-                "/repos/{}/contents/{DISCOVERY_FILENAME}?ref={commit_sha}",
+                "/repos/{}/contents/{file}?ref={commit_sha}",
                 self.repository
             ),
             deadline,
         )?;
-        content.validate(&entry).map(Some)
+        content.validate(entry, file)
     }
 }
 

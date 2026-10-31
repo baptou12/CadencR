@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@/test-utils";
 import MermaidDiagram from "./MermaidDiagram";
@@ -15,7 +16,12 @@ const initialize = vi.fn();
 
 // The fallback path dynamically imports "mermaid"; mock the module wholesale.
 vi.mock("mermaid", () => ({
-  default: { initialize, parse, render: renderFn },
+  default: {
+    initialize,
+    parse,
+    render: renderFn,
+    mermaidAPI: { defaultConfig: { secure: ["securityLevel"] } },
+  },
 }));
 
 // beautiful-mermaid draws flowcharts; mermaid only sees the kinds it cannot.

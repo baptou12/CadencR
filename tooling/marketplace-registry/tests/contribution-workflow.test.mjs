@@ -51,6 +51,7 @@ test("PR validation stays read-only and does not acquire credentials or privileg
   assert.equal((workflow.match(/persist-credentials: false/g) ?? []).length, 4);
   assert.doesNotMatch(workflow, /pull_request_target|workflow_run|workflow_dispatch/);
   assert.doesNotMatch(workflow, /secrets\.|contents:\s*write|id-token:\s*write/);
+  assert.doesNotMatch(workflow, /setup-node|node-version|npm|pnpm|yarn/);
   const { inert } = jobSections(workflow);
   assert.doesNotMatch(inert, /download-artifact|curl|wget|npm\s+(?:ci|install)|pnpm|yarn/);
 });
@@ -59,9 +60,9 @@ test("released CLI pin is the qualified atomic three-field pin", async () => {
   const config = await readFile(new URL("../ci/released-cli.env", import.meta.url), "utf8");
   const version = config.match(/^CADENCR_RELEASE_VERSION=(\S+)$/m)?.[1];
   const digest = config.match(/^CADENCR_RELEASE_SHA256=(\S+)$/m)?.[1];
-  assert.equal(version, "0.13.1-dev.39108033875.1");
-  assert.equal(digest, "d11bfade6297fa30e1e10e82605f5a221da8e07edeeee372e2c2f6185c6ff725");
-  assert.match(config, /^CADENCR_RELEASE_TAG=cli\/v0\.13\.1-dev\.39108033875\.1$/m);
+  assert.equal(version, "0.15.2");
+  assert.equal(digest, "f4a719871f776bdbbb9845ac98eb381a85da5730237e0c9b50c2e15198fc4031");
+  assert.match(config, /^CADENCR_RELEASE_TAG=cli\/v0\.15\.2$/m);
   assert.doesNotMatch(config, /URL|latest/);
 });
 
@@ -341,11 +342,17 @@ test("all trusted workflow business operations use released Rust commands withou
     "utf8",
   );
   assert.match(selector, /refusing legacy fallback/);
-  // The contribution/publisher pin must not claim newly added commands exist in
-  // already-distributed bytes. Full metadata/expiry cutover needs a new release.
+  // Bind the selected bytes to the separately qualified release and source;
+  // selecting this binary does not authorize deployment or publication.
   const pin = await readFile(new URL("../ci/released-cli.env", import.meta.url), "utf8");
-  assert.match(
-    pin,
-    /newly added metadata and\n# expiry commands require a separately qualified release/,
+  assert.deepEqual(
+    pin.split("\n").filter((line) => line && !line.startsWith("#")),
+    [
+      "CADENCR_RELEASE_VERSION=0.15.2",
+      "CADENCR_RELEASE_SHA256=f4a719871f776bdbbb9845ac98eb381a85da5730237e0c9b50c2e15198fc4031",
+      "CADENCR_RELEASE_TAG=cli/v0.15.2",
+    ],
   );
+  assert.match(pin, /^# Qualified source 07a41cbcacbcf7bdcfddb514313cbe9d146c101b\.$/m);
+  assert.match(pin, /no deployment or publication authorization/);
 });

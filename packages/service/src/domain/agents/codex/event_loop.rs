@@ -5,6 +5,7 @@ use std::sync::Arc;
 use codex_app_server_sdk_rs::{AppServerEvent, AppServerEventReceiver, CodexAppServerClient};
 use tokio::sync::{mpsc, Mutex, RwLock};
 
+use super::async_questions::{request_id as async_question_id, PendingAsyncQuestions};
 use super::event_lifecycle::SessionLifecycle;
 use super::event_state::IndexState;
 use super::event_subagent_recovery::recover_interacted_routes;
@@ -17,24 +18,29 @@ use super::responses::response_value;
 use super::trusted_mcp::trusted_cadencr_browser_permission_response;
 use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent};
 
+#[bon::builder]
 pub(super) fn spawn_event_loop(
     client: CodexAppServerClient,
     source_rx: AppServerEventReceiver,
     tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingCodexRequest>>>,
+    async_questions: Arc<Mutex<PendingAsyncQuestions>>,
     pending_prompt_receipts: Arc<PendingPromptReceipts>,
     turns: RootTurnTracker,
     model: Arc<RwLock<Option<String>>>,
     closing: Arc<AtomicBool>,
+    compaction: Arc<super::session::compaction::CompactionState>,
 ) {
     let event_loop = EventLoop {
         client,
         tx,
         pending_requests,
+        async_questions,
         pending_prompt_receipts,
         turns,
         model,
         closing,
+        compaction,
     };
     tokio::spawn(async move { event_loop.run(source_rx).await });
 }
@@ -43,10 +49,12 @@ struct EventLoop {
     client: CodexAppServerClient,
     tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingCodexRequest>>>,
+    async_questions: Arc<Mutex<PendingAsyncQuestions>>,
     pending_prompt_receipts: Arc<PendingPromptReceipts>,
     turns: RootTurnTracker,
     model: Arc<RwLock<Option<String>>>,
     closing: Arc<AtomicBool>,
+    compaction: Arc<super::session::compaction::CompactionState>,
 }
 
 struct NotificationState {
@@ -143,6 +151,9 @@ impl EventLoop {
         mut params: serde_json::Value,
         state: &mut NotificationState,
     ) -> bool {
+        if super::event_turn_state::belongs_to_root_thread(&params, &self.turns.root_thread_id) {
+            self.compaction.observe(&method, &params);
+        }
         if method == "turn/started" {
             let thread_id = params
                 .get("threadId")
@@ -219,6 +230,11 @@ impl EventLoop {
                 .clone_from(&state.lifecycle.children);
         }
         for event in events {
+            if async_question_id(&event).is_some()
+                && !self.async_questions.lock().await.enqueue(&event)
+            {
+                continue;
+            }
             if self.tx.send(Ok(event)).await.is_err() {
                 return false;
             }

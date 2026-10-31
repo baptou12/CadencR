@@ -236,6 +236,19 @@ pub(crate) async fn make_test_app_state() -> AppState {
     .await
     .unwrap();
 
+    for migration in [
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/migrations/20261024210000_session_prompt_queue.sql"
+        )),
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/migrations/20261026210000_prompt_queue_message_identity.sql"
+        )),
+    ] {
+        sqlx::raw_sql(migration).execute(&pool).await.unwrap();
+    }
+
     sqlx::query(
         r#"CREATE TABLE agent_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -539,4 +552,35 @@ pub(crate) async fn add_claude_custom_model(
     )
     .await
     .unwrap();
+}
+
+/// A provider `Result` event: the turn ended.
+pub(crate) fn result_event() -> RuntimeEvent {
+    RuntimeEvent::new(
+        crate::domain::agents::adapter::RuntimeEventMetadata::default(),
+        RuntimeEventKind::Result,
+    )
+}
+
+pub(crate) async fn insert_running_session(
+    app_state: &AppState,
+    db_session_id: i64,
+    feature_id: i64,
+) {
+    sqlx::query(
+        "INSERT INTO agent_sessions (id, feature_id, agent_type, status) VALUES (?, ?, 'session', 'running')",
+    )
+    .bind(db_session_id)
+    .bind(feature_id)
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap();
+}
+
+pub(crate) async fn db_status(app_state: &AppState, db_session_id: i64) -> String {
+    sqlx::query_scalar("SELECT status FROM agent_sessions WHERE id = ?")
+        .bind(db_session_id)
+        .fetch_one(&app_state.write_pool)
+        .await
+        .unwrap()
 }

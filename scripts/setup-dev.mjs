@@ -10,7 +10,7 @@
 // ports that do not collide with other worktrees, which this script cannot do
 // without either clobbering existing files or copying the dev database.
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -20,6 +20,7 @@ import {
   isPlaceholderToken,
   readEnvFile,
   updateEnvFile,
+  writePrivateEnv,
 } from "./dev-env.mjs";
 import { gitCheckout } from "./git-worktrees.mts";
 
@@ -31,10 +32,13 @@ export function copyMissingEnvFiles(root) {
   const created = [];
   for (const envPath of [SERVICE_ENV, DESKTOP_ENV]) {
     const target = join(root, envPath);
-    if (existsSync(target)) continue;
+    if (existsSync(target)) {
+      readEnvFile(root, envPath);
+      continue;
+    }
     const example = `${target}.example`;
     if (!existsSync(example)) throw new Error(`Missing ${envPath}.example`);
-    copyFileSync(example, target);
+    writePrivateEnv(target, readFileSync(example));
     created.push(envPath);
   }
   return created;

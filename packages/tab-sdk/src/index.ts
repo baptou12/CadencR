@@ -23,6 +23,11 @@ export type {
   ExecRunOptions,
 } from "./execution.js";
 export { CadencrError, isCadencrError, toCadencrError } from "./errors.js";
+export {
+  HOST_REPORTED_BACKEND_CODES,
+  isReportedByHost,
+  type HostReportedBackendCode,
+} from "./host-reported.js";
 export { createPluginFetch, pluginFetch, type PluginFetch } from "./fetcher.js";
 export { applyTheme, themeToCss, themeVariables, THEME_VARIABLE_PREFIX } from "./theme.js";
 export { singlePortSource, windowPortSource, type PortSource } from "./transport.js";

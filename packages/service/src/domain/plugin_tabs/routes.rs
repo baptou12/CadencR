@@ -8,8 +8,8 @@ use axum::Router;
 use sqlx::SqlitePool;
 
 use super::models::{
-    CreatePluginTabRequest, PluginTabConfiguration, PluginTabConsentRequest, PluginTabProjectQuery,
-    PluginTabSummary, PluginTabWorkspace, PutPluginTabConfigurationRequest,
+    CreatePluginTabRequest, PluginTabConfiguration, PluginTabConsentRequest, PluginTabListQuery,
+    PluginTabProjectQuery, PluginTabSummary, PluginTabWorkspace, PutPluginTabConfigurationRequest,
     SetPluginTabEnablementRequest,
 };
 use super::{
@@ -61,15 +61,15 @@ pub fn plugin_tabs_router() -> Router<AppState> {
 #[utoipa::path(
     get,
     path = "/api/plugin-tabs",
-    params(PluginTabProjectQuery),
+    params(PluginTabListQuery),
     responses((status = 200, body = Vec<PluginTabSummary>))
 )]
 pub async fn plugin_tab_list_handler(
     State(state): State<AppState>,
-    Query(query): Query<PluginTabProjectQuery>,
+    Query(query): Query<PluginTabListQuery>,
 ) -> Result<Json<Vec<PluginTabSummary>>, AppError> {
     Ok(Json(
-        summary::list(&state.read_pool, query.project_id).await?,
+        summary::list(&state.read_pool, query.project_id, query.project_overrides).await?,
     ))
 }
 
@@ -125,9 +125,12 @@ pub async fn plugin_tab_set_enablement_handler(
     Ok(Json(summary::from_tab(pool, tab, body.project_id).await?))
 }
 
-/// Accept the tab's current permissions. 409 `PLUGIN_TAB_CONSENT_STALE` when
-/// `permissions_hash` is not the current one. A changed consent revokes the
-/// tab's live grants.
+/// Accept the tab's current permissions — or, with the hash of a staged
+/// marketplace update (`pending_update.permissions_hash`), accept that update:
+/// it becomes the installed revision and its backend restarts on it. 409
+/// `PLUGIN_TAB_CONSENT_STALE` when `permissions_hash` is neither (409
+/// `MANAGED_TAB_UPDATE_CHANGED` when the staged update was replaced
+/// meanwhile). A changed consent revokes the tab's live grants.
 #[utoipa::path(
     put,
     path = "/api/plugin-tabs/{id}/consent",
@@ -142,12 +145,36 @@ pub async fn plugin_tab_consent_handler(
     Json(body): Json<PluginTabConsentRequest>,
 ) -> Result<Json<PluginTabSummary>, AppError> {
     let pool = &state.write_pool;
-    let tab = registry::get(&id).await?;
-    let (_, current) = tab.require_valid()?;
-    consent::require_current(&id, &current, &body.permissions_hash)?;
+    let mut tab = registry::get(&id).await?;
+    let current = match tab.pending_accepted_by(&body.permissions_hash) {
+        Some(super::registry::AcceptedUpdate {
+            revision,
+            permissions_hash: hash,
+        }) => {
+            tab.require_pending_not_blocked()?;
+            // The update is promoted before consent is recorded: a failed
+            // promotion leaves the installed revision and its consent alone.
+            super::managed::service::promote_pending(id.clone(), revision).await?;
+            // Before the grants are revoked below: the first reason given
+            // is the one its Activity shows.
+            state
+                .plugin_tab_backends
+                .stop_plugin(&id, super::backend::StopReason::TabUpdated)
+                .await;
+            tab = registry::get(&id).await?;
+            hash
+        }
+        None => {
+            let (_, current) = tab.require_valid()?;
+            consent::require_current(&id, &current, &body.permissions_hash)?;
+            current
+        }
+    };
     let previous = consent::consented_hash(pool, &id).await?;
     consent::record(pool, &id, &current).await?;
     if previous.as_deref() != Some(current.as_str()) {
+        // Every grant (the backend's included) carries the old hash: open
+        // instances re-mint, and the backend restarts on the new revision.
         state.plugin_tab_grants.revoke_plugin(&id);
         announce_change(&state, &id);
     }
@@ -253,5 +280,65 @@ async fn require_project(pool: &SqlitePool, project_id: Option<i64>) -> Result<(
             crate::domain::projects::service::ensure_project_exists(pool, project_id).await
         }
         None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use serde_json::json;
+
+    use super::*;
+    use crate::domain::plugin_tabs::backend::models::PluginTabBackendState;
+    use crate::domain::plugin_tabs::managed::policy::tests::configure;
+    use crate::domain::plugin_tabs::managed::storage::Activation;
+    use crate::domain::plugin_tabs::revocation_tests::{echo, install, launch};
+    use crate::domain::plugin_tabs::test_support;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn accepting_a_staged_update_says_the_backend_stopped_for_it() {
+        let _policy = configure(json!([]));
+        let temp = tempfile::tempdir().unwrap();
+        install(temp.path(), 0, Activation::Activate);
+        install(temp.path(), 1, Activation::Stage);
+        let state = AppState::with_pool(test_support::pool().await);
+        let tab = registry::get("graph").await.unwrap();
+        let (_, current) = tab.require_valid().unwrap();
+        consent::record(&state.write_pool, "graph", &current)
+            .await
+            .unwrap();
+        let staged = tab.pending.as_ref().unwrap().permissions_hash().unwrap();
+        let backends = state.plugin_tab_backends.clone();
+        backends
+            .request(&state.plugin_tab_grants, launch(&tab, temp.path()), echo())
+            .await
+            .unwrap();
+        drop(tab);
+
+        let Json(accepted) = plugin_tab_consent_handler(
+            State(state.clone()),
+            Path("graph".into()),
+            Query(PluginTabProjectQuery { project_id: None }),
+            Json(PluginTabConsentRequest {
+                permissions_hash: staged,
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(accepted.version.as_deref(), Some("1.0.1"));
+        let mut status = backends.status("graph", 2).await.unwrap();
+        for _ in 0..100 {
+            if status.state != PluginTabBackendState::Running {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            status = backends.status("graph", 2).await.unwrap();
+        }
+        assert_eq!(status.state, PluginTabBackendState::Stopped, "{status:?}");
+        // Not the grant revocation's "its permissions changed or it was turned off".
+        assert_eq!(status.exit_reason.as_deref(), Some("its tab was updated"));
+        backends.shutdown().await;
     }
 }

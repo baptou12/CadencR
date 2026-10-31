@@ -120,7 +120,15 @@ export function handleTurnComplete(ctx: StoreAccessors, sessionId: string, paylo
   const receivedBlocks = markPromptsReceived(session.blocks, ended.receivedPromptMessageUuids);
   const terminalBlocks = markPendingPromptsUnknown(receivedBlocks);
   const tailPromptBoundary = trimTailPromptTurnBoundary(terminalBlocks);
-  const blocks = tailPromptBoundary.blocks;
+  // The backend persisted a "stopped by you" marker for this turn; show it now
+  // (a reload reads the persisted row instead).
+  const blocks =
+    ended.reason === "turn_interrupted"
+      ? [
+          ...tailPromptBoundary.blocks,
+          { id: `interrupted-${Date.now()}`, type: "turn_interrupted" as const, content: "" },
+        ]
+      : tailPromptBoundary.blocks;
   const lifecycle = transitionTurn(session.lifecycle, {
     type: "turn_ended",
     reason: mapTerminalReason(ended.reason),

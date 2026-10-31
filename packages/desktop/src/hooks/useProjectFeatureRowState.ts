@@ -3,6 +3,7 @@ import { useFeaturePrefetch } from "@/hooks/useFeaturePrefetch";
 import { useFeatureAttention } from "@/hooks/useFeatureAttention";
 import type { Attention } from "@/lib/sidebar-attention";
 import { selectPrStatus, usePrStatusStore } from "@/stores/usePrStatusStore";
+import { useIsSidebarPointedFeature } from "@/stores/sidebar-pointed-feature-store";
 
 export interface ProjectFeatureRowState {
   attention: Attention;
@@ -11,6 +12,8 @@ export interface ProjectFeatureRowState {
   isActive: boolean;
   isArchived: boolean;
   isPinned: boolean;
+  /** Pointed at from elsewhere (an agent message's sender): the row lights up. */
+  isPointed: boolean;
   prefetchFeature: () => void;
 }
 
@@ -49,6 +52,7 @@ export function useProjectFeatureRowState(
     },
   );
   const prefetchFeature = useFeaturePrefetch(feature.id, projectId);
+  const isPointed = useIsSidebarPointedFeature(feature.id);
 
   return {
     attention,
@@ -57,6 +61,7 @@ export function useProjectFeatureRowState(
     isActive,
     isArchived: feature.status === "archived",
     isPinned: feature.is_pinned,
+    isPointed,
     prefetchFeature,
   };
 }

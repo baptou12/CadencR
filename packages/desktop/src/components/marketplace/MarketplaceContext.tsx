@@ -4,6 +4,7 @@ import { useTabMarketplace } from "@/hooks/useTabMarketplace";
 import { useThemeMarketplace } from "@/hooks/useThemeMarketplace";
 import { useTheme } from "@/hooks/useTheme";
 import { buildListings, type MarketplaceListing } from "@/lib/marketplace-listings";
+import { browsableListings } from "@/lib/marketplace-platform";
 import { usableCatalog } from "@/lib/marketplace";
 import { usableThemeCatalog } from "@/lib/theme-marketplace";
 
@@ -11,7 +12,10 @@ interface MarketplaceState {
   providers: ReturnType<typeof useMarketplace>;
   themes: ReturnType<typeof useThemeMarketplace>;
   tabs: ReturnType<typeof useTabMarketplace>;
+  /** Every known package: detail pages and the installed record read this. */
   listings: MarketplaceListing[];
+  /** What browsing surfaces list: `listings` minus packages with no build for this platform. */
+  browsable: MarketplaceListing[];
   themeLoading: boolean;
   loading: boolean;
   /** At least one kind has a current, verified catalog to install from. */
@@ -63,6 +67,7 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
       tabSummaries,
     ],
   );
+  const browsable = useMemo(() => browsableListings(listings), [listings]);
   const loading =
     providers.catalogQuery.isPending ||
     providers.inventoryQuery.isPending ||
@@ -76,6 +81,7 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
       themes,
       tabs,
       listings,
+      browsable,
       themeLoading,
       loading,
       catalogUsable: {
@@ -91,6 +97,7 @@ export function MarketplaceProvider({ children }: { children: ReactNode }): Reac
       themes,
       tabs,
       listings,
+      browsable,
       themeLoading,
       loading,
       providerCatalog,

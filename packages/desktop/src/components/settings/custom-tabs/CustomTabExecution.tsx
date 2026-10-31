@@ -1,11 +1,13 @@
 import { AlertTriangle, CpuIcon, TerminalIcon } from "lucide-react";
 import type { PluginTabSummary } from "@/api/generated";
-import { backendCommandLine } from "@/components/plugin-tabs/plugin-tab-access";
+import { backendBinaries } from "@/components/plugin-tabs/plugin-tab-access";
 import {
   BLOCKING_BANNER_CLASS,
   WARNING_BANNER_CLASS,
 } from "@/components/settings/SettingsWarningsBanner";
 import { cn } from "@/lib/utils";
+import { NewMark } from "./CustomTabUpdateChanges";
+import type { AddedAccess } from "./update-changes";
 
 type ExecutionTab = Pick<PluginTabSummary, "commands" | "backend">;
 
@@ -13,19 +15,32 @@ type ExecutionTab = Pick<PluginTabSummary, "commands" | "backend">;
  * What a tab may run beyond its page: the programs Cadencr runs for it, and
  * its native backend. Shown under the permissions on the card and in the
  * consent dialog, with what each one really means — nothing when the tab is
- * read-only.
+ * read-only. Reviewing an update, `added` marks what the installed version
+ * did not run.
  */
-export function CustomTabExecution({ tab }: { tab: ExecutionTab }): React.JSX.Element | null {
+export function CustomTabExecution({
+  tab,
+  added,
+}: {
+  tab: ExecutionTab;
+  added?: AddedAccess;
+}): React.JSX.Element | null {
   if (tab.commands.length === 0 && !tab.backend) return null;
   return (
     <div className="space-y-3">
-      <CommandsAccess commands={tab.commands} />
-      <BackendAccess tab={tab} />
+      <CommandsAccess commands={tab.commands} added={added?.commands} />
+      <BackendAccess tab={tab} isNew={added?.backend ?? false} />
     </div>
   );
 }
 
-function CommandsAccess({ commands }: { commands: ExecutionTab["commands"] }) {
+function CommandsAccess({
+  commands,
+  added,
+}: {
+  commands: ExecutionTab["commands"];
+  added?: ReadonlySet<string>;
+}) {
   if (commands.length === 0) return null;
   return (
     <div className="flex items-start gap-2.5">
@@ -38,6 +53,7 @@ function CommandsAccess({ commands }: { commands: ExecutionTab["commands"] }) {
               <span className="mr-1.5 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10.5px] text-foreground">
                 {command.program}
               </span>
+              {added?.has(command.program) ? <NewMark className="ml-0 mr-1.5" /> : null}
               {command.reasoning}
             </li>
           ))}
@@ -52,17 +68,20 @@ function CommandsAccess({ commands }: { commands: ExecutionTab["commands"] }) {
   );
 }
 
-function BackendAccess({ tab }: { tab: ExecutionTab }) {
+function BackendAccess({ tab, isNew }: { tab: ExecutionTab; isNew: boolean }) {
   const { backend } = tab;
   if (!backend) return null;
   return (
     <div className="flex items-start gap-2.5">
       <CpuIcon className="mt-0.5 size-3.5 shrink-0 text-[var(--acc-red)]" aria-hidden />
       <div className="min-w-0 space-y-1.5">
-        <p className="text-xs font-medium leading-tight">Runs native code with your rights</p>
+        <p className="text-xs font-medium leading-tight">
+          Runs native code with your rights
+          {isNew ? <NewMark /> : null}
+        </p>
         <p className="text-xs leading-snug text-muted-foreground">
           <span className="mr-1.5 break-all rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10.5px] text-foreground">
-            {backendCommandLine(backend)}
+            {backendBinaries(backend)}
           </span>
           {backend.reasoning}
         </p>

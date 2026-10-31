@@ -5,6 +5,15 @@ use serde_json::Value;
 use sqlx::SqlitePool;
 
 use super::paths;
+use crate::error::AppError;
+
+/// The stable code of a coded error; any other error fails the test.
+pub(crate) fn error_code(error: &AppError) -> &'static str {
+    match error {
+        AppError::Coded { code, .. } => code,
+        other => panic!("expected a coded error, got {other:?}"),
+    }
+}
 
 /// Write `<tabs>/<id>/tab.json` (and an icon) in this test's isolated plugins dir.
 pub(crate) fn write_tab(id: &str, overrides: Value) -> PathBuf {

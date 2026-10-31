@@ -1,9 +1,15 @@
-import { memo, type RefObject } from "react";
+import { memo, useEffect, type RefObject } from "react";
 import type { VirtuosoHandle } from "react-virtuoso";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { DisplayItem } from "@/components/agentStreamDisplay";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 import { useConversationSearch } from "@/hooks/useConversationSearch";
+import { useFeatureLayoutContext } from "@/components/feature-layout/FeatureLayoutContext";
+import {
+  isFreshFindRequest,
+  takeConversationFind,
+  useConversationFindRequestStore,
+} from "@/stores/conversation-find-request-store";
 import { ConversationSearchBar } from "./ConversationSearchBar";
 
 interface ConversationSearchProps {
@@ -30,6 +36,7 @@ export const ConversationSearch = memo(function ConversationSearch({
   scrollerRef,
 }: ConversationSearchProps) {
   const search = useConversationSearch({ items, toolResultMap, virtuosoRef, scrollerRef });
+  useTakeFindRequest(search.openSearch, search.setQuery);
 
   useScopedGlobalShortcutById(
     "conversation-search",
@@ -57,3 +64,21 @@ export const ConversationSearch = memo(function ConversationSearch({
     />
   );
 });
+
+/**
+ * Opens the find bar on a query the command palette asked for (a message hit
+ * in this conversation), once, if the request is still fresh.
+ */
+function useTakeFindRequest(openSearch: () => void, setQuery: (query: string) => void): void {
+  const featureId = useFeatureLayoutContext()?.featureId;
+  const request = useConversationFindRequestStore((state) =>
+    featureId != null && state.request?.featureId === featureId ? state.request : null,
+  );
+  useEffect(() => {
+    if (!request) return;
+    takeConversationFind(request.nonce);
+    if (!isFreshFindRequest(request, Date.now())) return;
+    openSearch();
+    setQuery(request.query);
+  }, [openSearch, request, setQuery]);
+}

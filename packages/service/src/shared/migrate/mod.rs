@@ -25,6 +25,8 @@ mod plugin_tabs_migration_tests;
 #[cfg(test)]
 mod project_authoring_marker_migration_tests;
 #[cfg(test)]
+mod prompt_queue_identity_migration_tests;
+#[cfg(test)]
 mod reply_wait_claim_migration_tests;
 #[cfg(test)]
 mod rewind_fork_migration_tests;

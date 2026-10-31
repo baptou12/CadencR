@@ -24,11 +24,7 @@ pub(super) fn validate_inputs(
     if !valid_publication_repository(repository) {
         return Err(RegistryError::single("repository is invalid"));
     }
-    if commit.len() != 40
-        || !commit
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-    {
+    if !crate::digest::is_lower_hex(commit, 40) {
         return Err(RegistryError::single(
             "registryCommit must be 40 lowercase hex characters",
         ));

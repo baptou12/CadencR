@@ -259,6 +259,12 @@ export type ProviderCatalogResponseEntryAllOfProfileCapability = null | Provider
 export type ProviderCatalogResponseEntryAllOf = {
   origin: ProviderOrigin;
   profile_capability?: ProviderCatalogResponseEntryAllOfProfileCapability;
+  /**
+   * A prompt sent while the agent works is delivered into the running turn
+   * and acknowledged (steering). When false the composer queues it for
+   * after the turn instead of promising a steer it can't confirm.
+   */
+  steering_acknowledged?: boolean;
 };
 
 /**
@@ -1151,6 +1157,38 @@ export const FeatureStatus = {
   active: "active",
   archived: "archived",
 } as const;
+
+/**
+ * One conversation as the command palette searches it: active and archived
+ * alike, with just what a result row and its preview name.
+ */
+export interface ConversationIndexEntry {
+  /**
+   * When it was archived; `None` for an active conversation.
+   * @nullable
+   */
+  archived_at?: string | null;
+  created_at: string;
+  id: number;
+  is_pinned: boolean;
+  /** @nullable */
+  label?: string | null;
+  /** Latest user message across the conversation's sessions, else its creation time. */
+  last_activity_at: string;
+  project_id: number;
+  /**
+   * Provider of the latest agent session, else the conversation's setting.
+   * @nullable
+   */
+  runtime_provider?: string | null;
+  status: FeatureStatus;
+  title: string;
+  /**
+   * Branch recorded for the conversation's worktree, when it has one.
+   * @nullable
+   */
+  worktree_branch?: string | null;
+}
 
 export interface ConversationReferenceCandidate {
   feature_id: number;
@@ -2926,6 +2964,25 @@ export type ManagedCatalogResponseIndex = null | SignedProviderCatalog;
  */
 export type ManagedCatalogResponseRecommendedVersions = { [key: string]: string };
 
+/**
+ * Why a catalog tab or provider version does not install on this host.
+ */
+export type TabVersionUnavailable =
+  (typeof TabVersionUnavailable)[keyof typeof TabVersionUnavailable];
+
+export const TabVersionUnavailable = {
+  platform: "platform",
+  protocol: "protocol",
+} as const;
+
+/**
+ * Provider versions that cannot install on this host, by provider id then
+ * version: the installer would find no binary for it. Never recommended.
+ */
+export type ManagedCatalogResponseUnavailableVersions = {
+  [key: string]: { [key: string]: TabVersionUnavailable };
+};
+
 export interface ManagedCatalogResponse {
   cache_status: ManagedCatalogCacheStatus;
   /** @nullable */
@@ -2943,6 +3000,11 @@ export interface ManagedCatalogResponse {
   /** @nullable */
   signer_key_id?: string | null;
   source_configured: boolean;
+  /**
+   * Provider versions that cannot install on this host, by provider id then
+   * version: the installer would find no binary for it. Never recommended.
+   */
+  unavailable_versions?: ManagedCatalogResponseUnavailableVersions;
   used_cached_verified_catalog: boolean;
 }
 
@@ -3098,23 +3160,108 @@ export interface ManagedProvidersInventory {
   trust: ManagedTrustInventory;
 }
 
+/**
+ * One `backend.binary` key. Windows is not supported yet.
+ */
+export type TabPlatform = (typeof TabPlatform)[keyof typeof TabPlatform];
+
+export const TabPlatform = {
+  "darwin-aarch64": "darwin-aarch64",
+  "darwin-x86_64": "darwin-x86_64",
+  "linux-x86_64": "linux-x86_64",
+} as const;
+
+export type ManagedTabInventoryEntryPlatform = null | TabPlatform;
+
 export interface ManagedTabInventoryEntry {
+  /**
+   * Why Cadencr's signed revocation policy blocks the active revision: it
+   * cannot run, only be removed (or updated to a version not blocked).
+   * @nullable
+   */
+  blocked?: string | null;
   /** @nullable */
   error?: string | null;
   id: string;
   name: string;
+  /**
+   * A verified update staged beside the active revision, waiting for the
+   * user to accept what it may now run (`PUT /api/plugin-tabs/{id}/consent`
+   * with its permissions hash) or to discard it.
+   * @nullable
+   */
+  pending_version?: string | null;
+  platform?: ManagedTabInventoryEntryPlatform;
+  /** The active revision's version. */
   version: string;
 }
+
+/**
+ * Whether the cached policy can vouch for new work.
+ */
+export type PolicyFreshness = (typeof PolicyFreshness)[keyof typeof PolicyFreshness];
+
+export const PolicyFreshness = {
+  not_configured: "not_configured",
+  fresh: "fresh",
+  stale: "stale",
+  missing: "missing",
+} as const;
+
+export interface ManagedTabPolicyStatus {
+  cache_status: PolicyFreshness;
+  /**
+   * Why the policy is not fresh, or the last feed failure.
+   * @nullable
+   */
+  detail?: string | null;
+  /** @nullable */
+  expires_at?: string | null;
+  /** @nullable */
+  generated_at?: string | null;
+  source_configured: boolean;
+}
+
+/**
+ * The custom-tab catalog only: the versions Cadencr's revocation policy
+ * blocks here, by tab id then version, with the policy's reason. They
+ * are never recommended, and installing one is refused.
+ */
+export type ManagedThemeCatalogResponseBlockedVersions = {
+  [key: string]: { [key: string]: string };
+};
+
+export type ManagedThemeCatalogResponseHostPlatform = null | TabPlatform;
 
 export type ManagedThemeCatalogResponseIndex = null | SignedMixedCatalog;
 
 export type ManagedThemeCatalogResponseRecommendedVersions = { [key: string]: string };
 
+/**
+ * The custom-tab catalog: the versions that cannot install here, by
+ * tab id then version, and why. They are never recommended.
+ */
+export type ManagedThemeCatalogResponseUnavailableVersions = {
+  [key: string]: { [key: string]: TabVersionUnavailable };
+};
+
 export interface ManagedThemeCatalogResponse {
+  /**
+   * The custom-tab catalog only: the versions Cadencr's revocation policy
+   * blocks here, by tab id then version, with the policy's reason. They
+   * are never recommended, and installing one is refused.
+   */
+  blocked_versions?: ManagedThemeCatalogResponseBlockedVersions;
   /** @nullable */
   error?: string | null;
+  host_platform?: ManagedThemeCatalogResponseHostPlatform;
   index?: ManagedThemeCatalogResponseIndex;
   recommended_versions: ManagedThemeCatalogResponseRecommendedVersions;
+  /**
+   * The custom-tab catalog: the versions that cannot install here, by
+   * tab id then version, and why. They are never recommended.
+   */
+  unavailable_versions?: ManagedThemeCatalogResponseUnavailableVersions;
   verified: boolean;
 }
 
@@ -3209,6 +3356,22 @@ export interface MessageFullContentResponse {
 export interface MessagePreviewResponse {
   /** @nullable */
   preview?: string | null;
+}
+
+/**
+ * The most recent message of one conversation that matches the query.
+ */
+export interface MessageSearchHit {
+  created_at: string;
+  feature_id: number;
+  feature_status: FeatureStatus;
+  feature_title: string;
+  message_id: number;
+  project_id: number;
+  /** `user` or `assistant`. */
+  role: string;
+  /** Text around the match; each matched word is wrapped in U+0002 … U+0003. */
+  snippet: string;
 }
 
 export interface ModeChangedPayload {
@@ -3361,7 +3524,7 @@ export interface PairingCodeResponse {
   /** @minimum 0 */
   expires_in_secs: number;
   fingerprint: string;
-  /** `https://<lan-ip>:<port>/?code=<code>` for each interface. */
+  /** `https://<lan-ip>:<port>/#code=<code>` for each interface. */
   urls: string[];
 }
 
@@ -3506,6 +3669,7 @@ export type PluginTabBackendState =
   (typeof PluginTabBackendState)[keyof typeof PluginTabBackendState];
 
 export const PluginTabBackendState = {
+  starting: "starting",
   running: "running",
   stopped: "stopped",
   crashed: "crashed",
@@ -3529,6 +3693,19 @@ export interface PluginTabBackendStatus {
    * @nullable
    */
   pid?: number | null;
+  /**
+   * Cadencr refuses to start it until the user allows a restart (`DELETE
+   * /api/plugin-tabs/{id}/backends/{feature_id}`): it spoke another
+   * protocol, crashed 3 times in a minute, or could not start 3 times in
+   * a minute (that last one also lifts a minute after the first refusal).
+   */
+  restart_held: boolean;
+  /**
+   * Why the last start was refused before anything ran (tampered binary,
+   * policy unavailable, …), until a run starts again.
+   * @nullable
+   */
+  start_error?: string | null;
   /**
    * RFC 3339, of the current or last run.
    * @nullable
@@ -3589,6 +3766,33 @@ export interface PluginTabActivity {
   backend?: PluginTabActivityBackend;
   /** The commands it asked Cadencr to run, newest first (at most 50). */
   commands: PluginTabExecRecord[];
+}
+
+/**
+ * A backend's availability on the platform Cadencr runs on.
+ */
+export type PluginTabBackendAvailability =
+  (typeof PluginTabBackendAvailability)[keyof typeof PluginTabBackendAvailability];
+
+export const PluginTabBackendAvailability = {
+  available: "available",
+  unavailable_on_platform: "unavailable_on_platform",
+} as const;
+
+/**
+ * One installed (or staged) marketplace backend binary: the signed facts a
+ * binary-only update changes.
+ */
+export interface PluginTabBackendBinary {
+  /** The signed SHA-256 of the executable, checked before each launch. */
+  executable_sha256: string;
+  /** The platform it was installed for (`darwin-aarch64`, …). */
+  platform: TabPlatform;
+  /**
+   * The backend protocol version it speaks.
+   * @minimum 0
+   */
+  protocol: number;
 }
 
 export type PluginTabConfigurationGlobal = { [key: string]: unknown };
@@ -3666,7 +3870,7 @@ export interface PluginTabConsentRequest {
 export interface PluginTabEnablement {
   /** No consent, or consent for an older permissions hash. */
   consent_required: boolean;
-  /** Switched on, consented at the current hash, and valid. */
+  /** Switched on, consented at the current hash, valid, and not blocked. */
   effective: boolean;
   /**
    * The global switch; `None` when never set (off).
@@ -3702,29 +3906,30 @@ export interface PluginTabNetwork {
 }
 
 /**
- * The conversation an open tab instance shows.
+ * Platform key (`darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`) →
+ * path of its native executable inside the tab folder. A platform left
+ * out cannot run the backend.
  */
-export interface PluginTabPresenceRequest {
-  feature_id: number;
-}
-
-export type PluginTabStatus = (typeof PluginTabStatus)[keyof typeof PluginTabStatus];
-
-export const PluginTabStatus = {
-  valid: "valid",
-  invalid: "invalid",
-} as const;
+export type TabBackendBinary = { [key: string]: string };
 
 /**
- * The tab's native backend process (`backend`).
+ * The tab's native backend process (`backend`): one executable per
+ * platform, shipped inside the tab folder, speaking stdio protocol
+ * `protocol` (`docs/CUSTOM_TABS.md` §4.7).
  */
 export interface TabBackend {
-  args?: string[];
   /**
-   * A path inside the tab folder (`bin/backend`) or a bare program name
-   * looked up on `PATH` (`node`, with the script in `args`).
+   * Platform key (`darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`) →
+   * path of its native executable inside the tab folder. A platform left
+   * out cannot run the backend.
    */
-  command: string;
+  binary: TabBackendBinary;
+  /**
+   * The stdio protocol version the backend speaks: `1` (the versions a
+   * Cadencr accepts are `SUPPORTED_BACKEND_PROTOCOLS`).
+   * @minimum 0
+   */
+  protocol: number;
   /**
    * Shown to the user at consent time; required.
    * @nullable
@@ -3732,7 +3937,9 @@ export interface TabBackend {
   reasoning?: string | null;
 }
 
-export type PluginTabSummaryBackend = null | TabBackend;
+export type PluginTabPendingUpdateBackend = null | TabBackend;
+
+export type PluginTabPendingUpdateBackendBinary = null | PluginTabBackendBinary;
 
 /**
  * How far a tab reaches beyond its page, from least to most. Shown on the
@@ -3758,6 +3965,58 @@ export interface TabCommand {
    */
   reasoning?: string | null;
 }
+
+/**
+ * What a staged marketplace update would run, for the review dialog.
+ */
+export interface PluginTabPendingUpdate {
+  access_level: TabAccessLevel;
+  backend?: PluginTabPendingUpdateBackend;
+  backend_binary?: PluginTabPendingUpdateBackendBinary;
+  /**
+   * Why Cadencr's revocation policy blocks it: it cannot be accepted
+   * (403 `PLUGIN_TAB_BLOCKED`), only discarded.
+   * @nullable
+   */
+  blocked_reason?: string | null;
+  commands: TabCommand[];
+  network: PluginTabNetwork;
+  permissions: string[];
+  /** What accepting it records; differs from the installed revision's. */
+  permissions_hash: string;
+  version: string;
+}
+
+/**
+ * The conversation an open tab instance shows.
+ */
+export interface PluginTabPresenceRequest {
+  feature_id: number;
+}
+
+/**
+ * One project's switch for a tab, overriding the global one.
+ */
+export interface PluginTabProjectOverride {
+  enabled: boolean;
+  project_id: number;
+}
+
+export type PluginTabStatus = (typeof PluginTabStatus)[keyof typeof PluginTabStatus];
+
+export const PluginTabStatus = {
+  valid: "valid",
+  invalid: "invalid",
+  blocked: "blocked",
+} as const;
+
+export type PluginTabSummaryBackend = null | TabBackend;
+
+export type PluginTabSummaryBackendAvailability = null | PluginTabBackendAvailability;
+
+export type PluginTabSummaryBackendBinary = null | PluginTabBackendBinary;
+
+export type PluginTabSummaryPendingUpdate = null | PluginTabPendingUpdate;
 
 export type TabIssueCode = (typeof TabIssueCode)[keyof typeof TabIssueCode];
 
@@ -3798,10 +4057,18 @@ export const TabIssueCode = {
   COMMAND_DUPLICATE: "COMMAND_DUPLICATE",
   COMMAND_NOT_ALLOWED: "COMMAND_NOT_ALLOWED",
   COMMAND_REASONING_REQUIRED: "COMMAND_REASONING_REQUIRED",
-  BACKEND_COMMAND_INVALID: "BACKEND_COMMAND_INVALID",
-  BACKEND_ARGS_INVALID: "BACKEND_ARGS_INVALID",
+  BACKEND_COMMAND_REMOVED: "BACKEND_COMMAND_REMOVED",
+  BACKEND_PROTOCOL_UNSUPPORTED: "BACKEND_PROTOCOL_UNSUPPORTED",
+  BACKEND_BINARY_REQUIRED: "BACKEND_BINARY_REQUIRED",
+  BACKEND_PLATFORM_UNKNOWN: "BACKEND_PLATFORM_UNKNOWN",
   BACKEND_REASONING_REQUIRED: "BACKEND_REASONING_REQUIRED",
   BACKEND_UNAVAILABLE: "BACKEND_UNAVAILABLE",
+  SHORTCUTS_TOO_MANY: "SHORTCUTS_TOO_MANY",
+  SHORTCUT_ID_INVALID: "SHORTCUT_ID_INVALID",
+  SHORTCUT_ID_DUPLICATE: "SHORTCUT_ID_DUPLICATE",
+  SHORTCUT_KEYS_INVALID: "SHORTCUT_KEYS_INVALID",
+  SHORTCUT_KEYS_DUPLICATE: "SHORTCUT_KEYS_DUPLICATE",
+  SHORTCUT_DESCRIPTION_INVALID: "SHORTCUT_DESCRIPTION_INVALID",
 } as const;
 
 /**
@@ -3813,6 +4080,23 @@ export interface TabIssue {
   /** @nullable */
   field?: string | null;
   message: string;
+}
+
+/**
+ * One keyboard shortcut a tab handles while it has focus (`shortcuts[]`),
+ * delivered to the page as a `shortcut` event naming its `id`.
+ */
+export interface TabShortcut {
+  /** What it does, for the shortcuts cheatsheet and the tab's settings. */
+  description: string;
+  /** Stable within the tab, e.g. `refresh`. */
+  id: string;
+  /**
+   * Shortcut tokens, e.g. `["mod", "shift", "r"]`: modifiers (`mod`,
+   * `ctrl`, `alt`, `shift`) and exactly one key; `mod`, `ctrl` or `alt`
+   * is required.
+   */
+  keys: string[];
 }
 
 /**
@@ -3835,6 +4119,15 @@ export interface PluginTabSummary {
    */
   authoring_project_id?: number | null;
   backend?: PluginTabSummaryBackend;
+  backend_availability?: PluginTabSummaryBackendAvailability;
+  backend_binary?: PluginTabSummaryBackendBinary;
+  /**
+   * Why Cadencr's signed revocation policy blocks this marketplace tab
+   * (`status` is then `blocked`): it cannot be enabled, opened or run its
+   * backend, only removed. `None` when not blocked.
+   * @nullable
+   */
+  blocked_reason?: string | null;
   /** Programs the tab may ask Cadencr to run. */
   commands: TabCommand[];
   configuration: TabConfigField[];
@@ -3864,12 +4157,21 @@ export interface PluginTabSummary {
   /** The manifest name, or the id when `tab.json` could not be parsed. */
   name: string;
   network: PluginTabNetwork;
+  pending_update?: PluginTabSummaryPendingUpdate;
   permissions: string[];
   /**
    * What consent is recorded against; `None` when the manifest is unreadable.
    * @nullable
    */
   permissions_hash?: string | null;
+  /**
+   * Every project override, by project id; only on a list asked for them
+   * (`?project_overrides=true`), so the settings page needs one request.
+   * @nullable
+   */
+  project_overrides?: PluginTabProjectOverride[] | null;
+  /** Keyboard shortcuts the tab handles while it has focus. */
+  shortcuts: TabShortcut[];
   status: PluginTabStatus;
   /** @nullable */
   version?: string | null;
@@ -4090,6 +4392,10 @@ export interface PromptCommandsResponse {
    * Codex, `/` everywhere on Claude, and so on.
    */
   prompt_command_policy: PromptCommandPolicyPayload;
+}
+
+export interface PromptQueueOkResponse {
+  ok: boolean;
 }
 
 export type PromptReceiptState = (typeof PromptReceiptState)[keyof typeof PromptReceiptState];
@@ -4574,6 +4880,34 @@ export interface PutPluginTabConfigurationRequest {
   values: PutPluginTabConfigurationRequestValues;
 }
 
+export interface QueuePromptRequest {
+  content: string;
+}
+
+/**
+ * Where a queued prompt stands.
+ */
+export type QueuedPromptStatus = (typeof QueuedPromptStatus)[keyof typeof QueuedPromptStatus];
+
+export const QueuedPromptStatus = {
+  pending: "pending",
+  delivering: "delivering",
+  error: "error",
+} as const;
+
+/**
+ * A prompt waiting for the end of the agent's turn.
+ */
+export interface QueuedPrompt {
+  content: string;
+  created_at: string;
+  /** @nullable */
+  error?: string | null;
+  id: number;
+  session_id: number;
+  status: QueuedPromptStatus;
+}
+
 export interface ReadFileResponse {
   content: string;
   /**
@@ -4687,6 +5021,21 @@ export interface RemoteAuditEntry {
   /** @nullable */
   device_id?: number | null;
   event: string;
+}
+
+/**
+ * Listener metadata needed by the desktop browser's origin policy.
+ */
+export interface RemoteBrowserOrigins {
+  enabled: boolean;
+  lan_urls: string[];
+  /**
+   * @minimum 0
+   * @nullable
+   */
+  port?: number | null;
+  /** @nullable */
+  tunnel_host?: string | null;
 }
 
 /**
@@ -5347,6 +5696,16 @@ export interface SettingsFileResponse {
   content: string;
   path: string;
   warnings: SettingWarning[];
+}
+
+export interface SideQuestionRequest {
+  question: string;
+}
+
+export interface SideQuestionResponse {
+  feature_id: number;
+  project_id: number;
+  session_id: number;
 }
 
 export interface StartImportRequest {
@@ -6162,6 +6521,14 @@ export type GetPrCommentsParams = {
   pr_number?: number | null;
 };
 
+export type LookupFeatureRepoPrParams = {
+  feature_id: number;
+  /**
+   * @minimum 0
+   */
+  pr_number: number;
+};
+
 export type ListStashesParams = {
   feature_id: number;
 };
@@ -6227,6 +6594,10 @@ export type LspRootParams = {
 
 export type PluginTabListParams = {
   project_id?: number;
+  /**
+   * Fill each summary's `project_overrides`.
+   */
+  project_overrides?: boolean;
 };
 
 export type PluginTabSelfConfiguration200 = { [key: string]: unknown };
@@ -6292,6 +6663,27 @@ export type ListSchedulesParams = {
    * @nullable
    */
   project_id?: number | null;
+};
+
+export type SearchMessagesParams = {
+  /**
+   * Words to find; each one matches as a prefix, all of them must appear.
+   */
+  q: string;
+  /**
+   * How many conversations to return (1–30, default 8).
+   * @nullable
+   */
+  limit?: number | null;
+  /**
+   * Restrict the search to one project.
+   * @nullable
+   */
+  project_id?: number | null;
+  /**
+   * Leave archived conversations out (default: included).
+   */
+  active_only?: boolean;
 };
 
 export type ListConversationReferencesParams = {
@@ -6987,6 +7379,8 @@ export const installProvider = (providerDescriptor: ProviderDescriptor, signal?:
   });
 };
 
+export const getInstallProviderMutationKey = () => ["installProvider"] as const;
+
 export const getInstallProviderMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -7003,7 +7397,7 @@ export const getInstallProviderMutationOptions = <
   InstallProviderMutationVariables,
   TContext
 > => {
-  const mutationKey = ["installProvider"];
+  const mutationKey = getInstallProviderMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -7056,6 +7450,8 @@ export const removeProvider = (providerId: string, signal?: AbortSignal) => {
   });
 };
 
+export const getRemoveProviderMutationKey = () => ["removeProvider"] as const;
+
 export const getRemoveProviderMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -7072,7 +7468,7 @@ export const getRemoveProviderMutationOptions = <
   RemoveProviderMutationVariables,
   TContext
 > => {
-  const mutationKey = ["removeProvider"];
+  const mutationKey = getRemoveProviderMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -7129,6 +7525,8 @@ export const setProviderEnabled = (
   });
 };
 
+export const getSetProviderEnabledMutationKey = () => ["setProviderEnabled"] as const;
+
 export const getSetProviderEnabledMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -7145,7 +7543,7 @@ export const getSetProviderEnabledMutationOptions = <
   SetProviderEnabledMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setProviderEnabled"];
+  const mutationKey = getSetProviderEnabledMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -7303,6 +7701,8 @@ export const install = (
   });
 };
 
+export const getInstallMutationKey = () => ["install"] as const;
+
 export const getInstallMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -7319,7 +7719,7 @@ export const getInstallMutationOptions = <
   InstallMutationVariables,
   TContext
 > => {
-  const mutationKey = ["install"];
+  const mutationKey = getInstallMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -7370,6 +7770,8 @@ export const refreshBlocklist = (signal?: AbortSignal) => {
   });
 };
 
+export const getRefreshBlocklistMutationKey = () => ["refreshBlocklist"] as const;
+
 export const getRefreshBlocklistMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -7381,7 +7783,7 @@ export const getRefreshBlocklistMutationOptions = <
     TContext
   >;
 }): UseMutationOptions<Awaited<ReturnType<typeof refreshBlocklist>>, TError, void, TContext> => {
-  const mutationKey = ["refreshBlocklist"];
+  const mutationKey = getRefreshBlocklistMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -7520,13 +7922,15 @@ export const refreshCatalog = (signal?: AbortSignal) => {
   });
 };
 
+export const getRefreshCatalogMutationKey = () => ["refreshCatalog"] as const;
+
 export const getRefreshCatalogMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<Awaited<ReturnType<typeof refreshCatalog>>, TError, void, TContext>;
 }): UseMutationOptions<Awaited<ReturnType<typeof refreshCatalog>>, TError, void, TContext> => {
-  const mutationKey = ["refreshCatalog"];
+  const mutationKey = getRefreshCatalogMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -7566,6 +7970,8 @@ export const remove = (providerId: string, signal?: AbortSignal) => {
   });
 };
 
+export const getRemoveMutationKey = () => ["remove"] as const;
+
 export const getRemoveMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -7582,7 +7988,7 @@ export const getRemoveMutationOptions = <
   RemoveMutationVariables,
   TContext
 > => {
-  const mutationKey = ["remove"];
+  const mutationKey = getRemoveMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -7639,6 +8045,8 @@ export const enabled = (
   });
 };
 
+export const getEnabledMutationKey = () => ["enabled"] as const;
+
 export const getEnabledMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -7655,7 +8063,7 @@ export const getEnabledMutationOptions = <
   EnabledMutationVariables,
   TContext
 > => {
-  const mutationKey = ["enabled"];
+  const mutationKey = getEnabledMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -7715,6 +8123,8 @@ export const rollback = (
   });
 };
 
+export const getRollbackMutationKey = () => ["rollback"] as const;
+
 export const getRollbackMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -7731,7 +8141,7 @@ export const getRollbackMutationOptions = <
   RollbackMutationVariables,
   TContext
 > => {
-  const mutationKey = ["rollback"];
+  const mutationKey = getRollbackMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -7791,6 +8201,8 @@ export const update = (
   });
 };
 
+export const getUpdateMutationKey = () => ["update"] as const;
+
 export const getUpdateMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -7807,7 +8219,7 @@ export const getUpdateMutationOptions = <
   UpdateMutationVariables,
   TContext
 > => {
-  const mutationKey = ["update"];
+  const mutationKey = getUpdateMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -7959,6 +8371,8 @@ export const checkProviderUpdates = (signal?: AbortSignal) => {
   });
 };
 
+export const getCheckProviderUpdatesMutationKey = () => ["checkProviderUpdates"] as const;
+
 export const getCheckProviderUpdatesMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -7975,7 +8389,7 @@ export const getCheckProviderUpdatesMutationOptions = <
   void,
   TContext
 > => {
-  const mutationKey = ["checkProviderUpdates"];
+  const mutationKey = getCheckProviderUpdatesMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -8026,6 +8440,8 @@ export const updateProvider = (
   });
 };
 
+export const getUpdateProviderMutationKey = () => ["updateProvider"] as const;
+
 export const getUpdateProviderMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -8042,7 +8458,7 @@ export const getUpdateProviderMutationOptions = <
   UpdateProviderMutationVariables,
   TContext
 > => {
-  const mutationKey = ["updateProvider"];
+  const mutationKey = getUpdateProviderMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -8098,6 +8514,8 @@ export const createProviderWorkspace = (
   });
 };
 
+export const getCreateProviderWorkspaceMutationKey = () => ["createProviderWorkspace"] as const;
+
 export const getCreateProviderWorkspaceMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -8114,7 +8532,7 @@ export const getCreateProviderWorkspaceMutationOptions = <
   CreateProviderWorkspaceMutationVariables,
   TContext
 > => {
-  const mutationKey = ["createProviderWorkspace"];
+  const mutationKey = getCreateProviderWorkspaceMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -8375,6 +8793,8 @@ export const upsertCustomModel = (
   });
 };
 
+export const getUpsertCustomModelMutationKey = () => ["upsertCustomModel"] as const;
+
 export const getUpsertCustomModelMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -8391,7 +8811,7 @@ export const getUpsertCustomModelMutationOptions = <
   UpsertCustomModelMutationVariables,
   TContext
 > => {
-  const mutationKey = ["upsertCustomModel"];
+  const mutationKey = getUpsertCustomModelMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -8447,6 +8867,8 @@ export const deleteCustomModel = (modelId: string, signal?: AbortSignal) => {
   });
 };
 
+export const getDeleteCustomModelMutationKey = () => ["deleteCustomModel"] as const;
+
 export const getDeleteCustomModelMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -8463,7 +8885,7 @@ export const getDeleteCustomModelMutationOptions = <
   DeleteCustomModelMutationVariables,
   TContext
 > => {
-  const mutationKey = ["deleteCustomModel"];
+  const mutationKey = getDeleteCustomModelMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -8618,6 +9040,8 @@ export const setActiveProfile = (
   });
 };
 
+export const getSetActiveProfileMutationKey = () => ["setActiveProfile"] as const;
+
 export const getSetActiveProfileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -8634,7 +9058,7 @@ export const getSetActiveProfileMutationOptions = <
   SetActiveProfileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setActiveProfile"];
+  const mutationKey = getSetActiveProfileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -8693,6 +9117,8 @@ export const upsertProfile = (
   });
 };
 
+export const getUpsertProfileMutationKey = () => ["upsertProfile"] as const;
+
 export const getUpsertProfileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -8709,7 +9135,7 @@ export const getUpsertProfileMutationOptions = <
   UpsertProfileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["upsertProfile"];
+  const mutationKey = getUpsertProfileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -8760,6 +9186,8 @@ export const deleteProfile = (name: string, signal?: AbortSignal) => {
   });
 };
 
+export const getDeleteProfileMutationKey = () => ["deleteProfile"] as const;
+
 export const getDeleteProfileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -8776,7 +9204,7 @@ export const getDeleteProfileMutationOptions = <
   DeleteProfileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["deleteProfile"];
+  const mutationKey = getDeleteProfileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -8928,6 +9356,8 @@ export const codexCreateProfile = (codexProfileDraft: CodexProfileDraft, signal?
   });
 };
 
+export const getCodexCreateProfileMutationKey = () => ["codexCreateProfile"] as const;
+
 export const getCodexCreateProfileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -8944,7 +9374,7 @@ export const getCodexCreateProfileMutationOptions = <
   CodexCreateProfileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["codexCreateProfile"];
+  const mutationKey = getCodexCreateProfileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -9002,6 +9432,8 @@ export const codexSetActiveProfile = (
   });
 };
 
+export const getCodexSetActiveProfileMutationKey = () => ["codexSetActiveProfile"] as const;
+
 export const getCodexSetActiveProfileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -9018,7 +9450,7 @@ export const getCodexSetActiveProfileMutationOptions = <
   CodexSetActiveProfileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["codexSetActiveProfile"];
+  const mutationKey = getCodexSetActiveProfileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -9076,6 +9508,8 @@ export const codexValidateProfile = (
   });
 };
 
+export const getCodexValidateProfileMutationKey = () => ["codexValidateProfile"] as const;
+
 export const getCodexValidateProfileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -9092,7 +9526,7 @@ export const getCodexValidateProfileMutationOptions = <
   CodexValidateProfileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["codexValidateProfile"];
+  const mutationKey = getCodexValidateProfileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -9151,6 +9585,8 @@ export const codexUpdateProfile = (
   });
 };
 
+export const getCodexUpdateProfileMutationKey = () => ["codexUpdateProfile"] as const;
+
 export const getCodexUpdateProfileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -9167,7 +9603,7 @@ export const getCodexUpdateProfileMutationOptions = <
   CodexUpdateProfileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["codexUpdateProfile"];
+  const mutationKey = getCodexUpdateProfileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -9220,6 +9656,8 @@ export const codexDeleteProfile = (id: string, signal?: AbortSignal) => {
   });
 };
 
+export const getCodexDeleteProfileMutationKey = () => ["codexDeleteProfile"] as const;
+
 export const getCodexDeleteProfileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -9236,7 +9674,7 @@ export const getCodexDeleteProfileMutationOptions = <
   CodexDeleteProfileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["codexDeleteProfile"];
+  const mutationKey = getCodexDeleteProfileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -9401,6 +9839,8 @@ export const createCustomAction = (
   });
 };
 
+export const getCreateCustomActionMutationKey = () => ["createCustomAction"] as const;
+
 export const getCreateCustomActionMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -9417,7 +9857,7 @@ export const getCreateCustomActionMutationOptions = <
   CreateCustomActionMutationVariables,
   TContext
 > => {
-  const mutationKey = ["createCustomAction"];
+  const mutationKey = getCreateCustomActionMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -9476,6 +9916,8 @@ export const updateCustomAction = (
   });
 };
 
+export const getUpdateCustomActionMutationKey = () => ["updateCustomAction"] as const;
+
 export const getUpdateCustomActionMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -9492,7 +9934,7 @@ export const getUpdateCustomActionMutationOptions = <
   UpdateCustomActionMutationVariables,
   TContext
 > => {
-  const mutationKey = ["updateCustomAction"];
+  const mutationKey = getUpdateCustomActionMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -9545,6 +9987,8 @@ export const deleteCustomAction = (id: number, signal?: AbortSignal) => {
   });
 };
 
+export const getDeleteCustomActionMutationKey = () => ["deleteCustomAction"] as const;
+
 export const getDeleteCustomActionMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -9561,7 +10005,7 @@ export const getDeleteCustomActionMutationOptions = <
   DeleteCustomActionMutationVariables,
   TContext
 > => {
-  const mutationKey = ["deleteCustomAction"];
+  const mutationKey = getDeleteCustomActionMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -9732,6 +10176,8 @@ export const runCustomAction = (
   });
 };
 
+export const getRunCustomActionMutationKey = () => ["runCustomAction"] as const;
+
 export const getRunCustomActionMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -9748,7 +10194,7 @@ export const getRunCustomActionMutationOptions = <
   RunCustomActionMutationVariables,
   TContext
 > => {
-  const mutationKey = ["runCustomAction"];
+  const mutationKey = getRunCustomActionMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -9930,6 +10376,8 @@ export const cancelCustomActionRun = (id: number, runId: number, signal?: AbortS
   });
 };
 
+export const getCancelCustomActionRunMutationKey = () => ["cancelCustomActionRun"] as const;
+
 export const getCancelCustomActionRunMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -9946,7 +10394,7 @@ export const getCancelCustomActionRunMutationOptions = <
   CancelCustomActionRunMutationVariables,
   TContext
 > => {
-  const mutationKey = ["cancelCustomActionRun"];
+  const mutationKey = getCancelCustomActionRunMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -10140,6 +10588,8 @@ export const setCustomActionSchedule = (
   });
 };
 
+export const getSetCustomActionScheduleMutationKey = () => ["setCustomActionSchedule"] as const;
+
 export const getSetCustomActionScheduleMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -10156,7 +10606,7 @@ export const getSetCustomActionScheduleMutationOptions = <
   SetCustomActionScheduleMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setCustomActionSchedule"];
+  const mutationKey = getSetCustomActionScheduleMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -10354,6 +10804,8 @@ export const setCustomActionVariable = (
   });
 };
 
+export const getSetCustomActionVariableMutationKey = () => ["setCustomActionVariable"] as const;
+
 export const getSetCustomActionVariableMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -10370,7 +10822,7 @@ export const getSetCustomActionVariableMutationOptions = <
   SetCustomActionVariableMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setCustomActionVariable"];
+  const mutationKey = getSetCustomActionVariableMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -10433,6 +10885,8 @@ export const updateDiffComment = (
   });
 };
 
+export const getUpdateDiffCommentMutationKey = () => ["updateDiffComment"] as const;
+
 export const getUpdateDiffCommentMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -10449,7 +10903,7 @@ export const getUpdateDiffCommentMutationOptions = <
   UpdateDiffCommentMutationVariables,
   TContext
 > => {
-  const mutationKey = ["updateDiffComment"];
+  const mutationKey = getUpdateDiffCommentMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -10502,6 +10956,8 @@ export const deleteDiffComment = (id: number, signal?: AbortSignal) => {
   });
 };
 
+export const getDeleteDiffCommentMutationKey = () => ["deleteDiffComment"] as const;
+
 export const getDeleteDiffCommentMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -10518,7 +10974,7 @@ export const getDeleteDiffCommentMutationOptions = <
   DeleteDiffCommentMutationVariables,
   TContext
 > => {
-  const mutationKey = ["deleteDiffComment"];
+  const mutationKey = getDeleteDiffCommentMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -10678,6 +11134,8 @@ export const createEditorFile = (createFileRequest: CreateFileRequest, signal?: 
   });
 };
 
+export const getCreateEditorFileMutationKey = () => ["createEditorFile"] as const;
+
 export const getCreateEditorFileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -10694,7 +11152,7 @@ export const getCreateEditorFileMutationOptions = <
   CreateEditorFileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["createEditorFile"];
+  const mutationKey = getCreateEditorFileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -10752,6 +11210,8 @@ export const createEditorFolder = (
   });
 };
 
+export const getCreateEditorFolderMutationKey = () => ["createEditorFolder"] as const;
+
 export const getCreateEditorFolderMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -10768,7 +11228,7 @@ export const getCreateEditorFolderMutationOptions = <
   CreateEditorFolderMutationVariables,
   TContext
 > => {
-  const mutationKey = ["createEditorFolder"];
+  const mutationKey = getCreateEditorFolderMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -10823,6 +11283,8 @@ export const format = (formatRequest: FormatRequest, signal?: AbortSignal) => {
   });
 };
 
+export const getFormatMutationKey = () => ["format"] as const;
+
 export const getFormatMutationOptions = <TError = ErrorType<void>, TContext = unknown>(options?: {
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof format>>,
@@ -10836,7 +11298,7 @@ export const getFormatMutationOptions = <TError = ErrorType<void>, TContext = un
   FormatMutationVariables,
   TContext
 > => {
-  const mutationKey = ["format"];
+  const mutationKey = getFormatMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -10889,6 +11351,8 @@ export const moveEditorPath = (movePathRequest: MovePathRequest, signal?: AbortS
   });
 };
 
+export const getMoveEditorPathMutationKey = () => ["moveEditorPath"] as const;
+
 export const getMoveEditorPathMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -10905,7 +11369,7 @@ export const getMoveEditorPathMutationOptions = <
   MoveEditorPathMutationVariables,
   TContext
 > => {
-  const mutationKey = ["moveEditorPath"];
+  const mutationKey = getMoveEditorPathMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -11063,6 +11527,8 @@ export const renameEditorPath = (renamePathRequest: RenamePathRequest, signal?: 
   });
 };
 
+export const getRenameEditorPathMutationKey = () => ["renameEditorPath"] as const;
+
 export const getRenameEditorPathMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -11079,7 +11545,7 @@ export const getRenameEditorPathMutationOptions = <
   RenameEditorPathMutationVariables,
   TContext
 > => {
-  const mutationKey = ["renameEditorPath"];
+  const mutationKey = getRenameEditorPathMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -11344,6 +11810,8 @@ export const trashEditorPath = (trashPathRequest: TrashPathRequest, signal?: Abo
   });
 };
 
+export const getTrashEditorPathMutationKey = () => ["trashEditorPath"] as const;
+
 export const getTrashEditorPathMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -11360,7 +11828,7 @@ export const getTrashEditorPathMutationOptions = <
   TrashEditorPathMutationVariables,
   TContext
 > => {
-  const mutationKey = ["trashEditorPath"];
+  const mutationKey = getTrashEditorPathMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -11730,6 +12198,8 @@ export const writeFile = (writeFileRequest: WriteFileRequest, signal?: AbortSign
   });
 };
 
+export const getWriteFileMutationKey = () => ["writeFile"] as const;
+
 export const getWriteFileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -11746,7 +12216,7 @@ export const getWriteFileMutationOptions = <
   WriteFileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["writeFile"];
+  const mutationKey = getWriteFileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -11895,6 +12365,8 @@ export const createLayout = (
   });
 };
 
+export const getCreateLayoutMutationKey = () => ["createLayout"] as const;
+
 export const getCreateLayoutMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -11911,7 +12383,7 @@ export const getCreateLayoutMutationOptions = <
   CreateLayoutMutationVariables,
   TContext
 > => {
-  const mutationKey = ["createLayout"];
+  const mutationKey = getCreateLayoutMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -11968,6 +12440,8 @@ export const updateLayout = (
   });
 };
 
+export const getUpdateLayoutMutationKey = () => ["updateLayout"] as const;
+
 export const getUpdateLayoutMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -11984,7 +12458,7 @@ export const getUpdateLayoutMutationOptions = <
   UpdateLayoutMutationVariables,
   TContext
 > => {
-  const mutationKey = ["updateLayout"];
+  const mutationKey = getUpdateLayoutMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -12035,6 +12509,8 @@ export const deleteLayout = (id: number, signal?: AbortSignal) => {
   });
 };
 
+export const getDeleteLayoutMutationKey = () => ["deleteLayout"] as const;
+
 export const getDeleteLayoutMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -12051,7 +12527,7 @@ export const getDeleteLayoutMutationOptions = <
   DeleteLayoutMutationVariables,
   TContext
 > => {
-  const mutationKey = ["deleteLayout"];
+  const mutationKey = getDeleteLayoutMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -12102,6 +12578,8 @@ export const setDefaultLayout = (id: number, signal?: AbortSignal) => {
   });
 };
 
+export const getSetDefaultLayoutMutationKey = () => ["setDefaultLayout"] as const;
+
 export const getSetDefaultLayoutMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -12118,7 +12596,7 @@ export const getSetDefaultLayoutMutationOptions = <
   SetDefaultLayoutMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setDefaultLayout"];
+  const mutationKey = getSetDefaultLayoutMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -12273,6 +12751,8 @@ export const createFeature = (createFeatureRequest: CreateFeatureRequest, signal
   });
 };
 
+export const getCreateFeatureMutationKey = () => ["createFeature"] as const;
+
 export const getCreateFeatureMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -12289,7 +12769,7 @@ export const getCreateFeatureMutationOptions = <
   CreateFeatureMutationVariables,
   TContext
 > => {
-  const mutationKey = ["createFeature"];
+  const mutationKey = getCreateFeatureMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -13113,6 +13593,8 @@ export const createDiffComment = (
   });
 };
 
+export const getCreateDiffCommentMutationKey = () => ["createDiffComment"] as const;
+
 export const getCreateDiffCommentMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -13129,7 +13611,7 @@ export const getCreateDiffCommentMutationOptions = <
   CreateDiffCommentMutationVariables,
   TContext
 > => {
-  const mutationKey = ["createDiffComment"];
+  const mutationKey = getCreateDiffCommentMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -13185,6 +13667,8 @@ export const deletePendingDiffComments = (featureId: number, signal?: AbortSigna
   });
 };
 
+export const getDeletePendingDiffCommentsMutationKey = () => ["deletePendingDiffComments"] as const;
+
 export const getDeletePendingDiffCommentsMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -13201,7 +13685,7 @@ export const getDeletePendingDiffCommentsMutationOptions = <
   DeletePendingDiffCommentsMutationVariables,
   TContext
 > => {
-  const mutationKey = ["deletePendingDiffComments"];
+  const mutationKey = getDeletePendingDiffCommentsMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -13254,6 +13738,8 @@ export const markDiffCommentsSent = (featureId: number, signal?: AbortSignal) =>
   });
 };
 
+export const getMarkDiffCommentsSentMutationKey = () => ["markDiffCommentsSent"] as const;
+
 export const getMarkDiffCommentsSentMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -13270,7 +13756,7 @@ export const getMarkDiffCommentsSentMutationOptions = <
   MarkDiffCommentsSentMutationVariables,
   TContext
 > => {
-  const mutationKey = ["markDiffCommentsSent"];
+  const mutationKey = getMarkDiffCommentsSentMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -13436,6 +13922,8 @@ export const markDiffViewed = (
   });
 };
 
+export const getMarkDiffViewedMutationKey = () => ["markDiffViewed"] as const;
+
 export const getMarkDiffViewedMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -13452,7 +13940,7 @@ export const getMarkDiffViewedMutationOptions = <
   MarkDiffViewedMutationVariables,
   TContext
 > => {
-  const mutationKey = ["markDiffViewed"];
+  const mutationKey = getMarkDiffViewedMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -13508,6 +13996,8 @@ export const unmarkDiffViewed = (
   });
 };
 
+export const getUnmarkDiffViewedMutationKey = () => ["unmarkDiffViewed"] as const;
+
 export const getUnmarkDiffViewedMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -13524,7 +14014,7 @@ export const getUnmarkDiffViewedMutationOptions = <
   UnmarkDiffViewedMutationVariables,
   TContext
 > => {
-  const mutationKey = ["unmarkDiffViewed"];
+  const mutationKey = getUnmarkDiffViewedMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -13580,6 +14070,8 @@ export const clearAllDiffViewed = (featureId: number, signal?: AbortSignal) => {
   });
 };
 
+export const getClearAllDiffViewedMutationKey = () => ["clearAllDiffViewed"] as const;
+
 export const getClearAllDiffViewedMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -13596,7 +14088,7 @@ export const getClearAllDiffViewedMutationOptions = <
   ClearAllDiffViewedMutationVariables,
   TContext
 > => {
-  const mutationKey = ["clearAllDiffViewed"];
+  const mutationKey = getClearAllDiffViewedMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -13769,6 +14261,8 @@ export const openFileRoute = (
   });
 };
 
+export const getOpenFileRouteMutationKey = () => ["openFileRoute"] as const;
+
 export const getOpenFileRouteMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -13785,7 +14279,7 @@ export const getOpenFileRouteMutationOptions = <
   OpenFileRouteMutationVariables,
   TContext
 > => {
-  const mutationKey = ["openFileRoute"];
+  const mutationKey = getOpenFileRouteMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -13839,6 +14333,8 @@ export const refreshSession = (featureId: number, signal?: AbortSignal) => {
   });
 };
 
+export const getRefreshSessionMutationKey = () => ["refreshSession"] as const;
+
 export const getRefreshSessionMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -13855,7 +14351,7 @@ export const getRefreshSessionMutationOptions = <
   RefreshSessionMutationVariables,
   TContext
 > => {
-  const mutationKey = ["refreshSession"];
+  const mutationKey = getRefreshSessionMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -14241,6 +14737,8 @@ export const deleteFeature = (id: number, signal?: AbortSignal) => {
   });
 };
 
+export const getDeleteFeatureMutationKey = () => ["deleteFeature"] as const;
+
 export const getDeleteFeatureMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -14257,7 +14755,7 @@ export const getDeleteFeatureMutationOptions = <
   DeleteFeatureMutationVariables,
   TContext
 > => {
-  const mutationKey = ["deleteFeature"];
+  const mutationKey = getDeleteFeatureMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -14314,6 +14812,8 @@ export const archiveFeature = (
   });
 };
 
+export const getArchiveFeatureMutationKey = () => ["archiveFeature"] as const;
+
 export const getArchiveFeatureMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -14330,7 +14830,7 @@ export const getArchiveFeatureMutationOptions = <
   ArchiveFeatureMutationVariables,
   TContext
 > => {
-  const mutationKey = ["archiveFeature"];
+  const mutationKey = getArchiveFeatureMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -14509,6 +15009,8 @@ export const autoNameFeature = (id: number, signal?: AbortSignal) => {
   });
 };
 
+export const getAutoNameFeatureMutationKey = () => ["autoNameFeature"] as const;
+
 export const getAutoNameFeatureMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -14525,7 +15027,7 @@ export const getAutoNameFeatureMutationOptions = <
   AutoNameFeatureMutationVariables,
   TContext
 > => {
-  const mutationKey = ["autoNameFeature"];
+  const mutationKey = getAutoNameFeatureMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -14589,6 +15091,8 @@ export const linkFeatureBranch = (
   });
 };
 
+export const getLinkFeatureBranchMutationKey = () => ["linkFeatureBranch"] as const;
+
 export const getLinkFeatureBranchMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -14605,7 +15109,7 @@ export const getLinkFeatureBranchMutationOptions = <
   LinkFeatureBranchMutationVariables,
   TContext
 > => {
-  const mutationKey = ["linkFeatureBranch"];
+  const mutationKey = getLinkFeatureBranchMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -14664,6 +15168,8 @@ export const unlinkFeatureBranch = (
   });
 };
 
+export const getUnlinkFeatureBranchMutationKey = () => ["unlinkFeatureBranch"] as const;
+
 export const getUnlinkFeatureBranchMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -14680,7 +15186,7 @@ export const getUnlinkFeatureBranchMutationOptions = <
   UnlinkFeatureBranchMutationVariables,
   TContext
 > => {
-  const mutationKey = ["unlinkFeatureBranch"];
+  const mutationKey = getUnlinkFeatureBranchMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -14846,6 +15352,8 @@ export const updateFeatureLabel = (
   });
 };
 
+export const getUpdateFeatureLabelMutationKey = () => ["updateFeatureLabel"] as const;
+
 export const getUpdateFeatureLabelMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -14862,7 +15370,7 @@ export const getUpdateFeatureLabelMutationOptions = <
   UpdateFeatureLabelMutationVariables,
   TContext
 > => {
-  const mutationKey = ["updateFeatureLabel"];
+  const mutationKey = getUpdateFeatureLabelMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -15041,6 +15549,8 @@ export const setFeatureModelSetting = (
   });
 };
 
+export const getSetFeatureModelSettingMutationKey = () => ["setFeatureModelSetting"] as const;
+
 export const getSetFeatureModelSettingMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -15057,7 +15567,7 @@ export const getSetFeatureModelSettingMutationOptions = <
   SetFeatureModelSettingMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setFeatureModelSetting"];
+  const mutationKey = getSetFeatureModelSettingMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -15226,6 +15736,8 @@ export const updateFeaturePinned = (
   });
 };
 
+export const getUpdateFeaturePinnedMutationKey = () => ["updateFeaturePinned"] as const;
+
 export const getUpdateFeaturePinnedMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -15242,7 +15754,7 @@ export const getUpdateFeaturePinnedMutationOptions = <
   UpdateFeaturePinnedMutationVariables,
   TContext
 > => {
-  const mutationKey = ["updateFeaturePinned"];
+  const mutationKey = getUpdateFeaturePinnedMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -15421,6 +15933,8 @@ export const setFeatureProviderSetting = (
   });
 };
 
+export const getSetFeatureProviderSettingMutationKey = () => ["setFeatureProviderSetting"] as const;
+
 export const getSetFeatureProviderSettingMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -15437,7 +15951,7 @@ export const getSetFeatureProviderSettingMutationOptions = <
   SetFeatureProviderSettingMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setFeatureProviderSetting"];
+  const mutationKey = getSetFeatureProviderSettingMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -15499,6 +16013,8 @@ export const respondGate = (
   });
 };
 
+export const getRespondGateMutationKey = () => ["respondGate"] as const;
+
 export const getRespondGateMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -15515,7 +16031,7 @@ export const getRespondGateMutationOptions = <
   RespondGateMutationVariables,
   TContext
 > => {
-  const mutationKey = ["respondGate"];
+  const mutationKey = getRespondGateMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -15683,6 +16199,8 @@ export const setFeatureSetting = (
   });
 };
 
+export const getSetFeatureSettingMutationKey = () => ["setFeatureSetting"] as const;
+
 export const getSetFeatureSettingMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -15699,7 +16217,7 @@ export const getSetFeatureSettingMutationOptions = <
   SetFeatureSettingMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setFeatureSetting"];
+  const mutationKey = getSetFeatureSettingMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -15758,6 +16276,8 @@ export const updateFeatureStatus = (
   });
 };
 
+export const getUpdateFeatureStatusMutationKey = () => ["updateFeatureStatus"] as const;
+
 export const getUpdateFeatureStatusMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -15774,7 +16294,7 @@ export const getUpdateFeatureStatusMutationOptions = <
   UpdateFeatureStatusMutationVariables,
   TContext
 > => {
-  const mutationKey = ["updateFeatureStatus"];
+  const mutationKey = getUpdateFeatureStatusMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -15833,6 +16353,8 @@ export const updateTargetBranch = (
   });
 };
 
+export const getUpdateTargetBranchMutationKey = () => ["updateTargetBranch"] as const;
+
 export const getUpdateTargetBranchMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -15849,7 +16371,7 @@ export const getUpdateTargetBranchMutationOptions = <
   UpdateTargetBranchMutationVariables,
   TContext
 > => {
-  const mutationKey = ["updateTargetBranch"];
+  const mutationKey = getUpdateTargetBranchMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -15908,6 +16430,8 @@ export const updateFeatureTitle = (
   });
 };
 
+export const getUpdateFeatureTitleMutationKey = () => ["updateFeatureTitle"] as const;
+
 export const getUpdateFeatureTitleMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -15924,7 +16448,7 @@ export const getUpdateFeatureTitleMutationOptions = <
   UpdateFeatureTitleMutationVariables,
   TContext
 > => {
-  const mutationKey = ["updateFeatureTitle"];
+  const mutationKey = getUpdateFeatureTitleMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -16310,6 +16834,8 @@ export const deleteFeatureBranch = (params: DeleteFeatureBranchParams, signal?: 
   });
 };
 
+export const getDeleteFeatureBranchMutationKey = () => ["deleteFeatureBranch"] as const;
+
 export const getDeleteFeatureBranchMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -16326,7 +16852,7 @@ export const getDeleteFeatureBranchMutationOptions = <
   DeleteFeatureBranchMutationVariables,
   TContext
 > => {
-  const mutationKey = ["deleteFeatureBranch"];
+  const mutationKey = getDeleteFeatureBranchMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -16693,6 +17219,8 @@ export const checkoutBranch = (checkoutBody: CheckoutBody, signal?: AbortSignal)
   });
 };
 
+export const getCheckoutBranchMutationKey = () => ["checkoutBranch"] as const;
+
 export const getCheckoutBranchMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -16709,7 +17237,7 @@ export const getCheckoutBranchMutationOptions = <
   CheckoutBranchMutationVariables,
   TContext
 > => {
-  const mutationKey = ["checkoutBranch"];
+  const mutationKey = getCheckoutBranchMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -16765,6 +17293,8 @@ export const validateCheckout = (
   });
 };
 
+export const getValidateCheckoutMutationKey = () => ["validateCheckout"] as const;
+
 export const getValidateCheckoutMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -16781,7 +17311,7 @@ export const getValidateCheckoutMutationOptions = <
   ValidateCheckoutMutationVariables,
   TContext
 > => {
-  const mutationKey = ["validateCheckout"];
+  const mutationKey = getValidateCheckoutMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -16836,6 +17366,8 @@ export const commit = (commitBody: CommitBody, signal?: AbortSignal) => {
   });
 };
 
+export const getCommitMutationKey = () => ["commit"] as const;
+
 export const getCommitMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -16852,7 +17384,7 @@ export const getCommitMutationOptions = <
   CommitMutationVariables,
   TContext
 > => {
-  const mutationKey = ["commit"];
+  const mutationKey = getCommitMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -17755,6 +18287,8 @@ export const getFileContentBatch = (
   });
 };
 
+export const getGetFileContentBatchMutationKey = () => ["getFileContentBatch"] as const;
+
 export const getGetFileContentBatchMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -17771,7 +18305,7 @@ export const getGetFileContentBatchMutationOptions = <
   GetFileContentBatchMutationVariables,
   TContext
 > => {
-  const mutationKey = ["getFileContentBatch"];
+  const mutationKey = getGetFileContentBatchMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -18127,6 +18661,8 @@ export const putForgeToken = (forgeTokenRequest: ForgeTokenRequest, signal?: Abo
   });
 };
 
+export const getPutForgeTokenMutationKey = () => ["putForgeToken"] as const;
+
 export const getPutForgeTokenMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -18143,7 +18679,7 @@ export const getPutForgeTokenMutationOptions = <
   PutForgeTokenMutationVariables,
   TContext
 > => {
-  const mutationKey = ["putForgeToken"];
+  const mutationKey = getPutForgeTokenMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -18195,6 +18731,8 @@ export const deleteForgeToken = (params: DeleteForgeTokenParams, signal?: AbortS
   });
 };
 
+export const getDeleteForgeTokenMutationKey = () => ["deleteForgeToken"] as const;
+
 export const getDeleteForgeTokenMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -18211,7 +18749,7 @@ export const getDeleteForgeTokenMutationOptions = <
   DeleteForgeTokenMutationVariables,
   TContext
 > => {
-  const mutationKey = ["deleteForgeToken"];
+  const mutationKey = getDeleteForgeTokenMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -18386,6 +18924,8 @@ export const resetFile = (fileMutationBody: FileMutationBody, signal?: AbortSign
   });
 };
 
+export const getResetFileMutationKey = () => ["resetFile"] as const;
+
 export const getResetFileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -18402,7 +18942,7 @@ export const getResetFileMutationOptions = <
   ResetFileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["resetFile"];
+  const mutationKey = getResetFileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -18455,6 +18995,8 @@ export const stageFile = (fileMutationBody: FileMutationBody, signal?: AbortSign
   });
 };
 
+export const getStageFileMutationKey = () => ["stageFile"] as const;
+
 export const getStageFileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -18471,7 +19013,7 @@ export const getStageFileMutationOptions = <
   StageFileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["stageFile"];
+  const mutationKey = getStageFileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -18527,6 +19069,8 @@ export const mergeFeatureBranch = (
   });
 };
 
+export const getMergeFeatureBranchMutationKey = () => ["mergeFeatureBranch"] as const;
+
 export const getMergeFeatureBranchMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -18543,7 +19087,7 @@ export const getMergeFeatureBranchMutationOptions = <
   MergeFeatureBranchMutationVariables,
   TContext
 > => {
-  const mutationKey = ["mergeFeatureBranch"];
+  const mutationKey = getMergeFeatureBranchMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -19092,6 +19636,118 @@ export function useGetPrComments<
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+export const lookupFeatureRepoPr = (params: LookupFeatureRepoPrParams, signal?: AbortSignal) => {
+  return customInstance<PrSummary>({ url: `/api/git/pr/lookup`, method: "GET", params, signal });
+};
+
+export const getLookupFeatureRepoPrQueryKey = (params?: LookupFeatureRepoPrParams) => {
+  return [`/api/git/pr/lookup`, ...(params ? [params] : [])] as const;
+};
+
+export const getLookupFeatureRepoPrQueryOptions = <
+  TData = Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupFeatureRepoPrParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof lookupFeatureRepoPr>>, TError, TData>
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getLookupFeatureRepoPrQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof lookupFeatureRepoPr>>> = ({ signal }) =>
+    lookupFeatureRepoPr(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type LookupFeatureRepoPrQueryResult = NonNullable<
+  Awaited<ReturnType<typeof lookupFeatureRepoPr>>
+>;
+export type LookupFeatureRepoPrQueryError = ErrorType<unknown>;
+
+export function useLookupFeatureRepoPr<
+  TData = Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupFeatureRepoPrParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof lookupFeatureRepoPr>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+          TError,
+          Awaited<ReturnType<typeof lookupFeatureRepoPr>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useLookupFeatureRepoPr<
+  TData = Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupFeatureRepoPrParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof lookupFeatureRepoPr>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+          TError,
+          Awaited<ReturnType<typeof lookupFeatureRepoPr>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useLookupFeatureRepoPr<
+  TData = Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupFeatureRepoPrParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof lookupFeatureRepoPr>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useLookupFeatureRepoPr<
+  TData = Awaited<ReturnType<typeof lookupFeatureRepoPr>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupFeatureRepoPrParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof lookupFeatureRepoPr>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getLookupFeatureRepoPrQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 export const push = (pushBody: PushBody, signal?: AbortSignal) => {
   return customInstance<GitSuccessResponse>({
     url: `/api/git/push`,
@@ -19101,6 +19757,8 @@ export const push = (pushBody: PushBody, signal?: AbortSignal) => {
     signal,
   });
 };
+
+export const getPushMutationKey = () => ["push"] as const;
 
 export const getPushMutationOptions = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
   mutation?: UseMutationOptions<
@@ -19115,7 +19773,7 @@ export const getPushMutationOptions = <TError = ErrorType<unknown>, TContext = u
   PushMutationVariables,
   TContext
 > => {
-  const mutationKey = ["push"];
+  const mutationKey = getPushMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -19162,6 +19820,8 @@ export const pushInput = (pushInputBody: PushInputBody, signal?: AbortSignal) =>
   });
 };
 
+export const getPushInputMutationKey = () => ["pushInput"] as const;
+
 export const getPushInputMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -19178,7 +19838,7 @@ export const getPushInputMutationOptions = <
   PushInputMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pushInput"];
+  const mutationKey = getPushInputMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -19331,6 +19991,8 @@ export const applyStash = (stashMutationBody: StashMutationBody, signal?: AbortS
   });
 };
 
+export const getApplyStashMutationKey = () => ["applyStash"] as const;
+
 export const getApplyStashMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -19347,7 +20009,7 @@ export const getApplyStashMutationOptions = <
   ApplyStashMutationVariables,
   TContext
 > => {
-  const mutationKey = ["applyStash"];
+  const mutationKey = getApplyStashMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -19400,6 +20062,8 @@ export const dropStash = (stashMutationBody: StashMutationBody, signal?: AbortSi
   });
 };
 
+export const getDropStashMutationKey = () => ["dropStash"] as const;
+
 export const getDropStashMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -19416,7 +20080,7 @@ export const getDropStashMutationOptions = <
   DropStashMutationVariables,
   TContext
 > => {
-  const mutationKey = ["dropStash"];
+  const mutationKey = getDropStashMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -19469,6 +20133,8 @@ export const popStash = (stashMutationBody: StashMutationBody, signal?: AbortSig
   });
 };
 
+export const getPopStashMutationKey = () => ["popStash"] as const;
+
 export const getPopStashMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -19485,7 +20151,7 @@ export const getPopStashMutationOptions = <
   PopStashMutationVariables,
   TContext
 > => {
-  const mutationKey = ["popStash"];
+  const mutationKey = getPopStashMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -19538,6 +20204,8 @@ export const pushStash = (stashPushBody: StashPushBody, signal?: AbortSignal) =>
   });
 };
 
+export const getPushStashMutationKey = () => ["pushStash"] as const;
+
 export const getPushStashMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -19554,7 +20222,7 @@ export const getPushStashMutationOptions = <
   PushStashMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pushStash"];
+  const mutationKey = getPushStashMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -19929,6 +20597,8 @@ export const updateBranch = (updateBranchBody: UpdateBranchBody, signal?: AbortS
   });
 };
 
+export const getUpdateBranchMutationKey = () => ["updateBranch"] as const;
+
 export const getUpdateBranchMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -19945,7 +20615,7 @@ export const getUpdateBranchMutationOptions = <
   UpdateBranchMutationVariables,
   TContext
 > => {
-  const mutationKey = ["updateBranch"];
+  const mutationKey = getUpdateBranchMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -20001,6 +20671,8 @@ export const abortUpdateBranch = (
   });
 };
 
+export const getAbortUpdateBranchMutationKey = () => ["abortUpdateBranch"] as const;
+
 export const getAbortUpdateBranchMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -20017,7 +20689,7 @@ export const getAbortUpdateBranchMutationOptions = <
   AbortUpdateBranchMutationVariables,
   TContext
 > => {
-  const mutationKey = ["abortUpdateBranch"];
+  const mutationKey = getAbortUpdateBranchMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -20075,6 +20747,8 @@ export const continueUpdateBranch = (
   });
 };
 
+export const getContinueUpdateBranchMutationKey = () => ["continueUpdateBranch"] as const;
+
 export const getContinueUpdateBranchMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -20091,7 +20765,7 @@ export const getContinueUpdateBranchMutationOptions = <
   ContinueUpdateBranchMutationVariables,
   TContext
 > => {
-  const mutationKey = ["continueUpdateBranch"];
+  const mutationKey = getContinueUpdateBranchMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -20146,6 +20820,8 @@ export const createWorktree = (createWorktreeBody: CreateWorktreeBody, signal?: 
   });
 };
 
+export const getCreateWorktreeMutationKey = () => ["createWorktree"] as const;
+
 export const getCreateWorktreeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -20162,7 +20838,7 @@ export const getCreateWorktreeMutationOptions = <
   CreateWorktreeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["createWorktree"];
+  const mutationKey = getCreateWorktreeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -20214,6 +20890,8 @@ export const removeWorktree = (params: RemoveWorktreeParams, signal?: AbortSigna
   });
 };
 
+export const getRemoveWorktreeMutationKey = () => ["removeWorktree"] as const;
+
 export const getRemoveWorktreeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -20230,7 +20908,7 @@ export const getRemoveWorktreeMutationOptions = <
   RemoveWorktreeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["removeWorktree"];
+  const mutationKey = getRemoveWorktreeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -20391,6 +21069,8 @@ export const removeOrphanWorktree = (
   });
 };
 
+export const getRemoveOrphanWorktreeMutationKey = () => ["removeOrphanWorktree"] as const;
+
 export const getRemoveOrphanWorktreeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -20407,7 +21087,7 @@ export const getRemoveOrphanWorktreeMutationOptions = <
   RemoveOrphanWorktreeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["removeOrphanWorktree"];
+  const mutationKey = getRemoveOrphanWorktreeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -20462,6 +21142,8 @@ export const retryWorktreeSetup = (retryWorktreeBody: RetryWorktreeBody, signal?
   });
 };
 
+export const getRetryWorktreeSetupMutationKey = () => ["retryWorktreeSetup"] as const;
+
 export const getRetryWorktreeSetupMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -20478,7 +21160,7 @@ export const getRetryWorktreeSetupMutationOptions = <
   RetryWorktreeSetupMutationVariables,
   TContext
 > => {
-  const mutationKey = ["retryWorktreeSetup"];
+  const mutationKey = getRetryWorktreeSetupMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -20532,6 +21214,8 @@ export const deleteWorktree = (params: DeleteWorktreeParams, signal?: AbortSigna
   });
 };
 
+export const getDeleteWorktreeMutationKey = () => ["deleteWorktree"] as const;
+
 export const getDeleteWorktreeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -20548,7 +21232,7 @@ export const getDeleteWorktreeMutationOptions = <
   DeleteWorktreeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["deleteWorktree"];
+  const mutationKey = getDeleteWorktreeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -21100,6 +21784,8 @@ export const openSession = (openLspSessionRequest: OpenLspSessionRequest, signal
   });
 };
 
+export const getOpenSessionMutationKey = () => ["openSession"] as const;
+
 export const getOpenSessionMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -21116,7 +21802,7 @@ export const getOpenSessionMutationOptions = <
   OpenSessionMutationVariables,
   TContext
 > => {
-  const mutationKey = ["openSession"];
+  const mutationKey = getOpenSessionMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -21269,6 +21955,8 @@ export const installManagedTab = (
   });
 };
 
+export const getInstallManagedTabMutationKey = () => ["installManagedTab"] as const;
+
 export const getInstallManagedTabMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -21285,7 +21973,7 @@ export const getInstallManagedTabMutationOptions = <
   InstallManagedTabMutationVariables,
   TContext
 > => {
-  const mutationKey = ["installManagedTab"];
+  const mutationKey = getInstallManagedTabMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -21445,6 +22133,8 @@ export const refreshManagedTabCatalog = (signal?: AbortSignal) => {
   });
 };
 
+export const getRefreshManagedTabCatalogMutationKey = () => ["refreshManagedTabCatalog"] as const;
+
 export const getRefreshManagedTabCatalogMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -21461,7 +22151,7 @@ export const getRefreshManagedTabCatalogMutationOptions = <
   void,
   TContext
 > => {
-  const mutationKey = ["refreshManagedTabCatalog"];
+  const mutationKey = getRefreshManagedTabCatalogMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -21503,9 +22193,128 @@ export const useRefreshManagedTabCatalog = <TError = ErrorType<unknown>, TContex
   return useMutation(getRefreshManagedTabCatalogMutationOptions(options), queryClient);
 };
 
+/**
+ * @summary The custom-tab revocation policy in force: whether this build has a feed,
+how fresh the cached policy is, and why not. Installing, updating and
+starting a backend need `cache_status` `fresh` (or `not_configured`).
+ */
+export const getManagedTabPolicy = (signal?: AbortSignal) => {
+  return customInstance<ManagedTabPolicyStatus>({
+    url: `/api/marketplace/tabs/policy`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetManagedTabPolicyQueryKey = () => {
+  return [`/api/marketplace/tabs/policy`] as const;
+};
+
+export const getGetManagedTabPolicyQueryOptions = <
+  TData = Awaited<ReturnType<typeof getManagedTabPolicy>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getManagedTabPolicy>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetManagedTabPolicyQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getManagedTabPolicy>>> = ({ signal }) =>
+    getManagedTabPolicy(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getManagedTabPolicy>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetManagedTabPolicyQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getManagedTabPolicy>>
+>;
+export type GetManagedTabPolicyQueryError = ErrorType<unknown>;
+
+export function useGetManagedTabPolicy<
+  TData = Awaited<ReturnType<typeof getManagedTabPolicy>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabPolicy>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getManagedTabPolicy>>,
+          TError,
+          Awaited<ReturnType<typeof getManagedTabPolicy>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetManagedTabPolicy<
+  TData = Awaited<ReturnType<typeof getManagedTabPolicy>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabPolicy>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getManagedTabPolicy>>,
+          TError,
+          Awaited<ReturnType<typeof getManagedTabPolicy>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetManagedTabPolicy<
+  TData = Awaited<ReturnType<typeof getManagedTabPolicy>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabPolicy>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary The custom-tab revocation policy in force: whether this build has a feed,
+how fresh the cached policy is, and why not. Installing, updating and
+starting a backend need `cache_status` `fresh` (or `not_configured`).
+ */
+
+export function useGetManagedTabPolicy<
+  TData = Awaited<ReturnType<typeof getManagedTabPolicy>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getManagedTabPolicy>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetManagedTabPolicyQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 export const removeManagedTab = (id: string, signal?: AbortSignal) => {
   return customInstance<boolean>({ url: `/api/marketplace/tabs/${id}`, method: "DELETE", signal });
 };
+
+export const getRemoveManagedTabMutationKey = () => ["removeManagedTab"] as const;
 
 export const getRemoveManagedTabMutationOptions = <
   TError = ErrorType<unknown>,
@@ -21523,7 +22332,7 @@ export const getRemoveManagedTabMutationOptions = <
   RemoveManagedTabMutationVariables,
   TContext
 > => {
-  const mutationKey = ["removeManagedTab"];
+  const mutationKey = getRemoveManagedTabMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -21568,6 +22377,85 @@ export const useRemoveManagedTab = <TError = ErrorType<unknown>, TContext = unkn
   return useMutation(getRemoveManagedTabMutationOptions(options), queryClient);
 };
 
+/**
+ * @summary Discard the update staged for review; the installed revision stays. 404
+`MANAGED_TAB_UPDATE_NOT_FOUND` when none is staged.
+ */
+export const discardManagedTabUpdate = (id: string, signal?: AbortSignal) => {
+  return customInstance<boolean>({
+    url: `/api/marketplace/tabs/${id}/pending`,
+    method: "DELETE",
+    signal,
+  });
+};
+
+export const getDiscardManagedTabUpdateMutationKey = () => ["discardManagedTabUpdate"] as const;
+
+export const getDiscardManagedTabUpdateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof discardManagedTabUpdate>>,
+    TError,
+    DiscardManagedTabUpdateMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof discardManagedTabUpdate>>,
+  TError,
+  DiscardManagedTabUpdateMutationVariables,
+  TContext
+> => {
+  const mutationKey = getDiscardManagedTabUpdateMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof discardManagedTabUpdate>>,
+    DiscardManagedTabUpdateMutationVariables
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return discardManagedTabUpdate(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DiscardManagedTabUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof discardManagedTabUpdate>>
+>;
+
+export type DiscardManagedTabUpdateMutationError = ErrorType<unknown>;
+export type DiscardManagedTabUpdateMutationVariables = { id: string };
+
+/**
+ * @summary Discard the update staged for review; the installed revision stays. 404
+`MANAGED_TAB_UPDATE_NOT_FOUND` when none is staged.
+ */
+export const useDiscardManagedTabUpdate = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof discardManagedTabUpdate>>,
+      TError,
+      DiscardManagedTabUpdateMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof discardManagedTabUpdate>>,
+  TError,
+  DiscardManagedTabUpdateMutationVariables,
+  TContext
+> => {
+  return useMutation(getDiscardManagedTabUpdateMutationOptions(options), queryClient);
+};
+
 export const updateManagedTab = (
   id: string,
   installManagedTabRequest: InstallManagedTabRequest,
@@ -21581,6 +22469,8 @@ export const updateManagedTab = (
     signal,
   });
 };
+
+export const getUpdateManagedTabMutationKey = () => ["updateManagedTab"] as const;
 
 export const getUpdateManagedTabMutationOptions = <
   TError = ErrorType<unknown>,
@@ -21598,7 +22488,7 @@ export const getUpdateManagedTabMutationOptions = <
   UpdateManagedTabMutationVariables,
   TContext
 > => {
-  const mutationKey = ["updateManagedTab"];
+  const mutationKey = getUpdateManagedTabMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -21746,6 +22636,8 @@ export const startRoute = (startRouteBody: number, signal?: AbortSignal) => {
   });
 };
 
+export const getStartRouteMutationKey = () => ["startRoute"] as const;
+
 export const getStartRouteMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -21762,7 +22654,7 @@ export const getStartRouteMutationOptions = <
   StartRouteMutationVariables,
   TContext
 > => {
-  const mutationKey = ["startRoute"];
+  const mutationKey = getStartRouteMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -21815,6 +22707,8 @@ export const stopRoute = (stopRouteBody: number, signal?: AbortSignal) => {
   });
 };
 
+export const getStopRouteMutationKey = () => ["stopRoute"] as const;
+
 export const getStopRouteMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -21831,7 +22725,7 @@ export const getStopRouteMutationOptions = <
   StopRouteMutationVariables,
   TContext
 > => {
-  const mutationKey = ["stopRoute"];
+  const mutationKey = getStopRouteMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -22088,6 +22982,8 @@ export const pluginTabAuthoring = (
   });
 };
 
+export const getPluginTabAuthoringMutationKey = () => ["pluginTabAuthoring"] as const;
+
 export const getPluginTabAuthoringMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -22104,7 +23000,7 @@ export const getPluginTabAuthoringMutationOptions = <
   PluginTabAuthoringMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabAuthoring"];
+  const mutationKey = getPluginTabAuthoringMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -22159,6 +23055,9 @@ export const pluginTabRevokeCurrentGrant = (signal?: AbortSignal) => {
   return customInstance<void>({ url: `/api/plugin-tabs/grants/current`, method: "DELETE", signal });
 };
 
+export const getPluginTabRevokeCurrentGrantMutationKey = () =>
+  ["pluginTabRevokeCurrentGrant"] as const;
+
 export const getPluginTabRevokeCurrentGrantMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -22175,7 +23074,7 @@ export const getPluginTabRevokeCurrentGrantMutationOptions = <
   void,
   TContext
 > => {
-  const mutationKey = ["pluginTabRevokeCurrentGrant"];
+  const mutationKey = getPluginTabRevokeCurrentGrantMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -22223,8 +23122,12 @@ export const usePluginTabRevokeCurrentGrant = <TError = ErrorType<unknown>, TCon
 /**
  * @summary Send one request to the tab's native backend, starting it if it is not
 running (plugin token). A backend error is a 200 with `error`. 403
-`PLUGIN_BACKEND_UNDECLARED` / `PLUGIN_BACKEND_UNSUPPORTED`, 422
-`PLUGIN_BACKEND_UNAVAILABLE`, 429 `PLUGIN_BACKEND_BUSY`, 503
+`PLUGIN_BACKEND_UNDECLARED`, 422 `PLUGIN_BACKEND_UNAVAILABLE` /
+`PLUGIN_BACKEND_UNAVAILABLE_ON_PLATFORM`, 409 `PLUGIN_BACKEND_TAMPERED` (a
+marketplace binary that differs from its signed digest) /
+`MANAGED_TAB_POLICY_UNAVAILABLE` (a revocation feed is configured but no
+fresh policy is cached: the backend does not start), 429
+`PLUGIN_BACKEND_BUSY`, 503
 `PLUGIN_BACKEND_CRASHING`, 504 `PLUGIN_BACKEND_TIMEOUT`, 502
 `PLUGIN_BACKEND_EXITED`.
  */
@@ -22240,6 +23143,8 @@ export const pluginTabSelfBackend = (
     signal,
   });
 };
+
+export const getPluginTabSelfBackendMutationKey = () => ["pluginTabSelfBackend"] as const;
 
 export const getPluginTabSelfBackendMutationOptions = <
   TError = ErrorType<unknown>,
@@ -22257,7 +23162,7 @@ export const getPluginTabSelfBackendMutationOptions = <
   PluginTabSelfBackendMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabSelfBackend"];
+  const mutationKey = getPluginTabSelfBackendMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -22286,8 +23191,12 @@ export type PluginTabSelfBackendMutationVariables = { data: PluginBackendRequest
 /**
  * @summary Send one request to the tab's native backend, starting it if it is not
 running (plugin token). A backend error is a 200 with `error`. 403
-`PLUGIN_BACKEND_UNDECLARED` / `PLUGIN_BACKEND_UNSUPPORTED`, 422
-`PLUGIN_BACKEND_UNAVAILABLE`, 429 `PLUGIN_BACKEND_BUSY`, 503
+`PLUGIN_BACKEND_UNDECLARED`, 422 `PLUGIN_BACKEND_UNAVAILABLE` /
+`PLUGIN_BACKEND_UNAVAILABLE_ON_PLATFORM`, 409 `PLUGIN_BACKEND_TAMPERED` (a
+marketplace binary that differs from its signed digest) /
+`MANAGED_TAB_POLICY_UNAVAILABLE` (a revocation feed is configured but no
+fresh policy is cached: the backend does not start), 429
+`PLUGIN_BACKEND_BUSY`, 503
 `PLUGIN_BACKEND_CRASHING`, 504 `PLUGIN_BACKEND_TIMEOUT`, 502
 `PLUGIN_BACKEND_EXITED`.
  */
@@ -22445,6 +23354,8 @@ export const pluginTabSelfExec = (pluginExecRequest: PluginExecRequest, signal?:
   });
 };
 
+export const getPluginTabSelfExecMutationKey = () => ["pluginTabSelfExec"] as const;
+
 export const getPluginTabSelfExecMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -22461,7 +23372,7 @@ export const getPluginTabSelfExecMutationOptions = <
   PluginTabSelfExecMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabSelfExec"];
+  const mutationKey = getPluginTabSelfExecMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -22539,6 +23450,8 @@ export const pluginTabSelfNetFetch = (
   });
 };
 
+export const getPluginTabSelfNetFetchMutationKey = () => ["pluginTabSelfNetFetch"] as const;
+
 export const getPluginTabSelfNetFetchMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -22555,7 +23468,7 @@ export const getPluginTabSelfNetFetchMutationOptions = <
   PluginTabSelfNetFetchMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabSelfNetFetch"];
+  const mutationKey = getPluginTabSelfNetFetchMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -22868,6 +23781,8 @@ export const pluginTabSelfStoragePut = (
   });
 };
 
+export const getPluginTabSelfStoragePutMutationKey = () => ["pluginTabSelfStoragePut"] as const;
+
 export const getPluginTabSelfStoragePutMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -22884,7 +23799,7 @@ export const getPluginTabSelfStoragePutMutationOptions = <
   PluginTabSelfStoragePutMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabSelfStoragePut"];
+  const mutationKey = getPluginTabSelfStoragePutMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -22943,6 +23858,9 @@ export const pluginTabSelfStorageDelete = (key: string, signal?: AbortSignal) =>
   });
 };
 
+export const getPluginTabSelfStorageDeleteMutationKey = () =>
+  ["pluginTabSelfStorageDelete"] as const;
+
 export const getPluginTabSelfStorageDeleteMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -22959,7 +23877,7 @@ export const getPluginTabSelfStorageDeleteMutationOptions = <
   PluginTabSelfStorageDeleteMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabSelfStorageDelete"];
+  const mutationKey = getPluginTabSelfStorageDeleteMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -23251,6 +24169,8 @@ export const pluginTabStopBackend = (id: string, featureId: number, signal?: Abo
   });
 };
 
+export const getPluginTabStopBackendMutationKey = () => ["pluginTabStopBackend"] as const;
+
 export const getPluginTabStopBackendMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -23267,7 +24187,7 @@ export const getPluginTabStopBackendMutationOptions = <
   PluginTabStopBackendMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabStopBackend"];
+  const mutationKey = getPluginTabStopBackendMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -23469,6 +24389,8 @@ export const pluginTabPutConfiguration = (
   });
 };
 
+export const getPluginTabPutConfigurationMutationKey = () => ["pluginTabPutConfiguration"] as const;
+
 export const getPluginTabPutConfigurationMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -23485,7 +24407,7 @@ export const getPluginTabPutConfigurationMutationOptions = <
   PluginTabPutConfigurationMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabPutConfiguration"];
+  const mutationKey = getPluginTabPutConfigurationMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -23539,9 +24461,12 @@ export const usePluginTabPutConfiguration = <TError = ErrorType<unknown>, TConte
 };
 
 /**
- * @summary Accept the tab's current permissions. 409 `PLUGIN_TAB_CONSENT_STALE` when
-`permissions_hash` is not the current one. A changed consent revokes the
-tab's live grants.
+ * @summary Accept the tab's current permissions — or, with the hash of a staged
+marketplace update (`pending_update.permissions_hash`), accept that update:
+it becomes the installed revision and its backend restarts on it. 409
+`PLUGIN_TAB_CONSENT_STALE` when `permissions_hash` is neither (409
+`MANAGED_TAB_UPDATE_CHANGED` when the staged update was replaced
+meanwhile). A changed consent revokes the tab's live grants.
  */
 export const pluginTabConsent = (
   id: string,
@@ -23559,6 +24484,8 @@ export const pluginTabConsent = (
   });
 };
 
+export const getPluginTabConsentMutationKey = () => ["pluginTabConsent"] as const;
+
 export const getPluginTabConsentMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -23575,7 +24502,7 @@ export const getPluginTabConsentMutationOptions = <
   PluginTabConsentMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabConsent"];
+  const mutationKey = getPluginTabConsentMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -23606,9 +24533,12 @@ export type PluginTabConsentMutationVariables = {
 };
 
 /**
- * @summary Accept the tab's current permissions. 409 `PLUGIN_TAB_CONSENT_STALE` when
-`permissions_hash` is not the current one. A changed consent revokes the
-tab's live grants.
+ * @summary Accept the tab's current permissions — or, with the hash of a staged
+marketplace update (`pending_update.permissions_hash`), accept that update:
+it becomes the installed revision and its backend restarts on it. 409
+`PLUGIN_TAB_CONSENT_STALE` when `permissions_hash` is neither (409
+`MANAGED_TAB_UPDATE_CHANGED` when the staged update was replaced
+meanwhile). A changed consent revokes the tab's live grants.
  */
 export const usePluginTabConsent = <TError = ErrorType<unknown>, TContext = unknown>(
   options?: {
@@ -23649,6 +24579,8 @@ export const pluginTabSetEnablement = (
   });
 };
 
+export const getPluginTabSetEnablementMutationKey = () => ["pluginTabSetEnablement"] as const;
+
 export const getPluginTabSetEnablementMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -23665,7 +24597,7 @@ export const getPluginTabSetEnablementMutationOptions = <
   PluginTabSetEnablementMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabSetEnablement"];
+  const mutationKey = getPluginTabSetEnablementMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -23739,6 +24671,8 @@ export const pluginTabCreateGrant = (
   });
 };
 
+export const getPluginTabCreateGrantMutationKey = () => ["pluginTabCreateGrant"] as const;
+
 export const getPluginTabCreateGrantMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -23755,7 +24689,7 @@ export const getPluginTabCreateGrantMutationOptions = <
   PluginTabCreateGrantMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabCreateGrant"];
+  const mutationKey = getPluginTabCreateGrantMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -23813,7 +24747,11 @@ export const usePluginTabCreateGrant = <TError = ErrorType<unknown>, TContext = 
  * @summary Take or renew a presence lease: an instance of the tab is open in the
 conversation, so its backend keeps running, idle or not. The desktop
 renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
-malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases.
+malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases, 404
+`PLUGIN_TAB_CONVERSATION_NOT_FOUND` once the conversation is deleted and
+409 `PLUGIN_TAB_CONVERSATION_ARCHIVED` while it is archived — possibly
+from another client, whose tabs still renew: every lease held in it goes
+too, so its backends stop.
  */
 export const pluginTabRenewPresence = (
   id: string,
@@ -23829,6 +24767,8 @@ export const pluginTabRenewPresence = (
     signal,
   });
 };
+
+export const getPluginTabRenewPresenceMutationKey = () => ["pluginTabRenewPresence"] as const;
 
 export const getPluginTabRenewPresenceMutationOptions = <
   TError = ErrorType<unknown>,
@@ -23846,7 +24786,7 @@ export const getPluginTabRenewPresenceMutationOptions = <
   PluginTabRenewPresenceMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabRenewPresence"];
+  const mutationKey = getPluginTabRenewPresenceMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -23880,7 +24820,11 @@ export type PluginTabRenewPresenceMutationVariables = {
  * @summary Take or renew a presence lease: an instance of the tab is open in the
 conversation, so its backend keeps running, idle or not. The desktop
 renews it every minute; unrenewed it lapses after 3 minutes. 400 for a
-malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases.
+malformed lease id, 429 `PLUGIN_TAB_PRESENCE_FULL` past 1 024 leases, 404
+`PLUGIN_TAB_CONVERSATION_NOT_FOUND` once the conversation is deleted and
+409 `PLUGIN_TAB_CONVERSATION_ARCHIVED` while it is archived — possibly
+from another client, whose tabs still renew: every lease held in it goes
+too, so its backends stop.
  */
 export const usePluginTabRenewPresence = <TError = ErrorType<unknown>, TContext = unknown>(
   options?: {
@@ -23913,6 +24857,8 @@ export const pluginTabReleasePresence = (id: string, leaseId: string, signal?: A
   });
 };
 
+export const getPluginTabReleasePresenceMutationKey = () => ["pluginTabReleasePresence"] as const;
+
 export const getPluginTabReleasePresenceMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -23929,7 +24875,7 @@ export const getPluginTabReleasePresenceMutationOptions = <
   PluginTabReleasePresenceMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabReleasePresence"];
+  const mutationKey = getPluginTabReleasePresenceMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -23990,6 +24936,8 @@ export const pluginTabWorkspace = (id: string, signal?: AbortSignal) => {
   });
 };
 
+export const getPluginTabWorkspaceMutationKey = () => ["pluginTabWorkspace"] as const;
+
 export const getPluginTabWorkspaceMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -24006,7 +24954,7 @@ export const getPluginTabWorkspaceMutationOptions = <
   PluginTabWorkspaceMutationVariables,
   TContext
 > => {
-  const mutationKey = ["pluginTabWorkspace"];
+  const mutationKey = getPluginTabWorkspaceMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -24158,6 +25106,8 @@ export const createProject = (createProjectRequest: CreateProjectRequest, signal
   });
 };
 
+export const getCreateProjectMutationKey = () => ["createProject"] as const;
+
 export const getCreateProjectMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -24174,7 +25124,7 @@ export const getCreateProjectMutationOptions = <
   CreateProjectMutationVariables,
   TContext
 > => {
-  const mutationKey = ["createProject"];
+  const mutationKey = getCreateProjectMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -24225,6 +25175,8 @@ export const deleteProject = (id: number, signal?: AbortSignal) => {
   });
 };
 
+export const getDeleteProjectMutationKey = () => ["deleteProject"] as const;
+
 export const getDeleteProjectMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -24241,7 +25193,7 @@ export const getDeleteProjectMutationOptions = <
   DeleteProjectMutationVariables,
   TContext
 > => {
-  const mutationKey = ["deleteProject"];
+  const mutationKey = getDeleteProjectMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -24292,6 +25244,8 @@ export const archiveProjectSessions = (id: number, signal?: AbortSignal) => {
   });
 };
 
+export const getArchiveProjectSessionsMutationKey = () => ["archiveProjectSessions"] as const;
+
 export const getArchiveProjectSessionsMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -24308,7 +25262,7 @@ export const getArchiveProjectSessionsMutationOptions = <
   ArchiveProjectSessionsMutationVariables,
   TContext
 > => {
-  const mutationKey = ["archiveProjectSessions"];
+  const mutationKey = getArchiveProjectSessionsMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -24474,6 +25428,8 @@ export const startClaudeCodeImport = (
   });
 };
 
+export const getStartClaudeCodeImportMutationKey = () => ["startClaudeCodeImport"] as const;
+
 export const getStartClaudeCodeImportMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -24490,7 +25446,7 @@ export const getStartClaudeCodeImportMutationOptions = <
   StartClaudeCodeImportMutationVariables,
   TContext
 > => {
-  const mutationKey = ["startClaudeCodeImport"];
+  const mutationKey = getStartClaudeCodeImportMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -24670,6 +25626,8 @@ export const startProviderImport = (
   });
 };
 
+export const getStartProviderImportMutationKey = () => ["startProviderImport"] as const;
+
 export const getStartProviderImportMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -24686,7 +25644,7 @@ export const getStartProviderImportMutationOptions = <
   StartProviderImportMutationVariables,
   TContext
 > => {
-  const mutationKey = ["startProviderImport"];
+  const mutationKey = getStartProviderImportMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -24874,6 +25832,9 @@ export const preparePublicationContribution = (
   });
 };
 
+export const getPreparePublicationContributionMutationKey = () =>
+  ["preparePublicationContribution"] as const;
+
 export const getPreparePublicationContributionMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -24890,7 +25851,7 @@ export const getPreparePublicationContributionMutationOptions = <
   PreparePublicationContributionMutationVariables,
   TContext
 > => {
-  const mutationKey = ["preparePublicationContribution"];
+  const mutationKey = getPreparePublicationContributionMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -25210,6 +26171,8 @@ export const preparePublicationPackage = (
   });
 };
 
+export const getPreparePublicationPackageMutationKey = () => ["preparePublicationPackage"] as const;
+
 export const getPreparePublicationPackageMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -25226,7 +26189,7 @@ export const getPreparePublicationPackageMutationOptions = <
   PreparePublicationPackageMutationVariables,
   TContext
 > => {
-  const mutationKey = ["preparePublicationPackage"];
+  const mutationKey = getPreparePublicationPackageMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -25410,6 +26373,8 @@ export const submitPublicationRegistry = (
   });
 };
 
+export const getSubmitPublicationRegistryMutationKey = () => ["submitPublicationRegistry"] as const;
+
 export const getSubmitPublicationRegistryMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -25426,7 +26391,7 @@ export const getSubmitPublicationRegistryMutationOptions = <
   SubmitPublicationRegistryMutationVariables,
   TContext
 > => {
-  const mutationKey = ["submitPublicationRegistry"];
+  const mutationKey = getSubmitPublicationRegistryMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -25488,6 +26453,9 @@ export const previewPublicationRegistry = (
   });
 };
 
+export const getPreviewPublicationRegistryMutationKey = () =>
+  ["previewPublicationRegistry"] as const;
+
 export const getPreviewPublicationRegistryMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -25504,7 +26472,7 @@ export const getPreviewPublicationRegistryMutationOptions = <
   PreviewPublicationRegistryMutationVariables,
   TContext
 > => {
-  const mutationKey = ["previewPublicationRegistry"];
+  const mutationKey = getPreviewPublicationRegistryMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -25566,6 +26534,8 @@ export const publishPublicationRelease = (
   });
 };
 
+export const getPublishPublicationReleaseMutationKey = () => ["publishPublicationRelease"] as const;
+
 export const getPublishPublicationReleaseMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -25582,7 +26552,7 @@ export const getPublishPublicationReleaseMutationOptions = <
   PublishPublicationReleaseMutationVariables,
   TContext
 > => {
-  const mutationKey = ["publishPublicationRelease"];
+  const mutationKey = getPublishPublicationReleaseMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -25644,6 +26614,8 @@ export const previewPublicationRelease = (
   });
 };
 
+export const getPreviewPublicationReleaseMutationKey = () => ["previewPublicationRelease"] as const;
+
 export const getPreviewPublicationReleaseMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -25660,7 +26632,7 @@ export const getPreviewPublicationReleaseMutationOptions = <
   PreviewPublicationReleaseMutationVariables,
   TContext
 > => {
-  const mutationKey = ["previewPublicationRelease"];
+  const mutationKey = getPreviewPublicationReleaseMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -25833,6 +26805,8 @@ export const setProjectSetting = (
   });
 };
 
+export const getSetProjectSettingMutationKey = () => ["setProjectSetting"] as const;
+
 export const getSetProjectSettingMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -25849,7 +26823,7 @@ export const getSetProjectSettingMutationOptions = <
   SetProjectSettingMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setProjectSetting"];
+  const mutationKey = getSetProjectSettingMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -26027,6 +27001,8 @@ export const putProjectSettingsFile = (
   });
 };
 
+export const getPutProjectSettingsFileMutationKey = () => ["putProjectSettingsFile"] as const;
+
 export const getPutProjectSettingsFileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -26043,7 +27019,7 @@ export const getPutProjectSettingsFileMutationOptions = <
   PutProjectSettingsFileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["putProjectSettingsFile"];
+  const mutationKey = getPutProjectSettingsFileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -26208,6 +27184,8 @@ export const subscribe = (pushSubscribeRequest: PushSubscribeRequest, signal?: A
   });
 };
 
+export const getSubscribeMutationKey = () => ["subscribe"] as const;
+
 export const getSubscribeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -26224,7 +27202,7 @@ export const getSubscribeMutationOptions = <
   SubscribeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["subscribe"];
+  const mutationKey = getSubscribeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -26280,6 +27258,8 @@ export const unsubscribe = (
   });
 };
 
+export const getUnsubscribeMutationKey = () => ["unsubscribe"] as const;
+
 export const getUnsubscribeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -26296,7 +27276,7 @@ export const getUnsubscribeMutationOptions = <
   UnsubscribeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["unsubscribe"];
+  const mutationKey = getUnsubscribeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -26432,6 +27412,109 @@ export function useVapidKey<
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+/**
+ * @summary Keep per-action browser authorization independent of device/audit database reads.
+ */
+export const browserOrigins = (signal?: AbortSignal) => {
+  return customInstance<RemoteBrowserOrigins>({
+    url: `/api/remote/browser-origins`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getBrowserOriginsQueryKey = () => {
+  return [`/api/remote/browser-origins`] as const;
+};
+
+export const getBrowserOriginsQueryOptions = <
+  TData = Awaited<ReturnType<typeof browserOrigins>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof browserOrigins>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getBrowserOriginsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof browserOrigins>>> = ({ signal }) =>
+    browserOrigins(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof browserOrigins>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type BrowserOriginsQueryResult = NonNullable<Awaited<ReturnType<typeof browserOrigins>>>;
+export type BrowserOriginsQueryError = ErrorType<unknown>;
+
+export function useBrowserOrigins<
+  TData = Awaited<ReturnType<typeof browserOrigins>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof browserOrigins>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof browserOrigins>>,
+          TError,
+          Awaited<ReturnType<typeof browserOrigins>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useBrowserOrigins<
+  TData = Awaited<ReturnType<typeof browserOrigins>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof browserOrigins>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof browserOrigins>>,
+          TError,
+          Awaited<ReturnType<typeof browserOrigins>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useBrowserOrigins<
+  TData = Awaited<ReturnType<typeof browserOrigins>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof browserOrigins>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Keep per-action browser authorization independent of device/audit database reads.
+ */
+
+export function useBrowserOrigins<
+  TData = Awaited<ReturnType<typeof browserOrigins>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof browserOrigins>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getBrowserOriginsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 export const remoteRevokeDevice = (id: number, signal?: AbortSignal) => {
   return customInstance<RemoteStatus>({
     url: `/api/remote/devices/${id}`,
@@ -26439,6 +27522,8 @@ export const remoteRevokeDevice = (id: number, signal?: AbortSignal) => {
     signal,
   });
 };
+
+export const getRemoteRevokeDeviceMutationKey = () => ["remoteRevokeDevice"] as const;
 
 export const getRemoteRevokeDeviceMutationOptions = <
   TError = ErrorType<unknown>,
@@ -26456,7 +27541,7 @@ export const getRemoteRevokeDeviceMutationOptions = <
   RemoteRevokeDeviceMutationVariables,
   TContext
 > => {
-  const mutationKey = ["remoteRevokeDevice"];
+  const mutationKey = getRemoteRevokeDeviceMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -26505,13 +27590,15 @@ export const remoteDisable = (signal?: AbortSignal) => {
   return customInstance<RemoteStatus>({ url: `/api/remote/disable`, method: "POST", signal });
 };
 
+export const getRemoteDisableMutationKey = () => ["remoteDisable"] as const;
+
 export const getRemoteDisableMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<Awaited<ReturnType<typeof remoteDisable>>, TError, void, TContext>;
 }): UseMutationOptions<Awaited<ReturnType<typeof remoteDisable>>, TError, void, TContext> => {
-  const mutationKey = ["remoteDisable"];
+  const mutationKey = getRemoteDisableMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -26547,13 +27634,15 @@ export const remoteEnable = (signal?: AbortSignal) => {
   return customInstance<RemoteStatus>({ url: `/api/remote/enable`, method: "POST", signal });
 };
 
+export const getRemoteEnableMutationKey = () => ["remoteEnable"] as const;
+
 export const getRemoteEnableMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<Awaited<ReturnType<typeof remoteEnable>>, TError, void, TContext>;
 }): UseMutationOptions<Awaited<ReturnType<typeof remoteEnable>>, TError, void, TContext> => {
-  const mutationKey = ["remoteEnable"];
+  const mutationKey = getRemoteEnableMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -26590,6 +27679,8 @@ export const remotePair = (pairRequest: PairRequest, signal?: AbortSignal) => {
   });
 };
 
+export const getRemotePairMutationKey = () => ["remotePair"] as const;
+
 export const getRemotePairMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
@@ -26606,7 +27697,7 @@ export const getRemotePairMutationOptions = <
   RemotePairMutationVariables,
   TContext
 > => {
-  const mutationKey = ["remotePair"];
+  const mutationKey = getRemotePairMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -26657,6 +27748,8 @@ export const remotePairingCode = (signal?: AbortSignal) => {
   });
 };
 
+export const getRemotePairingCodeMutationKey = () => ["remotePairingCode"] as const;
+
 export const getRemotePairingCodeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -26668,7 +27761,7 @@ export const getRemotePairingCodeMutationOptions = <
     TContext
   >;
 }): UseMutationOptions<Awaited<ReturnType<typeof remotePairingCode>>, TError, void, TContext> => {
-  const mutationKey = ["remotePairingCode"];
+  const mutationKey = getRemotePairingCodeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -26805,6 +27898,8 @@ export const remoteSetTunnelHost = (tunnelHostRequest: TunnelHostRequest, signal
   });
 };
 
+export const getRemoteSetTunnelHostMutationKey = () => ["remoteSetTunnelHost"] as const;
+
 export const getRemoteSetTunnelHostMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -26821,7 +27916,7 @@ export const getRemoteSetTunnelHostMutationOptions = <
   RemoteSetTunnelHostMutationVariables,
   TContext
 > => {
-  const mutationKey = ["remoteSetTunnelHost"];
+  const mutationKey = getRemoteSetTunnelHostMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -26982,6 +28077,8 @@ export const createSchedule = (saveScheduleRequest: SaveScheduleRequest, signal?
   });
 };
 
+export const getCreateScheduleMutationKey = () => ["createSchedule"] as const;
+
 export const getCreateScheduleMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -26998,7 +28095,7 @@ export const getCreateScheduleMutationOptions = <
   CreateScheduleMutationVariables,
   TContext
 > => {
-  const mutationKey = ["createSchedule"];
+  const mutationKey = getCreateScheduleMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -27161,6 +28258,8 @@ export const updateSchedule = (
   });
 };
 
+export const getUpdateScheduleMutationKey = () => ["updateSchedule"] as const;
+
 export const getUpdateScheduleMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -27177,7 +28276,7 @@ export const getUpdateScheduleMutationOptions = <
   UpdateScheduleMutationVariables,
   TContext
 > => {
-  const mutationKey = ["updateSchedule"];
+  const mutationKey = getUpdateScheduleMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -27227,6 +28326,8 @@ export const deleteSchedule = (id: number, signal?: AbortSignal) => {
   return customInstance<ScheduleDeleted>({ url: `/api/schedules/${id}`, method: "DELETE", signal });
 };
 
+export const getDeleteScheduleMutationKey = () => ["deleteSchedule"] as const;
+
 export const getDeleteScheduleMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -27243,7 +28344,7 @@ export const getDeleteScheduleMutationOptions = <
   DeleteScheduleMutationVariables,
   TContext
 > => {
-  const mutationKey = ["deleteSchedule"];
+  const mutationKey = getDeleteScheduleMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -27303,6 +28404,8 @@ export const setScheduleEnabled = (
   });
 };
 
+export const getSetScheduleEnabledMutationKey = () => ["setScheduleEnabled"] as const;
+
 export const getSetScheduleEnabledMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -27319,7 +28422,7 @@ export const getSetScheduleEnabledMutationOptions = <
   SetScheduleEnabledMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setScheduleEnabled"];
+  const mutationKey = getSetScheduleEnabledMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -27378,6 +28481,8 @@ export const runSchedule = (id: number, signal?: AbortSignal) => {
   });
 };
 
+export const getRunScheduleMutationKey = () => ["runSchedule"] as const;
+
 export const getRunScheduleMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -27394,7 +28499,7 @@ export const getRunScheduleMutationOptions = <
   RunScheduleMutationVariables,
   TContext
 > => {
-  const mutationKey = ["runSchedule"];
+  const mutationKey = getRunScheduleMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -27439,6 +28544,236 @@ export const useRunSchedule = <TError = ErrorType<unknown>, TContext = unknown>(
 > => {
   return useMutation(getRunScheduleMutationOptions(options), queryClient);
 };
+
+/**
+ * @summary Every conversation, active and archived, most recently touched first: the
+command palette ranks them client-side as the user types.
+ */
+export const listConversationIndex = (signal?: AbortSignal) => {
+  return customInstance<ConversationIndexEntry[]>({
+    url: `/api/search/conversations`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getListConversationIndexQueryKey = () => {
+  return [`/api/search/conversations`] as const;
+};
+
+export const getListConversationIndexQueryOptions = <
+  TData = Awaited<ReturnType<typeof listConversationIndex>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof listConversationIndex>>, TError, TData>
+  >;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListConversationIndexQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listConversationIndex>>> = ({ signal }) =>
+    listConversationIndex(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listConversationIndex>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListConversationIndexQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listConversationIndex>>
+>;
+export type ListConversationIndexQueryError = ErrorType<unknown>;
+
+export function useListConversationIndex<
+  TData = Awaited<ReturnType<typeof listConversationIndex>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listConversationIndex>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listConversationIndex>>,
+          TError,
+          Awaited<ReturnType<typeof listConversationIndex>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListConversationIndex<
+  TData = Awaited<ReturnType<typeof listConversationIndex>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listConversationIndex>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listConversationIndex>>,
+          TError,
+          Awaited<ReturnType<typeof listConversationIndex>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListConversationIndex<
+  TData = Awaited<ReturnType<typeof listConversationIndex>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listConversationIndex>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Every conversation, active and archived, most recently touched first: the
+command palette ranks them client-side as the user types.
+ */
+
+export function useListConversationIndex<
+  TData = Awaited<ReturnType<typeof listConversationIndex>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listConversationIndex>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListConversationIndexQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Conversations whose prompts or replies contain every word of `q`, one hit
+(the newest matching message) per conversation, newest first.
+ */
+export const searchMessages = (params: SearchMessagesParams, signal?: AbortSignal) => {
+  return customInstance<MessageSearchHit[]>({
+    url: `/api/search/messages`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getSearchMessagesQueryKey = (params?: SearchMessagesParams) => {
+  return [`/api/search/messages`, ...(params ? [params] : [])] as const;
+};
+
+export const getSearchMessagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchMessagesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMessages>>, TError, TData>>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getSearchMessagesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof searchMessages>>> = ({ signal }) =>
+    searchMessages(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchMessages>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type SearchMessagesQueryResult = NonNullable<Awaited<ReturnType<typeof searchMessages>>>;
+export type SearchMessagesQueryError = ErrorType<unknown>;
+
+export function useSearchMessages<
+  TData = Awaited<ReturnType<typeof searchMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchMessagesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMessages>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchMessages>>,
+          TError,
+          Awaited<ReturnType<typeof searchMessages>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useSearchMessages<
+  TData = Awaited<ReturnType<typeof searchMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchMessagesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMessages>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchMessages>>,
+          TError,
+          Awaited<ReturnType<typeof searchMessages>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useSearchMessages<
+  TData = Awaited<ReturnType<typeof searchMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchMessagesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMessages>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Conversations whose prompts or replies contain every word of `q`, one hit
+(the newest matching message) per conversation, newest first.
+ */
+
+export function useSearchMessages<
+  TData = Awaited<ReturnType<typeof searchMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SearchMessagesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMessages>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getSearchMessagesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 export const listConversationReferences = (
   params: ListConversationReferencesParams,
@@ -27803,6 +29138,8 @@ export const saveSessionDraft = (
   });
 };
 
+export const getSaveSessionDraftMutationKey = () => ["saveSessionDraft"] as const;
+
 export const getSaveSessionDraftMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -27819,7 +29156,7 @@ export const getSaveSessionDraftMutationOptions = <
   SaveSessionDraftMutationVariables,
   TContext
 > => {
-  const mutationKey = ["saveSessionDraft"];
+  const mutationKey = getSaveSessionDraftMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -27862,6 +29199,427 @@ export const useSaveSessionDraft = <TError = ErrorType<unknown>, TContext = unkn
   TContext
 > => {
   return useMutation(getSaveSessionDraftMutationOptions(options), queryClient);
+};
+
+export const listSessionPromptQueue = (sessionId: number, signal?: AbortSignal) => {
+  return customInstance<QueuedPrompt[]>({
+    url: `/api/sessions/${sessionId}/prompt-queue`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getListSessionPromptQueueQueryKey = (sessionId: number) => {
+  return [`/api/sessions/${sessionId}/prompt-queue`] as const;
+};
+
+export const getListSessionPromptQueueQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSessionPromptQueue>>,
+  TError = ErrorType<unknown>,
+>(
+  sessionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSessionPromptQueue>>, TError, TData>
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSessionPromptQueueQueryKey(sessionId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listSessionPromptQueue>>> = ({ signal }) =>
+    listSessionPromptQueue(sessionId, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: sessionId !== null && sessionId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listSessionPromptQueue>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListSessionPromptQueueQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSessionPromptQueue>>
+>;
+export type ListSessionPromptQueueQueryError = ErrorType<unknown>;
+
+export function useListSessionPromptQueue<
+  TData = Awaited<ReturnType<typeof listSessionPromptQueue>>,
+  TError = ErrorType<unknown>,
+>(
+  sessionId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSessionPromptQueue>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSessionPromptQueue>>,
+          TError,
+          Awaited<ReturnType<typeof listSessionPromptQueue>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListSessionPromptQueue<
+  TData = Awaited<ReturnType<typeof listSessionPromptQueue>>,
+  TError = ErrorType<unknown>,
+>(
+  sessionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSessionPromptQueue>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSessionPromptQueue>>,
+          TError,
+          Awaited<ReturnType<typeof listSessionPromptQueue>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListSessionPromptQueue<
+  TData = Awaited<ReturnType<typeof listSessionPromptQueue>>,
+  TError = ErrorType<unknown>,
+>(
+  sessionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSessionPromptQueue>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useListSessionPromptQueue<
+  TData = Awaited<ReturnType<typeof listSessionPromptQueue>>,
+  TError = ErrorType<unknown>,
+>(
+  sessionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSessionPromptQueue>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListSessionPromptQueueQueryOptions(sessionId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const enqueueSessionPrompt = (
+  sessionId: number,
+  queuePromptRequest: QueuePromptRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<QueuedPrompt>({
+    url: `/api/sessions/${sessionId}/prompt-queue`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: queuePromptRequest,
+    signal,
+  });
+};
+
+export const getEnqueueSessionPromptMutationKey = () => ["enqueueSessionPrompt"] as const;
+
+export const getEnqueueSessionPromptMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof enqueueSessionPrompt>>,
+    TError,
+    EnqueueSessionPromptMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof enqueueSessionPrompt>>,
+  TError,
+  EnqueueSessionPromptMutationVariables,
+  TContext
+> => {
+  const mutationKey = getEnqueueSessionPromptMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof enqueueSessionPrompt>>,
+    EnqueueSessionPromptMutationVariables
+  > = (props) => {
+    const { sessionId, data } = props ?? {};
+
+    return enqueueSessionPrompt(sessionId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type EnqueueSessionPromptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof enqueueSessionPrompt>>
+>;
+export type EnqueueSessionPromptMutationBody = QueuePromptRequest;
+export type EnqueueSessionPromptMutationError = ErrorType<unknown>;
+export type EnqueueSessionPromptMutationVariables = { sessionId: number; data: QueuePromptRequest };
+
+export const useEnqueueSessionPrompt = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof enqueueSessionPrompt>>,
+      TError,
+      EnqueueSessionPromptMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof enqueueSessionPrompt>>,
+  TError,
+  EnqueueSessionPromptMutationVariables,
+  TContext
+> => {
+  return useMutation(getEnqueueSessionPromptMutationOptions(options), queryClient);
+};
+
+export const deleteSessionQueuedPrompt = (sessionId: number, id: number, signal?: AbortSignal) => {
+  return customInstance<PromptQueueOkResponse>({
+    url: `/api/sessions/${sessionId}/prompt-queue/${id}`,
+    method: "DELETE",
+    signal,
+  });
+};
+
+export const getDeleteSessionQueuedPromptMutationKey = () => ["deleteSessionQueuedPrompt"] as const;
+
+export const getDeleteSessionQueuedPromptMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSessionQueuedPrompt>>,
+    TError,
+    DeleteSessionQueuedPromptMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSessionQueuedPrompt>>,
+  TError,
+  DeleteSessionQueuedPromptMutationVariables,
+  TContext
+> => {
+  const mutationKey = getDeleteSessionQueuedPromptMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSessionQueuedPrompt>>,
+    DeleteSessionQueuedPromptMutationVariables
+  > = (props) => {
+    const { sessionId, id } = props ?? {};
+
+    return deleteSessionQueuedPrompt(sessionId, id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSessionQueuedPromptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSessionQueuedPrompt>>
+>;
+
+export type DeleteSessionQueuedPromptMutationError = ErrorType<unknown>;
+export type DeleteSessionQueuedPromptMutationVariables = { sessionId: number; id: number };
+
+export const useDeleteSessionQueuedPrompt = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteSessionQueuedPrompt>>,
+      TError,
+      DeleteSessionQueuedPromptMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSessionQueuedPrompt>>,
+  TError,
+  DeleteSessionQueuedPromptMutationVariables,
+  TContext
+> => {
+  return useMutation(getDeleteSessionQueuedPromptMutationOptions(options), queryClient);
+};
+
+export const updateSessionQueuedPrompt = (
+  sessionId: number,
+  id: number,
+  queuePromptRequest: QueuePromptRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<QueuedPrompt>({
+    url: `/api/sessions/${sessionId}/prompt-queue/${id}`,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    data: queuePromptRequest,
+    signal,
+  });
+};
+
+export const getUpdateSessionQueuedPromptMutationKey = () => ["updateSessionQueuedPrompt"] as const;
+
+export const getUpdateSessionQueuedPromptMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSessionQueuedPrompt>>,
+    TError,
+    UpdateSessionQueuedPromptMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSessionQueuedPrompt>>,
+  TError,
+  UpdateSessionQueuedPromptMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateSessionQueuedPromptMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSessionQueuedPrompt>>,
+    UpdateSessionQueuedPromptMutationVariables
+  > = (props) => {
+    const { sessionId, id, data } = props ?? {};
+
+    return updateSessionQueuedPrompt(sessionId, id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSessionQueuedPromptMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSessionQueuedPrompt>>
+>;
+export type UpdateSessionQueuedPromptMutationBody = QueuePromptRequest;
+export type UpdateSessionQueuedPromptMutationError = ErrorType<unknown>;
+export type UpdateSessionQueuedPromptMutationVariables = {
+  sessionId: number;
+  id: number;
+  data: QueuePromptRequest;
+};
+
+export const useUpdateSessionQueuedPrompt = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSessionQueuedPrompt>>,
+      TError,
+      UpdateSessionQueuedPromptMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSessionQueuedPrompt>>,
+  TError,
+  UpdateSessionQueuedPromptMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateSessionQueuedPromptMutationOptions(options), queryClient);
+};
+
+export const sendSessionQueuedPromptNow = (sessionId: number, id: number, signal?: AbortSignal) => {
+  return customInstance<PromptQueueOkResponse>({
+    url: `/api/sessions/${sessionId}/prompt-queue/${id}/send`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getSendSessionQueuedPromptNowMutationKey = () =>
+  ["sendSessionQueuedPromptNow"] as const;
+
+export const getSendSessionQueuedPromptNowMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendSessionQueuedPromptNow>>,
+    TError,
+    SendSessionQueuedPromptNowMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendSessionQueuedPromptNow>>,
+  TError,
+  SendSessionQueuedPromptNowMutationVariables,
+  TContext
+> => {
+  const mutationKey = getSendSessionQueuedPromptNowMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendSessionQueuedPromptNow>>,
+    SendSessionQueuedPromptNowMutationVariables
+  > = (props) => {
+    const { sessionId, id } = props ?? {};
+
+    return sendSessionQueuedPromptNow(sessionId, id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendSessionQueuedPromptNowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendSessionQueuedPromptNow>>
+>;
+
+export type SendSessionQueuedPromptNowMutationError = ErrorType<unknown>;
+export type SendSessionQueuedPromptNowMutationVariables = { sessionId: number; id: number };
+
+export const useSendSessionQueuedPromptNow = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof sendSessionQueuedPromptNow>>,
+      TError,
+      SendSessionQueuedPromptNowMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof sendSessionQueuedPromptNow>>,
+  TError,
+  SendSessionQueuedPromptNowMutationVariables,
+  TContext
+> => {
+  return useMutation(getSendSessionQueuedPromptNowMutationOptions(options), queryClient);
 };
 
 export const listSessionPrompts = (sessionId: number, signal?: AbortSignal) => {
@@ -27975,6 +29733,86 @@ export function useListSessionPrompts<
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+export const askSessionSideQuestion = (
+  sessionId: number,
+  sideQuestionRequest: SideQuestionRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<SideQuestionResponse>({
+    url: `/api/sessions/${sessionId}/side-question`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: sideQuestionRequest,
+    signal,
+  });
+};
+
+export const getAskSessionSideQuestionMutationKey = () => ["askSessionSideQuestion"] as const;
+
+export const getAskSessionSideQuestionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof askSessionSideQuestion>>,
+    TError,
+    AskSessionSideQuestionMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof askSessionSideQuestion>>,
+  TError,
+  AskSessionSideQuestionMutationVariables,
+  TContext
+> => {
+  const mutationKey = getAskSessionSideQuestionMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof askSessionSideQuestion>>,
+    AskSessionSideQuestionMutationVariables
+  > = (props) => {
+    const { sessionId, data } = props ?? {};
+
+    return askSessionSideQuestion(sessionId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AskSessionSideQuestionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof askSessionSideQuestion>>
+>;
+export type AskSessionSideQuestionMutationBody = SideQuestionRequest;
+export type AskSessionSideQuestionMutationError = ErrorType<unknown>;
+export type AskSessionSideQuestionMutationVariables = {
+  sessionId: number;
+  data: SideQuestionRequest;
+};
+
+export const useAskSessionSideQuestion = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof askSessionSideQuestion>>,
+      TError,
+      AskSessionSideQuestionMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof askSessionSideQuestion>>,
+  TError,
+  AskSessionSideQuestionMutationVariables,
+  TContext
+> => {
+  return useMutation(getAskSessionSideQuestionMutationOptions(options), queryClient);
+};
+
 export const runArchivedCleanup = (signal?: AbortSignal) => {
   return customInstance<ArchivedCleanupRunResponse>({
     url: `/api/storage-maintenance/archived-cleanup/run`,
@@ -27982,6 +29820,8 @@ export const runArchivedCleanup = (signal?: AbortSignal) => {
     signal,
   });
 };
+
+export const getRunArchivedCleanupMutationKey = () => ["runArchivedCleanup"] as const;
 
 export const getRunArchivedCleanupMutationOptions = <
   TError = ErrorType<void>,
@@ -27994,7 +29834,7 @@ export const getRunArchivedCleanupMutationOptions = <
     TContext
   >;
 }): UseMutationOptions<Awaited<ReturnType<typeof runArchivedCleanup>>, TError, void, TContext> => {
-  const mutationKey = ["runArchivedCleanup"];
+  const mutationKey = getRunArchivedCleanupMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -28163,6 +30003,8 @@ export const killTerminalSessions = (params: KillTerminalSessionsParams, signal?
   });
 };
 
+export const getKillTerminalSessionsMutationKey = () => ["killTerminalSessions"] as const;
+
 export const getKillTerminalSessionsMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -28179,7 +30021,7 @@ export const getKillTerminalSessionsMutationOptions = <
   KillTerminalSessionsMutationVariables,
   TContext
 > => {
-  const mutationKey = ["killTerminalSessions"];
+  const mutationKey = getKillTerminalSessionsMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -28461,6 +30303,8 @@ export const createTheme = (createThemeRequest: CreateThemeRequest, signal?: Abo
   });
 };
 
+export const getCreateThemeMutationKey = () => ["createTheme"] as const;
+
 export const getCreateThemeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -28477,7 +30321,7 @@ export const getCreateThemeMutationOptions = <
   CreateThemeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["createTheme"];
+  const mutationKey = getCreateThemeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -28630,6 +30474,8 @@ export const installManagedTheme = (
   });
 };
 
+export const getInstallManagedThemeMutationKey = () => ["installManagedTheme"] as const;
+
 export const getInstallManagedThemeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -28646,7 +30492,7 @@ export const getInstallManagedThemeMutationOptions = <
   InstallManagedThemeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["installManagedTheme"];
+  const mutationKey = getInstallManagedThemeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -28808,6 +30654,9 @@ export const refreshManagedThemeCatalog = (signal?: AbortSignal) => {
   });
 };
 
+export const getRefreshManagedThemeCatalogMutationKey = () =>
+  ["refreshManagedThemeCatalog"] as const;
+
 export const getRefreshManagedThemeCatalogMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -28824,7 +30673,7 @@ export const getRefreshManagedThemeCatalogMutationOptions = <
   void,
   TContext
 > => {
-  const mutationKey = ["refreshManagedThemeCatalog"];
+  const mutationKey = getRefreshManagedThemeCatalogMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -28879,6 +30728,9 @@ export const previewManagedThemePackage = (
   });
 };
 
+export const getPreviewManagedThemePackageMutationKey = () =>
+  ["previewManagedThemePackage"] as const;
+
 export const getPreviewManagedThemePackageMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -28895,7 +30747,7 @@ export const getPreviewManagedThemePackageMutationOptions = <
   PreviewManagedThemePackageMutationVariables,
   TContext
 > => {
-  const mutationKey = ["previewManagedThemePackage"];
+  const mutationKey = getPreviewManagedThemePackageMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -28954,6 +30806,8 @@ export const removeManagedTheme = (
   });
 };
 
+export const getRemoveManagedThemeMutationKey = () => ["removeManagedTheme"] as const;
+
 export const getRemoveManagedThemeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -28970,7 +30824,7 @@ export const getRemoveManagedThemeMutationOptions = <
   RemoveManagedThemeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["removeManagedTheme"];
+  const mutationKey = getRemoveManagedThemeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -29023,6 +30877,8 @@ export const applyManagedTheme = (id: string, signal?: AbortSignal) => {
   });
 };
 
+export const getApplyManagedThemeMutationKey = () => ["applyManagedTheme"] as const;
+
 export const getApplyManagedThemeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -29039,7 +30895,7 @@ export const getApplyManagedThemeMutationOptions = <
   ApplyManagedThemeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["applyManagedTheme"];
+  const mutationKey = getApplyManagedThemeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -29098,6 +30954,8 @@ export const duplicateManagedTheme = (
   });
 };
 
+export const getDuplicateManagedThemeMutationKey = () => ["duplicateManagedTheme"] as const;
+
 export const getDuplicateManagedThemeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -29114,7 +30972,7 @@ export const getDuplicateManagedThemeMutationOptions = <
   DuplicateManagedThemeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["duplicateManagedTheme"];
+  const mutationKey = getDuplicateManagedThemeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -29295,6 +31153,8 @@ export const updateManagedTheme = (
   });
 };
 
+export const getUpdateManagedThemeMutationKey = () => ["updateManagedTheme"] as const;
+
 export const getUpdateManagedThemeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -29311,7 +31171,7 @@ export const getUpdateManagedThemeMutationOptions = <
   UpdateManagedThemeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["updateManagedTheme"];
+  const mutationKey = getUpdateManagedThemeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -29370,6 +31230,8 @@ export const writeTheme = (
   });
 };
 
+export const getWriteThemeMutationKey = () => ["writeTheme"] as const;
+
 export const getWriteThemeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -29386,7 +31248,7 @@ export const getWriteThemeMutationOptions = <
   WriteThemeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["writeTheme"];
+  const mutationKey = getWriteThemeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -29437,6 +31299,8 @@ export const deleteTheme = (id: string, signal?: AbortSignal) => {
   });
 };
 
+export const getDeleteThemeMutationKey = () => ["deleteTheme"] as const;
+
 export const getDeleteThemeMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -29453,7 +31317,7 @@ export const getDeleteThemeMutationOptions = <
   DeleteThemeMutationVariables,
   TContext
 > => {
-  const mutationKey = ["deleteTheme"];
+  const mutationKey = getDeleteThemeMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -29509,6 +31373,8 @@ export const themeWorkspace = (id: string, signal?: AbortSignal) => {
   });
 };
 
+export const getThemeWorkspaceMutationKey = () => ["themeWorkspace"] as const;
+
 export const getThemeWorkspaceMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -29525,7 +31391,7 @@ export const getThemeWorkspaceMutationOptions = <
   ThemeWorkspaceMutationVariables,
   TContext
 > => {
-  const mutationKey = ["themeWorkspace"];
+  const mutationKey = getThemeWorkspaceMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -29691,6 +31557,9 @@ export const dismissUsageRecordingIssue = (signal?: AbortSignal) => {
   });
 };
 
+export const getDismissUsageRecordingIssueMutationKey = () =>
+  ["dismissUsageRecordingIssue"] as const;
+
 export const getDismissUsageRecordingIssueMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -29707,7 +31576,7 @@ export const getDismissUsageRecordingIssueMutationOptions = <
   void,
   TContext
 > => {
-  const mutationKey = ["dismissUsageRecordingIssue"];
+  const mutationKey = getDismissUsageRecordingIssueMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -29974,6 +31843,8 @@ export const setWorkspaceModelSetting = (
   });
 };
 
+export const getSetWorkspaceModelSettingMutationKey = () => ["setWorkspaceModelSetting"] as const;
+
 export const getSetWorkspaceModelSettingMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -29990,7 +31861,7 @@ export const getSetWorkspaceModelSettingMutationOptions = <
   SetWorkspaceModelSettingMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setWorkspaceModelSetting"];
+  const mutationKey = getSetWorkspaceModelSettingMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -30158,6 +32029,9 @@ export const setWorkspaceProviderSetting = (
   });
 };
 
+export const getSetWorkspaceProviderSettingMutationKey = () =>
+  ["setWorkspaceProviderSetting"] as const;
+
 export const getSetWorkspaceProviderSettingMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -30174,7 +32048,7 @@ export const getSetWorkspaceProviderSettingMutationOptions = <
   SetWorkspaceProviderSettingMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setWorkspaceProviderSetting"];
+  const mutationKey = getSetWorkspaceProviderSettingMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -30337,6 +32211,8 @@ export const setWorkspaceSettingsBatch = (
   });
 };
 
+export const getSetWorkspaceSettingsBatchMutationKey = () => ["setWorkspaceSettingsBatch"] as const;
+
 export const getSetWorkspaceSettingsBatchMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -30353,7 +32229,7 @@ export const getSetWorkspaceSettingsBatchMutationOptions = <
   SetWorkspaceSettingsBatchMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setWorkspaceSettingsBatch"];
+  const mutationKey = getSetWorkspaceSettingsBatchMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -30508,6 +32384,8 @@ export const putSettingsFile = (
   });
 };
 
+export const getPutSettingsFileMutationKey = () => ["putSettingsFile"] as const;
+
 export const getPutSettingsFileMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -30524,7 +32402,7 @@ export const getPutSettingsFileMutationOptions = <
   PutSettingsFileMutationVariables,
   TContext
 > => {
-  const mutationKey = ["putSettingsFile"];
+  const mutationKey = getPutSettingsFileMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options
@@ -30702,6 +32580,8 @@ export const setWorkspaceSetting = (
   });
 };
 
+export const getSetWorkspaceSettingMutationKey = () => ["setWorkspaceSetting"] as const;
+
 export const getSetWorkspaceSettingMutationOptions = <
   TError = ErrorType<unknown>,
   TContext = unknown,
@@ -30718,7 +32598,7 @@ export const getSetWorkspaceSettingMutationOptions = <
   SetWorkspaceSettingMutationVariables,
   TContext
 > => {
-  const mutationKey = ["setWorkspaceSetting"];
+  const mutationKey = getSetWorkspaceSettingMutationKey();
   const { mutation: mutationOptions } = options
     ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
       ? options

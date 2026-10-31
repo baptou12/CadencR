@@ -1,22 +1,126 @@
 # Marketplace V1 — GitHub-only distribution
 
-## Current source migration checkpoint — 2026-10-18
+## Execution contract — 2026-10-23
 
-The requested full Rust cutover supersedes earlier instructions to retain legacy
-JavaScript business implementations until deployment. They are removed from this
-source template, including the expiry tool and executable legacy test helpers.
-Only thin orchestration/tests and frozen historical data remain. Production registry
-state, author authority and desktop visibility are unchanged.
+The user authorized completing the remaining development with `parallel-advisor`
+and independent `finish-job` reviews before each automatically approved local
+commit. The final development step is now to make the marketplace visible,
+after official package publication, signed-feed readiness and consumer QA.
+This supersedes the earlier stop-at-hidden milestone. Preserve data and secret
+boundaries; record actual deployment/qualification separately from source work.
 
-The candidate CI pin still references `0.13.1-dev.39108033875.1` for its existing
-commands. The replacement `0.13.1-dev.39144478778.1`, including standalone
-metadata/submission/expiry commands, is now released. Its isolated qualification
-is recorded [separately](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-18.md).
-Production pin review and rebuilt delivery payload approvals remain required;
-source tests are not distributed-binary qualification.
-See [template runtime gates](../tooling/marketplace-registry/README.md#status-and-runtime).
+## Release-owner decisions — 2026-10-25
 
-## Remaining delivery waves — 2026-10-18
+The sole release owner and contact is the repository owner (`rle-mino`).
+Decisions:
+
+- **Trust model:** two levels. An offline Ed25519 root key signs trust
+  generations that delegate catalog/policy signing to one online key. The root
+  private key is kept offline in the release owner's password manager and local
+  keychain, and never touches a runner or the repository.
+- **Renewal:** automatic. A scheduled renewal-only registry workflow re-signs the
+  unchanged catalog and policies well inside the 14-day validity window; an
+  expiry watch fails (and so notifies the owner) when expiry is under 72 hours.
+- **Official publisher:** `cadencr`, reserved. Packages outside the official
+  `merkr-software` repositories cannot claim it.
+- **First compatible desktop release:** `min_app_version` `0.15.0`.
+- **Platforms:** no fixed matrix. Each provider and native tab declares its own
+  OS/architecture targets; the client hides packages without a build for the
+  current platform (themes and UI-only tabs are platform-neutral). The same rule
+  applies to Linux clients once a Linux desktop release exists.
+- **Official custom tab:** not in v1.
+- **Security contact:** GitHub private vulnerability reporting on the public
+  registry; no email address is published.
+
+The remaining work follows the waves below.
+
+## Current registry delivery checkpoint — 2026-10-23
+
+- Registry bootstrap [PR #1](https://github.com/merkr-software/cadencr-registry/pull/1)
+  is merged at `efe2dc72f08a50bd30921e0fa7d1c4c959071f16`.
+- Trusted-base Rust contribution CI [PR #2](https://github.com/merkr-software/cadencr-registry/pull/2)
+  is merged at `bb19ac8be430672fce167541e5830f33c70968bc`.
+  [Run 39676576520](https://github.com/merkr-software/cadencr-registry/actions/runs/39676576520)
+  passed both jobs against the empty registry; populated-index validation was
+  skipped. Subsequent four-case hosted QA qualified populated three-kind
+  validation/index construction, rejection and trusted-base isolation; all eight
+  jobs returned their expected results. QA PRs #3–#6 closed without merge.
+- Legacy JavaScript business tooling and its npm harness were removed by
+  [PR #7](https://github.com/merkr-software/cadencr-registry/pull/7), merged at
+  `8731ca0551e753b02f10297c6fdb66c65e78026b` (still the remote registry tip).
+  Post-cleanup [run 39679587509](https://github.com/merkr-software/cadencr-registry/actions/runs/39679587509)
+  passed both jobs with provider/theme/UI-only-tab inputs and unsigned index
+  construction. QA PR #8 closed unmerged; no QA packages reached `main`.
+- Explicit current governance: only `rle-mino` may push `main`; no teams/apps,
+  `enforce_admins: true`, no mandatory reviews or CI checks. CI remains advisory.
+  This supersedes earlier policy requirements, not package-integrity gates.
+- Monorepo registry, author and qualification pins select stable `0.15.2`;
+  see the [0.15.2 evidence](qa/MARKETPLACE_STABLE_CLI_0152_2026_10_25.md). The
+  deployed registry pin follows separately (wave 4).
+  No official Graphite, Ember, Fjord or Pi release, production signing/feed
+  publication or desktop activation follows from SDK/CLI publication.
+
+See the [registry delivery record](MARKETPLACE_REGISTRY_DELIVERY_2026-10-21.md),
+[frozen qualification](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-21.md),
+[frozen pin review](MARKETPLACE_CLI_PIN_REVIEW_2026-10-21.md) and
+[template runtime gates](../tooling/marketplace-registry/README.md#status-and-runtime).
+The new delivery record is maintained after delivery; it was not part of CLI
+source commit `646864caeca2896170baa65d5389b475099b2ce1`.
+
+## Independent tool releases and native-tab delta — 2026-10-23
+
+Release code was inspected at `origin/main`
+`b347f8117faa947a71dde918d6ecf4ffabc1486f` and local `main`
+`f104b9053f89b4d28d424317b92c9a6330e7cee7`; their release/plugin surfaces match.
+These refs are not identical; this inspection did not rebase or merge either.
+Public package APIs and GitHub release metadata confirm the following delivery:
+
+| Artifact                                                                          | Published version          | Workflow             | Marketplace impact                                                                             |
+| --------------------------------------------------------------------------------- | -------------------------- | -------------------- | ---------------------------------------------------------------------------------------------- |
+| [cadencr-tab-backend](https://crates.io/crates/cadencr-tab-backend/0.1.0)         | `0.1.0`, not yanked        | `crates-release.yml` | Optional Rust helper and conformance harness for native custom-tab backends.                   |
+| [cadencr-provider-sdk](https://crates.io/crates/cadencr-provider-sdk/0.1.0)       | `0.1.0`, not yanked        | `crates-release.yml` | Optional Rust provider command harness; not a requirement to rewrite Pi.                       |
+| [@cadencr/tab-sdk](https://www.npmjs.com/package/@cadencr/tab-sdk/v/0.1.0)        | `0.1.0`                    | `npm-release.yml`    | Public custom-tab host/protocol API for third-party projects.                                  |
+| [@cadencr/tab-kit](https://www.npmjs.com/package/@cadencr/tab-kit/v/0.1.0)        | `0.1.0`                    | `npm-release.yml`    | Optional shared UI/design kit for custom tabs.                                                 |
+| [cadencr CLI](https://github.com/merkr-software/CadencR/releases/tag/cli/v0.14.1) | `0.14.1`, non-draft stable | `cli-release.yml`    | Linux x86_64 artifact available for qualification, including native-tab packaging/conformance. |
+
+- Tools have independent semver and tag namespaces. `desktop-release.yml` no
+  longer builds/attaches a CLI; app releases through `v0.14.0` retain their
+  historical assets. Stable CLI releases use `cli/vX.Y.Z`, never GitHub's
+  `Latest`; the latest app release remains `v0.14.1` at inspection time.
+- `scripts/release-tools.mjs --ref origin/main` reports all five tools
+  `up-to-date`, with no version-record problems. This tag/source comparison is
+  not marketplace lifecycle qualification; public registry queries above are the
+  separate publication check. Future bumps follow `CONTRIBUTING.md` and the
+  release skill: green main, dry run, then explicit per-tool publish approval.
+- Workflows default to dry runs and real publishes reference protected
+  `crates-io`, `npm` or `cli-release` environments. Builds/tests run before the
+  publishing step receives its credential. npm uploads the checked tarball with
+  provenance; crates publish with `--no-verify` after the same-commit dry run.
+  The merged npm correction builds the selected package before checking it.
+  These tool-release environments are not official-plugin author or registry
+  signing authority.
+- The four stable CLI assets were independently downloaded. The binary's SHA-256
+  matches `SHA256SUMS`, `released-cli.env`, provenance and GitHub's asset digest:
+  `8bc82e23a39f4a379713b47770fd4e0752574a7175c40e6dda932bd6d1beea73`.
+  Tag/provenance bind source `96100e5c9ae5741f5757158c8d946991be6eb300`,
+  [release run 39964714122](https://github.com/merkr-software/CadencR/actions/runs/39964714122).
+  The Linux binary was **not executed** during this inspection. Prior dev-CLI
+  lifecycle proofs do not automatically transfer to this artifact.
+- Main now contains native-tab manifests, per-platform executable archives,
+  executable-digest checks, consent/runtime handling and CLI conformance. The
+  older three-kind QA used a UI-only tab, not this executable-tab contract.
+  The inspection found official preparation expanded `distribution.binary`
+  only for providers. The execution wave below closes that source gap with
+  native archive orchestration; a new CLI pin alone would not have done so.
+- `plugins/release-policy.json` and
+  `scripts/official-plugin-author-policy.json` still have publication `PENDING`;
+  package templates retain publisher/compatibility decisions. Publishing SDKs
+  does not fill these values or enable marketplace UI/feed trust.
+
+## Remaining delivery waves — 2026-10-21
+
+Updated **2026-10-23**; the original section anchor is retained for frozen
+qualification links.
 
 This is the current ordered checklist. It supersedes older next-step lists and
 source-only completion claims below; dated evidence remains valid only for the
@@ -27,6 +131,10 @@ The supported publication chain must cover **providers, themes and custom tabs**
 The initial population milestone remains reviewed Graphite, Ember, Fjord and Pi;
 publishing an official tab is optional and requires an explicitly selected source.
 Neither examples nor passing tests constitute publication approval.
+For the expanded native-tab contract, the next path is preparation plus
+stable-CLI qualification, then reviewed pin deployment. Production authority,
+initial theme/Pi readiness and external SDK consumption can progress alongside
+that work; an optional official tab must not hold up the initial four plugins.
 
 ### Wave 1 — Close source-level gaps for all three package kinds
 
@@ -50,6 +158,15 @@ Neither examples nor passing tests constitute publication approval.
       exercise changed storage behavior through an isolated development-service
       API. Explicit CLI paths are required because debug dotenv overrides env;
       this is not Electron UI or remote-install qualification.
+- [x] Extend official tab preparation to reconstruct the UI archive **and** each
+      reviewed native-backend archive, with complete target/digest/size/executable
+      bindings in one immutable version. Keep UI-only tabs working. Candidate
+      backend execution/conformance belongs only in unprivileged validation;
+      inert contribution and credentialed publication/signing paths must not
+      execute it (`plugin validate --kind tab` now executes unless `--no-run`).
+      Source CLI checks cover deterministic three-platform archives, UI-first
+      author requests, complete target sets, manifest/receipt tampering and
+      script refusal. Published stable-ELF qualification remains in wave 3.
 
 ### Wave 2 — Finish official source and package readiness
 
@@ -58,8 +175,15 @@ Neither examples nor passing tests constitute publication approval.
       Qualify a newly packed/extracted working-tree payload against actual Pi
       using an isolated loopback model; this is not committed-source provenance,
       authenticated-model, tool-permission or managed-install qualification.
-- [ ] Establish Pi artwork authorship/licensing provenance and approve the
-      initial supported native target matrix. The x86_64 preparation path remains
+- [x] Replace Pi-derived artwork with original neutral connector SVG geometry,
+      record its Apache-2.0 creation provenance and update payload digests.
+      Repacked working-tree bytes pass actual Pi `0.85.1` isolated arm64 loopback
+      text/usage/resume/cancellation checks; exact committed-candidate and managed
+      installation qualification remain separate gates.
+      The [exact committed candidate](qa/MARKETPLACE_PI_COMMITTED_2026_10_23.md)
+      also passes extracted native loopback QA; managed admission remains pending.
+- [ ] Approve the initial supported native target matrix from actual runtime and
+      managed-installation evidence. The x86_64 preparation path remains
       unqualified; preparation/readiness facts do not constitute that approval.
 - [x] Recheck source-bound theme candidates and prepare metadata templates with
       real digests, license and provenance; keep source, candidate and approval
@@ -67,21 +191,84 @@ Neither examples nor passing tests constitute publication approval.
       compiled payload policy, not arbitrary example folders.
 - [x] Test official tab preparation with an inert fixture even if no official
       tab is selected for the initial public catalog.
+- [x] Build a fresh external-author example against the published crates/npm
+      packages, without workspace/path links or vendored monorepo artifacts.
+      Verify documented exports, provider commands and tab backend conformance;
+      record SDK/protocol compatibility separately from app/plugin versions.
+      This is an external-author acceptance gate, not a new dependency for the
+      three declarative themes or Pi's current implementation.
+      All four published `0.1.0` packages pass external consumption on macOS
+      arm64, including all seven native-backend conformance checks; see
+      [SDK evidence](qa/MARKETPLACE_PUBLIC_SDKS_2026_10_23.md).
 
-### Wave 3 — Deliver and qualify a new distributed CLI
+### Wave 3 — Qualify and adopt the published stable CLI
 
 - [x] Merge the required source changes to `main`, pass canonical CI, then use
-      the existing manual **CLI-only** development release workflow. Released
-      `0.13.1-dev.39108033875.1` from `88ead507983371e5c3df468c6d9bf7c6c12e5fbb`;
-      its four downloaded assets, checksum, provenance and tag binding were
-      independently verified. This delivery does not qualify its lifecycle.
+      the existing manual **CLI-only** development release workflow. The first
+      qualified executable is `0.13.1-dev.39306959010.1`, source
+      `646864caeca2896170baa65d5389b475099b2ce1`, released by
+      [run 39306959010](https://github.com/merkr-software/CadencR/actions/runs/39306959010).
+      Its downloaded checksum/provenance/tag bindings and scenario-specific proof
+      are recorded in the [current qualification](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-21.md).
 - [x] Verify the downloaded executable's checksum and source provenance, then
       qualify provider/theme/tab validation, packaging, contribution checks,
       author publication/retry and mixed-catalog publication, interruption/resume,
       fresh-runner recovery and renewal on the approved isolated public QA target.
-- [ ] Review/promote the exact registry and author executable pins with their
-      qualification evidence. Regenerate bootstrap/cutover hashes and manifests;
-      do not reuse old payload approvals after changing their bytes.
+- [x] Locally select the exact qualified registry, author and qualification
+      executable pins with their released artifact/source bindings.
+- [x] Deliver approved bootstrap and contribution-CI payloads with the exact
+      qualified pin; see the current registry delivery record. This does not
+      grant production signing or official-package publication authority.
+- [x] Publish stable `0.14.1` through the independent CLI workflow and verify its
+      downloaded checksum/source binding as recorded above. Availability is
+      complete; marketplace acceptance and pin promotion are not.
+- [x] Execute the exact stable ELF's 91 networkless checks, including separate
+      native tab archives and tamper rejection. Run `40029236838` passed; the
+      downloaded evidence artifact was independently verified. See the
+      [stable CLI qualification](qa/MARKETPLACE_STABLE_CLI_2026_10_23.md).
+- [x] Exercise stable `0.14.1` GitHub author publication/retry for all three kinds,
+      including multi-platform provider and UI-plus-native-tab archives, followed
+      by incremental signed-catalog publication/replays (14 entries, 21 archive
+      URLs). Renewal run `40032302758` failed after remote publication: its
+      four-read convergence ceiling was reached before the deadline. Separate
+      original-intent recovery runs `40033620593` and `40033732972` pass, preserving
+      request bytes, dates and complete remote inventory. The failed initial run
+      remains failed; this is not approval to promote the affected binary.
+- [x] Correct the source convergence ceiling while preserving the 30-second
+      deadline and per-retry authority/freshness checks (`1d998241b`). All 169
+      publisher tests, strict Clippy and 339 scripts tests pass; see the
+      [current evidence](qa/MARKETPLACE_STABLE_CLI_2026_10_23.md).
+- [x] Integrate that correction onto canonical `main`, preserving its independent
+      tool versions; confirm the next CLI version, pass exact-tip CI and a CLI-only
+      dry run, then obtain explicit post-dry-run publishing approval. Qualify the
+      newly distributed executable before pin promotion. Delayed recovery of the
+      old `0.14.1` executable does not deliver the correction. No SDK or desktop
+      release is required solely to ship this CLI fix.
+      Stable `0.14.2` (source `7bd611a0d10bfd161bb71f0f87ad693313b2c24f`, ELF
+      SHA-256 `1a2c28a1…5477849`) was released and its exact distributed ELF
+      passed all 12 gates, including first-pass renewal; see the
+      [0.14.2 evidence](qa/MARKETPLACE_STABLE_CLI_2026_10_25.md).
+- [ ] Run native conformance on each supported executable host separately;
+      inert fixture distribution and Linux runner checks do not qualify macOS
+      binaries, managed archive installation or Electron behavior.
+- [x] Review/promote the three monorepo pins atomically to `0.14.2`.
+- [x] Release and qualify the policy-lifecycle CLI. `0.15.0` failed gate 13 (one
+      post-write authenticated read) and `0.15.1` passed only after preserved
+      read-back failures and a manual wait out of the raw CDN's 300 s cache. Stable `0.15.2` (source
+      `07a41cbcacbcf7bdcfddb514313cbe9d146c101b`, ELF SHA-256 `f4a71987…98fc4031`,
+      release run 40237643528) passed all 13 gates with no manual CDN wait; see the
+      [0.15.2 evidence](qa/MARKETPLACE_STABLE_CLI_0152_2026_10_25.md). The three
+      monorepo pins and the official author policy now select it.
+- [x] Deliver the reviewed matching public registry pin and workflow contract
+      (stable `cli/vX.Y.Z` tag fetch parity), registry `main` `17c4798`. Re-run
+      trusted-base populated CI, including a native-backend tab and unchanged
+      provider/theme/UI-only-tab cases. QA PRs #9–#12 (closed unmerged): the
+      positive four-kind case ([40189074028](https://github.com/merkr-software/cadencr-registry/actions/runs/40189074028))
+      and tampered candidate tooling/pin ([40189081349](https://github.com/merkr-software/cadencr-registry/actions/runs/40189081349))
+      pass with index construction; a native target missing its executable
+      digest ([40189075882](https://github.com/merkr-software/cadencr-registry/actions/runs/40189075882))
+      and an unknown platform key ([40189078759](https://github.com/merkr-software/cadencr-registry/actions/runs/40189078759))
+      fail as expected. Linux runner only; native archives are metadata here.
 
 #### Wave 3 qualification checkpoint — 2026-10-18
 
@@ -104,25 +291,61 @@ Neither examples nor passing tests constitute publication approval.
 
 ### Wave 4 — Deploy the real registry and publication authority
 
-- [ ] Recheck public registry `main` and resolve its maintainer/approval policy
-      explicitly. A signed local merge is not a delivered bootstrap; do not
-      bypass protections or infer a governance change from implementation approval.
-- [ ] Deliver bootstrap first, then the trusted-base Rust contribution workflow;
-      observe actual hosted checks for providers, themes and tabs.
-- [ ] Separately provision reviewed production author/signing environments,
+- [x] Resolve and apply explicit registry governance: only `rle-mino` may push
+      `main`, no teams/apps, admins enforced, no mandatory reviews/checks.
+- [x] Deliver bootstrap, then trusted-base Rust contribution CI; both hosted jobs
+      passed on the empty registry in run `39676576520`.
+- [x] Qualify the deployed workflow with populated provider/theme/tab entries,
+      unsigned index construction, malformed/immutable rejection and trusted-base
+      tampering checks. All eight hosted jobs returned expected results; QA PRs
+      closed unmerged. No hosted index artifact was inspected; exact output-kind
+      counts were inspected in a local native test only.
+- [x] Separately provision reviewed production author/signing environments,
       credentials, trust profile and renewal/revocation owners/alerts; deploy and
       verify the protected Rust publisher. QA keys/tokens never become production
       authority, and author publication does not grant catalog signing authority.
+      SDK/CLI release credentials/environments must not be reused implicitly.
+      The author stage now checks an explicit reviewer policy: exact numeric
+      reviewer identities/types and `prevent_self_review`, bound to the pinned
+      environment ID. A sole reviewed owner may approve their own dispatch when
+      that policy explicitly selects `false`; no second reviewer is inferred.
+      Delivered 2026-10-25/26: environment `25284345176` (sole reviewer
+      `rle-mino`, `prevent_self_review: false`) and publication `APPROVED` in
+      both policies; registry environments `protected-marketplace-publisher`
+      (reviewed) and `protected-marketplace-renewal` (unattended renewal only)
+      hold the online key `cadencr-registry-1`; trust generation 1 is signed by
+      the offline root `cadencr-root-1` (see [trust material](marketplace-trust/README.md)).
+      Registry actions are restricted to two SHA-pinned actions; the deployed
+      workflows use exactly those pins (registry PR #15).
 
 ### Wave 5 — Publish the initial plugins and populate signed feeds
 
-- [ ] Publish reviewed immutable author releases for Graphite, Ember, Fjord and
+- [x] Publish reviewed immutable author releases for Graphite, Ember, Fjord and
       Pi using the qualified CLI and completed official jobs. An official tab is
       added only if its source and release are explicitly approved.
-- [ ] Submit/review their registry entries, mirror exact approved archives into
+      `plugins/theme-{graphite,ember,fjord}/v0.1.0` and
+      `plugins/provider-pi/v0.4.0` were published from `16469b9f2` with stable
+      CLI `0.15.2`. No official tab is in v1.
+- [x] Submit/review their registry entries, mirror exact approved archives into
       registry-owned GitHub Releases, and publish/independently verify signed
-      catalogs and revocation policies. Exercise initial submission and a later
-      version; conflicting changes to an existing version must fail closed.
+      catalogs and revocation policies.
+      Registry PRs #13–#15 (squash) carried the entries and the reviewed request;
+      [run 40287994876](https://github.com/merkr-software/cadencr-registry/actions/runs/40287994876)
+      mirrored the four archives and published catalog release
+      `marketplace-v2-18a2cf06…` (attempt 1 failed on the missing discovery
+      branch, attempt 2 of the same run reconciled and advanced it). The
+      [public catalog](https://raw.githubusercontent.com/merkr-software/cadencr-registry/refs/heads/marketplace-v2/managed-index.json)
+      lists the four `cadencr` packages and verifies against `cadencr-registry-1`.
+      [Run 40288735135](https://github.com/merkr-software/cadencr-registry/actions/runs/40288735135)
+      bootstrapped the three empty signed revocation policies; each verifies
+      with the `0.15.2` CLI (Linux container). The registry feed variables are
+      set; the first expiry watch ([run 40375261277](https://github.com/merkr-software/cadencr-registry/actions/runs/40375261277))
+      passed, everything expires 2026-11-08.
+- [x] Exercise a later version; conflicting changes to an existing version must
+      fail closed. QA PR #17 (closed unmerged) changing Graphite 0.1.0's digest
+      failed contribution CI (`existing packages are immutable`). Pi 0.4.1 was
+      published as an incremental version (registry PR #18, run `40405778470`,
+      catalog `2056f6a1…` with Pi 0.4.0 and 0.4.1).
 
 ### Wave 6 — Qualify consumer and external-author lifecycles
 
@@ -130,6 +353,16 @@ Neither examples nor passing tests constitute publication approval.
       install/use/update/restart/remove, theme activation, tab consent and Pi's
       generic ACP lifecycle. Use inert signed tab fixtures if no official tab is
       published, and exercise repeated updates beyond the former retention cap.
+      **2026-10-26, dev build on macOS arm64 against the production feeds**
+      ([evidence](qa/MARKETPLACE_CONSUMER_QA_2026_10_26.md)): discovery, theme
+      install/activate/remove/restart, Pi install, real turn, resume after
+      restart and removal pass. Pi 0.4.0 failed closed at the conformance gate
+      (`MANAGED_RESTORE_FAILED`, never-prompted resume) and was fixed in 0.4.1.
+      Packaged clients and Linux remain open.
+- [ ] Exercise native-tab execution consent, scoped API access, revoked/stale
+      policy refusal, per-conversation process lifecycle, executable integrity,
+      update/restart and removal while leased. Verify macOS arm64 signature/CPU
+      and approved platform limits. An inert UI-only tab is not this coverage.
 - [ ] Exercise tampering, incompatible versions, local-ID conflicts, revocation,
       expired/offline policies, interrupted operations and supported rollback
       paths. Preserve existing projects, editable plugins and every database.
@@ -137,7 +370,7 @@ Neither examples nor passing tests constitute publication approval.
       version update, including ownership/collision checks and retry reconciliation.
       Record packaged-client coverage separately from dev/API-only evidence.
 
-### Wave 7 — Remove superseded tooling and stop at the hidden milestone
+### Wave 7 — Complete operations and enable the marketplace
 
 - [x] Source migration: remove replaced JavaScript business tools and executable
       legacy test oracles. Keep frozen compatibility data, independent crypto
@@ -155,34 +388,67 @@ Neither examples nor passing tests constitute publication approval.
       authenticated identity, freshness and cleanup remain mandatory. Source
       regression is not proof of the historical hosted error's exact cause; see
       [the source-only contract](../tooling/marketplace-registry/OPERATIONS.md#source-only-discovery-convergence-correction).
-- [ ] Merge the correction, pass canonical CI, release a new CLI and demonstrate
-      first-pass renewal plus unchanged replays/clean-runner recovery using that
-      actual distributed binary. The original failed run remains failed. Do not
-      promote production pins from source tests or successful recovery alone.
-- [ ] Review the replacement registry/author pins and regenerate bootstrap/cutover
-      payload hashes and approvals before deployment. The source candidate still
-      pins the older CLI; neither QA pins nor a manual CLI release deploy it.
+- [x] Merge the correction, pass canonical CI and release the exact new CLI
+      `0.13.1-dev.39306959010.1`. Its distributed ELF passes 65 networkless checks,
+      first-pass renewal of the 8-entry/10-archive catalog with unchanged replays
+      and fresh-runner recovery, plus provider/theme/tab author lifecycles.
+      See [October 21 evidence](MARKETPLACE_RUST_CUTOVER_QUALIFICATION_2026-10-21.md).
+      The original failed renewal remains failed; its cause is not established.
+- [x] Verify the new three-kind `1.0.2` mixed incremental publication: 11 entries /
+      14 archives, controlled interruption/resume, unchanged replay and separate
+      fresh-runner reconstruction with the exact distributed CLI.
+- [x] Verify that new catalog's first-pass renewal with unchanged replays and
+      clean-runner reconstruction: four exact-binary proofs, 11 entries and
+      14 archives. No failed-job retry or replacement dates supplied the success.
+- [x] Select the qualified replacement in all three local pin files; retain
+      exact source/checksum bindings in the current pin review record.
+- [x] Deliver approved bootstrap and contribution-CI cutover with the qualified
+      pin. Production author/signing authority remains a separate gate.
+- [x] Deliver registry legacy JavaScript cleanup in PR #7 at `8731ca0`; verify
+      post-cleanup three-kind hosted Rust CI in run `39679587509`. No business
+      JavaScript engine or npm test harness remains in the registry; fixtures,
+      thin shell helpers and inactive protected-workflow examples remain.
 - [ ] Update final operational evidence: populated verified feeds, reproducible
       official releases, renewal/revocation controls and exact platform limits.
       Source documentation is migrated; live delivery/owner/alert proof is not.
-- [ ] Stop before public desktop activation. A separately authorized app release
-      supplies reviewed official trust/feed configuration and exposes UI only
-      after clean packaged-client acceptance gates pass.
+- [ ] As the final development step, enable marketplace visibility with reviewed
+      official trust/feed configuration, after the catalog contains the initial
+      official plugins and clean packaged-client acceptance gates pass. Verify
+      default-visible navigation and provider/theme/tab discovery in the app.
+      Publishing a new desktop release remains a separate delivery action.
+      **2026-10-26:** activation was prepared and QA'd, then held back for the
+      release owner's go: the gate is back on `main` (`82c0b4263`) and the
+      repository variables are unset. A release-built sidecar compiled the CI
+      way verified the production catalog (5 entries, `cadencr-registry-1`)
+      and installed a theme. Re-enable with the
+      [activation runbook](MARKETPLACE_RELEASE_CONFIG.md#activation-runbook).
 
 ### Dependencies and delivery boundaries
 
 - Waves 1 and 2 can progress in parallel with disjoint ownership. Governance and
   environment decisions from wave 4 can be prepared alongside them, without
   changing protections or provisioning authority implicitly.
-- Wave 3 needs its required source on green `main`; waves 4–6 then consume that
-  actual qualified binary. Source cleanup is now prepared ahead of deployment; the expanded runtime
-  contract requires a newly qualified CLI and reviewed delivery before adoption.
-- A new **CLI release is required**; no public **desktop release** is required
-  to reach the populated-but-hidden milestone. Local packaged QA is not a release.
+- Stable CLI and all four public SDK packages are already released. Wave 3 now
+  needs qualification/adoption, not another release by default. New Rust CLI or
+  shared-library behavior changes require a new immutable CLI version and
+  requalification; workflow/docs-only changes do not automatically require one.
+- SDK availability does not authorize any official plugin or signed catalog.
+  Waves 4–6 consume reviewed artifacts/pins and separately approved authority.
+  No public **desktop release** is required to populate the hidden marketplace.
+  Consumer QA can use an isolated local packaged build; public activation and
+  the final compatible app-version floor are separate reviewed delivery gates.
+- Graphite/Ember/Fjord/Pi can use the existing qualified pin once their package
+  readiness and production authority gates pass. Publishing the SDKs does not
+  force migration to stable `0.14.1` first. Native-backend tabs must wait for the
+  expanded preparation, exact-binary qualification and compatible consumer gate;
+  they cannot borrow UI-only-tab proof.
+- Linux x86_64 is required for GitHub's distributed-CLI jobs, not a newly selected
+  Linux desktop target. SDK/CLI versions must never be substituted for a plugin's
+  version, native protocol version or `min_app_version`.
 - Implementation follows `parallel-advisor` with GPT-6.1-Sol workers; each finished
-  step receives `finish-job` review before its proposed commit. Leave changes
-  uncommitted pending approval; merge, push, release and production policy changes
-  remain separate delivery actions.
+  step receives `finish-job` review before its automatically approved local
+  commit. Merge, push, release and production policy changes remain separately
+  recorded delivery actions; commit approval alone does not authorize them.
 
 ### Waves 1–2 source checkpoint — 2026-10-18
 
@@ -203,7 +469,10 @@ Neither examples nor passing tests constitute publication approval.
 - Detailed verification and the debug-startup isolation incident are recorded in
   [wave qualification](./qa/MARKETPLACE_WAVES_1_2_2026_10_18.md).
 
-## Current milestone — publish plugins before public activation (2026-10-13)
+## Historical milestone — publish plugins before public activation (2026-10-13)
+
+Current delivery status and policy are above; the following dated checkpoint is
+historical and does not reinstate superseded approval or retention requirements.
 
 This section supersedes the preparation-only stop below. v0.13.0 is released
 with the marketplace hidden. The next milestone is to publish reviewed original
@@ -1130,9 +1399,10 @@ workflows and documented commands, then remove replaced JavaScript business code
 
 ### Activation acceptance gates
 
-1. Explicitly select the release version and coordinated source. The current
-   bootstrap expects the existing app release namespace `vX.Y.Z`; an independent
-   namespace requires an approved coordinated change.
+1. Explicitly select the release version and coordinated source. The bootstrap
+   accepts the CLI's own namespace, `cli/vX.Y.Z` from `cli-release.yml` (stable)
+   or `cli-dev-release.yml` (`-dev.<run>.<attempt>`), and legacy two-field pins
+   resolving to the app release `vX.Y.Z`, which carried CLIs up to `0.14.0`.
 2. Verify the actual released Linux asset, its checksum/version and orchestration
    command before atomically provisioning both pin values in a reviewed change.
 3. Exercise JS-to-Rust and Rust-to-JS canonical state handoff, interrupted remote

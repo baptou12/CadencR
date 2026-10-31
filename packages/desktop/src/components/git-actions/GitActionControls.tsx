@@ -11,6 +11,7 @@ import { CircleAlert, ChevronDown, GitBranch, GitCommit, Loader2 } from "lucide-
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
+import { useShortcutKeys } from "@/hooks/useShortcutLabel";
 import { cn } from "@/lib/utils";
 import { gitActionIcon } from "./GitActionPopover";
 import { GitActionPopoverContent } from "./GitActionPopoverContent";
@@ -133,6 +134,7 @@ function DesktopGitActionControl({
   onPopoverOpenChange,
   onAction,
 }: GitActionControlsProps): ReactElement {
+  const gitActionsKeys = useShortcutKeys("git-actions");
   const active = activeGitActivity(activities);
   const primaryAction = active?.action ?? state.primary;
   const PrimaryIcon = state.updatePending
@@ -165,7 +167,7 @@ function DesktopGitActionControl({
         </Button>
       )}
       <Popover open={popoverOpen} onOpenChange={onPopoverOpenChange}>
-        <ShortcutTooltip label="Git actions" keys={["cmd", "G"]}>
+        <ShortcutTooltip label="Git actions" keys={gitActionsKeys}>
           <PopoverTrigger asChild>
             <Button
               variant="outline"

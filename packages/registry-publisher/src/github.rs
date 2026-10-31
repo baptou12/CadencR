@@ -9,6 +9,7 @@ mod upload;
 mod validation;
 use serde::Deserialize;
 use std::path::Path;
+use std::time::Instant;
 
 use model::{validate_asset, DraftBody, RawAsset, RawRelease};
 use request::{AssetResponse, Requester};
@@ -67,10 +68,32 @@ pub(crate) struct VerifyAssetRequest<'a> {
 
 pub(crate) trait ReleaseClient {
     fn get_tag_commit(&self, tag: &str) -> Result<Option<String>, PublisherError>;
+    /// Like [`Self::get_tag_commit`], every request bounded by `deadline`.
+    fn get_tag_commit_before(
+        &self,
+        tag: &str,
+        deadline: Instant,
+    ) -> Result<Option<String>, PublisherError> {
+        request::check_deadline(Some(deadline))?;
+        let result = self.get_tag_commit(tag);
+        request::check_deadline(Some(deadline))?;
+        result
+    }
     fn find_release(&self, tag: &str) -> Result<Option<Release>, PublisherError>;
     fn get_release(&self, release_id: u64) -> Result<Option<Release>, PublisherError>;
     fn create_draft(&self, request: CreateDraftRequest<'_>) -> Result<Release, PublisherError>;
     fn list_assets(&self, release_id: u64) -> Result<Vec<Asset>, PublisherError>;
+    /// Like [`Self::list_assets`], every request bounded by `deadline`.
+    fn list_assets_before(
+        &self,
+        release_id: u64,
+        deadline: Instant,
+    ) -> Result<Vec<Asset>, PublisherError> {
+        request::check_deadline(Some(deadline))?;
+        let result = self.list_assets(release_id);
+        request::check_deadline(Some(deadline))?;
+        result
+    }
     fn upload_asset(&self, request: UploadAssetRequest<'_>) -> Result<Asset, PublisherError>;
     fn verify_asset(&self, request: VerifyAssetRequest<'_>) -> Result<(), PublisherError>;
     fn publish_draft(&self, release_id: u64) -> Result<Release, PublisherError>;
@@ -111,18 +134,22 @@ impl GitHubClient {
     }
 }
 
-impl ReleaseClient for GitHubClient {
-    fn get_tag_commit(&self, tag: &str) -> Result<Option<String>, PublisherError> {
+impl GitHubClient {
+    fn tag_commit(
+        &self,
+        tag: &str,
+        deadline: Option<Instant>,
+    ) -> Result<Option<String>, PublisherError> {
         text(tag, "release tag")?;
         let encoded = url::form_urlencoded::byte_serialize(tag.as_bytes())
             .collect::<String>()
             .replace('+', "%20");
         let Some(reference) = self
             .request
-            .get_optional::<model::RawTagReference>(&format!(
-                "/repos/{}/git/ref/tags/{encoded}",
-                self.repository
-            ))?
+            .get_optional_with_deadline::<model::RawTagReference>(
+                &format!("/repos/{}/git/ref/tags/{encoded}", self.repository),
+                deadline,
+            )?
         else {
             return Ok(None);
         };
@@ -135,13 +162,46 @@ impl ReleaseClient for GitHubClient {
             if !visited.insert(target.sha.clone()) {
                 return Err(error("GitHub annotated tag cycle detected"));
             }
-            let annotated: model::RawAnnotatedTag = self.request.get(&format!(
-                "/repos/{}/git/tags/{}",
-                self.repository, target.sha
-            ))?;
+            let annotated: model::RawAnnotatedTag = self.request.get_with_deadline(
+                &format!("/repos/{}/git/tags/{}", self.repository, target.sha),
+                deadline,
+            )?;
             target = annotated.validate(&target.sha)?;
         }
         Ok(Some(target.sha))
+    }
+
+    fn assets(
+        &self,
+        release_id: u64,
+        deadline: Option<Instant>,
+    ) -> Result<Vec<Asset>, PublisherError> {
+        id(release_id, "release id")?;
+        self.paged_before::<RawAsset>(
+            "asset",
+            &format!("/repos/{}/releases/{release_id}/assets", self.repository),
+            deadline,
+        )?
+        .into_iter()
+        .map(Asset::try_from)
+        .collect()
+    }
+}
+
+impl ReleaseClient for GitHubClient {
+    fn get_tag_commit(&self, tag: &str) -> Result<Option<String>, PublisherError> {
+        self.tag_commit(tag, None)
+    }
+
+    fn get_tag_commit_before(
+        &self,
+        tag: &str,
+        deadline: Instant,
+    ) -> Result<Option<String>, PublisherError> {
+        request::check_deadline(Some(deadline))?;
+        let result = self.tag_commit(tag, Some(deadline));
+        request::check_deadline(Some(deadline))?;
+        result
     }
 
     fn find_release(&self, tag: &str) -> Result<Option<Release>, PublisherError> {
@@ -182,14 +242,18 @@ impl ReleaseClient for GitHubClient {
     }
 
     fn list_assets(&self, release_id: u64) -> Result<Vec<Asset>, PublisherError> {
-        id(release_id, "release id")?;
-        self.paged::<RawAsset>(
-            "asset",
-            &format!("/repos/{}/releases/{release_id}/assets", self.repository),
-        )?
-        .into_iter()
-        .map(Asset::try_from)
-        .collect()
+        self.assets(release_id, None)
+    }
+
+    fn list_assets_before(
+        &self,
+        release_id: u64,
+        deadline: Instant,
+    ) -> Result<Vec<Asset>, PublisherError> {
+        request::check_deadline(Some(deadline))?;
+        let result = self.assets(release_id, Some(deadline));
+        request::check_deadline(Some(deadline))?;
+        result
     }
 
     fn upload_asset(&self, request: UploadAssetRequest<'_>) -> Result<Asset, PublisherError> {

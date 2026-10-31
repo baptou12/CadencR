@@ -20,6 +20,10 @@ const exampleUrl = new URL("../examples/workflows/publish-protected-catalog.yml"
 const activeUrl = new URL("../.github/workflows/publish-protected-catalog.yml", import.meta.url);
 const hasExample = existsSync(exampleUrl);
 const source = readFileSync(hasExample ? exampleUrl : activeUrl, "utf8");
+// The key lifecycle is one implementation shared with the renewal workflow.
+const feedsScript = new URL("../scripts/ci/registry-feeds.sh", import.meta.url);
+const feeds = readFileSync(feedsScript, "utf8");
+const publisherPrefix = "marketplace-publisher-secret-";
 
 test("exported protected workflow remains an inert example", () => {
   if (hasExample)
@@ -48,6 +52,13 @@ function runInline(stepName, env) {
   });
 }
 
+function runKeyHelper(mode, env, prefix = publisherPrefix) {
+  return spawnSync("sh", [feedsScript.pathname, mode, prefix], {
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+}
+
 test("publisher is a manually dispatched, default-branch-only protected workflow", () => {
   assert.match(source, /^on:\n  workflow_dispatch:\n/m);
   assert.doesNotMatch(source, /^  (pull_request|push|workflow_run):/m);
@@ -71,7 +82,7 @@ test("publisher is a manually dispatched, default-branch-only protected workflow
 });
 
 test("both jobs checkout only the dispatched commit without credentials", () => {
-  assert.equal(occurrences(/uses: actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/g), 2);
+  assert.equal(occurrences(/uses: actions\/checkout@11d5960a326750d5838078e36cf38b85af677262/g), 2);
   assert.equal(occurrences(/ref: \$\{\{ github\.sha \}\}/g), 2);
   assert.equal(occurrences(/persist-credentials: false/g), 2);
   assert.doesNotMatch(source, /github\.event\.pull_request|head\.sha|checkout@(?:main|master)/);
@@ -114,17 +125,27 @@ test("privileged command uses repository-bound environment values and reviewed c
 });
 
 test("private key stays outside recoverable state and is cleaned on every outcome", () => {
-  assert.match(source, /writeFileSync\(file, key, \{ flag: "wx", mode: 0o600 \}\)/);
-  assert.match(source, /Buffer\.byteLength\(key, "utf8"\) > 16 \* 1024/);
+  assert.match(feeds, /writeFileSync\(file, key, \{ flag: "wx", mode: 0o600 \}\)/);
+  assert.match(feeds, /Buffer\.byteLength\(key, "utf8"\) > 16 \* 1024/);
+  assert.match(
+    feeds,
+    /appendFileSync\(process\.env\.GITHUB_OUTPUT, `private_key_file=\$\{file\}\\n`\)/,
+  );
+  assert.match(feeds, /unlinkSync\(file\)/);
+  // Both steps call the shared implementation with this workflow's own prefix.
   assert.match(
     source,
-    /appendFileSync\(process\.env\.GITHUB_OUTPUT, `private_key_file=\$\{file\}\\n`\)/,
+    /name: Materialize protected signing key\n(?:.*\n)*?        run: sh scripts\/ci\/registry-feeds\.sh materialize-key marketplace-publisher-secret-\n/,
   );
   assert.match(
     source,
     /name: Remove materialized signing key\n        if: \$\{\{ always\(\) && steps\.materialize_key\.outputs\.private_key_file != '' \}\}/,
   );
-  assert.match(source, /unlinkSync\(file\)/);
+  assert.match(
+    source,
+    /run: sh scripts\/ci\/registry-feeds\.sh remove-key marketplace-publisher-secret-\n/,
+  );
+  assert.doesNotMatch(source, /unlinkSync|writeFileSync\(file, key|mkdtempSync/);
   assert.doesNotMatch(source, /path:.*private\.pem/);
   assert.doesNotMatch(source, /upload-artifact|include-hidden-files/);
 });
@@ -133,26 +154,33 @@ test("materialization and cleanup scripts enforce owned private key lifecycle at
   const root = mkdtempSync(path.join(os.tmpdir(), "publisher-workflow-test-"));
   const output = path.join(root, "github-output");
   writeFileSync(output, "");
-  const created = runInline("Materialize protected signing key", {
+  const created = runKeyHelper("materialize-key", {
     CADENCR_REGISTRY_PRIVATE_KEY_PEM: "test-private-key",
     PRIVATE_KEY_ROOT: root,
     GITHUB_OUTPUT: output,
   });
   assert.equal(created.status, 0, created.stderr);
   const file = readFileSync(output, "utf8").trim().slice("private_key_file=".length);
+  assert.equal(path.basename(path.dirname(file)).startsWith(publisherPrefix), true);
   assert.equal(readFileSync(file, "utf8"), "test-private-key");
   assert.equal(statSync(file).mode & 0o777, 0o600);
 
-  const cleaned = runInline("Remove materialized signing key", {
-    PRIVATE_KEY_FILE: file,
-    PRIVATE_KEY_ROOT: root,
-  });
+  // A directory owned by the other workflow's prefix is not this workflow's to clean.
+  const otherOwned = runKeyHelper(
+    "remove-key",
+    { PRIVATE_KEY_FILE: file, PRIVATE_KEY_ROOT: root },
+    "marketplace-renewal-secret-",
+  );
+  assert.notEqual(otherOwned.status, 0);
+  assert.equal(readFileSync(file, "utf8"), "test-private-key");
+
+  const cleaned = runKeyHelper("remove-key", { PRIVATE_KEY_FILE: file, PRIVATE_KEY_ROOT: root });
   assert.equal(cleaned.status, 0, cleaned.stderr);
   assert.throws(() => statSync(file), { code: "ENOENT" });
 
   const foreign = path.join(root, "private.pem");
   writeFileSync(foreign, "operator-owned");
-  const refused = runInline("Remove materialized signing key", {
+  const refused = runKeyHelper("remove-key", {
     PRIVATE_KEY_FILE: foreign,
     PRIVATE_KEY_ROOT: root,
   });
@@ -164,7 +192,7 @@ test("materialization and cleanup scripts enforce owned private key lifecycle at
   writeFileSync(externalKey, "foreign-through-parent");
   const linkedParent = path.join(root, "marketplace-publisher-secret-linked");
   symlinkSync(external, linkedParent, "dir");
-  const refusedParent = runInline("Remove materialized signing key", {
+  const refusedParent = runKeyHelper("remove-key", {
     PRIVATE_KEY_FILE: path.join(linkedParent, "private.pem"),
     PRIVATE_KEY_ROOT: root,
   });
@@ -173,17 +201,29 @@ test("materialization and cleanup scripts enforce owned private key lifecycle at
 
   const oversizedOutput = path.join(root, "oversized-output");
   writeFileSync(oversizedOutput, "");
-  const oversized = runInline("Materialize protected signing key", {
+  const oversized = runKeyHelper("materialize-key", {
     CADENCR_REGISTRY_PRIVATE_KEY_PEM: "x".repeat(16 * 1024 + 1),
     PRIVATE_KEY_ROOT: root,
     GITHUB_OUTPUT: oversizedOutput,
   });
   assert.notEqual(oversized.status, 0);
   assert.equal(readFileSync(oversizedOutput, "utf8"), "");
+
+  const badPrefix = runKeyHelper(
+    "materialize-key",
+    {
+      CADENCR_REGISTRY_PRIVATE_KEY_PEM: "k",
+      PRIVATE_KEY_ROOT: root,
+      GITHUB_OUTPUT: oversizedOutput,
+    },
+    "../escape-",
+  );
+  assert.notEqual(badPrefix.status, 0);
+  assert.equal(readFileSync(oversizedOutput, "utf8"), "");
 });
 
 test("raw recovery state is never uploaded or restored", () => {
-  assert.match(source, /timeout-minutes: 30/);
+  assert.match(source, /timeout-minutes: 45/);
   assert.doesNotMatch(source, /actions\/(?:upload|download)-artifact/);
   assert.match(source, /Fresh runners reconstruct published provider state only after tag/);
 });
@@ -310,4 +350,28 @@ test("selector binds the same committed pin and owned destination", (t) => {
   );
   assert.notEqual(pending.result.status, 0);
   assert.equal(pending.output, "");
+});
+
+// The registry repository allows only these exact action pins (Settings →
+// Actions → "Allow select actions", SHA pinning required). A workflow using any
+// other action is refused at dispatch, so every deployed workflow must stay
+// inside this list. prepare-protected-publication is not deployed: its unsigned
+// index upload needs actions/upload-artifact, which the registry does not allow.
+test("deployed workflows use only the registry's allowed action pins", () => {
+  const allowed = new Set([
+    "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+    "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+  ]);
+  const directory = new URL("../.github/workflows/", import.meta.url);
+  for (const name of [
+    "validate-provider-metadata.yml",
+    "publish-protected-catalog.yml",
+    "bootstrap-revocation-policies.yml",
+    "renew-protected-catalog.yml",
+    "watch-registry-expiry.yml",
+  ]) {
+    const uses = [...readFileSync(new URL(name, directory), "utf8").matchAll(/uses:\s*(\S+)/g)];
+    assert.ok(uses.length > 0, name);
+    for (const [, action] of uses) assert.ok(allowed.has(action), `${name}: ${action}`);
+  }
 });

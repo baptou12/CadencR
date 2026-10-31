@@ -62,6 +62,7 @@ describe("selectElementContext", () => {
   it("re-arms the picker in the replacement document after a page refresh", async () => {
     const contents = Object.assign(new EventEmitter(), {
       executeJavaScript: vi.fn(async () => undefined),
+      getURL: () => "https://example.test/refreshed",
       getZoomFactor: vi.fn(() => 1.2),
       isDestroyed: vi.fn(() => false),
       isLoading: vi.fn(() => true),
@@ -80,7 +81,11 @@ describe("selectElementContext", () => {
       .mockResolvedValueOnce(context("tab-1"));
 
     const selection = selectElementContext(tab as unknown as ManagedTab, "anchor-1");
-    contents.emit("did-start-navigation", {}, tab.metadata.url, false, true);
+    contents.emit("did-start-navigation", {
+      url: tab.metadata.url,
+      isSameDocument: false,
+      isMainFrame: true,
+    });
     tab.metadata = { ...tab.metadata, url: "https://example.test/refreshed", title: "Refreshed" };
     await vi.waitFor(() => expect(contents.listenerCount("did-stop-loading")).toBe(1));
     expect(captureElementContext).toHaveBeenCalledOnce();

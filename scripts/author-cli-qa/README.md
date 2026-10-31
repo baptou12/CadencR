@@ -116,8 +116,31 @@ SHA-256 of the exact candidate bytes.
 The Rust CI job builds the current source CLI and enables this additional fixture
 contract test. It catches compiled-entry and publication-metadata errors before
 hosted author QA; it does not replace the downloaded Linux executable checks.
+It also packs a backend tab (`pack-tab` plus `pack-tab-backend` for every
+platform, from synthesized inert native headers that are never executed) and
+checks the `backend-<platform>` publication targets. Native-backend candidates are supported by the harness but are not qualified
+until the separately reviewed distributed workflow is exercised.
 
 ```sh
 CADENCR_DEVELOPMENT_FIXTURE_CLI="$PWD/target/debug/cadencr" \
   python3 -B scripts/author-cli-qa/test_harness.py
 ```
+
+## Native-backend tab candidate
+
+For a new tab-only candidate, optionally set `"tab_variant": "native-backend"`.
+Omission or `"ui-only"` preserves existing tab behavior; this field is rejected
+for providers/themes and all other values are rejected. Never change an existing
+request, candidate tag, or release to switch variants: create a fresh source tag
+and reviewed candidate instead.
+
+The native variant binds both static UI fixtures and the tracked deterministic
+`native_fixture.py` generator bytes to the source commit. That generator contains
+all inert Mach-O/ELF header data (macOS arm64/x64 and Linux x64); no compiler,
+download, credentials, or runnable backend is involved. Static validation always
+uses `--no-run`. The Rust CLI packs each backend first, supplying its exact
+archive/executable receipt fields to `pack-tab --package`; the UI archive remains
+the primary author archive and every platform is an `additional_archives` entry.
+Publication, retry, independent inventory and tamper probes reuse the same author
+request path. This is harness coverage, **not distributed-CLI qualification**;
+that still requires the separately reviewed deployed workflow and real evidence.

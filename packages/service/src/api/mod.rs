@@ -35,11 +35,14 @@ use crate::domain::features::routes::features_router;
 use crate::domain::git::routes::git_router;
 use crate::domain::imports::routes::imports_router;
 use crate::domain::lsp::lsp_router;
+use crate::domain::mcp::control::side_question::side_question_router;
 use crate::domain::neovim::routes::routes as neovim_routes;
 use crate::domain::neovim::ws::ws_routes as neovim_ws_routes;
 use crate::domain::ports::routes::ports_router;
 use crate::domain::projects::routes::projects_router;
+use crate::domain::prompt_queue::routes::prompt_queue_router;
 use crate::domain::schedules::routes::schedules_router;
+use crate::domain::search::routes::search_routes;
 use crate::domain::sessions::routes::sessions_router;
 use crate::domain::terminal::routes::terminal_router;
 use crate::domain::themes::themes_router;
@@ -226,9 +229,12 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(projects_router())
         .merge(features_router())
         .merge(recent_routes())
+        .merge(search_routes())
         .merge(ports_router())
         .merge(feature_layouts_router())
         .merge(diff_comments_router())
+        .merge(prompt_queue_router())
+        .merge(side_question_router())
         .merge(sessions_router())
         .merge(schedules_router())
         .merge(terminal_router())
@@ -297,6 +303,9 @@ pub fn build_router(state: AppState) -> Router {
         // Custom tab grants, plugin-token routes and the plugin socket: a
         // desktop feature, never on the remote listener.
         .merge(crate::domain::plugin_tabs::plugin_tabs_loopback_router())
+        // The visual sandbox shell: `auth_middleware` lets it through without
+        // the token, which an iframe cannot send.
+        .merge(crate::domain::visual_frame::router())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::auth_middleware,
@@ -327,6 +336,8 @@ pub fn build_remote_router(
         // Device-keyed push subscription endpoints: remote-only, since they read
         // the device id injected by `remote_auth_middleware` (loopback has none).
         .merge(crate::domain::push::routes::remote_router())
+        // Public like the SPA's static files (non-`/api` paths skip device auth).
+        .merge(crate::domain::visual_frame::router())
         // Keep API misses API-shaped. Without this, an authenticated request for
         // a loopback-only or typoed `/api/*` path would fall through to
         // `index.html`, obscuring routing mistakes and weakening the "remote

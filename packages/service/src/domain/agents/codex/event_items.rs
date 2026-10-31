@@ -160,6 +160,12 @@ pub(super) fn file_patch_updated_event(
 }
 
 fn text_item(params: Value, completed: bool, index_state: &mut IndexState) -> Vec<RuntimeEvent> {
+    if params["item"]["questions"]
+        .as_array()
+        .is_some_and(|questions| !questions.is_empty())
+    {
+        return super::async_questions::question_events(&params, completed, index_state);
+    }
     content_item(
         params,
         RuntimeContentBlock::Text {

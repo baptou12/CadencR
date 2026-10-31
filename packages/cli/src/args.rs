@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
+use crate::tab_backend::TabBackendCommand;
+
 #[derive(Debug, Parser)]
 #[command(
     name = "cadencr",
@@ -59,6 +61,10 @@ pub(crate) enum PluginCommand {
         /// manifest and need no provider descriptor.
         #[arg(long, value_enum, default_value_t = PluginKind::Provider)]
         kind: PluginKind,
+        /// Custom tabs: do not run the backend's protocol conformance checks
+        /// (static checks still apply), for machines that cannot execute it.
+        #[arg(long)]
+        no_run: bool,
     },
 }
 
@@ -80,6 +86,10 @@ pub(crate) struct RegistryArgs {
 pub(crate) enum RegistryCommand {
     #[command(flatten)]
     Diagnostics(crate::metadata::MetadataCommand),
+    #[command(flatten)]
+    TabBackend(TabBackendCommand),
+    #[command(flatten)]
+    Policy(crate::policy::PolicyCommand),
     /// Validate a candidate contribution relative to a base registry.
     Validate {
         #[arg(long)]
@@ -208,28 +218,6 @@ pub(crate) enum RegistryCommand {
         #[arg(long, default_value_t = 1)]
         minimum_generation: u64,
     },
-    /// Sign a domain-bound theme revocation policy.
-    SignThemeBlocklist {
-        #[arg(long)]
-        payload: PathBuf,
-        #[arg(long)]
-        private_key: PathBuf,
-        #[arg(long)]
-        key_id: String,
-        #[arg(long)]
-        output: PathBuf,
-    },
-    /// Verify a domain-bound signed theme revocation policy.
-    VerifyThemeBlocklist {
-        #[arg(long)]
-        index: PathBuf,
-        #[arg(long)]
-        public_key: PathBuf,
-        #[arg(long)]
-        key_id: String,
-        #[arg(long)]
-        allow_expired: bool,
-    },
     /// Join a validated canonical payload and detached signature document.
     AssembleSignedIndex {
         #[arg(long)]
@@ -256,6 +244,7 @@ impl Cli {
                 ) | RegistryCommand::PackProvider { .. }
                     | RegistryCommand::PackTheme { .. }
                     | RegistryCommand::PackTab { .. }
+                    | RegistryCommand::TabBackend(TabBackendCommand::PackTabBackend { .. })
             })
         )
     }

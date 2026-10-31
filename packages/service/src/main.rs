@@ -4,6 +4,7 @@
 
 use cadencr_service::{api, app_state, config, dev_env, domain, remote, shared, shutdown};
 
+use anyhow::Context;
 use axum::serve::ListenerExt;
 use clap::Parser;
 use std::path::PathBuf;
@@ -44,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
                 config.settings_dir.as_deref(),
                 &db_path,
             );
+            domain::settings_store::dir::secure(&settings_dir)?;
             domain::settings_store::init(settings_dir);
             domain::agents::providers::installed::managed::trust::initialize_pinned_registry_trust(
             )
@@ -74,14 +76,16 @@ async fn main() -> anyhow::Result<()> {
                 info!("Loaded env from {}", dotenv_path.display());
             }
 
-            // Hydrate process env from the user's login shell BEFORE any
-            // subprocesses (git, gpg, ssh, agent CLIs, PTY shells) get
-            // spawned. Without this, a Electron/launchd-launched binary
-            // inherits a stripped-down env (`PATH=/usr/bin:/bin:...`, no
-            // `GPG_TTY`, no `SSH_AUTH_SOCK`) and `git commit -S` fails for
-            // anyone who configured signing or agent sockets in their
-            // `.zshrc` / `.zprofile`. Best-effort: warns on failure,
-            // never blocks startup.
+            let addr = format!("127.0.0.1:{}", config.port);
+            let listener = tokio::net::TcpListener::bind(&addr)
+                .await
+                .with_context(|| format!("failed to bind Cadencr service listener on {addr}"))?;
+
+            // Freeze the data roots from Electron's launch env, then hydrate the
+            // login-shell env before any git, agent or PTY subprocess spawns.
+            shared::app_paths::pin_roots()
+                .map_err(anyhow::Error::msg)
+                .context("could not resolve Cadencr's data directories")?;
             shared::login_env::hydrate_from_login_shell().await;
 
             let db_path = config
@@ -149,9 +153,7 @@ async fn main() -> anyhow::Result<()> {
                 config.settings_dir.as_deref(),
                 &db_path,
             );
-            if let Err(e) = std::fs::create_dir_all(&settings_dir) {
-                tracing::warn!(dir = %settings_dir.display(), "failed to create settings dir: {e}");
-            }
+            domain::settings_store::dir::secure(&settings_dir)?;
             // Resolve to an absolute path so the "Edit JSON" / "Copy path" UI
             // shows a usable location. In dev the dir derives from a relative
             // `--db-path`, which would otherwise surface as a confusing
@@ -180,13 +182,6 @@ async fn main() -> anyhow::Result<()> {
                 Ok(false) => {}
                 Err(e) => tracing::warn!("failed to prune ephemeral settings keys: {e}"),
             }
-            // The macOS notch island became the default notification destination;
-            // move existing installs over once.
-            match domain::settings_store::notch_default::apply_notch_default().await {
-                Ok(true) => info!("switched notifications to the notch island"),
-                Ok(false) => {}
-                Err(e) => tracing::warn!("failed to apply the notch notification default: {e}"),
-            }
 
             // Mark any sessions left as 'running' from a previous crash as 'paused'
             domain::ws_session::persistence::WsSessionPersistence::cleanup_stale_sessions(
@@ -207,6 +202,14 @@ async fn main() -> anyhow::Result<()> {
                 domain::sessions::message_dispatch::recover_orphaned_claims(&write_pool).await?;
             if recovered > 0 {
                 info!(recovered, "recovered orphaned message delivery claims");
+            }
+            let interrupted_prompts =
+                domain::prompt_queue::store::recover_interrupted_deliveries(&write_pool).await?;
+            if interrupted_prompts > 0 {
+                info!(
+                    interrupted_prompts,
+                    "marked interrupted queued prompts as failed"
+                );
             }
 
             let auth_token = config.auth_token.ok_or_else(|| {
@@ -268,10 +271,10 @@ async fn main() -> anyhow::Result<()> {
                 &domain::plugin_tabs::paths::tabs_dir(),
                 state.plugin_tab_events_tx.clone(),
             );
-            // A manifest edit that changes a tab's permissions revokes its
-            // live grants (a `dist/` rebuild does not).
+            // Permission changes and revocations revoke live grants (blocked: backends stop first).
             tokio::spawn(domain::plugin_tabs::grants::revoke_on_manifest_change(
                 state.plugin_tab_grants.clone(),
+                state.plugin_tab_backends.clone(),
                 state.plugin_tab_events_tx.subscribe(),
             ));
             state
@@ -345,10 +348,7 @@ async fn main() -> anyhow::Result<()> {
             let app =
                 api::build_router(state).layer(api::cors::build_cors_layer(config.frontend_port));
 
-            let addr = format!("127.0.0.1:{}", config.port);
             info!("Cadencr service listening on {addr}");
-
-            let listener = tokio::net::TcpListener::bind(&addr).await?;
             // Disable Nagle's algorithm on every accepted connection. Nagle is
             // the default on `tokio::net::TcpStream` and silently coalesces
             // small frames for ~200 ms, which destroys real-time WS streaming.

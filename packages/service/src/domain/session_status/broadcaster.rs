@@ -70,6 +70,11 @@ impl SessionStatusBroadcaster {
         }
     }
 
+    /// Whether a session has a live turn or a pending user-input gate.
+    pub fn is_busy(&self, session_id: i64) -> bool {
+        self.lock().is_busy(session_id)
+    }
+
     /// Broadcast a status transition of the current turn. Returns the new
     /// seq, or `None` when nothing changed.
     pub fn broadcast(
@@ -98,6 +103,22 @@ impl SessionStatusBroadcaster {
             kind: Some(kind),
             request_id: Some(request_id),
             ..Transition::new(session_id, feature_id, AgentStatus::Question)
+        })
+    }
+
+    /// Resolve a gate without clearing one published during answer delivery.
+    pub fn broadcast_gate_resolved(
+        &self,
+        session_id: i64,
+        feature_id: i64,
+        request_id: &str,
+        status: AgentStatus,
+    ) -> Option<u64> {
+        self.apply(Transition {
+            source: Source::GateResponse {
+                request_id: request_id.to_string(),
+            },
+            ..Transition::new(session_id, feature_id, status)
         })
     }
 
@@ -247,6 +268,29 @@ mod tests {
         assert_eq!(event.kind, Some(PendingKind::Permission));
         assert_eq!(event.request_id.as_deref(), Some("req-42"));
         assert_eq!(event.turn_started_at_ms, started.turn_started_at_ms);
+    }
+
+    #[test]
+    fn a_delayed_answer_cannot_overwrite_the_next_questions_status() {
+        let broadcaster = broadcaster();
+        broadcaster.broadcast_gate(7, 8, PendingKind::Question, "first".into());
+        // The next form arrives while the previous answer is being persisted.
+        broadcaster.broadcast_gate(7, 8, PendingKind::Question, "second".into());
+        let mut rx = broadcaster.subscribe();
+        assert!(broadcaster
+            .broadcast_gate_resolved(7, 8, "first", AgentStatus::Agent)
+            .is_none());
+        assert!(rx.try_recv().is_err());
+        let pending = &broadcaster.snapshot().states["7"];
+        assert_eq!(pending.status, AgentStatus::Question);
+        assert_eq!(pending.request_id.as_deref(), Some("second"));
+        assert!(broadcaster
+            .broadcast_gate_resolved(7, 8, "second", AgentStatus::Agent)
+            .is_some());
+        assert_eq!(
+            broadcaster.snapshot().states["7"].status,
+            AgentStatus::Agent
+        );
     }
 
     #[tokio::test]

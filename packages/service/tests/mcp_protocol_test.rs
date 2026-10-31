@@ -1,12 +1,12 @@
 //! Exercise real server handlers over JSON-RPC, including Claude Code's
 //! discovery-first startup. No CLI binary, model, or on-disk database is needed.
 //!
-//! Own test binary: it calls `settings_store::init` (a first-call-wins
-//! `OnceLock`) with a tempdir that is deleted when the test ends.
+//! Own test binary: every client initializes the same isolated settings dir,
+//! kept alive across tests so shared fallback settings cannot affect dispatch.
 
 mod support;
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use cadencr_service::domain::mcp::{
@@ -35,6 +35,12 @@ impl WireClient {
     }
 
     fn with_context(agent: AgentType, ctx: Arc<McpContext>) -> Self {
+        static SETTINGS_DIR: OnceLock<tempfile::TempDir> = OnceLock::new();
+        SETTINGS_DIR.get_or_init(|| {
+            let dir = tempfile::tempdir().unwrap();
+            cadencr_service::domain::settings_store::init(dir.path().to_path_buf());
+            dir
+        });
         let server = create_mcp_server(agent, ctx);
         let (client_io, server_io) = tokio::io::duplex(65536);
         let server = tokio::spawn(async move {
@@ -129,6 +135,9 @@ fn assert_tool_catalog(agent: AgentType, result: &Value) {
             "project_list_schedules",
             "project_update_schedule",
             "project_delete_schedule",
+            "project_archive_session",
+            "project_get_settings",
+            "project_update_settings",
         ],
         AgentType::Workspace => &[
             "workspace_list_projects",
@@ -137,6 +146,8 @@ fn assert_tool_catalog(agent: AgentType, result: &Value) {
             "workspace_session_graph",
             "workspace_recent_activity",
             "workspace_send_session_message",
+            "workspace_get_settings",
+            "workspace_update_settings",
         ],
     };
     let mut actual: Vec<&str> = tools
@@ -235,8 +246,6 @@ async fn legacy_clients_still_initialize_and_list_tools_without_metadata() {
 /// both after modern discovery and after legacy initialization.
 #[tokio::test]
 async fn real_workspace_tool_succeeds_over_modern_and_legacy_wire() {
-    let settings_dir = tempfile::tempdir().unwrap();
-    cadencr_service::domain::settings_store::init(settings_dir.path().to_path_buf());
     let pool = support::mcp_control::seeded_control_pool().await;
     let ctx = McpContext::new_with_source_session(pool.clone(), pool, 42, Some(777));
 

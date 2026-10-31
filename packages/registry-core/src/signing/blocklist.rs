@@ -1,48 +1,32 @@
 use super::*;
+use crate::blocklist::MAX_BLOCKLIST_BYTES;
+use crate::{authenticate_policy, PolicyKind};
 
-pub fn sign_theme_blocklist(
+/// Sign `kind`'s revocation policy, which must be current, with the catalog
+/// key.
+pub fn sign_policy(
+    kind: PolicyKind,
     payload_file: &Path,
     private_key_file: &Path,
     key_id: &str,
 ) -> Result<Vec<u8>, RegistryError> {
-    let value = read_json(
-        payload_file,
-        crate::MAX_THEME_BLOCKLIST_BYTES as u64,
-        "theme blocklist",
-    )?;
-    let prepared = crate::prepare_theme_blocklist(&value, false, Utc::now())?;
-    sign_prepared_index(prepared.signing, private_key_file, key_id)
+    let label = format!("{} blocklist", kind.name());
+    let value = read_json(payload_file, MAX_BLOCKLIST_BYTES as u64, &label)?;
+    let prepared = kind.prepare(&value, false, Utc::now())?;
+    sign_prepared_index(prepared, private_key_file, key_id)
 }
 
-pub fn verify_signed_theme_blocklist(
+/// Authenticate a signed `kind` policy file and validate its domain.
+pub fn verify_policy(
+    kind: PolicyKind,
     index_file: &Path,
     public_key_file: &Path,
     key_id: &str,
     allow_expired: bool,
 ) -> Result<(), RegistryError> {
+    let label = format!("signed {} blocklist", kind.name());
     validate_signing_key_id(key_id)?;
-    let envelope = read_json(
-        index_file,
-        crate::MAX_SIGNED_THEME_BLOCKLIST_BYTES as u64,
-        "signed theme blocklist",
-    )?;
-    let object = envelope
-        .as_object()
-        .ok_or_else(|| RegistryError::single("theme blocklist envelope must be an object"))?;
-    reject_unknown(object, &["signed", "signature"], "envelope")?;
-    let signed = object
-        .get("signed")
-        .ok_or_else(|| RegistryError::single("envelope.signed is required"))?;
-    let signature = object.get("signature").and_then(Value::as_object);
-    let decoded = validate_signature(signature)?;
-    let payload = canonical_json_bytes(signed);
-    let validated = ValidatedEnvelope {
-        signature: signature.expect("validated signature"),
-        decoded,
-        payload,
-    };
-    validate_envelope_key_id(&validated, key_id)?;
-    let key = parse_public_key(&read_file(public_key_file, KEY_LIMIT, "public key")?)?;
-    verify_validated_signature(validated, &key)?;
-    crate::prepare_theme_blocklist(signed, allow_expired, Utc::now()).map(|_| ())
+    let bytes = read_file(index_file, kind.max_signed_bytes() as u64, &label)?;
+    let public_key = read_file(public_key_file, KEY_LIMIT, "public key")?;
+    authenticate_policy(kind, &bytes, &public_key, key_id, allow_expired, Utc::now()).map(|_| ())
 }

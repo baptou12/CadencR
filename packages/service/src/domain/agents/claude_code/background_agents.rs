@@ -4,8 +4,9 @@
 //! detached agent keeps working; the CLI auto-resumes the main agent once it
 //! finishes. The shared stream reader uses the signal derived here to keep the
 //! session "working" across that gap instead of going idle the moment the
-//! launching turn completes (issue #58). Conforms to
-//! `.claude/rules/inline-rust-tests.md`.
+//! launching turn completes (issue #58). It also counts every live background
+//! task (shell commands included) so the runtime is not torn down while one
+//! still has to report back. Conforms to `.claude/rules/inline-rust-tests.md`.
 
 use serde_json::Value;
 
@@ -75,11 +76,32 @@ pub(super) fn background_agent_signal(
     }
 }
 
+/// Count the background tasks still alive, from Claude Code's
+/// `system/background_tasks_changed` snapshot. The CLI emits it whenever its
+/// set of `run_in_background` tasks changes (a shell command, agent or monitor
+/// starts or settles), always listing every live task, so its length is
+/// authoritative regardless of task type. Foreground shells nested in an agent
+/// never appear in it.
+///
+/// Like the task lifecycle above, the subtype is untyped by the SDK and arrives
+/// as `SdkMessage::Unknown` with the raw JSON preserved.
+pub(super) fn background_task_count(msg: &claude_agent_sdk_rs::SdkMessage) -> Option<usize> {
+    let claude_agent_sdk_rs::SdkMessage::Unknown(raw) = msg else {
+        return None;
+    };
+    if raw.get("type").and_then(Value::as_str) != Some("system")
+        || raw.get("subtype").and_then(Value::as_str) != Some("background_tasks_changed")
+    {
+        return None;
+    }
+    raw.get("tasks").and_then(Value::as_array).map(Vec::len)
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
-    use super::background_agent_signal;
+    use super::{background_agent_signal, background_task_count};
     use crate::domain::agents::adapter::BackgroundAgentSignal;
 
     fn signal(value: serde_json::Value) -> Option<BackgroundAgentSignal> {
@@ -138,6 +160,52 @@ mod tests {
             signal(json!({
                 "type": "system", "subtype": "task_notification", "uuid": "u", "session_id": "s",
                 "task_id": "task-abc", "status": "in_progress"
+            })),
+            None
+        );
+    }
+
+    fn task_count(value: serde_json::Value) -> Option<usize> {
+        let msg: claude_agent_sdk_rs::SdkMessage =
+            serde_json::from_value(value).expect("valid sdk message");
+        background_task_count(&msg)
+    }
+
+    #[test]
+    fn background_tasks_changed_counts_every_live_task() {
+        // Real wire shape (CLI 2.1.310) after two `run_in_background` Bash calls.
+        assert_eq!(
+            task_count(json!({
+                "type": "system", "subtype": "background_tasks_changed",
+                "uuid": "u", "session_id": "s",
+                "tasks": [
+                    { "task_id": "bwhoajb5w", "run_id": "r1", "task_type": "local_bash",
+                      "description": "Background sleep 12 then echo a" },
+                    { "task_id": "a9c32227", "run_id": "r2", "task_type": "local_agent",
+                      "subagent_type": "general-purpose", "description": "Agent" }
+                ]
+            })),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn background_tasks_changed_with_no_tasks_is_a_zero_snapshot() {
+        assert_eq!(
+            task_count(json!({
+                "type": "system", "subtype": "background_tasks_changed",
+                "uuid": "u", "session_id": "s", "tasks": []
+            })),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn task_lifecycle_messages_are_not_snapshots() {
+        assert_eq!(
+            task_count(json!({
+                "type": "system", "subtype": "task_started", "uuid": "u", "session_id": "s",
+                "task_id": "task-bash", "tool_use_id": "toolu_2", "task_type": "local_bash"
             })),
             None
         );

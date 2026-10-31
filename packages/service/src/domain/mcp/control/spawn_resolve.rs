@@ -29,6 +29,17 @@ pub(super) struct SpawnBranch {
     reuse_branch: Option<String>,
 }
 
+impl SpawnBranch {
+    /// Work in the existing worktree of `branch`.
+    pub(super) fn reuse_worktree(branch: String) -> Self {
+        Self {
+            mode: Some("reuse_worktree".to_string()),
+            base: None,
+            reuse_branch: Some(branch),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct SpawnRuntimeSelection {
     pub(super) model: Option<String>,
@@ -121,7 +132,7 @@ pub(super) async fn resolve_target_project(
     Ok(target)
 }
 
-async fn fetch_project_by_id(
+pub(super) async fn fetch_project_by_id(
     pool: &sqlx::SqlitePool,
     id: i64,
 ) -> Result<Option<TargetProject>, AppError> {

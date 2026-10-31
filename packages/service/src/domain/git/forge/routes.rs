@@ -238,6 +238,10 @@ pub fn forge_router() -> Router<AppState> {
         .route("/api/git/pr", get(get_pr_handler))
         .route("/api/git/pr/comments", get(get_pr_comments_handler))
         .route(
+            "/api/git/pr/lookup",
+            get(super::pr_lookup::lookup_feature_repo_pr),
+        )
+        .route(
             "/api/git/forge/image",
             get(super::image_routes::get_forge_image_handler),
         )

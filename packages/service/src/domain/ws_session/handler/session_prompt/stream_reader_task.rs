@@ -17,6 +17,7 @@ use crate::domain::ws_session::protocol::{SessionEndedPayload, WsEnvelope};
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 
 use super::super::{persist_and_close_query, QueryState, SdkSessions, WsSender};
+use super::runtime_hold_registry;
 use super::stream_reader_resume::transition_active_to_pending_on_stream_end;
 use super::stream_reader_stop;
 use super::stream_reader_turn_state::StreamTurnState;
@@ -82,6 +83,10 @@ pub(super) struct StreamReaderState {
     /// premature eviction (e.g. on a nested-agent `MessageStart`) would wrongly
     /// drop it mid-run.
     pub(super) live_background_agents: HashSet<String>,
+    /// Work the runtime still owes the agent a resume for (see
+    /// [`super::runtime_hold`]). Unlike `live_background_agents` it doesn't
+    /// keep the session `running`.
+    pub(super) runtime_hold: runtime_hold_registry::SharedRuntimeHold,
     /// Monotonic counter stamped onto every `session.message` envelope this
     /// reader emits, so clients can detect a dropped envelope (gap) and
     /// resync. Restarts at 1 with each reader; clients treat a lower-than-
@@ -145,6 +150,9 @@ impl StreamReaderTask {
             Some(self.db_session_id),
         );
         let mut state = StreamReaderState::new(initial_usage);
+        let hold_registration = self.runtime_session_handle.as_ref().map(|runtime| {
+            runtime_hold_registry::register(self.db_session_id, runtime, &state.runtime_hold)
+        });
 
         loop {
             match self.next_action(&mut state).await {
@@ -173,6 +181,7 @@ impl StreamReaderTask {
             }
         }
 
+        drop(hold_registration);
         transition_active_to_pending_on_stream_end(
             &self.sdk_sessions,
             self.db_session_id,
@@ -295,9 +304,12 @@ impl StreamReaderTask {
     /// turn is safely between turns (see [`should_close_orphaned`]). Returns
     /// `true` when the runtime was closed and the reader should stop.
     async fn maybe_teardown_orphaned(&self, state: &StreamReaderState) -> bool {
-        // Cheap pre-check before the DB read: never tear down mid-turn or before
-        // the first turn has completed.
-        if !(state.turn_state.is_between_turns() && state.turn_state.has_completed_turn()) {
+        // Cheap pre-check before the DB read: never tear down mid-turn, before
+        // the first turn has completed, or while the runtime owes a resume
+        // (closing it would kill that work).
+        if !(state.turn_state.is_between_turns() && state.turn_state.has_completed_turn())
+            || state.runtime_hold.holds_runtime()
+        {
             return false;
         }
         let row = WsSessionPersistence::get_session_row(&self.write_pool, self.db_session_id).await;
@@ -342,7 +354,10 @@ impl StreamReaderTask {
             )
             .await;
         }
-        WsSessionPersistence::mark_paused_static(&self.write_pool, self.db_session_id).await;
+        // Teardown only runs after a completed turn, so the session is
+        // `completed`, not `paused`: a persisted `paused` restores on reconnect
+        // as a turn still waiting on the user.
+        WsSessionPersistence::mark_completed_static(&self.write_pool, self.db_session_id).await;
         WsSessionPersistence::broadcast_session_status(
             &self.session_status_tx,
             self.db_session_id,

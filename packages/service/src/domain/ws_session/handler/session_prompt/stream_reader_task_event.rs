@@ -51,6 +51,7 @@ impl StreamReaderTask {
         };
         self.forward_compaction_state(state, &runtime_event).await;
         track_background_agents(&mut state.live_background_agents, &runtime_event);
+        state.runtime_hold.observe(&runtime_event);
 
         match forward_immediate_event(self, state, &runtime_event).await {
             // `prompt_received` / `commands.updated` / `stream_status` are
@@ -359,6 +360,12 @@ impl StreamReaderTask {
                 .await
                 .is_some_and(|row| row.has_pending_user_input());
         if has_pending_user_input {
+            return;
+        }
+        // The user's own queued prompts go first: they are what the person
+        // supervising this session asked for next.
+        use crate::domain::prompt_queue::delivery::drain_next_after_turn;
+        if drain_next_after_turn(&self.app_state, self.db_session_id).await {
             return;
         }
         if let Err(error) = crate::domain::mcp::control::message_queue::drain_next_queued_message(

@@ -19,6 +19,15 @@ const electronState = vi.hoisted(() => ({
   openPath: vi.fn<(_path: string) => Promise<string>>(() => Promise.resolve("")),
 }));
 
+vi.mock("./app-paths", () => ({
+  resolveRendererDiagnosticHistory: () =>
+    path.join(electronState.logsPath, "renderer-diagnostics.json"),
+}));
+
+vi.mock("./renderer-window-security", () => ({
+  rendererLoadTarget: () => ({ kind: "url", value: "http://127.0.0.1:1420/" }),
+}));
+
 vi.mock("electron", () => ({
   app: {
     get isPackaged() {
@@ -56,19 +65,34 @@ function trustedEvent(
 ): IpcMainInvokeEvent {
   return {
     sender: { id: 7 },
-    senderFrame: senderFrameUrl === null ? null : { url: senderFrameUrl },
+    senderFrame:
+      senderFrameUrl === null ? null : { url: senderFrameUrl, processId: 1, routingId: 2 },
   } as unknown as IpcMainInvokeEvent;
 }
 
 function ipcEvent(senderId: number, senderFrameUrl: string | null): IpcMainInvokeEvent {
   return {
     sender: { id: senderId },
-    senderFrame: senderFrameUrl === null ? null : { url: senderFrameUrl },
+    senderFrame:
+      senderFrameUrl === null ? null : { url: senderFrameUrl, processId: 1, routingId: 2 },
   } as unknown as IpcMainInvokeEvent;
 }
 
 function mainWindow(): BrowserWindow {
-  return { webContents: { id: 7 } } as unknown as BrowserWindow;
+  return {
+    webContents: {
+      id: 7,
+      mainFrame: { processId: 1, routingId: 2, url: "http://127.0.0.1:1420/" },
+    },
+  } as unknown as BrowserWindow;
+}
+
+function ipcHandler(channel: string): (event: IpcMainInvokeEvent, payload?: unknown) => unknown {
+  const handlerCall = vi.mocked(ipcMain.handle).mock.calls.find(([registeredChannel]) => {
+    return registeredChannel === channel;
+  });
+  expect(handlerCall).toBeDefined();
+  return handlerCall?.[1] as (event: IpcMainInvokeEvent, payload?: unknown) => unknown;
 }
 
 describe("ipc validators", () => {
@@ -215,8 +239,10 @@ describe("ipc validators", () => {
     await expect(openExternalLink(pathToFileURL(file).href)).rejects.toThrow(/No app/);
   });
 
-  it("accepts null senderFrame only after the sender webContents matched", () => {
-    expect(() => assertTrustedSender(trustedEvent(null), () => mainWindow())).not.toThrow();
+  it("rejects a missing sender frame even when the sender webContents matched", () => {
+    expect(() => assertTrustedSender(trustedEvent(null), () => mainWindow())).toThrow(
+      /untrusted renderer/,
+    );
     expect(() => assertTrustedSender(ipcEvent(8, null), () => mainWindow())).toThrow(
       /untrusted window/,
     );
@@ -235,13 +261,7 @@ describe("ipc validators", () => {
       requestQuit: vi.fn(),
     });
 
-    const handlerCall = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => {
-      return channel === "app:renderer-error";
-    });
-    expect(handlerCall).toBeDefined();
-    const handler = handlerCall?.[1] as (event: IpcMainInvokeEvent, payload: unknown) => void;
-
-    handler(trustedEvent(), {
+    ipcHandler("app:renderer-error")(trustedEvent(), {
       source: "error",
       message: "global crash",
       stack: "Error: global crash",
@@ -282,5 +302,38 @@ describe("ipc validators", () => {
     handler(event);
 
     expect(event.returnValue).toBe(true);
+  });
+
+  it("registers native window control handlers", () => {
+    const minimize = vi.fn();
+    const maximize = vi.fn();
+    const unmaximize = vi.fn();
+    const close = vi.fn();
+    const win = {
+      webContents: {
+        id: 7,
+        mainFrame: { processId: 1, routingId: 2, url: "http://127.0.0.1:1420/" },
+      },
+      minimize,
+      maximize,
+      unmaximize,
+      close,
+      isMaximized: vi.fn(() => false),
+    } as unknown as BrowserWindow;
+
+    registerIpc({
+      getMainWindow: () => win,
+      confirmClose: vi.fn(),
+      requestQuit: vi.fn(),
+    });
+
+    ipcHandler("app:window-minimize")(trustedEvent());
+    ipcHandler("app:window-toggle-maximize")(trustedEvent());
+    ipcHandler("app:window-close")(trustedEvent());
+
+    expect(minimize).toHaveBeenCalledTimes(1);
+    expect(maximize).toHaveBeenCalledTimes(1);
+    expect(unmaximize).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });

@@ -74,11 +74,17 @@ describe("shared Neovim file navigation", () => {
     expect(mocks.dismiss).toHaveBeenCalledWith("pending");
   });
 
-  it("waits for startup, opens, then reveals and focuses the newly mounted editor", async () => {
+  it("reveals the PTY before file opening finishes, then focuses the editor", async () => {
     let resolveStart!: () => void;
+    let resolveOpen!: () => void;
     mocks.start.mockReturnValueOnce(
       new Promise<void>((resolve) => {
         resolveStart = resolve;
+      }),
+    );
+    mocks.open.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveOpen = resolve;
       }),
     );
     const reveal = vi.fn(() => {
@@ -92,12 +98,14 @@ describe("shared Neovim file navigation", () => {
     await act(async () => resolveStart());
     expect(mocks.open).toHaveBeenCalledOnce();
     expect(reveal).toHaveBeenCalledOnce();
+    expect(mocks.dismiss).not.toHaveBeenCalled();
+    await act(async () => resolveOpen());
     act(() => vi.runAllTimers());
     expect(document.activeElement).toBe(hosts[0]);
   });
 
   it.each(["start", "open"] as const)(
-    "surfaces %s failure and clears loading without revealing",
+    "surfaces %s failure and clears loading",
     async (operation) => {
       mocks[operation].mockRejectedValueOnce(new Error("unavailable"));
       const reveal = vi.fn();
@@ -107,10 +115,37 @@ describe("shared Neovim file navigation", () => {
         description: "unavailable",
       });
       expect(mocks.dismiss).toHaveBeenCalledWith("pending");
-      expect(reveal).not.toHaveBeenCalled();
-      if (operation === "start") expect(mocks.open).not.toHaveBeenCalled();
+      if (operation === "start") {
+        expect(mocks.open).not.toHaveBeenCalled();
+        expect(reveal).not.toHaveBeenCalled();
+      } else {
+        expect(reveal).toHaveBeenCalledOnce();
+      }
     },
   );
+
+  it("shows the backend explanation when a file-open request is rejected", async () => {
+    mocks.open.mockRejectedValueOnce(
+      Object.assign(new Error("Request failed with status code 400"), {
+        isAxiosError: true,
+        response: { data: { error: "Bad request: Path is outside the project directory" } },
+      }),
+    );
+    const reveal = vi.fn();
+    const { result } = renderHook(() => useOpenFileInNeovim(2));
+
+    await act(async () => result.current?.("/docs/report.md", undefined, undefined, reveal));
+
+    expect(mocks.open).toHaveBeenCalledWith({
+      featureId: "2",
+      data: { path: "/docs/report.md", line: undefined, col: undefined },
+    });
+    expect(mocks.error).toHaveBeenCalledWith("Could not open /docs/report.md in Neovim", {
+      description: "Bad request: Path is outside the project directory",
+    });
+    expect(mocks.dismiss).toHaveBeenCalledWith("pending");
+    expect(reveal).toHaveBeenCalledOnce();
+  });
 
   it.each([
     ["0", false],

@@ -86,7 +86,8 @@ function AgentQuestionContent({
             onFocus={() => form.setFreeTextFocused(true)}
             onBlur={() => form.setFreeTextFocused(false)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") form.handleFreeTextSubmit();
+              if (event.key === "Enter" && !event.nativeEvent.isComposing)
+                form.handleFreeTextSubmit();
             }}
             placeholder="Type your answer..."
             className={cn(

@@ -83,7 +83,6 @@ pub async fn query(content: serde_json::Value, mut options: Options) -> Result<Q
 
     // Set up channel and shared state
     let (tx, rx) = mpsc::channel(256);
-    let (interrupt_tx, interrupt_rx) = mpsc::channel(4);
     let (kill_tx, kill_rx) = mpsc::channel(1);
     let session_id = Arc::new(Mutex::new(None));
     let mcp_servers = Arc::new(Mutex::new(Vec::new()));
@@ -104,7 +103,6 @@ pub async fn query(content: serde_json::Value, mut options: Options) -> Result<Q
         Arc::clone(&pending_control),
         cancelled_control_requests.clone(),
         cancel_token.clone(),
-        interrupt_rx,
         kill_rx,
     ));
 
@@ -118,7 +116,6 @@ pub async fn query(content: serde_json::Value, mut options: Options) -> Result<Q
         pending_control,
         control_request_counter,
         reader_task: Some(reader_task),
-        interrupt_tx,
         kill_tx,
         _cancel_token: cancel_token,
         pid,

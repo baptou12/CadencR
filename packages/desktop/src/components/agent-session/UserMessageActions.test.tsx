@@ -28,9 +28,11 @@ import { AgentSessionProvider } from "./agent-session-context";
 import { UserMessageActions } from "./UserMessageActions";
 import { UserMessageBlock } from "../UserMessageBlock";
 
+const NOOP_ACTIONS = { sendPrompt: vi.fn(), openModelPicker: vi.fn() };
+
 function renderActions(block: AgentBlockData, wsSessionId: string | null = "ws-feature-1") {
   return render(
-    <AgentSessionProvider value={{ wsSessionId }}>
+    <AgentSessionProvider value={{ wsSessionId, ...NOOP_ACTIONS }}>
       <UserMessageActions block={block} bubbleRef={{ current: null }} />
     </AgentSessionProvider>,
   );
@@ -205,7 +207,7 @@ describe("UserMessageActions", () => {
     useIsTouchDevice.mockReturnValue(true);
     const user = userEvent.setup();
     render(
-      <AgentSessionProvider value={{ wsSessionId: "ws-feature-1" }}>
+      <AgentSessionProvider value={{ wsSessionId: "ws-feature-1", ...NOOP_ACTIONS }}>
         <UserMessageBlock
           content="hello"
           renderActions={(bubbleRef) => (

@@ -5,6 +5,7 @@ use serde_json::json;
 use sqlx::{FromRow, QueryBuilder, Sqlite};
 
 use crate::domain::mcp::context::McpContext;
+use crate::domain::mcp::settings_tool::SettingsTool;
 use crate::domain::mcp::tools::audit::record_read_tool_audit;
 use crate::domain::mcp::tools::helpers::{error_result, require_i64, text_result};
 use crate::domain::mcp::tools::messages::{
@@ -74,6 +75,12 @@ pub async fn run_workspace_tool(
         "workspace_recent_activity" => workspace_activity::recent_activity(&ctx, &args).await,
         "workspace_send_session_message" => {
             project_control::send_workspace_session_message(&args, &ctx).await
+        }
+        "workspace_get_settings" => {
+            project_control::get_settings(&args, &ctx, SettingsTool::Workspace).await
+        }
+        "workspace_update_settings" => {
+            project_control::update_settings(&args, &ctx, SettingsTool::Workspace).await
         }
         _ => Err(format!("Unknown tool: {name}")),
     };

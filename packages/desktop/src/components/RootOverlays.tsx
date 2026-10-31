@@ -11,6 +11,8 @@ import { SchedulesShortcut } from "@/components/SchedulesShortcut";
 import { UnifiedAgentsShortcut } from "@/components/UnifiedAgentsShortcut";
 import { PostUpdateChangelogDialog } from "@/components/PostUpdateChangelogDialog";
 import { ThemeDrawer } from "@/components/theme/ThemeDrawer";
+import { PluginTabPresenceKeeper } from "@/components/plugin-tabs/PluginTabPresenceKeeper";
+import { PluginTabShortcutRelay } from "@/components/plugin-tabs/PluginTabShortcutRelay";
 import { useRemoteUpdateCheck } from "@/hooks/useRemoteUpdateCheck";
 import { useShortcutsHelpStore } from "@/stores/shortcuts-help-store";
 import { useListFeatureWorktrees, type Feature } from "@/api/generated";
@@ -82,7 +84,13 @@ export function RootOverlays({
       />
       <UnifiedAgentsShortcut />
       <SchedulesShortcut />
-      <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
+      <PluginTabPresenceKeeper />
+      <PluginTabShortcutRelay />
+      <KeyboardShortcutsModal
+        open={shortcutsHelpOpen}
+        onOpenChange={setShortcutsHelpOpen}
+        projectId={activeProjectId}
+      />
       <Toaster />
       <PostUpdateChangelogDialog />
       <ThemeDrawer />

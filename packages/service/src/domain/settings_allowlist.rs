@@ -333,6 +333,14 @@ mod tests {
         assert!(!is_project_key_allowed("agent_stream_summary_mode"));
     }
     #[test]
+    fn workspace_accepts_composer_context_meter_display() {
+        // Persisted by clicking the composer's context meter; without this the
+        // click 400s and the meter never changes.
+        assert!(is_workspace_key_allowed("composer_context_meter_display"));
+        assert!(!is_feature_key_allowed("composer_context_meter_display"));
+        assert!(!is_project_key_allowed("composer_context_meter_display"));
+    }
+    #[test]
     fn workspace_accepts_agent_message_navigator_enabled() {
         // Persisted by Settings → Interface → "Message navigator" toggle via
         // useDebouncedSetting; without this the toggle 400s.

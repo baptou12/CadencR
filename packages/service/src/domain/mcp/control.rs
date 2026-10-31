@@ -1,4 +1,5 @@
 use crate::app_state::AppState;
+use crate::domain::mcp::settings_tool::SettingsTool;
 use crate::error::AppError;
 use axum::{
     extract::{Query, State},
@@ -7,6 +8,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+pub(crate) mod archive_cleanup;
+mod archive_session;
 mod audit;
 mod create_schedule;
 mod gate_envelope;
@@ -25,6 +28,9 @@ mod schedule_scope;
 mod scope;
 mod send_message;
 mod send_message_modes;
+mod settings;
+mod settings_policy;
+pub mod side_question;
 mod spawn_follow;
 mod spawn_persist;
 mod spawn_resolve;
@@ -116,7 +122,25 @@ pub fn control_router() -> Router<AppState> {
             "/internal/mcp/project/delete-schedule",
             post(manage_schedule::delete_schedule_handler),
         )
+        .route(
+            "/internal/mcp/project/archive-session",
+            post(archive_session::archive_session_handler),
+        )
+        .merge(settings_routes(SettingsTool::Project))
+        .merge(settings_routes(SettingsTool::Workspace))
         .merge(gate_respond::routes())
+}
+
+fn settings_routes(tool: SettingsTool) -> Router<AppState> {
+    Router::new()
+        .route(
+            tool.read_endpoint(),
+            post(move |state, body| settings::read_handler(state, body, tool)),
+        )
+        .route(
+            tool.update_endpoint(),
+            post(move |state, body| settings::update_handler(state, body, tool)),
+        )
 }
 
 async fn project_context_handler(

@@ -109,22 +109,39 @@ package runners (`bash`, `node`, `python`, `npx`…) are refused
 `PLUGIN_EXEC_NOT_FOUND`, `PLUGIN_EXEC_TIMEOUT`, `PLUGIN_EXEC_OUTPUT_TOO_LARGE`,
 `PLUGIN_EXEC_BUSY`.
 
-**Native backend.** For a long-running process or your own dependencies:
-`"backend": { "command": "node", "args": ["backend/server.mjs"], "reasoning": "…" }`
-(`command` is a file in this folder or a program on `PATH`). Cadencr starts it
-with this folder as working directory on the first
-`await client.backend.request(method, params?)` and stops it when the tab
-closes. It reads JSON lines on stdin and answers on stdout:
+**Native backend.** For a long-running process or your own dependencies,
+ship a native executable (for example a small Rust program) per platform:
+`"backend": { "protocol": 1, "binary": { "darwin-aarch64": "bin/darwin-aarch64/backend", "linux-x86_64": "bin/linux-x86_64/backend" }, "reasoning": "…" }`.
+Platform keys are `darwin-aarch64`, `darwin-x86_64` and `linux-x86_64`; each
+path is a file in this folder. Scripts (`#!`), interpreters and programs on
+`PATH` are refused (`PLUGIN_BACKEND_NOT_NATIVE`); arm64 macOS binaries must be
+code-signed (the Rust linker ad-hoc signs them; else `codesign -s - <file>`).
+A platform without a binary cannot run the backend
+(`PLUGIN_BACKEND_UNAVAILABLE_ON_PLATFORM`). Cadencr starts it with this folder
+as working directory (treat it as read-only) on the first
+`await client.backend.request(method, params?)` and stops it about 30 s after
+the tab closes. In Rust, the `cadencr-tab-backend` crate implements the whole
+protocol (`serve(|cx| …)`); otherwise it reads JSON lines on stdin and answers
+on stdout (normative spec: docs/TAB_BACKEND_PROTOCOL.md in the Cadencr repo):
 
-1. first line: `{"type":"hello","worktree","feature_id","project_id","scopes","api":{"base_url","token_header","token"}}`
-   — call the Cadencr API with `fetch(api.base_url + path, { headers: { [api.token_header]: api.token } })`;
-   the token carries only this tab's permissions;
+1. first line: `{"type":"hello","protocol":1,"plugin":{"id","version"},"worktree","state_dir","feature_id","project_id","scopes","api":{"base_url","token_header","token"}}`
+   — write files only under `state_dir`; call the Cadencr API with
+   `api.base_url + path` and the header `api.token_header: api.token`; the
+   token carries only this tab's permissions. Answer with exactly
+   `{"type":"ready","protocol":1}` as your first stdout line within 5 s
+   (`PLUGIN_BACKEND_NOT_READY` otherwise; another protocol or line is
+   `PLUGIN_BACKEND_PROTOCOL_MISMATCH` and is not retried until restarted
+   from Activity);
 2. then `{"type":"request","id","method","params"}` lines; answer each with
    `{"type":"response","id","result"}` or `{"type":"response","id","error":{"code","message"}}`;
 3. write logs to stderr (shown in Activity), never to stdout; exit when stdin closes.
 
+`cadencr plugin validate <folder> --kind tab` runs this platform's binary
+through the protocol conformance checks; fix every failure it reports.
+
 A backend runs with the user's rights and is not sandboxed: keep it small and
-say exactly what it does in `reasoning`. Marketplace tabs cannot ship one.
+say exactly what it does in `reasoning`. A marketplace tab ships it as a signed
+native binary per platform, hashed against its signed digest before each start.
 
 ### Configuration and secrets
 
@@ -140,6 +157,19 @@ Secrets are never readable by the tab. Write `{{secret:<key>}}` in a
 service substitutes it before the request leaves the machine. A secret the
 user has not set fails the call with `PLUGIN_TAB_SECRET_UNKNOWN`.
 
+### Keyboard shortcuts
+
+`"shortcuts": [{ "id": "refresh", "keys": ["mod", "shift", "r"], "description": "Refresh" }]`
+declares keys the tab handles while it has focus (≤ 16). `keys`: `mod` (⌘ on
+macOS, Ctrl elsewhere), `ctrl`, `alt`, `shift`, plus exactly one key — a
+lowercase letter, a digit, `f1`–`f12`, `enter`, `escape`, `space`, an arrow
+(`up`…), `plus`, `minus`, `comma`, `slash`, `backtick`, `backspace`,
+`lbracket` or `rbracket` — and `mod`, `ctrl` or `alt` must be held. Handle a
+press with `useShortcut("refresh", () => …)`, not a `keydown` listener.
+Cadencr's own shortcuts always win: one on the same keys never fires (Settings
+→ Custom tabs says which Cadencr shortcut takes it; `client.shortcuts` lists
+the ids that can fire), so prefer `mod`+`alt` or `mod`+`shift`+`alt` chords.
+
 ## The SDK: `@cadencr/tab-sdk`
 
 `src/main.tsx` wraps the app in `<CadencrProvider>`, which connects and
@@ -149,7 +179,7 @@ to render your own). Inside it:
 
 ```tsx
 import {
-  useCadencr, useStorage, useStream, useTabContext, useTheme, useVisibility,
+  useCadencr, useShortcut, useStorage, useStream, useTabContext, useTheme, useVisibility,
 } from "@cadencr/tab-sdk/react";
 ```
 
@@ -158,6 +188,7 @@ import {
 | `useTabContext()` | `{ project: { id, name, path }, feature: { id, name, branch, baseBranch, worktreePath }, pullRequest: { number, url, state, title } \| null, session: { id, provider, status } \| null }` — live |
 | `useTheme()` | `{ id, appearance: "light" \| "dark", tokens }` — live |
 | `useVisibility()` | `true` while the tab is shown; pause polling and heavy work when `false` |
+| `useShortcut(id, handler)` | runs `handler` when the manifest shortcut `id` is pressed while the tab has focus |
 | `useStream(topic, handler, { params?, onResync?, onError?, enabled? })` | one subscription for the component's lifetime |
 | `useStorage(key, initial)` | `{ value, loading, error, set(value) }` for one storage key |
 | `useCadencr()` | the client (below) |

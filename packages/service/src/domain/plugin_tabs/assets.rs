@@ -25,6 +25,7 @@ use axum::response::{IntoResponse, Response};
 use cadencr_plugin_core::tab::read_tab_manifest;
 mod stream;
 
+use super::managed::policy::PolicySubject;
 use super::{paths, registry};
 use crate::error::AppError;
 
@@ -43,6 +44,7 @@ pub async fn serve(id: &str, path: &str) -> Result<Response, AppError> {
     let local_root = paths::tabs_dir();
     let managed_root = super::managed::storage::root();
     let (id, path) = (id.to_string(), path.to_string());
+    let policy = super::managed::policy::current()?;
     let (file, length, lease) = tokio::task::spawn_blocking(move || {
         let selected = paths::resolve_plugin_directory()
             .id(&id)
@@ -51,7 +53,14 @@ pub async fn serve(id: &str, path: &str) -> Result<Response, AppError> {
             .call()?;
         let (file, length) = locate(selected.directory(), &id, &path)?;
         if let paths::PluginDirectory::Managed(lease) = &selected {
-            lease.verify_asset(&file)?;
+            let revision = lease.verify_asset(&file)?;
+            // A blocked revision serves nothing (403 `PLUGIN_TAB_BLOCKED`);
+            // an out-of-date policy still lets the page load.
+            policy.require_not_blocked(PolicySubject::installed(
+                &id,
+                &revision.manifest.version,
+                &revision.facts,
+            ))?;
         }
         Ok::<_, AppError>((file, length, selected.into_lease()))
     })

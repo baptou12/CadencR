@@ -336,6 +336,17 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
   border-radius: 4px;
 }
 
+/* A conversation pointed at from elsewhere (an agent message's sender, see
+ * AgentMessageSender) lights up in place: a primary wash and rim, no layout
+ * change, so the list never moves under the pointer. */
+[data-nav-type="feature"][data-sidebar-pointed] {
+  background-color: color-mix(in oklab, var(--primary) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary) 55%, transparent);
+}
+[data-nav-type="feature"][data-sidebar-pointed] [data-feature-title][data-tone="quiet"] {
+  color: var(--foreground);
+}
+
 /* Manual order: where a dragged conversation would land, a 2px primary line
  * across the gap above or below the hovered row (`useRowReorder`), and the
  * dragged row stepping back while it travels. */

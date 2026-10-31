@@ -14,7 +14,7 @@ import {
 } from "@/lib/ws-reconnect";
 
 vi.mock("sonner", () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
+  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
 
 function createTestContext(session: SessionEntry): StoreAccessors {
@@ -566,6 +566,28 @@ describe("handleEnvelope error handling", () => {
         .blocks.slice(0, 2)
         .map((block) => block.promptDeliveryState),
     ).toEqual(["received_agent", "delivery_failed"]);
+  });
+
+  it("routes RUNTIME_CHANGE_DEFERRED to an info toast without failing the turn", () => {
+    vi.mocked(toast.info).mockClear();
+    vi.mocked(toast.error).mockClear();
+    const session = createSessionEntry();
+    session.lifecycle = { phase: "active" } as SessionEntry["lifecycle"];
+    const ctx = createTestContext(session);
+    const message =
+      "The agent is waiting on background work, so your new reasoning effort will apply to your first message after it finishes.";
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "error",
+      payload: { code: "RUNTIME_CHANGE_DEFERRED", message },
+    });
+
+    expect(toast.info).toHaveBeenCalledWith(message, { id: "RUNTIME_CHANGE_DEFERRED" });
+    expect(toast.error).not.toHaveBeenCalled();
+    const updated = ctx.getSession("s1");
+    expect(updated.lifecycle).toEqual({ phase: "active" });
+    expect(updated.blocks).toHaveLength(0);
   });
 
   it("routes MODE_NOT_SUPPORTED to a toast and leaves the agent stream untouched", () => {

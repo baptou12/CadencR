@@ -65,7 +65,7 @@ impl AcpProviderHooks for NormalizingHooks {
     }
 }
 
-async fn client_with_agent_io() -> (AcpClient, DuplexStream, BufReader<DuplexStream>) {
+pub(super) async fn client_with_agent_io() -> (AcpClient, DuplexStream, BufReader<DuplexStream>) {
     let (client_reads_stdout, agent_writes_stdout) = duplex(64 * 1024);
     let (agent_reads_stdin, client_writes_stdin) = duplex(64 * 1024);
     let client = AcpClient::spawn_with_streams(
@@ -83,7 +83,7 @@ async fn client_with_agent_io() -> (AcpClient, DuplexStream, BufReader<DuplexStr
     )
 }
 
-fn event_loop_config(cwd: PathBuf) -> EventLoopConfig {
+pub(super) fn event_loop_config(cwd: PathBuf) -> EventLoopConfig {
     let hooks = Arc::new(PlainHooks);
     EventLoopConfig {
         session_id: Arc::new(RwLock::new(Some("s-1".to_string()))),
@@ -106,16 +106,17 @@ fn event_loop_config(cwd: PathBuf) -> EventLoopConfig {
     }
 }
 
-async fn write_agent_request(stdout: &mut DuplexStream, request: Value) {
+pub(super) async fn write_agent_request(stdout: &mut DuplexStream, request: Value) {
     let mut frame = serde_json::to_vec(&request).unwrap();
     frame.push(b'\n');
     stdout.write_all(&frame).await.unwrap();
 }
 
-async fn read_agent_response(stdin: &mut BufReader<DuplexStream>) -> Value {
+pub(super) async fn read_agent_response(stdin: &mut BufReader<DuplexStream>) -> Value {
     let mut line = String::new();
+    // Subprocess-backed requests include process startup and output draining.
     tokio::time::timeout(
-        std::time::Duration::from_millis(500),
+        std::time::Duration::from_secs(5),
         stdin.read_line(&mut line),
     )
     .await

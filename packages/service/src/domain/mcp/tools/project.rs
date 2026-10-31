@@ -6,6 +6,7 @@ use serde_json::json;
 use sqlx::{FromRow, QueryBuilder, Sqlite};
 
 use crate::domain::mcp::context::McpContext;
+use crate::domain::mcp::settings_tool::SettingsTool;
 use crate::domain::mcp::tools::audit::record_read_tool_audit;
 use crate::domain::mcp::tools::helpers::{error_result, require_i64, text_result};
 use crate::domain::mcp::tools::messages::{
@@ -75,8 +76,15 @@ pub async fn run_project_tool(
         "project_list_schedules" => project_schedules::list_schedules(&ctx).await,
         "project_update_schedule" => project_control::update_schedule(&args, &ctx).await,
         "project_delete_schedule" => project_control::delete_schedule(&args, &ctx).await,
+        "project_archive_session" => project_control::archive_session(&args, &ctx).await,
         "project_list_pending_gates" => project_control::list_pending_gates(&args, &ctx).await,
         "project_respond_gate" => project_control::respond_gate(&args, &ctx).await,
+        "project_get_settings" => {
+            project_control::get_settings(&args, &ctx, SettingsTool::Project).await
+        }
+        "project_update_settings" => {
+            project_control::update_settings(&args, &ctx, SettingsTool::Project).await
+        }
         _ => Err(format!("Unknown tool: {name}")),
     };
     let result = if is_project_read_tool(name) {

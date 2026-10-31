@@ -36,6 +36,8 @@ pub struct PluginBackendCallError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginTabBackendState {
+    /// Started, and not yet `ready` (its handshake has 5 s): requests wait.
+    Starting,
     Running,
     /// Stopped by Cadencr (tab closed, turned off, permissions changed) or
     /// exited on its own with status 0.
@@ -48,6 +50,14 @@ pub enum PluginTabBackendState {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PluginTabBackendStatus {
     pub state: PluginTabBackendState,
+    /// Cadencr refuses to start it until the user allows a restart (`DELETE
+    /// /api/plugin-tabs/{id}/backends/{feature_id}`): it spoke another
+    /// protocol, crashed 3 times in a minute, or could not start 3 times in
+    /// a minute (that last one also lifts a minute after the first refusal).
+    pub restart_held: bool,
+    /// Why the last start was refused before anything ran (tampered binary,
+    /// policy unavailable, …), until a run starts again.
+    pub start_error: Option<String>,
     pub pid: Option<u32>,
     /// RFC 3339, of the current or last run.
     pub started_at: Option<String>,

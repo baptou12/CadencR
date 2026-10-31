@@ -1,3 +1,4 @@
+import { recordDiagnosticEvent } from "./renderer-diagnostics";
 import type { PromptAttachmentPayload } from "@/types/agent-types";
 import type { SlashCommandKind } from "@/lib/slash-command";
 import type { PromptCommandPolicyPayload } from "@/lib/prompt-command-policy";
@@ -43,7 +44,12 @@ export function parseEnvelope(raw: string): WsEnvelope {
   if (!parsed.domain || !parsed.action) {
     throw new Error("Invalid envelope: missing domain or action");
   }
-  return parsed as WsEnvelope;
+  const envelope = parsed as WsEnvelope;
+  recordDiagnosticEvent("stream", {
+    domain: /^[a-z_]{1,40}$/.test(envelope.domain) ? envelope.domain : "other",
+    action: /^[a-z_.]{1,80}$/.test(envelope.action) ? envelope.action : "other",
+  });
+  return envelope;
 }
 
 export function createSessionInit(config: SessionConfig): WsEnvelope {

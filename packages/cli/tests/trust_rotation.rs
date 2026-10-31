@@ -24,7 +24,7 @@ fn rotation() -> catalog::Fixture {
     );
     std::fs::write(
         root.join("previous-payload.json"),
-        cadencr_registry_core::validate_signing_payload_at(&previous, false, now).unwrap(),
+        cadencr_registry_core::validate_catalog_payload_at(&previous, false, now).unwrap(),
     )
     .unwrap();
     let output = Command::new("node")

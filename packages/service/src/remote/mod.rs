@@ -73,6 +73,8 @@ pub struct RemoteInfo {
     pub fingerprint: String,
     pub port: u16,
     pub lan_ips: Vec<IpAddr>,
+    /// Tunnel authority accepted by this running listener, fixed at startup.
+    pub tunnel_host: Option<String>,
 }
 
 #[derive(Debug)]
@@ -227,6 +229,7 @@ impl RemoteController {
             fingerprint: tls.fingerprint,
             port,
             lan_ips,
+            tunnel_host,
         };
         tracing::info!("remote access listening on {bound_addr}");
         rt.handle = Some(handle);

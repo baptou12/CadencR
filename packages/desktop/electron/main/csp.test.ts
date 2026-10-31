@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rendererCsp, resolveRendererCspDevelopment } from "./csp";
+import { rendererCsp, rendererDevelopmentHeaders, resolveRendererCspDevelopment } from "./csp";
 
 describe("rendererCsp", () => {
   it("uses a hardened production policy", () => {
@@ -12,6 +12,15 @@ describe("rendererCsp", () => {
     expect(csp).not.toContain("127.0.0.1:1420");
     expect(csp).toContain("http://127.0.0.1:5004");
     expect(csp).toContain("object-src 'none'");
+  });
+
+  it("frames only the service's HTTP origins (the visual sandbox shell)", () => {
+    const frameSrc = (csp: string) => csp.split("; ").find((line) => line.startsWith("frame-src"));
+
+    expect(frameSrc(rendererCsp(true))).toBe("frame-src http://127.0.0.1:5004");
+    const development = frameSrc(rendererCsp(false));
+    expect(development).toContain("http://127.0.0.1:5005");
+    expect(development).not.toContain("ws:");
   });
 
   it("allows Vite dev endpoints only for development", () => {
@@ -36,6 +45,27 @@ describe("rendererCsp", () => {
     expect(csp).toContain("ws://127.0.0.1:1421");
     expect(csp).not.toContain("127.0.0.1:5005");
     expect(csp).not.toContain("127.0.0.1:1420");
+  });
+
+  it("sends anti-framing response headers while preserving the complete generated development policy", () => {
+    const development = resolveRendererCspDevelopment({
+      VITE_API_URL: "http://127.0.0.1:5106",
+      VITE_FRONTEND_PORT: "1427",
+    });
+    const headers = rendererDevelopmentHeaders(development);
+    expect(headers["X-Frame-Options"]).toBe("DENY");
+    expect(headers["Content-Security-Policy"]).toBe(rendererCsp(false, development));
+    const directives = headers["Content-Security-Policy"].split("; ");
+    expect(directives.filter((value) => value.startsWith("frame-ancestors"))).toEqual([
+      "frame-ancestors 'none'",
+    ]);
+    expect(directives.find((value) => value.startsWith("connect-src"))).toContain(
+      "ws://127.0.0.1:1427",
+    );
+    expect(directives.find((value) => value.startsWith("script-src"))).toContain(
+      "'wasm-unsafe-eval'",
+    );
+    expect(directives).toContain("object-src 'none'");
   });
 
   it("ignores configured development endpoints in production", () => {

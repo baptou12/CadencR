@@ -2,16 +2,21 @@ import { Globe, ShieldCheck } from "lucide-react";
 import type { PluginTabSummary } from "@/api/generated";
 import { describeScope } from "./custom-tab-model";
 import { CustomTabExecution } from "./CustomTabExecution";
+import { NewMark } from "./CustomTabUpdateChanges";
+import type { AddedAccess } from "./update-changes";
 
 /**
  * What a tab may read, which sites it may reach and what it may run, in plain
  * words. The same list the consent dialog asks the user to accept, so the
- * card and the dialog never describe one permission two ways.
+ * card and the dialog never describe one permission two ways. Reviewing an
+ * update, `added` marks what the installed version did not ask for.
  */
 export function CustomTabPermissions({
   tab,
+  added,
 }: {
   tab: Pick<PluginTabSummary, "permissions" | "network" | "commands" | "backend">;
+  added?: AddedAccess;
 }): React.JSX.Element {
   const origins = tab.network.allowed_origins;
   return (
@@ -36,6 +41,7 @@ export function CustomTabPermissions({
                     <span className="ml-1.5 font-mono text-[10.5px] font-normal text-muted-foreground">
                       {scope}
                     </span>
+                    {added?.permissions.has(scope) ? <NewMark /> : null}
                   </p>
                   <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{description}</p>
                 </div>
@@ -44,8 +50,12 @@ export function CustomTabPermissions({
           })}
         </ul>
       )}
-      <NetworkAccess origins={origins} reasoning={tab.network.reasoning ?? null} />
-      <CustomTabExecution tab={tab} />
+      <NetworkAccess
+        origins={origins}
+        reasoning={tab.network.reasoning ?? null}
+        added={added?.origins}
+      />
+      <CustomTabExecution tab={tab} added={added} />
     </div>
   );
 }
@@ -53,9 +63,11 @@ export function CustomTabPermissions({
 function NetworkAccess({
   origins,
   reasoning,
+  added,
 }: {
   origins: string[];
   reasoning: string | null;
+  added?: ReadonlySet<string>;
 }): React.JSX.Element {
   if (origins.length === 0) {
     return (
@@ -77,6 +89,7 @@ function NetworkAccess({
               className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10.5px] text-foreground"
             >
               {origin}
+              {added?.has(origin) ? <NewMark /> : null}
             </li>
           ))}
         </ul>

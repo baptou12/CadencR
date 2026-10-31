@@ -371,6 +371,7 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
             .map_err(RuntimeError::from)?;
         Ok(Box::new(ClaudeCodeSession {
             query,
+            turn_control: Default::default(),
             prompt_receipts: std::sync::Arc::new(ClaudePromptReceipts::default()),
         }))
     }
