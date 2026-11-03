@@ -220,7 +220,18 @@ pub(super) fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
             }
             "turn_interrupted" => {
                 push_block(
-                    make_simple_block("turn_interrupted", String::new(), msg, id, None, true),
+                    // Empty for a user stop; `restart` when a restart cut the turn off.
+                    make_simple_block("turn_interrupted", msg.content.clone(), msg, id, None, true),
+                    parent_idx,
+                    &mut all,
+                    &mut root_indices,
+                );
+            }
+            // Rows Cadencr writes itself: a turn's closing line and a model
+            // switch the CLI reported. Content is their JSON detail.
+            "turn_summary" | "model_switch" => {
+                push_block(
+                    make_simple_block(&msg.message_type, msg.content.clone(), msg, id, None, true),
                     parent_idx,
                     &mut all,
                     &mut root_indices,
@@ -253,6 +264,20 @@ mod tests {
     fn test_build_blocks_empty() {
         let blocks = build_blocks(&[]);
         assert!(blocks.is_empty());
+    }
+
+    #[test]
+    fn turn_summaries_and_model_switches_are_returned_as_their_own_rows() {
+        let msgs = vec![
+            make_message(1, 1, "model_switch", r#"{"from":"a","to":"b"}"#),
+            make_message(2, 1, "text", "hello"),
+            make_message(3, 1, "turn_summary", r#"{"totalMs":1000}"#),
+        ];
+        let blocks = build_blocks(&msgs);
+        let types: Vec<&str> = blocks.iter().map(|block| block.type_.as_str()).collect();
+        assert_eq!(types, ["model_switch", "text", "turn_summary"]);
+        assert_eq!(blocks[2].id, "msg-3");
+        assert_eq!(blocks[2].content, r#"{"totalMs":1000}"#);
     }
 
     #[test]

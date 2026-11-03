@@ -1,3 +1,5 @@
+import { installSessionPresentationEffects } from "./ws-session-store";
+import { updateQuestionDraft, useQuestionDraftStore } from "./question-drafts";
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useWsSessionStore, applyMutations, createStreamingState } from "./ws-session-store";
@@ -59,7 +61,11 @@ class MockWebSocket {
 
 Object.assign(MockWebSocket, { OPEN: 1, CONNECTING: 0, CLOSED: 3 });
 
+let disposePresentation: () => void;
+
 beforeEach(() => {
+  disposePresentation = installSessionPresentationEffects({ onUserPromptDispatched: vi.fn() });
+  useQuestionDraftStore.setState({ drafts: new Map() });
   MockWebSocket.reset();
   canonicalMessageSequence = 1000;
   useWsSessionStore.setState({ sessions: {} });
@@ -70,6 +76,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  disposePresentation();
   // Disconnect all sessions to close WebSocket connections and clear pending state
   const store = useWsSessionStore.getState();
   for (const sessionId of Object.keys(store.sessions)) {
@@ -261,27 +268,6 @@ describe("ws-session-store", () => {
     expect(actions).not.toContain("destroy");
     expect(ws.readyState).toBe(MockWebSocket.CLOSED);
     expect(useWsSessionStore.getState().sessions["s1"]).toBeUndefined();
-  });
-
-  it("destroy sends destroy envelope and closes connection", async () => {
-    const store = useWsSessionStore.getState();
-    store.connect("s1");
-    await tick();
-    const ws = getWs();
-    ws.simulateMessage({
-      domain: "session",
-      action: "initialized",
-      payload: { session_id: "srv-1" },
-    });
-    store.destroy("s1");
-    const destroyMsg = JSON.parse(ws.sent[ws.sent.length - 1]);
-    expect(destroyMsg.action).toBe("destroy");
-    expect(destroyMsg.payload.session_id).toBe("srv-1");
-    expect(ws.readyState).toBe(MockWebSocket.CLOSED);
-    expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({
-      phase: "terminal",
-      reason: "completed",
-    });
   });
 
   it("sendPrompt waits for the canonical backend event without marking the agent running", async () => {
@@ -1196,7 +1182,7 @@ describe("ws-session-store", () => {
     // to rebuild the per-connection handle on the backend.
     expect(session.serverSessionId).toBe("srv-1");
     expect(session.runtimeSessionId).toBe("uuid-abc-123");
-    expect(session.conn).toBeNull();
+    expect(session).not.toHaveProperty("conn");
   });
 
   it("re-emits session.init on reconnect to rebuild the backend handle", async () => {
@@ -1405,18 +1391,102 @@ describe("ws-session-store", () => {
     const { store, ws } = await connectInitializedSession();
     simulatePermissionRequest(ws, "perm-retry");
 
-    store.respondToPermission("s1", "perm-retry", "allow_once");
-    const respondEnvelope = JSON.parse(ws.sent[ws.sent.length - 1]);
-    // Simulate the WS-level null payload that `sendRequest` resolves with on
-    // timeout — the gate stays so the user can retry once the WS recovers.
-    const session = useWsSessionStore.getState().sessions["s1"];
-    const cb = session.pendingWsRequests.get(respondEnvelope.id);
-    cb?.(null);
+    // Exercise the request timer: the gate stays so the user can retry.
+    vi.useFakeTimers();
+    try {
+      store.respondToPermission("s1", "perm-retry", "allow_once");
+      await vi.advanceTimersByTimeAsync(10_000);
+    } finally {
+      vi.useRealTimers();
+    }
     await tick();
 
     const after = useWsSessionStore.getState().sessions["s1"];
     expect(after.pendingPermission?.requestId).toBe("perm-retry");
     expect(after.submittingPermissionRequestId).toBeNull();
+  });
+
+  it.each(["error", "timeout"])(
+    "keeps question and draft on %s, then cleans only after ack",
+    async (failure) => {
+      const { store, ws } = await connectInitializedSession();
+      useWsSessionStore.setState(
+        updateSession(useWsSessionStore.getState(), "s1", { sessionDbId: 7 }),
+      );
+      simulateQuestionRequest(ws, "q-retry");
+      updateQuestionDraft({ sessionId: 7, requestId: "q-retry" }, (draft) => ({
+        ...draft,
+        freeText: "kept",
+      }));
+      store.respondToQuestion("s1", [["Sonnet"]]);
+      const first = lastSentEnvelope(ws, "permission.respond");
+      store.respondToQuestion("s1", [["Sonnet"]]);
+      expect(lastSentEnvelope(ws, "permission.respond").id).toBe(first.id);
+      expect(useWsSessionStore.getState().sessions.s1.pendingRequestId).toBe("q-retry");
+      ws.simulateMessage({
+        domain: "session",
+        action: "error",
+        ref: String(first.id),
+        payload: failure === "timeout" ? null : { code: "DB_ERROR", message: "Disk full" },
+      });
+      await tick();
+      const after = useWsSessionStore.getState().sessions.s1;
+      expect(after.pendingQuestions).toHaveLength(1);
+      expect(after.submittingPermissionRequestId).toBeNull();
+      expect(after.blocks.at(-1)?.type).toBe("error");
+      expect(useQuestionDraftStore.getState().drafts.get(7)?.draft.freeText).toBe("kept");
+      store.respondToQuestion("s1", [["Sonnet"]]);
+      const retry = lastSentEnvelope(ws, "permission.respond");
+      expect(retry.payload).toEqual(first.payload);
+      ws.simulateMessage({ domain: "session", action: "ack", ref: String(retry.id), payload: {} });
+      await tick();
+      expect(useWsSessionStore.getState().sessions.s1.pendingQuestions).toEqual([]);
+      expect(useQuestionDraftStore.getState().drafts.has(7)).toBe(false);
+    },
+  );
+
+  it("keeps a draft on failed close and removes it on confirmed close/replacement", async () => {
+    const { store, ws } = await connectInitializedSession();
+    useWsSessionStore.setState(
+      updateSession(useWsSessionStore.getState(), "s1", { sessionDbId: 7 }),
+    );
+    simulateQuestionRequest(ws, "q-close");
+    updateQuestionDraft({ sessionId: 7, requestId: "q-close" }, (draft) => ({
+      ...draft,
+      freeText: "kept",
+    }));
+    store.closeGate("s1", "escape");
+    ws.simulateMessage({
+      domain: "session",
+      action: "error",
+      payload: { code: "DB_ERROR", message: "Disk full" },
+    });
+    expect(useQuestionDraftStore.getState().drafts.has(7)).toBe(true);
+    ws.simulateMessage({
+      domain: "session",
+      action: "gate.closed",
+      payload: { request_id: "q-close", reason: "escape" },
+    });
+    expect(useQuestionDraftStore.getState().drafts.has(7)).toBe(false);
+    simulateQuestionRequest(ws, "q-new");
+    updateQuestionDraft({ sessionId: 7, requestId: "q-new" }, (draft) => ({
+      ...draft,
+      freeText: "new",
+    }));
+    store.respondToQuestion("s1", [["Sonnet"]]);
+    const response = lastSentEnvelope(ws, "permission.respond");
+    simulateQuestionRequest(ws, "q-replaced");
+    updateQuestionDraft({ sessionId: 7, requestId: "q-replaced" }, (draft) => ({
+      ...draft,
+      freeText: "replacement",
+    }));
+    ws.simulateMessage({ domain: "session", action: "ack", ref: String(response.id), payload: {} });
+    await tick();
+    expect(useWsSessionStore.getState().sessions.s1.pendingRequestId).toBe("q-replaced");
+    expect(
+      useWsSessionStore.getState().sessions.s1.permissionResponseMessageUuids.has("q-new"),
+    ).toBe(false);
+    expect(useQuestionDraftStore.getState().drafts.get(7)?.draft.freeText).toBe("replacement");
   });
 
   it("new session starts with no selection until the backend confirms one", async () => {
@@ -1506,7 +1576,7 @@ describe("ws-session-store", () => {
     expect(session.accessMode).toBe("fullAccess");
   });
 
-  it("session.initialized with Cursor access mode updates the stored access chip", async () => {
+  it("session.initialized with a provider-neutral access mode updates the access chip", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -1516,7 +1586,7 @@ describe("ws-session-store", () => {
       action: "initialized",
       payload: {
         session_id: "42",
-        provider: "cursor",
+        provider: "codex_cli",
         access_mode: "autoReview",
       },
     });
@@ -3310,59 +3380,14 @@ describe("ws-session-store", () => {
       });
     });
 
-    it("records active and user-pending timing across permission-gated turns", async () => {
+    it("leaves a turn's closing line to the backend instead of measuring it locally", async () => {
       const ws = await setupActiveSession();
-      vi.useFakeTimers();
-      vi.setSystemTime(1_000);
-      const store = useWsSessionStore.getState();
+      useWsSessionStore.getState().sendPrompt("s1", "build it");
+      streamTextMessage(ws, "done");
+      ws.simulateMessage({ domain: "session", action: "turn_complete", payload: {} });
 
-      store.sendPrompt("s1", "build it");
-      vi.setSystemTime(4_000);
-      ws.simulateMessage({
-        domain: "session",
-        action: "permission.request",
-        payload: { request_id: "req-1", tool_name: "Bash", tool_input: {} },
-      });
-      vi.setSystemTime(9_000);
-      streamTextMessage(ws, "resumed after permission");
-      vi.setSystemTime(11_000);
-      ws.simulateMessage({
-        domain: "session",
-        action: "turn_complete",
-        payload: {},
-      });
-
-      const session = useWsSessionStore.getState().sessions["s1"];
-      expect(session.turnTiming.completed).toEqual({
-        totalMs: 7_000,
-        activeMs: 2_000,
-        userPendingMs: 5_000,
-      });
-      expect(session.blocks.at(-1)).toMatchObject({
-        type: "turn_summary",
-        content: "Worked - 7s · Agent 2s · Waiting 5s",
-      });
-      vi.useRealTimers();
-    });
-
-    it("adds a visible turn summary even when a turn completes without output blocks", async () => {
-      const ws = await setupActiveSession();
-      vi.useFakeTimers();
-      vi.setSystemTime(1_000);
-
-      streamTextMessage(ws, "");
-      vi.setSystemTime(4_000);
-      ws.simulateMessage({
-        domain: "session",
-        action: "turn_complete",
-        payload: {},
-      });
-
-      expect(useWsSessionStore.getState().sessions["s1"].blocks.at(-1)).toMatchObject({
-        type: "turn_summary",
-        content: "Worked - 3s · Agent 3s · Waiting 0s",
-      });
-      vi.useRealTimers();
+      const blocks = useWsSessionStore.getState().sessions["s1"].blocks;
+      expect(blocks.some((block) => block.type === "turn_summary")).toBe(false);
     });
   });
 

@@ -108,6 +108,7 @@ export type UpdateEvent =
     };
 
 export type { RendererErrorReportPayload } from "@/shared/renderer-error";
+import type { AppCloseChoice, AppCloseRequest } from "@/shared/app-close";
 
 export interface CadencrDesktopBridge {
   isElectron: boolean;
@@ -131,13 +132,14 @@ export interface CadencrDesktopBridge {
   onNotificationClicked: (cb: (payload: NotificationClickPayload) => void) => () => void;
   onNotificationFailed: (cb: (payload: { reason: string }) => void) => () => void;
   onNotificationFallback: (cb: (payload: NotificationFallbackPayload) => void) => () => void;
-  onCloseRequested: (cb: () => void) => () => void;
-  confirmClose: () => Promise<void>;
+  onCloseRequested: (cb: (request: AppCloseRequest) => void) => () => void;
+  confirmClose: (choice?: AppCloseChoice) => Promise<void>;
   requestQuit: () => Promise<void>;
   windowMinimize?: () => Promise<void>;
   windowToggleMaximize?: () => Promise<void>;
   windowClose?: () => Promise<void>;
   exportRendererDiagnostics?: (context: DiagnosticContext) => Promise<{ canceled: boolean }>;
+  telemetryRelayStatus?: () => Promise<"idle" | "unavailable" | "frames_unavailable">;
   reportRendererError?: (payload: RendererErrorReportPayload) => Promise<void>;
   setZoom: (factor: number) => Promise<void>;
   /** Centers the macOS traffic lights on a band `center` CSS px from the top; null restores them. */
@@ -165,6 +167,7 @@ export interface CadencrDesktopBridge {
 
 export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   exportRendererDiagnostics: (context: DiagnosticContext) => Promise<{ canceled: boolean }>;
+  telemetryRelayStatus?: () => Promise<"idle" | "unavailable" | "frames_unavailable">;
   reportRendererError: (payload: RendererErrorReportPayload) => Promise<void>;
   setTrafficLightsCenter: (center: number | null) => Promise<void>;
   // The macOS notch island; the browser fallback resolves them as unsupported.

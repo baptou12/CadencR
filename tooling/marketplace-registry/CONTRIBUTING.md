@@ -6,7 +6,7 @@ The next milestone populates reviewed themes and Pi before a separately authoriz
 desktop activation. Local validation is not publication authority. All business
 validation/packaging/publication uses the Rust CLI, not registry JavaScript.
 Standalone preflight and expiry commands are included in the locally selected,
-qualified `0.15.2`. Selection does not deploy the production
+qualified `0.15.4`. Selection does not deploy the production
 workflow or grant publication authority.
 See [runtime and deployment gates](README.md#status-and-runtime).
 
@@ -28,6 +28,7 @@ See [runtime and deployment gates](README.md#status-and-runtime).
 | Declarative theme                | `cadencr plugin validate <folder> --kind theme`                                                                      | `cadencr registry pack-theme --directory <staging> --output <new.tar.gz>`                                                                                                                    |
 | Custom tab                       | `cadencr plugin validate <folder> --kind tab`                                                                        | `cadencr registry pack-tab --directory <compiled-staging> --output <new.tar.gz>`                                                                                                             |
 | Custom tab with a native backend | `cadencr plugin validate <folder> --kind tab` (runs this platform's backend through the protocol conformance checks) | `pack-tab` for the web archive, then `cadencr registry pack-tab-backend --directory <tab-folder> --target <platform> --output <new.tar.gz>` for each platform in `tab.json` `backend.binary` |
+| Multi-export plugin              | `cadencr plugin validate <folder> --kind plugin` (`plugin.json`, then each member with its own kind's validator)     | Each member with its own kind's command above, every archive in one author release; see [Multi-export plugins](AUTHORING.md#multi-export-plugins)                                            |
 
 Providers must implement the documented executable/ACP contract and pass native
 runtime/conformance tests on every declared platform. A theme remains declarative
@@ -75,6 +76,10 @@ checks continuity against the authenticated prior signed catalog.
 ## Identity, ownership and licensing
 
 - IDs use `^[a-z][a-z0-9-]*$`; normalized collisions and reserved identities fail.
+  The migrated `cursor` identity is accepted only for the official `cadencr`
+  publisher from a `merkr-software` repository, with an explicit minimum host
+  version of `0.16.0` or newer. Other built-in identities and normalized
+  lookalikes remain reserved.
 - New identities require proof of authority over the linked source project.
 - The `host.publisher` value `cadencr` (any letter case) is reserved for the
   official `merkr-software` GitHub organisation. A package or submission that

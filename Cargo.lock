@@ -816,7 +816,7 @@ dependencies = [
 
 [[package]]
 name = "cadencr-cli"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "bon",
  "cadencr-plugin-core",
@@ -836,7 +836,7 @@ dependencies = [
 
 [[package]]
 name = "cadencr-plugin-core"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "bon",
  "libc",
@@ -852,17 +852,32 @@ dependencies = [
 ]
 
 [[package]]
-name = "cadencr-provider-sdk"
-version = "0.2.0"
+name = "cadencr-plugin-provider-cursor"
+version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
  "bon",
+ "cadencr-provider-sdk",
+ "libc",
+ "regex-lite",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "cadencr-provider-sdk"
+version = "0.3.0"
+dependencies = [
+ "agent-client-protocol",
+ "bon",
+ "serde",
  "serde_json",
 ]
 
 [[package]]
 name = "cadencr-registry-core"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "base64 0.23.1",
  "bon",
@@ -885,7 +900,7 @@ dependencies = [
 
 [[package]]
 name = "cadencr-registry-publisher"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -909,7 +924,7 @@ dependencies = [
 
 [[package]]
 name = "cadencr-service"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -930,7 +945,6 @@ dependencies = [
  "claude-agent-sdk-rs",
  "cli-discovery",
  "codex-app-server-sdk-rs",
- "cursor-agent-sdk-rs",
  "dashmap",
  "dirs",
  "dotenvy",
@@ -986,7 +1000,7 @@ dependencies = [
 
 [[package]]
 name = "cadencr-tab-backend"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bon",
  "libc",
@@ -1123,7 +1137,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "claude-agent-sdk-rs"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "async-trait",
  "bon",
@@ -1145,7 +1159,7 @@ dependencies = [
 
 [[package]]
 name = "cli-discovery"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "bon",
  "futures 0.3.34",
@@ -1184,7 +1198,7 @@ dependencies = [
 
 [[package]]
 name = "codex-app-server-sdk-rs"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "bon",
  "cli-discovery",
@@ -1453,18 +1467,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38d28fb6aa7dd680b3ffd1a3e64e115c177bdba63c0ae7f9cd48129ff05c4fa0"
 dependencies = [
  "cmov",
-]
-
-[[package]]
-name = "cursor-agent-sdk-rs"
-version = "0.15.1"
-dependencies = [
- "bon",
- "cli-discovery",
- "once_cell",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
 ]
 
 [[package]]
@@ -3433,7 +3435,7 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "opencode-sdk-rs"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "axum",
  "bon",

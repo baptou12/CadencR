@@ -1,19 +1,26 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
+import type { ReactNode } from "react";
 import { render, screen } from "@/test-utils";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 
 const generatedMocks = vi.hoisted(() => ({
   getProjectSettings: vi.fn(),
-  marketplaceEnabled: true,
   getPublicationReadiness: vi.fn(),
   preparePublicationPackage: vi.fn(),
   setProjectSetting: vi.fn(),
 }));
 
-vi.mock("@/lib/marketplace-gate", () => ({
-  get MARKETPLACE_ENABLED() {
-    return generatedMocks.marketplaceEnabled;
-  },
+vi.mock("@tanstack/react-router", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-router")>()),
+  Link: ({
+    children,
+    to,
+    search,
+  }: {
+    children: ReactNode;
+    to: string;
+    search?: Record<string, string>;
+  }) => <a href={search ? `${to}?${new URLSearchParams(search)}` : to}>{children}</a>,
 }));
 
 vi.mock("../api/generated", async (importOriginal) => ({
@@ -31,13 +38,16 @@ vi.mock("../api/generated", async (importOriginal) => ({
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
 }));
 
+// The custom actions list is covered by its own tests.
+vi.mock("./custom-actions/CustomActionsManager", () => ({
+  CustomActionsManager: () => null,
+}));
 vi.mock("./ModelSelector", () => ({
   ModelSelector: () => <div data-testid="model-selector" />,
 }));
 
 describe("ProjectSettingsDialog", () => {
   beforeEach(() => {
-    generatedMocks.marketplaceEnabled = true;
     generatedMocks.getPublicationReadiness.mockClear();
     generatedMocks.getProjectSettings.mockReturnValue({ data: [] });
     generatedMocks.getPublicationReadiness.mockReturnValue({
@@ -49,27 +59,6 @@ describe("ProjectSettingsDialog", () => {
     });
     generatedMocks.setProjectSetting.mockClear();
   });
-
-  it.each(["provider", "theme"] as const)(
-    "hides publication and its hooks for %s projects while retaining local settings",
-    (authoringTarget) => {
-      generatedMocks.marketplaceEnabled = false;
-      render(
-        <ProjectSettingsDialog
-          projectId={1}
-          projectName="Local plugin"
-          authoringTarget={authoringTarget}
-          open
-          onOpenChange={vi.fn()}
-        />,
-      );
-      expect(generatedMocks.getPublicationReadiness).not.toHaveBeenCalled();
-      expect(screen.queryByText(/publication preparation/i)).not.toBeInTheDocument();
-      expect(screen.queryByText(/Prepare a local .* bundle/i)).not.toBeInTheDocument();
-      expect(screen.getByText("Worktree setup commands")).toBeInTheDocument();
-      expect(screen.getByText("Local plugin")).toBeInTheDocument();
-    },
-  );
 
   it("renders nothing when closed", () => {
     const { container } = render(
@@ -94,6 +83,10 @@ describe("ProjectSettingsDialog", () => {
     );
     expect(screen.getByText("My Project")).toBeInTheDocument();
     expect(screen.getByText(/Project settings/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Browse language servers" })).toHaveAttribute(
+      "href",
+      "/marketplace?kind=lsp",
+    );
   });
 
   it("renders branch prefix input", () => {

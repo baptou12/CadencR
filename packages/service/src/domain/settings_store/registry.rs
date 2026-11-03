@@ -17,12 +17,19 @@ mod sidebar;
 pub enum ValueKind {
     /// `"true"` or `"false"`.
     Bool,
+    LspLanguages,
+    StringArray,
     /// One of a fixed set of strings.
     Enum(&'static [&'static str]),
     /// Parses as a number.
     Number,
     /// Parses as an integer within an inclusive range.
-    IntegerRange { min: i64, max: i64 },
+    IntegerRange {
+        min: i64,
+        max: i64,
+    },
+    /// Comma-separated values from a fixed set, none twice; empty is the empty list.
+    IdList(&'static [&'static str]),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -40,6 +47,9 @@ impl SettingSpec {
     pub fn is_valid(&self, value: &str) -> bool {
         match self.kind {
             ValueKind::Bool => value == "true" || value == "false",
+            ValueKind::LspLanguages => crate::domain::lsp::selection::valid_preferences(value),
+            ValueKind::StringArray => serde_json::from_str::<Vec<String>>(value)
+                .is_ok_and(|ids| ids.iter().all(|id| !id.is_empty())),
             ValueKind::Enum(allowed) => allowed.contains(&value),
             ValueKind::Number => value
                 .trim()
@@ -49,8 +59,19 @@ impl SettingSpec {
                 .trim()
                 .parse::<i64>()
                 .is_ok_and(|number| (min..=max).contains(&number)),
+            ValueKind::IdList(allowed) => is_id_list(value, allowed),
         }
     }
+}
+
+fn is_id_list(value: &str, allowed: &[&str]) -> bool {
+    if value.is_empty() {
+        return true;
+    }
+    let ids: Vec<&str> = value.split(',').collect();
+    ids.iter()
+        .enumerate()
+        .all(|(index, id)| allowed.contains(id) && !ids[..index].contains(id))
 }
 
 const BOOL: ValueKind = ValueKind::Bool;
@@ -61,6 +82,8 @@ const NUMBER: ValueKind = ValueKind::Number;
 /// at the other. Returns `None` for keys not in this set.
 fn editor_tooling_spec(key: &str) -> Option<SettingSpec> {
     let spec = match key {
+        "editor_lsp_languages" => SettingSpec::new(ValueKind::LspLanguages, None),
+        "editor_lsp_ignored_languages" => SettingSpec::new(ValueKind::StringArray, None),
         "editor_typescript_server" => SettingSpec::new(
             ValueKind::Enum(&["typescript-language-server", "tsgo"]),
             Some("typescript-language-server"),
@@ -84,6 +107,12 @@ pub fn workspace_spec(key: &str) -> Option<SettingSpec> {
     if let Some(spec) = editor_tooling_spec(key).or_else(|| sidebar::sidebar_display_spec(key)) {
         return Some(spec);
     }
+    if crate::domain::settings_allowlist::is_provider_access_mode_key(key) {
+        return Some(SettingSpec::new(
+            ValueKind::Enum(&["default", "fullAccess", "autoReview"]),
+            Some("default"),
+        ));
+    }
     let spec = match key {
         // Booleans default to "false" — the historical "unset == off" behavior.
         "editor_vim_mode"
@@ -105,7 +134,8 @@ pub fn workspace_spec(key: &str) -> Option<SettingSpec> {
         | "animations_enabled"
         | "notch_always_on"
         | "browser_mcp_enabled"
-        | "project_mcp_enabled" => SettingSpec::new(BOOL, Some("true")),
+        | "project_mcp_enabled"
+        | "agent_restart_resume_enabled" => SettingSpec::new(BOOL, Some("true")),
         "workspace_mcp_enabled" => SettingSpec::new(BOOL, Some("true")),
         "workspace_mcp_max_result_chars" => SettingSpec::new(NUMBER, Some("100000")),
         // Storage retention is the only lossy maintenance pass, so users must
@@ -184,6 +214,17 @@ mod tests {
         assert!(spec.is_valid("false"));
         assert!(!spec.is_valid("yes"));
         assert_eq!(spec.default, Some("true"));
+    }
+
+    #[test]
+    fn provider_access_mode_defaults_accept_only_access_mode_ids() {
+        let spec = workspace_spec("provider_access_mode.acme-agent").unwrap();
+        for value in ["default", "fullAccess", "autoReview"] {
+            assert!(spec.is_valid(value), "{value}");
+        }
+        assert!(!spec.is_valid("bypassPermissions"));
+        assert_eq!(spec.default, Some("default"));
+        assert!(workspace_spec("provider_access_mode.Bad Id").is_none());
     }
 
     #[test]

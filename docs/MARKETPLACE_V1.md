@@ -54,8 +54,8 @@ The remaining work follows the waves below.
 - Explicit current governance: only `rle-mino` may push `main`; no teams/apps,
   `enforce_admins: true`, no mandatory reviews or CI checks. CI remains advisory.
   This supersedes earlier policy requirements, not package-integrity gates.
-- Monorepo registry, author and qualification pins select stable `0.15.2`;
-  see the [0.15.2 evidence](qa/MARKETPLACE_STABLE_CLI_0152_2026_10_25.md). The
+- Monorepo registry, author and qualification pins select stable `0.15.4`;
+  see the [provider-author and offline qualification](qa/MARKETPLACE_STABLE_CLI_0154_2026_11_02.md). The
   deployed registry pin follows separately (wave 4).
   No official Graphite, Ember, Fjord or Pi release, production signing/feed
   publication or desktop activation follows from SDK/CLI publication.
@@ -422,6 +422,11 @@ that work; an optional official tab must not hold up the initial four plugins.
       way verified the production catalog (5 entries, `cadencr-registry-1`)
       and installed a theme. Re-enable with the
       [activation runbook](MARKETPLACE_RELEASE_CONFIG.md#activation-runbook).
+      **2026-10-28:** on the release owner's go, activated for v0.16.0 on
+      `feature/plan-cadencr-v0-16-0-features-9ee8`: the gate is removed again,
+      the nine repository variables are set, and the desktop release workflows
+      now refuse a build without the root trust and catalog feeds
+      (`validate-marketplace-build-env.mjs --require-catalog`).
 
 ### Dependencies and delivery boundaries
 
@@ -1027,9 +1032,12 @@ and a separately authorized activation clears every gate.
       install/publication against real deployed artifacts, and assign operational owners.
 - [ ] Separately authorize official roots/feed activation and public UI exposure.
 
-Internal QA can opt in with `VITE_INTERNAL_MARKETPLACE=true` in a DEV renderer
-only; production builds cannot expose the marketplace through that environment
-variable. This is not a public activation switch.
+The marketplace UI is visible in every desktop build; there is no renderer
+opt-in. Whether it can browse or install anything depends only on the feed and
+trust configuration compiled into the service. A build without that
+configuration (dev builds, forks) shows the marketplace as unavailable: the
+catalog page says it is not available in this build and offers no retry, and
+anything already installed stays manageable.
 
 ### Milestone evidence — 2026-10-12
 

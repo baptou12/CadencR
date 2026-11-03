@@ -50,19 +50,22 @@ pub(crate) enum PluginCommand {
         #[arg(long)]
         confirm_request_sha256: String,
     },
-    /// Validate a provider plugin folder against an explicit descriptor.
+    /// Validate a provider (against an explicit descriptor), theme, custom-tab
+    /// or multi-export plugin folder.
     Validate {
         /// Provider workspace containing the existing bin/provider entrypoint.
         folder: PathBuf,
         /// Temporary explicit host descriptor input; never discovered from user state.
         #[arg(long, required_if_eq("kind", "provider"))]
         descriptor: Option<PathBuf>,
-        /// Content kind; themes and custom tabs are validated from their own
-        /// manifest and need no provider descriptor.
+        /// Content kind; themes, custom tabs and multi-export plugins are
+        /// validated from their own manifest and need no provider descriptor
+        /// (a plugin's provider members name theirs in `plugin.json`).
         #[arg(long, value_enum, default_value_t = PluginKind::Provider)]
         kind: PluginKind,
-        /// Custom tabs: do not run the backend's protocol conformance checks
-        /// (static checks still apply), for machines that cannot execute it.
+        /// Custom tabs (and plugin tab members): do not run the backend's
+        /// protocol conformance checks (static checks still apply), for
+        /// machines that cannot execute it.
         #[arg(long)]
         no_run: bool,
     },
@@ -74,6 +77,9 @@ pub(crate) enum PluginKind {
     Provider,
     Theme,
     Tab,
+    Lsp,
+    /// A multi-export plugin: `plugin.json` and each member folder it names.
+    Plugin,
 }
 
 #[derive(Debug, Args)]
@@ -88,6 +94,8 @@ pub(crate) enum RegistryCommand {
     Diagnostics(crate::metadata::MetadataCommand),
     #[command(flatten)]
     TabBackend(TabBackendCommand),
+    #[command(flatten)]
+    Lsp(crate::lsp::LspCommand),
     #[command(flatten)]
     Policy(crate::policy::PolicyCommand),
     /// Validate a candidate contribution relative to a base registry.
@@ -244,6 +252,7 @@ impl Cli {
                 ) | RegistryCommand::PackProvider { .. }
                     | RegistryCommand::PackTheme { .. }
                     | RegistryCommand::PackTab { .. }
+                    | RegistryCommand::Lsp(crate::lsp::LspCommand::PackLsp { .. })
                     | RegistryCommand::TabBackend(TabBackendCommand::PackTabBackend { .. })
             })
         )

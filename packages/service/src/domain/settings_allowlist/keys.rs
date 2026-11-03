@@ -47,6 +47,8 @@ pub const PROJECT_ALLOWED_KEYS: &[&str] = &[
     // toggles auto-format on save.
     "editor_typescript_server",
     "editor_linter",
+    "editor_lsp_languages",
+    "editor_lsp_ignored_languages",
     "editor_formatter",
     "editor_format_on_save",
     // Project-scoped JSON map of exact-file and extension language-mode
@@ -71,7 +73,6 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "claude_bypass_permissions_enabled",
     "codex_full_access_enabled",
     "codex_permission_mode",
-    "cursor_access_mode",
     // UI chrome
     "sidebar_left_width",
     "sidebar_provider_logos",
@@ -122,6 +123,8 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // project-then-workspace). Mirrored in PROJECT_ALLOWED_KEYS.
     "editor_typescript_server",
     "editor_linter",
+    "editor_lsp_languages",
+    "editor_lsp_ignored_languages",
     "editor_formatter",
     "editor_format_on_save",
     // File-tree icon set used by the editor's @pierre/trees-based file tree.
@@ -235,6 +238,10 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "browser_mcp_enabled",
     "project_mcp_enabled",
     "workspace_mcp_enabled",
+    // "true"/"false" (default enabled): after a restart (update, rebuild,
+    // crash), resume the agent turns it interrupted. Read by
+    // `domain::restart_continuations`.
+    "agent_restart_resume_enabled",
     "workspace_mcp_max_result_chars",
     // Storage retention. `retention_compact_archived_enabled` toggles the sweep
     // that strips heavy tool payloads (terminal output, screenshots) out of
@@ -272,6 +279,8 @@ pub const SIDEBAR_DISPLAY_KEYS: &[&str] = &[
     "sidebar_density",
     "sidebar_font_size",
     "sidebar_title_lines",
+    "sidebar_row_height",
+    "sidebar_color_mode",
     "sidebar_title_source",
     "sidebar_row_status",
     "sidebar_row_time",
@@ -308,6 +317,8 @@ pub const SIDEBAR_DISPLAY_KEYS: &[&str] = &[
     "sidebar_row_todos",
     "sidebar_uniform_rows",
     "sidebar_compact_rows",
+    "sidebar_block_order",
+    "sidebar_folded_blocks",
 ];
 
 #[cfg(test)]

@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 mod acquisition;
-pub use acquisition::{acquire, acquire_catalog};
+pub use acquisition::{acquire, acquire_catalog, cached_catalog};
 
 pub fn verify(
     index: &SignedMixedCatalog,
@@ -51,10 +51,8 @@ pub fn resolve_kind(
     version: &str,
     kind: &str,
 ) -> Result<Value, AppError> {
-    let entry = index
-        .signed
-        .packages
-        .iter()
+    // Plugin members resolve like standalone entries of their kind.
+    let entry = cadencr_registry_core::catalog_members(&index.signed.packages)
         .find(|entry| {
             entry["kind"] == kind
                 && entry["package"][kind]["id"] == id
@@ -163,7 +161,7 @@ pub fn recommended_for(
     admit: impl Fn(&Value) -> bool,
 ) -> BTreeMap<String, String> {
     let mut recommended: BTreeMap<&str, (&str, semver::Version)> = BTreeMap::new();
-    for entry in &index.signed.packages {
+    for entry in cadencr_registry_core::catalog_members(&index.signed.packages) {
         let Some((id, version)) = package_version(entry, kind) else {
             continue;
         };

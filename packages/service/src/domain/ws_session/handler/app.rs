@@ -33,6 +33,12 @@ pub(super) async fn handle_app_action(
             "prompt_queue_changed",
             OnLag::ResendBare,
         ),
+        "subscribe.custom_action_events" => forward_app_events(
+            sender,
+            app_state.custom_action_events_tx.subscribe(),
+            "custom_action_event",
+            OnLag::ResendBare,
+        ),
         "subscribe.alacritty_config_events" => {
             handle_subscribe_alacritty_config_events(sender, app_state).await
         }
@@ -50,6 +56,9 @@ pub(super) async fn handle_app_action(
         }
         "subscribe.provider_update_events" => {
             super::app_notifications::subscribe_provider_update_events(sender, app_state)
+        }
+        "subscribe.restart_continuation_events" => {
+            super::app_notifications::subscribe_restart_continuation_events(sender)
         }
         "subscribe.storage_maintenance_events" => {
             super::app_notifications::subscribe_storage_maintenance(sender, app_state)
