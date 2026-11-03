@@ -24,6 +24,7 @@ import type {
 } from "../main/browser-types";
 import type { ChangelogImageBytes } from "../../src/shared/changelog-image";
 import type { RendererErrorReportPayload } from "../../src/shared/renderer-error";
+import type { AppCloseChoice, AppCloseRequest } from "../../src/shared/app-close";
 import { notchHostBridge } from "./notch-host-bridge";
 import { installPluginTabPortRelay, pluginTabsHostBridge } from "./plugin-tabs-host-bridge";
 
@@ -213,14 +214,18 @@ contextBridge.exposeInMainWorld("cadencr", {
     onIpc("notification-failed", cb),
   onNotificationFallback: (cb: (payload: NotificationFallbackPayload) => void): (() => void) =>
     onIpc("notification-fallback", cb),
-  onCloseRequested: (cb: () => void): (() => void) => onIpc("app:close-requested", cb),
-  confirmClose: (): Promise<void> => ipcRenderer.invoke("app:confirm-close"),
+  onCloseRequested: (cb: (request: AppCloseRequest) => void): (() => void) =>
+    onIpc("app:close-requested", cb),
+  confirmClose: (choice?: AppCloseChoice): Promise<void> =>
+    ipcRenderer.invoke("app:confirm-close", choice),
   requestQuit: (): Promise<void> => ipcRenderer.invoke("app:request-quit"),
   windowMinimize: (): Promise<void> => ipcRenderer.invoke("app:window-minimize"),
   windowToggleMaximize: (): Promise<void> => ipcRenderer.invoke("app:window-toggle-maximize"),
   windowClose: (): Promise<void> => ipcRenderer.invoke("app:window-close"),
   exportRendererDiagnostics: (context: DiagnosticContext): Promise<{ canceled: boolean }> =>
     ipcRenderer.invoke("app:export-renderer-diagnostics", context),
+  telemetryRelayStatus: (): Promise<"idle" | "unavailable" | "frames_unavailable"> =>
+    ipcRenderer.invoke("app:telemetry-relay-status"),
   reportRendererError: (payload: RendererErrorReportPayload): Promise<void> =>
     ipcRenderer.invoke("app:renderer-error", payload),
   setZoom: (factor: number): Promise<void> => ipcRenderer.invoke("webview:set-zoom", factor),

@@ -33,6 +33,11 @@ env:
   CADENCR_MANAGED_THEME_INDEX_URL: ${{ vars.CADENCR_MANAGED_THEME_INDEX_URL }}
   CADENCR_MANAGED_THEME_BLOCKLIST_URL: ${{ vars.CADENCR_MANAGED_THEME_BLOCKLIST_URL }}
   CADENCR_MANAGED_TAB_BLOCKLIST_URL: ${{ vars.CADENCR_MANAGED_TAB_BLOCKLIST_URL }}
+  CADENCR_MANAGED_LSP_BLOCKLIST_URL: ${{ vars.CADENCR_MANAGED_LSP_BLOCKLIST_URL }}
+  # Public ingest configuration only; user consent is still off by default.
+  CADENCR_SENTRY_DSN: ${{ vars.CADENCR_SENTRY_DSN }}
+  CADENCR_POSTHOG_KEY: ${{ vars.CADENCR_POSTHOG_KEY }}
+  CADENCR_POSTHOG_HOST: ${{ vars.CADENCR_POSTHOG_HOST }}
 
 permissions:
   contents: write
@@ -77,6 +82,8 @@ jobs:
     # (2.35), so this build also runs on Debian 12 and Ubuntu 22.04.
     runs-on: ubuntu-22.04
     timeout-minutes: 90
+    env:
+      CADENCR_SENTRY_UPLOAD_CONFIGURED: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
     steps:
       - name: Validate release tag
         run: |
@@ -114,7 +121,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Validate marketplace build configuration
-        run: node scripts/validate-marketplace-build-env.mjs
+        run: node scripts/validate-marketplace-build-env.mjs --require-catalog
 
       - name: Use bounded pnpm listing for packaging
         run: |
@@ -154,6 +161,25 @@ jobs:
       - name: Archive exact renderer bundles and source maps
         run: node packages/desktop/scripts/archive-renderer-diagnostics.mjs
 
+      - name: Load Sentry uploader from workflow commit
+        if: env.CADENCR_SENTRY_UPLOAD_CONFIGURED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/contents/scripts/upload-sentry-renderer-maps.mjs?ref=$GITHUB_SHA" --jq .content \
+            | node -e 'const fs=require("node:fs"); fs.writeFileSync(process.argv[1], Buffer.from(fs.readFileSync(0,"utf8"),"base64"));' "$RUNNER_TEMP/cadencr-sentry-uploader.mjs"
+          test -s "$RUNNER_TEMP/cadencr-sentry-uploader.mjs"
+
+      - name: Upload optional Sentry renderer source maps
+        if: env.CADENCR_SENTRY_UPLOAD_CONFIGURED == 'true'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          SENTRY_URL: ${{ vars.SENTRY_URL }}
+        run: node "$RUNNER_TEMP/cadencr-sentry-uploader.mjs"
+
       - name: Build Rust service sidecar (x64)
         run: node scripts/validate-marketplace-build-env.mjs -- pnpm --filter @cadencr/service build:sidecars
 
@@ -170,8 +196,19 @@ jobs:
             --x64 \
             --publish never
 
+      # Packaging tests follow the immutable workflow commit, while application
+      # sources remain checked out at the existing release tag.
+      - name: Load Linux smoke test from workflow commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/contents/scripts/smoke-linux-packages.sh?ref=$GITHUB_SHA" --jq .content \
+            | node -e 'const fs=require("node:fs"); fs.writeFileSync(process.argv[1], Buffer.from(fs.readFileSync(0,"utf8"),"base64"));' "$RUNNER_TEMP/cadencr-smoke-linux-packages.sh"
+          test -s "$RUNNER_TEMP/cadencr-smoke-linux-packages.sh"
+
       - name: Smoke test Linux packages
-        run: scripts/smoke-linux-packages.sh packages/desktop/dist-electron "${RELEASE_TAG#v}" x64
+        run: bash "$RUNNER_TEMP/cadencr-smoke-linux-packages.sh" packages/desktop/dist-electron "${RELEASE_TAG#v}" x64
 
       - name: Stage renderer diagnostics beside Linux packages
         run: cp packages/desktop/diagnostics/*-renderer-diagnostics.tar.gz packages/desktop/dist-electron/

@@ -3,8 +3,8 @@
 `cadencr` provides headless plugin validation, theme/provider/tab packaging, registry index
 signing and verified publication staging. Commands never contact the service or
 database, install a plugin, or execute a provider binary; the one program they
-run is a custom tab's own backend, for `plugin validate --kind tab` (below,
-`--no-run` to skip it).
+run is a custom tab's own backend, for `plugin validate --kind tab` and
+`--kind plugin` (below, `--no-run` to skip it).
 `stage-publication` downloads inert GitHub Release assets. `mirror-publication`
 can upload already verified local artifacts to an explicitly confirmed GitHub
 draft; it never promotes that draft to a published release.
@@ -25,6 +25,8 @@ release into an existing empty or partial directory, never from author sources.
 cadencr plugin validate <folder> --descriptor <descriptor.json>
 cadencr plugin validate <folder> --kind theme
 cadencr plugin validate <folder> --kind tab [--no-run]
+cadencr plugin validate <folder> --kind lsp
+cadencr plugin validate <folder> --kind plugin [--no-run]
 cadencr registry validate --base <directory> --candidate <directory>
 cadencr registry validate-metadata <file.json>...  # 1–32 local files; NOT authentication
 cadencr registry validate-submission <submission.json>...  # 1–32 local files
@@ -38,6 +40,9 @@ cadencr registry pack-theme --directory <theme-staging-directory> \
   --output <new-theme.tar.gz>
 cadencr registry pack-tab --directory <tab-staging-directory> \
   [--package <metadata.json>] --output <new-tab.tar.gz>
+cadencr registry pack-lsp --directory <prepared-server-directory> \
+  --target <darwin-aarch64|darwin-x86_64|linux-x86_64> --runtime <native|node> \
+  --entry <relative-entry> --output <new-server.tar.gz>
 cadencr registry pack-tab-backend --directory <tab-folder> \
   --target <darwin-aarch64|darwin-x86_64|linux-x86_64> --output <new-backend.tar.gz>
 cadencr registry plan-publication --submission <submission.json> \
@@ -54,17 +59,21 @@ cadencr registry sign-tab-blocklist --payload <tab-policy.json> \
   --private-key <private.pem> --key-id <key-id> --output <new-envelope.json>
 cadencr registry verify-tab-blocklist --index <tab-envelope.json> \
   --public-key <public.pem> --key-id <key-id> [--allow-expired]
+cadencr registry sign-lsp-blocklist --payload <lsp-policy.json> \
+  --private-key <private.pem> --key-id <key-id> --output <new-envelope.json>
+cadencr registry verify-lsp-blocklist --index <lsp-envelope.json> \
+  --public-key <public.pem> --key-id <key-id> [--allow-expired]
 cadencr registry sign-provider-blocklist --payload <provider-policy.json> \
   --private-key <private.pem> --key-id <key-id> --output <new-envelope.json>
 cadencr registry verify-provider-blocklist --index <provider-envelope.json> \
   --public-key <public.pem> --key-id <key-id> [--allow-expired]
-cadencr registry renew-policy --kind <provider|theme|tab> --current <envelope.json> \
+cadencr registry renew-policy --kind <provider|theme|tab|lsp> --current <envelope.json> \
   --public-key <public.pem> --key-id <key-id> --private-key <private.pem> \
   --expires-at <YYYY-MM-DDTHH:mm:ssZ> --output <new-envelope.json>
-cadencr registry publish-policy --kind <provider|theme|tab> --signed <envelope.json> \
+cadencr registry publish-policy --kind <provider|theme|tab|lsp> --signed <envelope.json> \
   --repository <owner/repository> --discovery-branch <branch> \
   --public-key <public.pem> --key-id <key-id> [--bootstrap | --renewal] [--receipt <new-receipt.json>]
-cadencr registry fetch-policy --kind <provider|theme|tab> \
+cadencr registry fetch-policy --kind <provider|theme|tab|lsp> \
   --repository <owner/repository> --discovery-branch <branch> --output <new-envelope.json>
 cadencr registry assemble-signed-index --payload <index.json> \
   --signature <signature.json> --output <new-envelope.json>
@@ -122,9 +131,20 @@ not; otherwise it is run, from the tab folder and with the manifest's
 `backend.protocol`, through the protocol conformance checks of
 `cadencr-tab-backend` (`docs/TAB_BACKEND_PROTOCOL.md`), and a failed check fails
 the command with `TAB_BACKEND_CONFORMANCE_FAILED`. `--no-run` skips that run,
-for machines that cannot execute the binary. Local validation does not
-establish publisher trust, publication completeness, or an installed managed
-version.
+for machines that cannot execute the binary. `--kind plugin` validates a
+multi-export plugin folder: its `plugin.json` (schema 1, closed, at most 64 KiB:
+`id`, `name`, `version`, optional `description`, and 1–6 `contributes` members
+of kind `provider`, `theme` or `tab`, each naming a distinct, non-nested
+relative `path`, a provider also its `descriptor` file), then every member
+folder with the validator of its kind as above (a tab member's backend runs
+unless `--no-run`), then that every tab manifest `version` and provider
+descriptor `agent.version` equals the plugin `version` and that member ids
+differ from each other and from the plugin id once reduced to lowercase ASCII
+letters and digits. Every problem is listed at once, one line per member, under
+`PLUGIN_VALIDATION_FAILED`; `--descriptor` is refused. See
+`tooling/marketplace-registry/AUTHORING.md` (Multi-export plugins). Local
+validation does not establish publisher trust, publication completeness, or an
+installed managed version.
 
 ### Declarative theme boundary
 
@@ -573,3 +593,16 @@ binding, checksum and downloaded binary before selecting a candidate for QA.
 No workflow run changes the checked-in qualification or production pins; the
 production pair remains `PENDING` until real lifecycle qualification is complete.
 Marketplace UI remains hidden in production.
+
+## Language-server authoring
+
+See the [native and prepared Node examples](../../tooling/marketplace-registry/examples/lsp/README.md)
+for the signed language associations, launch arguments, target receipts, and
+standalone or plugin member submissions. `pack-lsp` executes no code or package
+installation; a Node bundle must already contain all dependencies. Local LSP
+validation reads `lsp.json` and checks each entry's signed size, SHA-256 and native
+platform, without starting it. The registry staging boundary verifies complete
+archives before publication.
+
+These commands describe the source CLI in this checkout. The registry template's
+qualified released CLI pin remains a separate release and adoption decision.

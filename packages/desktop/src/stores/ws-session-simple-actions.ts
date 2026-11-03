@@ -1,11 +1,10 @@
-import type { DisplayRowMode } from "@/components/agentStreamDisplay";
+import type { DisplayRowMode } from "@/types/agent-stream";
 import {
   createAccessModeSet,
   createCommandsGet,
-  createDestroy,
   createEffortSet,
   createFastModeSet,
-  createEnvelope,
+  createSessionEnvelope,
   createGateClose,
   createInterrupt,
   createModeSet,
@@ -15,14 +14,11 @@ import {
   createProviderSet,
   createSessionClear,
   createSessionCompact,
-  createSessionDelete,
   type GateCloseReason,
   type RuntimeConfigOverridePatch,
   type WsEnvelope,
 } from "@/lib/ws-envelope";
-import { clearReconnect, unregisterReconnector } from "@/lib/ws-reconnect";
 import { DEFAULT_PROMPT_COMMAND_POLICY } from "@/lib/prompt-command-policy";
-import { useConnectionStatusStore } from "@/stores/connection-status-store";
 import type { AccessMode } from "@/types/access-mode";
 import {
   applyApprovePlan,
@@ -31,8 +27,6 @@ import {
   loadOlderSessionMessages,
 } from "./ws-session-actions";
 import { loadSessionPromptTurn } from "./ws-session-prompt-turn";
-import { discardStreamDeltas } from "./ws-delta-coalescer";
-import { SESSION_CLOSED_BEFORE_DELIVERY, failPromptDelivery } from "./ws-session-prompt-delivery";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import { parseErrorPayload, parseFastModePayload } from "./ws-envelope-payload";
 import { resyncMessagesOnReconnect } from "./ws-session-resync";
@@ -41,19 +35,15 @@ import type {
   PermissionMode,
   PersistedStatePayload,
   ResyncTarget,
-  SessionEntry,
   WsSessionStore,
 } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
-import { transitionTurn } from "./ws-turn-lifecycle";
 
 type SimpleSessionActions = Pick<
   WsSessionStore,
   | "interrupt"
-  | "destroy"
   | "clearSession"
   | "compactSession"
-  | "deleteSession"
   | "setProvider"
   | "setModel"
   | "setThinkingEffort"
@@ -77,8 +67,6 @@ type SimpleSessionActions = Pick<
 interface SimpleSessionActionDeps {
   ctx: StoreAccessors;
   sendRaw: (sessionId: string, envelope: WsEnvelope) => void;
-  sourceKey: (sessionId: string) => string;
-  rejectPendingRequests: (session: SessionEntry) => void;
   planRestorePrefix: string;
 }
 
@@ -91,45 +79,12 @@ export function createWsSessionSimpleActions(deps: SimpleSessionActionDeps): Sim
 }
 
 function createLifecycleActions(deps: SimpleSessionActionDeps) {
-  const { ctx, sendRaw, sourceKey, rejectPendingRequests } = deps;
+  const { ctx, sendRaw } = deps;
   const { get, set, getSession } = ctx;
   return {
     interrupt(sessionId: string) {
       const session = getSession(sessionId);
       sendRaw(sessionId, createInterrupt(session.serverSessionId));
-    },
-
-    destroy(sessionId: string) {
-      clearReconnect(sourceKey(sessionId));
-      unregisterReconnector(sourceKey(sessionId));
-      useConnectionStatusStore.getState().clearSource(sourceKey(sessionId));
-      discardStreamDeltas(sessionId);
-      const session = get().sessions[sessionId];
-      // Same rationale as disconnect(): a destroyed session must not replay
-      // its queued envelopes on a future connect, nor leave sendRequest()
-      // callers hanging until the timeout after a deliberate close().
-      session?.outboundQueue.splice(0);
-      if (session) rejectPendingRequests(session);
-      if (session?.queuedPrompts.length)
-        set(updateSession(get(), sessionId, { queuedPrompts: [] }));
-      failPromptDelivery(sessionId, SESSION_CLOSED_BEFORE_DELIVERY);
-      if (!session?.conn) return;
-
-      if (session.serverSessionId) {
-        session.conn.sendJson(createDestroy(session.serverSessionId));
-      }
-      session.conn.close();
-
-      set(
-        updateSession(get(), sessionId, {
-          conn: null,
-          isConnected: false,
-          lifecycle: transitionTurn(session.lifecycle, {
-            type: "turn_ended",
-            reason: "completed",
-          }),
-        }),
-      );
     },
 
     clearSession(sessionId: string) {
@@ -146,11 +101,6 @@ function createLifecycleActions(deps: SimpleSessionActionDeps) {
           compactRequestPending: true,
         }),
       );
-    },
-
-    deleteSession(sessionId: string) {
-      const session = getSession(sessionId);
-      sendRaw(sessionId, createSessionDelete(session.serverSessionId));
     },
   };
 }
@@ -278,7 +228,7 @@ function createWorkflowActions(deps: SimpleSessionActionDeps) {
         );
         return;
       }
-      const envelope = createEnvelope("session", "retry_worktree_setup", {
+      const envelope = createSessionEnvelope("retry_worktree_setup", {
         session_id: session.serverSessionId,
         feature_id: featureId,
       });
@@ -311,6 +261,7 @@ function createWorkflowActions(deps: SimpleSessionActionDeps) {
             ? session.promptCommandPolicy
             : DEFAULT_PROMPT_COMMAND_POLICY,
           slashCommandsLoading: true,
+          slashCommandsError: sameTarget ? session.slashCommandsError : null,
           slashCommandsKey: nextKey,
           slashCommandsRequestRef: envelope.id,
         }),

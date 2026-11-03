@@ -28,11 +28,14 @@ JavaScript business implementations and executable legacy test oracles are
 removed from the source template; thin orchestration and frozen test data remain.
 The candidate registry pin still targets an older CLI. Reviewing its replacement,
 regenerating delivery approvals, actual registry deployment and official-plugin
-publication remain pending. Desktop activation is separate.
+publication remain pending.
 
-Internal QA can opt in with `VITE_INTERNAL_MARKETPLACE=true` in a DEV renderer
-only; production builds cannot expose the marketplace through that environment
-variable. This is not a public activation switch.
+The marketplace UI is visible in every desktop build; there is no renderer
+opt-in. Whether it can browse or install anything depends only on the feed and
+trust configuration compiled into the service. A build without that
+configuration (dev builds, forks) shows the marketplace as unavailable: the
+catalog page says it is not available in this build and offers no retry, and
+anything already installed stays manageable.
 
 Use the [operator runbook](../tooling/marketplace-registry/OPERATIONS.md)
 for renewal, failure alerts, revocation and rotation preparation. No real owner,
@@ -45,26 +48,25 @@ They are template files, not deployed, and inert until configured as described b
 
 ## Activation gate
 
-**State 2026-10-26:** not activated. The marketplace is hidden in production
-builds (`VITE_INTERNAL_MARKETPLACE` gate) and none of the variables below is set
-on `merkr-software/CadencR`. Activation was prepared, QA'd against the
-production registry and then held back for the release owner's go: see
-[Activation runbook](#activation-runbook).
+**State 2026-10-28:** activated for the v0.16.0 release, on the release
+owner's go. The UI gate is removed on the release branch, the variables below
+are set on `merkr-software/CadencR`, and both desktop release workflows run
+`node scripts/validate-marketplace-build-env.mjs --require-catalog`, so a
+release without the root-authorized trust and the catalog feeds fails before
+compiling the service. Until that branch is merged, `main` still hides the
+marketplace (`VITE_INTERNAL_MARKETPLACE` gate); a release from `main` in the
+meantime compiles the feeds into the service but shows no marketplace.
 
 ### Activation runbook
 
 Everything below is public data; no secret is involved. Do it only on the
 release owner's explicit go, right before the activation release.
 
-1. **Show the marketplace in every build.** Revert the hiding commit on `main`:
-
-   ```sh
-   git revert 82c0b4263   # "revert(marketplace): hide the marketplace again until the activation go"
-   ```
-
-   This restores `89b2b9f11` (gate removed, honest "not available in this
-   build" state) and the `catalogSourceMissing` helper reuse. The original
-   commits also live on the branch `feature/marketplace-activation`.
+1. **Show the marketplace in every build.** Done for v0.16.0 by re-applying
+   `89b2b9f11` (gate removed, honest "not available in this build" state) and
+   the `catalogSourceMissing` helper reuse from `9e4c5ea93`, which
+   `82c0b4263` had hidden again on `main`. The original commits also live on
+   the branch `feature/marketplace-activation`.
 
 2. **Compile the production trust and feeds into releases.** From the
    repository root:
@@ -103,7 +105,8 @@ For a local packaged check, export the same variables and run
 `node scripts/validate-marketplace-build-env.mjs -- pnpm build:local`; turbo
 passes `CADENCR_MANAGED_*` and `CADENCR_REGISTRY_*` through.
 
-To deactivate again, revert the step-1 commit and delete the nine variables.
+To deactivate again, restore the gate (`82c0b4263`), drop `--require-catalog`
+from the release workflows and delete the nine variables.
 
 The desktop release workflow forwards public repository variables into service
 compilation. It does **not** provision trust, deploy feeds, generate signing keys,
@@ -118,15 +121,16 @@ blocklist checks remain authoritative; build validation does not replace them.
 
 ## Public repository variables
 
-| Variable                                     | Configuration rule                                                                                                                                                                                                                                     |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `CADENCR_MANAGED_PROVIDER_KEY_ID`            | Host-owned signing key ID; starts with an ASCII alphanumeric character, followed by ASCII alphanumeric, `.`, `_`, or `-`; at most 128 bytes.                                                                                                           |
-| `CADENCR_MANAGED_PROVIDER_PUBLIC_KEY_BASE64` | Canonical base64 representation of the host-owned 32-byte Ed25519 public key. Never a private key.                                                                                                                                                     |
-| `CADENCR_MANAGED_PROVIDER_INDEX_URL`         | Credential-free HTTPS provider catalog URL. Existing schema-1 feeds remain supported; current clients may point at the signed mixed schema-2 feed.                                                                                                     |
-| `CADENCR_MANAGED_PROVIDER_BLOCKLIST_URL`     | Credential-free HTTPS signed policy URL, configured together with the provider catalog and both key variables.                                                                                                                                         |
-| `CADENCR_MANAGED_THEME_INDEX_URL`            | Additional activation pair with the theme blocklist, requiring the complete four-variable trust group. It must point at `https://raw.githubusercontent.com/<owner>/<repository>/refs/heads/marketplace-v2/managed-index.json`.                         |
-| `CADENCR_MANAGED_THEME_BLOCKLIST_URL`        | Theme-only signed revocation policy at `https://raw.githubusercontent.com/<owner>/<repository>/refs/heads/marketplace-v2/managed-theme-blocklist.json`; same reviewed repository as the mixed catalog.                                                 |
-| `CADENCR_MANAGED_TAB_BLOCKLIST_URL`          | Custom-tab-only signed revocation policy (`kind: "tab-blocklist"`), e.g. `https://raw.githubusercontent.com/<owner>/<repository>/refs/heads/marketplace-v2/managed-tab-blocklist.json`; same signing key and reviewed repository as the mixed catalog. |
+| Variable                                     | Configuration rule                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CADENCR_MANAGED_PROVIDER_KEY_ID`            | Host-owned signing key ID; starts with an ASCII alphanumeric character, followed by ASCII alphanumeric, `.`, `_`, or `-`; at most 128 bytes.                                                                                                                                                                                                               |
+| `CADENCR_MANAGED_PROVIDER_PUBLIC_KEY_BASE64` | Canonical base64 representation of the host-owned 32-byte Ed25519 public key. Never a private key.                                                                                                                                                                                                                                                         |
+| `CADENCR_MANAGED_PROVIDER_INDEX_URL`         | Credential-free HTTPS provider catalog URL. Existing schema-1 feeds remain supported; current clients may point at the signed mixed schema-2 feed.                                                                                                                                                                                                         |
+| `CADENCR_MANAGED_PROVIDER_BLOCKLIST_URL`     | Credential-free HTTPS signed policy URL, configured together with the provider catalog and both key variables.                                                                                                                                                                                                                                             |
+| `CADENCR_MANAGED_THEME_INDEX_URL`            | Additional activation pair with the theme blocklist, requiring the complete four-variable trust group. It must point at `https://raw.githubusercontent.com/<owner>/<repository>/refs/heads/marketplace-v2/managed-index.json`.                                                                                                                             |
+| `CADENCR_MANAGED_THEME_BLOCKLIST_URL`        | Theme-only signed revocation policy at `https://raw.githubusercontent.com/<owner>/<repository>/refs/heads/marketplace-v2/managed-theme-blocklist.json`; same reviewed repository as the mixed catalog.                                                                                                                                                     |
+| `CADENCR_MANAGED_TAB_BLOCKLIST_URL`          | Custom-tab-only signed revocation policy (`kind: "tab-blocklist"`), e.g. `https://raw.githubusercontent.com/<owner>/<repository>/refs/heads/marketplace-v2/managed-tab-blocklist.json`; same signing key and reviewed repository as the mixed catalog.                                                                                                     |
+| `CADENCR_MANAGED_LSP_BLOCKLIST_URL`          | Optional LSP-only signed revocation policy (`kind: "lsp-blocklist"`) at `https://raw.githubusercontent.com/<owner>/<repository>/refs/heads/marketplace-v2/managed-lsp-blocklist.json`; requires shared trust and the mixed catalog in the same reviewed repository. Without it, LSP installation is disabled; existing marketplace kinds remain available. |
 
 The first four variables are all-or-none. The two theme feeds are also all-or-none.
 The tab policy URL goes with the theme feeds: the desktop release workflow forwards it, and
@@ -556,13 +560,13 @@ Client behavior:
 
 ## Deployment cutover still pending
 
-The candidate template pins qualified `0.13.1-dev.39108033875.1` for existing
-contribution/build/publication commands; see its exact
-[qualification evidence](MARKETPLACE_CLI_QUALIFICATION_2026-10-18.md). The source
-now removes replaced JavaScript business tooling and adds Rust standalone
-metadata/submission/expiry commands. **Those new commands need a new CLI release
-and qualification before full template deployment.** The older binary is not a
-replacement pin for this expanded contract.
+The candidate template selects qualified `0.15.2` in
+[`ci/released-cli.env`](../tooling/marketplace-registry/ci/released-cli.env); see its
+[qualification evidence](qa/MARKETPLACE_STABLE_CLI_2026_10_25.md). That binary covers
+the existing Rust contribution, metadata, submission, expiry and publication
+commands. **The new LSP package and policy commands need a new CLI release and
+qualification before LSP template deployment.** Keep the version, tag and digest
+pin unchanged until the replacement binary has been qualified.
 
 Merge/release/qualify the updated CLI, review the exact source/version/tag/digest,
 and regenerate all registry delivery payload hashes. Reinspect actual remote
@@ -575,3 +579,9 @@ performs that deployment, assigns authority or activates desktop UI.
 Author pins, official roots/feeds, signing environments, initial plugin releases
 and packaged-client certification remain separate gates. Fresh runners rebuild
 proof from verified remote evidence; raw recovery state is never uploaded/restored.
+
+## Language server revocation
+
+Language servers use the shared signed mixed catalog and a separate `lsp-blocklist` policy. Set `CADENCR_MANAGED_LSP_BLOCKLIST_URL` only after reviewing and publishing `managed-lsp-blocklist.json` on the catalog repository’s `marketplace-v2` branch. Both desktop release workflows forward this public build variable. The build validator rejects a supplied LSP policy without the shared catalog/trust configuration, a different repository or branch, unsafe URL components, and surrounding whitespace.
+
+The variable remains optional so existing provider, theme and custom tab feeds can continue to build. An absent LSP policy disables language server installation; opening a file or starting a session never downloads a server. Installation is an explicit marketplace or editor suggestion action.

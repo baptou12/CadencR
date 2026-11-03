@@ -48,4 +48,27 @@ describe.each(["darwin", "linux"])("diagnostic persistence on %s", (platform) =>
     expect(() => saveDiagnosticRecord(file, record(platform, 0))).toThrow();
     expect(readFileSync(file, "utf8")).toBe("corrupt evidence");
   });
+
+  it.each([
+    "ResizeObserver loop completed with undelivered notifications",
+    "ResizeObserver loop completed with undelivered notifications.",
+    "ResizeObserver loop limit exceeded",
+    "ResizeObserver loop limit exceeded.",
+  ])("re-reads fatal evidence from disk after a burst of %s", (message) => {
+    const file = path.join(mkdtempSync(path.join(os.tmpdir(), "cadencr-diag-")), "history.json");
+    const fatal = record(platform, 0);
+    fatal.error = { source: "react-uncaught", message: "fatal", componentStack: "at AgentPanel" };
+    saveDiagnosticRecord(file, fatal);
+    for (let i = 1; i <= 30; i++) {
+      const noise = record(platform, i);
+      noise.error.message = message;
+      saveDiagnosticRecord(file, noise);
+    }
+    const reloaded = readDiagnosticRecords(file);
+    expect(reloaded).toHaveLength(10);
+    expect(reloaded[0]).toEqual(fatal);
+    expect(reloaded.slice(1).map((item) => item.timestamp)).toEqual(
+      Array.from({ length: 9 }, (_, i) => record(platform, i + 22).timestamp),
+    );
+  });
 });

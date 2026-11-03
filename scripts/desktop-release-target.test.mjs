@@ -114,6 +114,76 @@ test("packaging raises the descriptor limit inherited by pnpm", () => {
   }
 });
 
+test("CloudKit uses TCP without replacing firewall rules or bypassing failed setup", () => {
+  const steps = workflow.jobs.release.steps;
+  const setupIndex = steps.findIndex(
+    (step) => step.name === "Route Apple CloudKit requests over HTTPS TCP",
+  );
+  const nativeIndex = steps.findIndex((step) => step.name?.startsWith("Build Rust service"));
+  assert.ok(setupIndex >= 0 && setupIndex < nativeIndex);
+  const scratch = mkdtempSync(join(tmpdir(), "cadencr-cloudkit-transport-"));
+  try {
+    writeFileSync(join(scratch, "sudo"), '#!/bin/sh\nexec "$@"\n', { mode: 0o700 });
+    writeFileSync(
+      join(scratch, "pfctl"),
+      `#!/bin/bash
+printf '%s\\n' "$*" >> "$PF_CALLS_FILE"
+case "$*" in
+  -sr) printf '%s\\n' "$PF_RULESET"; exit "$PF_READ_EXIT" ;;
+  '-a com.apple/000.cadencr-cloudkit -f -') cat > "$PF_ANCHOR_FILE"; exit "$PF_LOAD_EXIT" ;;
+  -E) exit "$PF_ENABLE_EXIT" ;;
+  *) exit 91 ;;
+esac
+`,
+      { mode: 0o700 },
+    );
+    const read = ["-sr"];
+    const load = [...read, "-a com.apple/000.cadencr-cloudkit -f -"];
+    const enabled = [...load, "-E"];
+    for (const { rules, readExit = 0, loadExit = 0, enableExit = 0, status, calls } of [
+      { rules: 'anchor "com.apple/*" all', status: 0, calls: enabled },
+      { rules: 'anchor "com.apple/*"', status: 0, calls: enabled },
+      { rules: 'nat-anchor "com.apple/*" all', status: 1, calls: read },
+      { rules: "pass out all", status: 1, calls: read },
+      { rules: 'anchor "com.apple/*" all', readExit: 13, status: 13, calls: read },
+      { rules: 'anchor "com.apple/*" all', loadExit: 17, status: 17, calls: load },
+      { rules: 'anchor "com.apple/*" all', enableExit: 19, status: 19, calls: enabled },
+    ]) {
+      const callsFile = join(scratch, "calls");
+      const anchorFile = join(scratch, "anchor");
+      writeFileSync(callsFile, "");
+      writeFileSync(anchorFile, "");
+      const env = {
+        ...process.env,
+        PATH: `${scratch}:${process.env.PATH}`,
+        PF_CALLS_FILE: callsFile,
+        PF_ANCHOR_FILE: anchorFile,
+        PF_RULESET: rules,
+        PF_READ_EXIT: String(readExit),
+        PF_LOAD_EXIT: String(loadExit),
+        PF_ENABLE_EXIT: String(enableExit),
+      };
+      delete env.BASH_ENV;
+      const result = spawnSync("bash", ["-e", "-c", steps[setupIndex].run], {
+        env,
+        encoding: "utf8",
+      });
+      assert.equal(result.status, status, `${rules}\n${result.stdout}\n${result.stderr}`);
+      assert.deepEqual(readFileSync(callsFile, "utf8").trim().split("\n"), calls);
+      assert.equal(
+        readFileSync(anchorFile, "utf8"),
+        calls.includes(load[1])
+          ? "block return out quick proto udp from any to any port 443\n"
+          : "",
+      );
+      if (status === 1)
+        assert.match(result.stdout, /::error::.*refusing to replace firewall rules/);
+    }
+  } finally {
+    rmSync(scratch, { recursive: true });
+  }
+});
+
 test("packaging retries only transient Apple stapling failures with a bounded backoff", () => {
   const packaging = workflow.jobs.release.steps.find(
     (step) => step.name === "Build, sign, and notarize desktop app",

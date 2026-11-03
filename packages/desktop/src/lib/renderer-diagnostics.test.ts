@@ -7,7 +7,7 @@ import {
   installDiagnosticBrowserEvents,
 } from "./renderer-diagnostics";
 import { createDiagnosticGate, diagnosticContextSchema } from "@/shared/renderer-diagnostics";
-import { persistBrowserDiagnostic, exportBrowserDiagnostics } from "./renderer-diagnostics-browser";
+import { persistBrowserDiagnostic } from "./renderer-diagnostics-browser";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -70,9 +70,19 @@ describe("diagnostic history", () => {
   });
 });
 
-it("persists browser errors across module reloads and exports their original crash context", async () => {
+it.each([
+  "ResizeObserver loop completed with undelivered notifications",
+  "ResizeObserver loop completed with undelivered notifications.",
+  "ResizeObserver loop limit exceeded",
+  "ResizeObserver loop limit exceeded.",
+])("exports the original browser crash context after noise and reload: %s", async (message) => {
   const diagnostics = captureDiagnosticContext();
   await persistBrowserDiagnostic({ source: "react-boundary", message: "crash", diagnostics });
+  for (let i = 0; i < 30; i++) {
+    await persistBrowserDiagnostic({ source: "error", message });
+  }
+  vi.resetModules();
+  const { exportBrowserDiagnostics } = await import("./renderer-diagnostics-browser");
   const blobs: Blob[] = [];
   vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
     blobs.push(blob as Blob);
@@ -81,6 +91,7 @@ it("persists browser errors across module reloads and exports their original cra
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
   await exportBrowserDiagnostics(captureDiagnosticContext());
   const exported = JSON.parse(await blobs[0].text());
+  expect(exported.reports).toHaveLength(10);
   expect(exported.reports[0].error.diagnostics.reportId).toBe(diagnostics.reportId);
   expect(exported.reports[0].error.message).toBe("crash");
 });
