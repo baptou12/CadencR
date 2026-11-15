@@ -16,7 +16,10 @@ that only reads Cadencr data (**read-only**), a page that also asks Cadencr to
 run the programs it lists (**runs commands**, §4.6), and a page with its own
 native process that runs with the user's rights (**native code**, §4.7).
 Cadencr does not sandbox native code (decision 2026-10-18); what it always
-enforces is the tab's access to Cadencr itself.
+enforces is the tab's access to Cadencr itself. A listed command runs with
+arguments the tab chooses, and most programs can run arbitrary code from their
+arguments, so **runs commands is trusted like native code**: both need the
+same explicit trust at consent (§6.2).
 
 ## 1. Model
 
@@ -68,7 +71,7 @@ sibling of `plugins/themes`. Cadencr rescans it on startup and watches it
   "icon": "icon.svg",
   "api_version": 1,
   "entry": "dist/index.html",
-  "tab": { "label": "Graph" },
+  "tab": { "label": "Graph", "replaces": ["git"] },
   "permissions": ["features:read", "git:read"],
   "network": {
     "allowed_origins": ["https://gitlab.example.com"],
@@ -102,7 +105,8 @@ sibling of `plugins/themes`. Cadencr rescans it on startup and watches it
 }
 ```
 
-`commands`, `backend` and `shortcuts` are optional; most tabs declare none.
+`commands`, `backend`, `shortcuts` and `tab.replaces` are optional; most tabs
+declare none.
 
 Rules (validated by `cadencr-plugin-core::tab`, the service and
 `cadencr plugin validate --kind tab`):
@@ -111,6 +115,11 @@ Rules (validated by `cadencr-plugin-core::tab`, the service and
   It is a URL host label (`cadencr-tab://<id>/`).
 - `name` 1–64 chars, `version` semver, `description` ≤ 280 chars, `tab.label`
   1–24 chars (defaults to `name`).
+- `tab.replaces`: built-in tabs the user may show this tab in place of (§10),
+  unique values among `terminal`, `git`, `editor` and `preview`
+  (`REPLACES_INVALID`, `REPLACES_DUPLICATE`). Agent and Browser cannot be
+  replaced: the agent's own surface and its browser tools need them. A
+  declaration, not a permission: it leaves the hash unchanged.
 - `api_version`: integer; v1 hosts accept `1`.
 - `entry`, `icon`: relative, normalized, no `..`, no absolute paths, no
   backslashes; `icon` must end in `.svg`.
@@ -134,7 +143,13 @@ Rules (validated by `cadencr-plugin-core::tab`, the service and
   `pipx`…) and launchers/privilege tools (`env`, `sudo`, `xargs`, `nohup`,
   `open`, `start`…), with or without a Windows suffix or a version suffix
   (`python3.12`, `node18`, `php-8.2`; `cadencr_plugin_core::tab::DENIED_PROGRAMS`). Listing a program names
-  _which_ program runs, not what it does with its arguments.
+  _which_ program runs, not what it does with its arguments. This list is
+  **not a sandbox**: everyday programs run arbitrary code from their arguments
+  (`git -c alias.x='!sh …' x`, `find -exec`, `awk 'BEGIN{system(…)}'`,
+  `ssh -o ProxyCommand`, `tar --to-command`, `rsync -e`, `make -f`), so a tab
+  that lists any command is consented to as code running with the user's
+  rights (§6.2). It only keeps a manifest from hiding "runs anything" behind
+  an honest-looking list.
 - `backend.protocol`: the stdio protocol version, `1` in this release
   (`BACKEND_PROTOCOL_UNSUPPORTED` otherwise). `backend.binary`: at least one
   entry (`BACKEND_BINARY_REQUIRED`) mapping a platform — `darwin-aarch64`,
@@ -166,13 +181,15 @@ Rules (validated by `cadencr-plugin-core::tab`, the service and
 
 **Permissions hash**: SHA-256 (hex) over the canonical JSON
 `{"permissions":[sorted],"allowed_origins":[sorted]}`, extended with
-`"commands":[sorted programs]` when `commands` is non-empty and
+`"commands":[sorted programs],"trust":1` when `commands` is non-empty and
 `"backend":{"protocol":1,"binary":{<platform>:<path>, sorted by platform}}`
 when a backend is declared (each key omitted otherwise, so a tab declaring
 neither keeps its hash). Consent is recorded against this hash; a widened
 manifest — a new scope, origin, program, backend, or a platform's binary
 added or moved — requires a new consent. Reasons, labels and
-versions do not.
+versions do not. `"trust":1` marks consent to commands given with the
+explicit code-trust acknowledgment (§6.2): consents to commands recorded
+before it was required no longer match and are asked for again.
 
 ## 4. Service
 
@@ -206,7 +223,7 @@ manifest.
 | `GET /api/plugin-tabs?project_id=`                        | List local tabs with manifest, validation, enablement.                                                                               |
 | `GET /api/plugin-tabs/{id}?project_id=`                   | One tab.                                                                                                                             |
 | `PUT /api/plugin-tabs/{id}/enablement`                    | `{project_id: number\|null, enabled: boolean\|null}`; `null` clears a project override. Enabling needs consent.                      |
-| `PUT /api/plugin-tabs/{id}/consent`                       | `{permissions_hash}`; must equal the current hash (409 `PLUGIN_TAB_CONSENT_STALE`).                                                  |
+| `PUT /api/plugin-tabs/{id}/consent`                       | `{permissions_hash, trusts_code?}`; must equal the current hash (409 `PLUGIN_TAB_CONSENT_STALE`). `trusts_code: true` is required for a `commands` or `backend` tab (422 `PLUGIN_TAB_TRUST_REQUIRED`). |
 | `GET/PUT /api/plugin-tabs/{id}/configuration?project_id=` | Settings form values; secrets come back as `{ "is_set": true }`.                                                                     |
 | `GET /api/plugin-tabs/{id}/assets/{*path}`                | Static bytes from the plugin folder with CSP headers (§5.2). Empty path = `entry`.                                                   |
 | `POST /api/plugin-tabs/{id}/grants`                       | `{feature_id}` → `{token, expires_at, scopes, api_version}`. 403 `PLUGIN_TAB_DISABLED` if not effective for the feature's project.   |
@@ -219,7 +236,7 @@ icon_svg (string|null), api_version, entry, entry_present, permissions,
 network {allowed_origins, reasoning}, configuration, permissions_hash, status
 ("valid"|"invalid"), errors[], warnings[], dir, authoring_project_id|null,
 enablement {global: bool|null, project: bool|null, effective: bool,
-consent_required: bool}, commands[], backend|null, backend_availability
+consent_required: bool}, commands[], replaces[], backend|null, backend_availability
 ("available"|"unavailable_on_platform"|null), access_level
 ("ui"|"commands"|"backend"; "ui" when the manifest is unreadable)`.
 
@@ -418,7 +435,8 @@ the service resolves, starts, relays to and stops it.
   authenticated cached policy blocks, even an expired one. When a feed is
   configured but no fresh policy is cached, install, update and backend start
   are 409 `MANAGED_TAB_POLICY_UNAVAILABLE` — the tab's page keeps working,
-  and a backend already running keeps serving.
+  and a backend already running keeps serving. A build without the tab feed is
+  treated the same way: no install, update or backend start.
 - **Binaries only.** A backend is a native executable shipped in the tab
   folder, one per platform — never a script, an interpreter or a program on
   `PATH`, so what the user consents to is that file. The former
@@ -511,7 +529,10 @@ the service resolves, starts, relays to and stops it.
   conversation's tab strip — shown or hidden, its conversation on screen or
   not (another conversation, Settings), idle or not — and released (`DELETE`)
   when the tab is closed, or once it may not run (turned off, blocked,
-  removed, invalid, no build for this platform). Deleting a conversation
+  removed, invalid, no build for this platform). A tab shown in place of a
+  built-in (§10), which has no close, holds one in each conversation whose
+  page showed it since the app started, released once it no longer replaces
+  the built-in there. Deleting a conversation
   (or its project) or archiving it releases every lease held in it, from
   every client. A window that still shows it gets no error: once it is
   deleted, a renewal answers 404 `PLUGIN_TAB_CONVERSATION_NOT_FOUND` and the
@@ -681,6 +702,17 @@ Always available, no scope: context, theme, `state`, `storage`, `config`,
 `ui.*`. `net.fetch` requires `network.allowed_origins`, `exec.run` a listed
 program in `commands`, `backend.request` a `backend`.
 
+File paths in `git:read` routes, returned and accepted, are relative to the
+root of the Git checkout. `files:read` routes use paths relative to the
+feature's editor root (`/api/editor/root`). The two differ when a project is
+registered on a subdirectory of a repository (a monorepo package): `git:read`
+then lists changes across the whole checkout, with paths that include the
+subdirectory, and a changed file outside the subdirectory cannot be opened
+through `files:read`. `GET /api/git/path-prefix` (`git:read`) returns that
+subdirectory as `prefix` (`packages/app`, empty at the checkout root): strip
+`prefix/` from a Git path to get its editor path; a Git path without it lies
+outside the editor root.
+
 ### 6.1 Policy table (v1)
 
 The entries of `domain/plugin_tabs/policy.rs`, in order; every one is tier
@@ -704,6 +736,7 @@ name the grant's.
 | GET    | `/api/git/commit-graph`                      | `git:read`       | FeatureQuery(feature_id) |
 | GET    | `/api/git/file-content`                      | `git:read`       | FeatureQuery(feature_id) |
 | GET    | `/api/git/blame`                             | `git:read`       | FeatureQuery(feature_id) |
+| GET    | `/api/git/path-prefix`                       | `git:read`       | FeatureQuery(feature_id) |
 | GET    | `/api/git/branches`                          | `git:read`       | ProjectQuery(project_id) |
 | GET    | `/api/git/branch`                            | `git:read`       | ProjectQuery(project_id) |
 | GET    | `/api/git/pr`                                | `forge:read`     | FeatureQuery(feature_id) |
@@ -745,15 +778,17 @@ names the same way:
 | Level         | `access_level` | Declares                         | What Cadencr enforces                                                                                   | What it does not                                                    |
 | ------------- | -------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | Read-only     | `ui`           | neither `commands` nor `backend` | Everything: the guest has no network or process of its own; every byte goes through the policy table.   | —                                                                   |
-| Runs commands | `commands`     | `commands`                       | Only the listed programs run, without a shell, in the conversation's folder, bounded and logged (§4.6). | What a listed program does with the arguments the tab chooses.      |
+| Runs commands | `commands`     | `commands`                       | Only the listed programs run, without a shell, in the conversation's folder, bounded and logged (§4.6). | What a listed program does with the arguments the tab chooses — most can run any code, so it is trusted like native code. |
 | Native code   | `backend`      | `backend`                        | Its Cadencr access (own grant, scopes, binding); its lifecycle (§4.7).                                  | Anything else: it runs with the user's rights, outside any sandbox. |
 
 The user is told at every step:
 
 - **Consent** (Settings): the dialog leads with the level, lists the programs
   with their reasons and what running them means, and for native code shows
-  the backend's binaries, says it is not sandboxed, and requires ticking "I trust
-  this code to run on my computer with my rights" before **Allow**.
+  the backend's binaries and says it is not sandboxed. For both runs commands
+  and native code it requires ticking "I trust this code to run on my computer
+  with my rights" before **Allow**, and the service refuses the consent without
+  it (`trusts_code`, 422 `PLUGIN_TAB_TRUST_REQUIRED`).
 - **Settings card**: a level badge (Read-only / Runs commands / Native code)
   beside the status badge; the permissions block repeats the consent lists.
 - **Tab strip**: a terminal glyph (commands) or a chip glyph (native code) on
@@ -894,3 +929,49 @@ folder holding `entry` (`dist/` in the scaffold) reloads live instances.
 
 Both are versioned independently of the app (0.x) and target public npm with
 trusted publishing; nothing is published without the maintainer's approval.
+
+## 10. Replacing a built-in tab
+
+A tab that declares `tab.replaces` (§3) can stand in for a built-in tab:
+Terminal, Git, Editor or Preview. The user picks it in **Settings → Custom
+tabs → Replace built-in tabs**, which stores the workspace setting
+`custom_tab_replacements`, a JSON object from built-in to tab id
+(`{"git":"my-vcs"}`). Cadencr honors only replaceable built-ins mapped to
+distinct valid ids: the service drops any other value on read (and refuses it
+from an agent), and Settings says the stored value was ignored. Nothing checks
+the tabs themselves, which change without the setting being written.
+
+Rules:
+
+1. **One per built-in, one built-in per tab.** Several tabs may declare the same
+   built-in; the setting names one. Choosing a tab that already replaces
+   another built-in moves it, so a conversation never runs a tab twice.
+2. **Only where it can run.** In a conversation, the chosen tab takes the
+   built-in's place, label, icon and shortcut (`⌘⇧G` still reaches the Git
+   place) when it is listed for the project, still declares that built-in,
+   and its page would run: on, consented, valid, built, not blocked, with a
+   backend for this platform, in the desktop app. Otherwise the built-in shows
+   (`resolveTabReplacements`), and Settings says why under the row.
+3. **The built-in comes back for content only it can show.** Opening a file
+   in the Editor, a pull request in Git, a document in Preview, or running a
+   custom action in the Terminal shows the built-in again in that
+   conversation (`activateBuiltinFeatureTab`), also when that conversation
+   hasn't been shown yet. The built-in shortcuts of a place a custom tab holds
+   (`⌘P` file search, the Editor's and Terminal's `⌘W`) do not apply. The tab
+   strip's **+** menu switches the place back to the custom tab, or to the
+   built-in on demand. The built-in keeps the place until then, or until
+   another custom tab is chosen for it (not while the custom tab briefly
+   can't run, e.g. rebuilding). This choice is in memory: after a restart the
+   replacement shows again. A switch remounts the place's content: the guest
+   page reloads (its `state.*` and backend stay), and the built-in reopens
+   like a newly shown tab.
+4. **One instance.** The replacement is the same instance as the placed
+   `plugin:<id>` tab (`<feature>:plugin:<id>`), which is hidden while the
+   replacement shows. Its backend lease (§4.7) is held like a placed tab's, in
+   every conversation whose page showed it since the app started, until that
+   conversation is deleted or the replacement stops resolving there.
+
+The guest is not told which built-in it replaces; it receives the same
+context as a placed tab. A manifest using `tab.replaces` is invalid on a
+Cadencr that predates it (§3 is a closed format), so a published tab that
+declares it needs a `min_app_version` of the first release supporting it.

@@ -23,7 +23,7 @@ import { useGlobalShortcutById, useShortcut } from "@/hooks/useShortcut";
 import { useThemeSync } from "@/hooks/useTheme";
 import { useRouteFeatureIds } from "@/hooks/useRouteFeatureIds";
 import { useVisualViewportHeight } from "@/hooks/useVisualViewportHeight";
-import { useZoomHotkeys } from "@/hooks/useZoom";
+import { useAppZoom } from "@/hooks/useZoom";
 import { resolveFeatureArchiveAction } from "@/lib/feature-archive-decision";
 import {
   initNotificationPermission,
@@ -36,7 +36,8 @@ import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { listenForPushNavigation } from "@/lib/remote/push-register";
 import { isInCodeMirrorEditor, isInTerminalFocusZone } from "@/lib/shortcuts/dom-targets";
 import { toastError } from "@/lib/api-errors";
-import { isTurnActive } from "@/stores/ws-turn-lifecycle";
+import { busySessionTargets, MID_TURN } from "@/stores/busy-session-targets";
+import { stopUnloadedAgents } from "@/stores/unloaded-agent-control";
 import { isMeaningfulScreenPath, useLastScreenStore } from "@/stores/last-screen-store";
 import { useSessionStatusStore } from "@/stores/session-status-store";
 import { useShortcutsHelpStore } from "@/stores/shortcuts-help-store";
@@ -51,7 +52,7 @@ function useRootEnvironment(isMobile: boolean) {
   usePowerBusySignal();
   useRemoteSleepGuard();
   useAutoUpdateBridge();
-  useZoomHotkeys();
+  useAppZoom();
   useVisualViewportHeight(isMobile);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -197,14 +198,12 @@ function useRootShortcuts(
     useShortcutsHelpStore.getState().toggle();
   });
   useShortcut("stop-all-agents", (event) => {
+    const { loaded, unreachable } = busySessionTargets(MID_TURN);
+    if (loaded.length === 0 && unreachable.length === 0) return;
+    event.preventDefault();
     const store = useWsSessionStore.getState();
-    let stopped = false;
-    for (const [sessionId, session] of Object.entries(store.sessions)) {
-      if (!isTurnActive(session.lifecycle)) continue;
-      store.interrupt(sessionId);
-      stopped = true;
-    }
-    if (stopped) event.preventDefault();
+    for (const sessionId of loaded) store.interrupt(sessionId);
+    void stopUnloadedAgents(unreachable);
   });
   useShortcut("command-palette", (event) => {
     if (isInCodeMirrorEditor(event.target) || isInTerminalFocusZone(event.target)) return;

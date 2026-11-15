@@ -1,12 +1,14 @@
+mod close;
 pub(super) mod compaction;
 mod input;
 mod interrupt;
+mod options;
 mod question;
 mod stream;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -27,13 +29,15 @@ use super::responses::response_value;
 use super::session_permissions::{
     is_plan_approval_request_id, permission_kind_for_request_id, take_pending,
 };
-use super::timeouts::{with_control_timeout, with_probe_timeout};
+use super::timeouts::with_probe_timeout;
 use super::turn_start::{turn_start_params, TurnStartOptions};
 use crate::domain::agents::adapter::{
     AgentRuntimeSession, KnownSubagent, RuntimeAccessMode, RuntimeError, RuntimeEvent,
     RuntimeMcpServerStatus, RuntimeMessageRx, RuntimePermissionMode, RuntimePermissionResponse,
     RuntimePermissionResponseKind,
 };
+use crate::domain::mcp::trusted::CadencrBrowserTrust;
+pub(super) use options::CodexSessionOptions;
 use stream::{error_receiver, spawn_local_forwarder, stream_channel};
 
 pub(super) struct CodexSession {
@@ -63,23 +67,13 @@ pub(super) struct CodexSession {
     pending_prompt_receipts: Arc<PendingPromptReceipts>,
     temp_files: Arc<Mutex<Vec<TempPath>>>,
     closing: Arc<AtomicBool>,
+    /// Interrupts so far: an input that raced one starts no turn (see `session/input.rs`).
+    interrupts: AtomicU64,
     compaction: Arc<compaction::CompactionState>,
     mcp_servers: Arc<RwLock<Vec<RuntimeMcpServerStatus>>>,
     context_window: Option<u64>,
     known_subagents: Vec<KnownSubagent>,
-}
-
-pub(super) struct CodexSessionOptions {
-    pub(super) model: Option<String>,
-    pub(super) effort: Option<String>,
-    pub(super) effective_model: Option<String>,
-    pub(super) effective_effort: Option<String>,
-    pub(super) summary: Option<String>,
-    pub(super) fast_mode: Option<bool>,
-    pub(super) permission_mode: Option<RuntimePermissionMode>,
-    pub(super) access_mode: Option<RuntimeAccessMode>,
-    pub(super) cwd: PathBuf,
-    pub(super) context_window: Option<u64>,
+    browser_trust: CadencrBrowserTrust,
 }
 
 impl CodexSession {
@@ -114,10 +108,12 @@ impl CodexSession {
             pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
             temp_files: Arc::new(Mutex::new(Vec::new())),
             closing: Arc::new(AtomicBool::new(false)),
+            interrupts: AtomicU64::new(0),
             compaction: Arc::default(),
             mcp_servers: Arc::new(RwLock::new(Vec::new())),
             context_window: options.context_window,
             known_subagents: Vec::new(),
+            browser_trust: options.browser_trust,
         }
     }
 
@@ -213,6 +209,7 @@ impl AgentRuntimeSession for CodexSession {
             .closing(Arc::clone(&self.closing))
             .compaction(Arc::clone(&self.compaction))
             .known_subagents(std::mem::take(&mut self.known_subagents))
+            .browser_trust(self.browser_trust)
             .call();
         spawn_local_forwarder(local_rx, tx);
         rx
@@ -262,6 +259,7 @@ impl AgentRuntimeSession for CodexSession {
         content: Value,
         client_message_id: Option<String>,
     ) -> Result<(), RuntimeError> {
+        let interrupts_at_entry = self.interrupts.load(Ordering::SeqCst);
         if let Some(client_message_id) = client_message_id.as_ref() {
             self.pending_prompt_receipts
                 .enqueue(client_message_id.clone());
@@ -269,8 +267,12 @@ impl AgentRuntimeSession for CodexSession {
 
         let result = match self.convert_input(content).await {
             Ok(input) => {
-                self.stream_converted_input(input, client_message_id.as_deref())
-                    .await
+                self.stream_converted_input(
+                    input,
+                    client_message_id.as_deref(),
+                    interrupts_at_entry,
+                )
+                .await
             }
             Err(error) => Err(error),
         };
@@ -290,6 +292,7 @@ impl AgentRuntimeSession for CodexSession {
     }
 
     async fn interrupt(&self) -> Result<(), RuntimeError> {
+        self.interrupts.fetch_add(1, Ordering::SeqCst);
         // Snapshot before awaiting RPCs; completion events keep updating the tracker.
         let children = self.child_turn_ids.read().await.clone();
         let root_turn = self.active_turn_id.read().await.clone();
@@ -322,21 +325,7 @@ impl AgentRuntimeSession for CodexSession {
     }
 
     async fn close(&mut self) -> Result<(), RuntimeError> {
-        self.closing.store(true, Ordering::SeqCst);
-        let unsubscribe = with_control_timeout(
-            "Codex thread/unsubscribe",
-            self.client.thread_unsubscribe(&self.thread_id),
-        )
-        .await;
-        self.temp_files.lock().await.clear();
-        self.pending_prompt_receipts.clear();
-        self.async_questions.lock().await.clear();
-        self.client.shutdown().await;
-        unsubscribe.map(|_| ()).map_err(|error| {
-            RuntimeError::new(format!(
-                "Codex session closed, but thread/unsubscribe failed: {error}"
-            ))
-        })
+        self.close_session().await
     }
 
     async fn set_model(&self, model: &str) -> Result<(), RuntimeError> {
@@ -380,7 +369,7 @@ impl AgentRuntimeSession for CodexSession {
             return self.respond_async_question(response).await;
         }
         let pending = take_pending(&self.pending_requests, &response.request_id).await?;
-        let result = response_value(&pending.method, &pending.params, &response);
+        let result = response_value(pending.method, &pending.params, &response);
         self.client
             .respond_server_request(pending.id.clone(), result)
             .await?;

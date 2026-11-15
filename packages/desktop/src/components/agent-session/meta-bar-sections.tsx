@@ -70,6 +70,7 @@ export function useMetaBarDerivedState(
         id: provider.id,
         label: provider.label,
         disabled: provider.disabled,
+        refreshError: provider.refreshError,
         models: provider.models,
       }));
     }
@@ -232,7 +233,6 @@ export function MetaBarLeadingChips(props: LeadingChipsProps) {
           permissionMode={props.permissionMode}
           enabledOptInModes={props.enabledOptInModes}
           providerModes={props.providerModes}
-          onToggle={props.onPermissionModeToggle}
           onSelect={props.onPermissionModeSet}
           incompatibleReason={props.modeIncompatibleReason}
         />

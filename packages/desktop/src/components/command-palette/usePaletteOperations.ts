@@ -12,7 +12,7 @@ import {
   type MessageSearchHit,
 } from "@/api/generated";
 import { useOpenFileInNeovim } from "@/components/editor/neovim/useOpenFileInNeovim";
-import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import { useSetting } from "@/hooks/useSetting";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { DEFAULT_WORKTREE_MODE_KEY, type DefaultWorktreeMode } from "@/lib/default-worktree-mode";
 import { desktopBridge } from "@/lib/desktop-bridge";
@@ -20,6 +20,7 @@ import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { requestConversationFind } from "@/stores/conversation-find-request-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { DEFAULT_MAX_TABS } from "@/stores/editor-store-types";
+import { activateBuiltinFeatureTab } from "@/lib/plugin-tabs/builtin-fallback";
 import { activateFeatureTab } from "@/stores/feature-layout-store";
 
 /** How a new conversation gets its working copy. */
@@ -46,11 +47,11 @@ export interface PaletteOperations {
 
 /** Opens `path` in a conversation's editor: Neovim's own buffers when it runs there. */
 function useOpenFile(activeFeatureId: number | null): PaletteOperations["openFile"] {
-  const { value: maxTabsSetting } = useDebouncedSetting("editor_max_tabs");
+  const { value: maxTabsSetting } = useSetting("editor_max_tabs");
   const openInNeovim = useOpenFileInNeovim(activeFeatureId ?? 0);
   return useCallback(
     (featureId: number, path: string) => {
-      activateFeatureTab(featureId, "editor");
+      activateBuiltinFeatureTab(featureId, "editor");
       if (openInNeovim && featureId === activeFeatureId) {
         openInNeovim(path);
         return;

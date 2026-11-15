@@ -1,9 +1,13 @@
 use std::sync::Arc;
 
 use cadencr_service::domain::mcp::context::McpContext;
+use cadencr_service::domain::mcp::control_grant::McpControlServer;
 use cadencr_service::domain::mcp::tools::project::run_project_tool;
+use cadencr_service::domain::mcp::tools::project_providers::agent_providers_doc;
 use serde_json::json;
 use sqlx::sqlite::SqlitePoolOptions;
+
+use crate::support::mcp_service::served_mcp_context;
 
 async fn test_ctx() -> Arc<McpContext> {
     let pool = SqlitePoolOptions::new()
@@ -45,7 +49,9 @@ async fn test_ctx() -> Arc<McpContext> {
     .await
     .expect("seed project MCP test database");
 
-    McpContext::new_with_source_session(pool.clone(), pool, 100, Some(1000))
+    // The tools only read `pool`; tests seed more rows through `ctx.read_pool`,
+    // the same in-memory database the service writes.
+    served_mcp_context(pool, McpControlServer::Project, 100, 1000).await
 }
 
 fn result_text(result: rmcp::model::CallToolResult) -> String {
@@ -73,12 +79,13 @@ async fn project_list_sessions_returns_only_current_project_sessions_as_json() {
     );
 }
 
+// `project_list_agent_providers` relays to the service, which answers with
+// this document (built where the catalog caches and CLI paths live).
 #[tokio::test]
 async fn project_list_agent_providers_returns_spawn_guidance() {
     let ctx = test_ctx().await;
 
-    let result = run_project_tool("project_list_agent_providers", json!({}), ctx).await;
-    let body: serde_json::Value = serde_json::from_str(&result_text(result)).expect("tool JSON");
+    let body = agent_providers_doc(&ctx.read_pool, std::path::Path::new("/tmp/current")).await;
 
     assert!(body.get("project").is_none());
     assert!(body["valid_provider_ids"]
@@ -116,7 +123,7 @@ async fn project_list_sessions_supports_stable_cursor_pagination() {
             (1002, 102, 'session', 'codex', 'openai/gpt-5.4', 'completed', '2026-06-18T11:00:00Z');
         "#,
     )
-    .execute(&ctx.write_pool)
+    .execute(&ctx.read_pool)
     .await
     .unwrap();
 
@@ -170,7 +177,7 @@ async fn project_find_related_sessions_searches_only_current_project_history() {
         INSERT INTO agent_messages_fts(agent_messages_fts) VALUES('rebuild');
         "#,
     )
-    .execute(&ctx.write_pool)
+    .execute(&ctx.read_pool)
     .await
     .unwrap();
 
@@ -277,7 +284,7 @@ async fn project_read_session_caps_total_returned_message_content() {
          VALUES (5, 1000, 'assistant', 'text', ?, '2026-06-18T10:04:00Z')",
     )
     .bind(large_content)
-    .execute(&ctx.write_pool)
+    .execute(&ctx.read_pool)
     .await
     .unwrap();
 
@@ -410,7 +417,7 @@ async fn project_get_session_status_reports_pending_gate_as_turn_state() {
          SET status = 'paused', pending_permission = '{\"request_id\":\"gate-1\"}'
          WHERE id = 1000",
     )
-    .execute(&ctx.write_pool)
+    .execute(&ctx.read_pool)
     .await
     .unwrap();
 

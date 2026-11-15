@@ -1,7 +1,7 @@
 //! Original signed wire envelope plus a post-verification provider-only view.
 //! The view is never serialized, signed, cached, or retained as proof.
 use super::{ManagedProviderIndex, ManagedProviderPackage, SignedManagedProviderIndex};
-use crate::domain::themes::managed::models::SignedMixedCatalog;
+use crate::domain::marketplace::models::SignedMixedCatalog;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -52,6 +52,13 @@ impl SignedProviderCatalog {
                 // Plugin members are providers like standalone entries.
                 let packages = cadencr_registry_core::catalog_members(&index.signed.packages)
                     .filter(|entry| entry["kind"] == "provider")
+                    .filter(|entry| {
+                        !index
+                            .signed
+                            .provider_handoffs
+                            .iter()
+                            .any(|record| record.retires(entry))
+                    })
                     .map(|entry| {
                         serde_json::from_value::<ManagedProviderPackage>(entry["package"].clone())
                             .map_err(|e| e.to_string())

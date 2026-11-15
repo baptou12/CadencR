@@ -76,6 +76,19 @@ export interface AcpAgentEntry {
   [key: string]: unknown;
 }
 
+export interface AgentDigestToolOutcome {
+  /**
+   * The start of a failed call's output, which says why, line breaks kept;
+   * absent when it succeeded.
+   * @nullable
+   */
+  error_output?: string | null;
+  /** The call failed: its result is a `tool_error`. */
+  is_error: boolean;
+}
+
+export type AgentDigestToolCallOutcome = null | AgentDigestToolOutcome;
+
 export interface AgentDigestToolCall {
   /**
    * The tool input JSON with long strings and arrays clipped, so a file
@@ -85,6 +98,7 @@ export interface AgentDigestToolCall {
   args: string;
   /** Tool name exactly as the provider reported it. */
   name: string;
+  outcome?: AgentDigestToolCallOutcome;
 }
 
 export type AgentActivityDigestEntryLastTool = null | AgentDigestToolCall;
@@ -242,6 +256,12 @@ export interface ProviderCatalogEntry {
   label: string;
   models: ModelCatalogEntry[];
   modes?: ProviderModeCatalogEntry[];
+  /**
+   * Set when `models` is the last catalog known because refreshing it
+   * failed; carries why. `None` for a fresh catalog.
+   * @nullable
+   */
+  refresh_error?: string | null;
   status: ProviderStatus;
   /** @nullable */
   status_message?: string | null;
@@ -282,6 +302,11 @@ export interface ProviderPromptCapabilities {
 export interface ProviderResumeCommand {
   args: string[];
   program: string;
+  /**
+   * Host-managed owner binding; never supplied by a contributor command template.
+   * @nullable
+   */
+  session_owner?: string | null;
 }
 
 export type ProviderCatalogResponseEntryAllOfProfileCapability = null | ProviderProfileCapability;
@@ -347,6 +372,10 @@ export type AgentSelectionResponseSelections = { [key: string]: ResolvedSelectio
 export interface AgentSelectionResponse {
   /** Keyed by agent type (`session`, `auto_name`). */
   selections: AgentSelectionResponseSelections;
+}
+
+export interface AgentSessionControlAck {
+  accepted: boolean;
 }
 
 export interface AgentSessionRow {
@@ -530,6 +559,61 @@ export interface AllocatedPort {
   source: PortSource;
 }
 
+export type StepStatus = (typeof StepStatus)[keyof typeof StepStatus];
+
+export const StepStatus = {
+  pending: "pending",
+  running: "running",
+  interrupted: "interrupted",
+  done: "done",
+  skipped: "skipped",
+  blocked: "blocked",
+  failed: "failed",
+} as const;
+
+/**
+ * One step's state. `reason` is a skip explanation, a blocked code
+ * (`dirty_worktree`, `unmerged_branch`) or what a pending step waits on.
+ */
+export interface StepOutcome {
+  /** @nullable */
+  detail?: string | null;
+  /** @nullable */
+  message?: string | null;
+  /** @nullable */
+  reason?: string | null;
+  status: StepStatus;
+}
+
+export type CleanupReportBranch = null | StepOutcome;
+
+export type CleanupReportBrowserTabs = null | StepOutcome;
+
+export type CleanupReportTerminals = null | StepOutcome;
+
+export type CleanupReportWorktree = null | StepOutcome;
+
+/**
+ * One entry per step that was asked for; absent steps were not requested.
+ */
+export interface CleanupReport {
+  branch?: CleanupReportBranch;
+  browser_tabs?: CleanupReportBrowserTabs;
+  terminals?: CleanupReportTerminals;
+  worktree?: CleanupReportWorktree;
+}
+
+export interface ArchiveCleanupStatus {
+  cleanup: CleanupReport;
+  feature_id: number;
+  project_id: number;
+  /** A run is executing its steps right now. */
+  running: boolean;
+  /** Every requested step is done or had nothing to do. */
+  settled: boolean;
+  title: string;
+}
+
 export interface ArchivePreview {
   descendant_ids: number[];
   has_relations: boolean;
@@ -547,13 +631,28 @@ export interface ArchiveProjectSessionsResponse {
   skipped_running: number;
 }
 
+/**
+ * The Archive dialog's options: which relatives to archive along, and the
+ * cleanup to run on the selected conversation once the archive commits.
+ */
 export interface ArchiveRequest {
+  close_browser_tabs?: boolean;
+  /** Delete the branch even when unmerged; only after the user confirmed it. */
+  force_remove_branch?: boolean;
+  /** Discard uncommitted changes; only after the user confirmed it. */
+  force_remove_worktree?: boolean;
   include_descendants?: boolean;
   include_parent?: boolean;
+  kill_terminals?: boolean;
+  /** Also removes the worktree, which git requires first. */
+  remove_branch?: boolean;
+  remove_worktree?: boolean;
 }
 
 export interface ArchiveResponse {
   archived_ids: number[];
+  /** Each requested cleanup step's outcome, on the selected conversation. */
+  cleanup: CleanupReport;
 }
 
 export type ArchivedCleanupRunStatus =
@@ -2630,6 +2729,28 @@ export type GitOperationResponseOneOfThree = {
  */
 export type GitOperationResponse = GitOperationResponseOneOf | GitOperationResponseOneOfThree;
 
+/**
+ * Where the feature's directory sits in its checkout. Git tab paths are
+ * relative to the checkout root; editor paths are relative to the feature's
+ * directory, so the two differ by this prefix.
+ */
+export interface GitPathPrefixResponse {
+  /**
+   * The feature's directory relative to the checkout root, with `/`
+   * separators: empty at the root, `packages/app` for a monorepo project.
+   * `None` when the directory has no Git metadata.
+   * @nullable
+   */
+  prefix?: string | null;
+  /**
+   * Absolute path of the checkout root, where Git runs. Names a Git path
+   * outside the feature's directory without ambiguity. `None` when the
+   * directory has no Git metadata.
+   * @nullable
+   */
+  root?: string | null;
+}
+
 export interface GitStats {
   deletions: number;
   files_changed: number;
@@ -2772,6 +2893,33 @@ export interface GitSuccessResponse {
   /** @nullable */
   error?: string | null;
   success: boolean;
+}
+
+/**
+ * A feature the installed Git is too old for.
+ */
+export interface UnsupportedGitFeature {
+  label: string;
+  /** The first Git release with it, as `2.38.0`. */
+  minimum_version: string;
+}
+
+/**
+ * The installed Git, for diagnostics.
+ */
+export interface GitVersionResponse {
+  /**
+   * Why the version is unknown.
+   * @nullable
+   */
+  error?: string | null;
+  /** What this Git is too old for. */
+  unsupported: UnsupportedGitFeature[];
+  /**
+   * `2.34.1`; `None` when Git is missing or its version unreadable.
+   * @nullable
+   */
+  version?: string | null;
 }
 
 export interface HasUncommittedChangesResponse {
@@ -2923,121 +3071,17 @@ export interface InstallLspRequest {
   version: string;
 }
 
-/**
- * Algorithms accepted by index schema v1.
- */
-export type ManagedSignatureAlgorithm =
-  (typeof ManagedSignatureAlgorithm)[keyof typeof ManagedSignatureAlgorithm];
-
-export const ManagedSignatureAlgorithm = {
-  ed25519: "ed25519",
-} as const;
-
-/**
- * Detached index signature. Cryptographic verification is intentionally a
- * caller concern; contract validation only validates this envelope's shape.
- */
-export interface ManagedIndexSignature {
-  algorithm: ManagedSignatureAlgorithm;
-  key_id: string;
-  /** Standard padded base64. Ed25519 signatures decode to exactly 64 bytes. */
-  value: string;
-}
-
-/**
- * Package-owned files, all relative to the extracted package root.
- */
-export interface ManagedPackageAssets {
-  icon: string;
-  /** @nullable */
-  license?: string | null;
-  /** @nullable */
-  readme?: string | null;
-}
-
-/**
- * Inclusive Cadencr application compatibility bounds.
- */
-export interface ManagedAppCompatibility {
-  /** @nullable */
-  max_app_version?: string | null;
-  min_app_version: string;
-}
-
-/**
- * Strict host metadata that must never be moved into the portable ACP entry.
- */
-export interface ManagedProviderHost {
-  assets: ManagedPackageAssets;
-  compatibility: ManagedAppCompatibility;
-  /**
-   * Stable registry publisher identity. Signature trust is resolved from the
-   * index key separately; this field records who owns the package entry.
-   */
-  publisher: string;
-}
-
-/**
- * One versioned provider package in the signed index.
- */
-export interface ManagedProviderPackage {
-  /** Lossless ACP Registry v1 payload. */
-  agent: AcpAgentEntry;
-  /** Cadencr-only host and package policy. */
-  host: ManagedProviderHost;
-}
-
-/**
- * The deterministic payload covered by an index signature.
- */
-export interface ManagedProviderIndex {
-  /** Hard freshness boundary. Expired catalogs are never exposed or installed. */
-  expires_at: string;
-  /** Monotonic publication time used to reject replayed catalog snapshots. */
-  generated_at: string;
-  packages: ManagedProviderPackage[];
-  /** @minimum 0 */
-  schema_version: number;
-}
-
-/**
- * A detached signature over [`ManagedProviderIndex::signing_bytes`].
- */
-export interface SignedManagedProviderIndex {
-  signature: ManagedIndexSignature;
-  /** The exact payload covered by `signature`. */
-  signed: ManagedProviderIndex;
-}
-
-export interface MixedCatalogPayload {
-  expires_at: string;
-  generated_at: string;
-  packages: unknown[];
-  /** @minimum 0 */
-  schema_version: number;
-}
-
-export interface SignedMixedCatalog {
-  signature: ManagedIndexSignature;
-  signed: MixedCatalogPayload;
-}
-
-export type SignedProviderCatalog = SignedManagedProviderIndex | SignedMixedCatalog;
-
 export interface InstallManagedProviderRequest {
-  index: SignedProviderCatalog;
   provider_id: string;
   version: string;
 }
 
 export interface InstallManagedTabRequest {
-  index: SignedMixedCatalog;
   tab_id: string;
   version: string;
 }
 
 export interface InstallManagedThemeRequest {
-  index: SignedMixedCatalog;
   theme_id: string;
   version: string;
 }
@@ -3235,6 +3279,41 @@ export interface ListServersResponse {
 
 export type LspCatalogResponseBlockedVersions = { [key: string]: { [key: string]: string } };
 
+/**
+ * Algorithms accepted by index schema v1.
+ */
+export type ManagedSignatureAlgorithm =
+  (typeof ManagedSignatureAlgorithm)[keyof typeof ManagedSignatureAlgorithm];
+
+export const ManagedSignatureAlgorithm = {
+  ed25519: "ed25519",
+} as const;
+
+/**
+ * Detached index signature. Cryptographic verification is intentionally a
+ * caller concern; contract validation only validates this envelope's shape.
+ */
+export interface ManagedIndexSignature {
+  algorithm: ManagedSignatureAlgorithm;
+  key_id: string;
+  /** Standard padded base64. Ed25519 signatures decode to exactly 64 bytes. */
+  value: string;
+}
+
+export interface MixedCatalogPayload {
+  expires_at: string;
+  generated_at: string;
+  packages: unknown[];
+  provider_handoffs?: unknown[];
+  /** @minimum 0 */
+  schema_version: number;
+}
+
+export interface SignedMixedCatalog {
+  signature: ManagedIndexSignature;
+  signed: MixedCatalogPayload;
+}
+
 export type LspCatalogResponseIndex = null | SignedMixedCatalog;
 
 export type LspCatalogResponseRecommendedVersions = { [key: string]: string };
@@ -3248,6 +3327,7 @@ export const LspVersionUnavailable = {
   node: "node",
   policy: "policy",
   compatibility: "compatibility",
+  operating_system: "operating_system",
 } as const;
 
 export type LspCatalogResponseUnavailableVersions = {
@@ -3290,6 +3370,15 @@ export interface LspResolveResponse {
 export interface LspRootResponse {
   /** Absolute resolved LSP root. The feature root when no marker matched. */
   root: string;
+}
+
+/**
+ * Inclusive Cadencr application compatibility bounds.
+ */
+export interface ManagedAppCompatibility {
+  /** @nullable */
+  max_app_version?: string | null;
+  min_app_version: string;
 }
 
 export type ManagedBlocklistCacheStatus =
@@ -3344,6 +3433,64 @@ export const ManagedCatalogCacheStatus = {
   invalid: "invalid",
   expired: "expired",
 } as const;
+
+/**
+ * Package-owned files, all relative to the extracted package root.
+ */
+export interface ManagedPackageAssets {
+  icon: string;
+  /** @nullable */
+  license?: string | null;
+  /** @nullable */
+  readme?: string | null;
+}
+
+/**
+ * Strict host metadata that must never be moved into the portable ACP entry.
+ */
+export interface ManagedProviderHost {
+  assets: ManagedPackageAssets;
+  compatibility: ManagedAppCompatibility;
+  /**
+   * Stable registry publisher identity. Signature trust is resolved from the
+   * index key separately; this field records who owns the package entry.
+   */
+  publisher: string;
+}
+
+/**
+ * One versioned provider package in the signed index.
+ */
+export interface ManagedProviderPackage {
+  /** Lossless ACP Registry v1 payload. */
+  agent: AcpAgentEntry;
+  /** Cadencr-only host and package policy. */
+  host: ManagedProviderHost;
+}
+
+/**
+ * The deterministic payload covered by an index signature.
+ */
+export interface ManagedProviderIndex {
+  /** Hard freshness boundary. Expired catalogs are never exposed or installed. */
+  expires_at: string;
+  /** Monotonic publication time used to reject replayed catalog snapshots. */
+  generated_at: string;
+  packages: ManagedProviderPackage[];
+  /** @minimum 0 */
+  schema_version: number;
+}
+
+/**
+ * A detached signature over [`ManagedProviderIndex::signing_bytes`].
+ */
+export interface SignedManagedProviderIndex {
+  signature: ManagedIndexSignature;
+  /** The exact payload covered by `signature`. */
+  signed: ManagedProviderIndex;
+}
+
+export type SignedProviderCatalog = SignedManagedProviderIndex | SignedMixedCatalog;
 
 export type ManagedCatalogResponseIndex = null | SignedProviderCatalog;
 
@@ -3695,6 +3842,49 @@ export interface MarkViewedRequest {
 }
 
 /**
+ * The way out of an invalid trust configuration.
+ */
+export type MarketplaceTrustRecovery =
+  (typeof MarketplaceTrustRecovery)[keyof typeof MarketplaceTrustRecovery];
+
+export const MarketplaceTrustRecovery = {
+  reinstall: "reinstall",
+  update_app: "update_app",
+  set_aside: "set_aside",
+  repair: "repair",
+} as const;
+
+export type MarketplaceTrustState =
+  (typeof MarketplaceTrustState)[keyof typeof MarketplaceTrustState];
+
+export const MarketplaceTrustState = {
+  configured: "configured",
+  unconfigured: "unconfigured",
+  invalid: "invalid",
+} as const;
+
+export type MarketplaceTrustStatusRecovery = null | MarketplaceTrustRecovery;
+
+export interface MarketplaceTrustStatus {
+  /** @nullable */
+  error?: string | null;
+  /** @nullable */
+  error_code?: string | null;
+  /**
+   * The file a `set_aside` recovery renames.
+   * @nullable
+   */
+  file?: string | null;
+  /**
+   * Where a set-aside file was kept, in the answer to that action.
+   * @nullable
+   */
+  kept_at?: string | null;
+  recovery?: MarketplaceTrustStatusRecovery;
+  status: MarketplaceTrustState;
+}
+
+/**
  * Where one value the user provides at install time goes.
  */
 export type McpInputKind = (typeof McpInputKind)[keyof typeof McpInputKind];
@@ -3957,6 +4147,14 @@ export interface MergeResult {
   /** @nullable */
   error?: string | null;
   success: boolean;
+  /**
+   * Set on a *successful* merge whose cleanup did not complete — e.g. the
+   * target worktree could not be switched back to the branch it had
+   * checked out before. The merge itself is committed; the UI must still
+   * tell the user the worktree was left on another branch.
+   * @nullable
+   */
+  warning?: string | null;
 }
 
 export interface MessageFullContentResponse {
@@ -4493,6 +4691,12 @@ export interface PluginTabConfiguration {
 export interface PluginTabConsentRequest {
   /** The hash the user was shown; must equal the current one. */
   permissions_hash: string;
+  /**
+   * The user ticked "I trust this code to run on my computer". Required
+   * (422 `PLUGIN_TAB_TRUST_REQUIRED`) for a tab that runs commands or ships
+   * a backend; ignored for a read-only one.
+   */
+  trusts_code?: boolean;
 }
 
 export interface PluginTabEnablement {
@@ -4697,6 +4901,8 @@ export const TabIssueCode = {
   SHORTCUT_KEYS_INVALID: "SHORTCUT_KEYS_INVALID",
   SHORTCUT_KEYS_DUPLICATE: "SHORTCUT_KEYS_DUPLICATE",
   SHORTCUT_DESCRIPTION_INVALID: "SHORTCUT_DESCRIPTION_INVALID",
+  REPLACES_INVALID: "REPLACES_INVALID",
+  REPLACES_DUPLICATE: "REPLACES_DUPLICATE",
 } as const;
 
 /**
@@ -4798,6 +5004,12 @@ export interface PluginTabSummary {
    * @nullable
    */
   project_overrides?: PluginTabProjectOverride[] | null;
+  /**
+   * Built-in tabs (`terminal`, `git`, `editor`, `preview`) the tab declares
+   * it can replace (`tab.replaces`); which one it does is a workspace
+   * setting (`custom_tab_replacements`).
+   */
+  replaces: string[];
   /** Keyboard shortcuts the tab handles while it has focus. */
   shortcuts: TabShortcut[];
   status: PluginTabStatus;
@@ -5923,6 +6135,16 @@ export interface RestartContinuationReport {
   previous_version?: string | null;
 }
 
+/**
+ * Resume an archive cleanup, forcing the steps the user confirmed.
+ */
+export interface RetryArchiveCleanupRequest {
+  /** Delete the branch even though it is not merged. */
+  force_remove_branch?: boolean;
+  /** Discard the worktree's uncommitted changes. */
+  force_remove_worktree?: boolean;
+}
+
 export interface RetryWorktreeBody {
   feature_id: number;
   project_id: number;
@@ -6338,6 +6560,14 @@ export interface SessionClearedPayload {
  */
 export type SessionCompactStartedPayload = null;
 
+/**
+ * `compact.stopped`: a Stop cancelled the manual compaction before it began.
+ * An intended outcome, not a failure; the transcript marker is persisted.
+ */
+export interface SessionCompactStoppedPayload {
+  [key: string]: unknown;
+}
+
 export interface SessionConfigSetPayload {
   config_id: string;
   session_id: string;
@@ -6694,6 +6924,17 @@ export interface SettingsFileResponse {
 }
 
 export interface SideQuestionRequest {
+  /**
+   * The composer's access choice made before the source session joined.
+   * @nullable
+   */
+  access_mode?: string | null;
+  /**
+   * The composer's permission mode when the source session has not joined
+   * yet: a chip change made before then is not saved on its row.
+   * @nullable
+   */
+  permission_mode?: string | null;
   question: string;
 }
 
@@ -7081,7 +7322,6 @@ export interface UpdateLabelRequest {
 }
 
 export interface UpdateManagedProviderRequest {
-  index: SignedProviderCatalog;
   version: string;
 }
 
@@ -7314,6 +7554,7 @@ export const WsSessionAction = {
   access_modechanged: "access_mode.changed",
   providersetok: "provider.set.ok",
   compactstarted: "compact.started",
+  compactstopped: "compact.stopped",
   modelsetok: "model.set.ok",
   effortsetok: "effort.set.ok",
   configsnapshot: "config.snapshot",
@@ -8004,179 +8245,191 @@ export type WsSessionEventOneOfFiveoneAction =
   (typeof WsSessionEventOneOfFiveoneAction)[keyof typeof WsSessionEventOneOfFiveoneAction];
 
 export const WsSessionEventOneOfFiveoneAction = {
-  modelsetok: "model.set.ok",
+  compactstopped: "compact.stopped",
 } as const;
 
 export type WsSessionEventOneOfFiveone = {
   action: WsSessionEventOneOfFiveoneAction;
-  payload: ModelSetOkPayload;
+  payload: SessionCompactStoppedPayload;
 };
 
 export type WsSessionEventOneOfFivethreeAction =
   (typeof WsSessionEventOneOfFivethreeAction)[keyof typeof WsSessionEventOneOfFivethreeAction];
 
 export const WsSessionEventOneOfFivethreeAction = {
-  effortsetok: "effort.set.ok",
+  modelsetok: "model.set.ok",
 } as const;
 
 export type WsSessionEventOneOfFivethree = {
   action: WsSessionEventOneOfFivethreeAction;
-  payload: EffortSetOkPayload;
+  payload: ModelSetOkPayload;
 };
 
 export type WsSessionEventOneOfFivefiveAction =
   (typeof WsSessionEventOneOfFivefiveAction)[keyof typeof WsSessionEventOneOfFivefiveAction];
 
 export const WsSessionEventOneOfFivefiveAction = {
-  configsnapshot: "config.snapshot",
+  effortsetok: "effort.set.ok",
 } as const;
 
 export type WsSessionEventOneOfFivefive = {
   action: WsSessionEventOneOfFivefiveAction;
-  payload: SessionConfigSnapshotPayload;
+  payload: EffortSetOkPayload;
 };
 
 export type WsSessionEventOneOfFivesevenAction =
   (typeof WsSessionEventOneOfFivesevenAction)[keyof typeof WsSessionEventOneOfFivesevenAction];
 
 export const WsSessionEventOneOfFivesevenAction = {
-  fast_modesetok: "fast_mode.set.ok",
+  configsnapshot: "config.snapshot",
 } as const;
 
 export type WsSessionEventOneOfFiveseven = {
   action: WsSessionEventOneOfFivesevenAction;
-  payload: FastModeSetOkPayload;
+  payload: SessionConfigSnapshotPayload;
 };
 
 export type WsSessionEventOneOfFivenineAction =
   (typeof WsSessionEventOneOfFivenineAction)[keyof typeof WsSessionEventOneOfFivenineAction];
 
 export const WsSessionEventOneOfFivenineAction = {
-  modechanged: "mode.changed",
+  fast_modesetok: "fast_mode.set.ok",
 } as const;
 
 export type WsSessionEventOneOfFivenine = {
   action: WsSessionEventOneOfFivenineAction;
-  payload: ModeChangedPayload;
+  payload: FastModeSetOkPayload;
 };
 
 export type WsSessionEventOneOfSixoneAction =
   (typeof WsSessionEventOneOfSixoneAction)[keyof typeof WsSessionEventOneOfSixoneAction];
 
 export const WsSessionEventOneOfSixoneAction = {
-  profilechanged: "profile.changed",
+  modechanged: "mode.changed",
 } as const;
 
 export type WsSessionEventOneOfSixone = {
   action: WsSessionEventOneOfSixoneAction;
-  payload: ProfileChangedPayload;
+  payload: ModeChangedPayload;
 };
 
 export type WsSessionEventOneOfSixthreeAction =
   (typeof WsSessionEventOneOfSixthreeAction)[keyof typeof WsSessionEventOneOfSixthreeAction];
 
 export const WsSessionEventOneOfSixthreeAction = {
-  runtime_overrideschanged: "runtime_overrides.changed",
+  profilechanged: "profile.changed",
 } as const;
 
 export type WsSessionEventOneOfSixthree = {
   action: WsSessionEventOneOfSixthreeAction;
-  payload: RuntimeOverridesChangedPayload;
+  payload: ProfileChangedPayload;
 };
 
 export type WsSessionEventOneOfSixfiveAction =
   (typeof WsSessionEventOneOfSixfiveAction)[keyof typeof WsSessionEventOneOfSixfiveAction];
 
 export const WsSessionEventOneOfSixfiveAction = {
-  branchrewound: "branch.rewound",
+  runtime_overrideschanged: "runtime_overrides.changed",
 } as const;
 
 export type WsSessionEventOneOfSixfive = {
   action: WsSessionEventOneOfSixfiveAction;
-  payload: BranchRewoundPayload;
+  payload: RuntimeOverridesChangedPayload;
 };
 
 export type WsSessionEventOneOfSixsevenAction =
   (typeof WsSessionEventOneOfSixsevenAction)[keyof typeof WsSessionEventOneOfSixsevenAction];
 
 export const WsSessionEventOneOfSixsevenAction = {
-  branchforked: "branch.forked",
+  branchrewound: "branch.rewound",
 } as const;
 
 export type WsSessionEventOneOfSixseven = {
   action: WsSessionEventOneOfSixsevenAction;
-  payload: BranchForkedPayload;
+  payload: BranchRewoundPayload;
 };
 
 export type WsSessionEventOneOfSixnineAction =
   (typeof WsSessionEventOneOfSixnineAction)[keyof typeof WsSessionEventOneOfSixnineAction];
 
 export const WsSessionEventOneOfSixnineAction = {
-  runtime_session_id: "runtime_session_id",
+  branchforked: "branch.forked",
 } as const;
 
 export type WsSessionEventOneOfSixnine = {
   action: WsSessionEventOneOfSixnineAction;
-  payload: RuntimeSessionIdPayload;
+  payload: BranchForkedPayload;
 };
 
 export type WsSessionEventOneOfSevenoneAction =
   (typeof WsSessionEventOneOfSevenoneAction)[keyof typeof WsSessionEventOneOfSevenoneAction];
 
 export const WsSessionEventOneOfSevenoneAction = {
-  permissionrequest: "permission.request",
+  runtime_session_id: "runtime_session_id",
 } as const;
 
 export type WsSessionEventOneOfSevenone = {
   action: WsSessionEventOneOfSevenoneAction;
-  payload: PermissionRequestPayload;
+  payload: RuntimeSessionIdPayload;
 };
 
 export type WsSessionEventOneOfSeventhreeAction =
   (typeof WsSessionEventOneOfSeventhreeAction)[keyof typeof WsSessionEventOneOfSeventhreeAction];
 
 export const WsSessionEventOneOfSeventhreeAction = {
-  prompt_received: "prompt_received",
+  permissionrequest: "permission.request",
 } as const;
 
 export type WsSessionEventOneOfSeventhree = {
   action: WsSessionEventOneOfSeventhreeAction;
-  payload: PromptReceivedPayload;
+  payload: PermissionRequestPayload;
 };
 
 export type WsSessionEventOneOfSevenfiveAction =
   (typeof WsSessionEventOneOfSevenfiveAction)[keyof typeof WsSessionEventOneOfSevenfiveAction];
 
 export const WsSessionEventOneOfSevenfiveAction = {
-  stream_status: "stream_status",
+  prompt_received: "prompt_received",
 } as const;
 
 export type WsSessionEventOneOfSevenfive = {
   action: WsSessionEventOneOfSevenfiveAction;
-  payload: SessionStreamStatusPayload;
+  payload: PromptReceivedPayload;
 };
 
 export type WsSessionEventOneOfSevensevenAction =
   (typeof WsSessionEventOneOfSevensevenAction)[keyof typeof WsSessionEventOneOfSevensevenAction];
 
 export const WsSessionEventOneOfSevensevenAction = {
-  persistence_status: "persistence_status",
+  stream_status: "stream_status",
 } as const;
 
 export type WsSessionEventOneOfSevenseven = {
   action: WsSessionEventOneOfSevensevenAction;
-  payload: SessionPersistenceStatusPayload;
+  payload: SessionStreamStatusPayload;
 };
 
 export type WsSessionEventOneOfSevennineAction =
   (typeof WsSessionEventOneOfSevennineAction)[keyof typeof WsSessionEventOneOfSevennineAction];
 
 export const WsSessionEventOneOfSevennineAction = {
-  subagent_updated: "subagent_updated",
+  persistence_status: "persistence_status",
 } as const;
 
 export type WsSessionEventOneOfSevennine = {
   action: WsSessionEventOneOfSevennineAction;
+  payload: SessionPersistenceStatusPayload;
+};
+
+export type WsSessionEventOneOfEightoneAction =
+  (typeof WsSessionEventOneOfEightoneAction)[keyof typeof WsSessionEventOneOfEightoneAction];
+
+export const WsSessionEventOneOfEightoneAction = {
+  subagent_updated: "subagent_updated",
+} as const;
+
+export type WsSessionEventOneOfEightone = {
+  action: WsSessionEventOneOfEightoneAction;
   payload: SubagentRun;
 };
 
@@ -8223,7 +8476,8 @@ export type WsSessionEvent =
   | WsSessionEventOneOfSeventhree
   | WsSessionEventOneOfSevenfive
   | WsSessionEventOneOfSevenseven
-  | WsSessionEventOneOfSevennine;
+  | WsSessionEventOneOfSevennine
+  | WsSessionEventOneOfEightone;
 
 export type GetAgentCatalogParams = {
   /**
@@ -8621,6 +8875,10 @@ export type CheckMergeConflictsParams = {
 
 export type GetOriginalBranchParams = {
   project_id: number;
+  feature_id: number;
+};
+
+export type GetGitPathPrefixParams = {
   feature_id: number;
 };
 
@@ -11808,6 +12066,121 @@ export function useGetUnifiedAgents<
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetUnifiedAgentsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Archived conversations whose cleanup is not settled: in progress, waiting,
+interrupted, blocked or failed.
+ */
+export const listArchiveCleanups = (signal?: AbortSignal) => {
+  return customInstance<ArchiveCleanupStatus[]>({
+    url: `/api/archive-cleanups`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getListArchiveCleanupsQueryKey = () => {
+  return [`/api/archive-cleanups`] as const;
+};
+
+export const getListArchiveCleanupsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listArchiveCleanups>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listArchiveCleanups>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListArchiveCleanupsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listArchiveCleanups>>> = ({ signal }) =>
+    listArchiveCleanups(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listArchiveCleanups>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListArchiveCleanupsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listArchiveCleanups>>
+>;
+export type ListArchiveCleanupsQueryError = ErrorType<unknown>;
+
+export function useListArchiveCleanups<
+  TData = Awaited<ReturnType<typeof listArchiveCleanups>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listArchiveCleanups>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listArchiveCleanups>>,
+          TError,
+          Awaited<ReturnType<typeof listArchiveCleanups>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListArchiveCleanups<
+  TData = Awaited<ReturnType<typeof listArchiveCleanups>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listArchiveCleanups>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listArchiveCleanups>>,
+          TError,
+          Awaited<ReturnType<typeof listArchiveCleanups>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListArchiveCleanups<
+  TData = Awaited<ReturnType<typeof listArchiveCleanups>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listArchiveCleanups>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Archived conversations whose cleanup is not settled: in progress, waiting,
+interrupted, blocked or failed.
+ */
+
+export function useListArchiveCleanups<
+  TData = Awaited<ReturnType<typeof listArchiveCleanups>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listArchiveCleanups>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListArchiveCleanupsQueryOptions(options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;
@@ -17917,6 +18290,11 @@ export const useDeleteFeature = <TError = ErrorType<unknown>, TContext = unknown
   return useMutation(getDeleteFeatureMutationOptions(options), queryClient);
 };
 
+/**
+ * @summary Archive a conversation and run the cleanup the request asks for, all
+orchestrated here: the response carries each step's outcome. The cleanup
+keeps running if the client goes away, and is journaled for resumption.
+ */
 export const archiveFeature = (
   id: number,
   archiveRequest: ArchiveRequest,
@@ -17973,6 +18351,11 @@ export type ArchiveFeatureMutationBody = ArchiveRequest;
 export type ArchiveFeatureMutationError = ErrorType<unknown>;
 export type ArchiveFeatureMutationVariables = { id: number; data: ArchiveRequest };
 
+/**
+ * @summary Archive a conversation and run the cleanup the request asks for, all
+orchestrated here: the response carries each step's outcome. The cleanup
+keeps running if the client goes away, and is journaled for resumption.
+ */
 export const useArchiveFeature = <TError = ErrorType<unknown>, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
@@ -17990,6 +18373,192 @@ export const useArchiveFeature = <TError = ErrorType<unknown>, TContext = unknow
   TContext
 > => {
   return useMutation(getArchiveFeatureMutationOptions(options), queryClient);
+};
+
+export const getArchiveCleanup = (id: number, signal?: AbortSignal) => {
+  return customInstance<ArchiveCleanupStatus>({
+    url: `/api/features/${id}/archive-cleanup`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetArchiveCleanupQueryKey = (id: number) => {
+  return [`/api/features/${id}/archive-cleanup`] as const;
+};
+
+export const getGetArchiveCleanupQueryOptions = <
+  TData = Awaited<ReturnType<typeof getArchiveCleanup>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getArchiveCleanup>>, TError, TData>>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetArchiveCleanupQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getArchiveCleanup>>> = ({ signal }) =>
+    getArchiveCleanup(id, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getArchiveCleanup>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type GetArchiveCleanupQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getArchiveCleanup>>
+>;
+export type GetArchiveCleanupQueryError = ErrorType<unknown>;
+
+export function useGetArchiveCleanup<
+  TData = Awaited<ReturnType<typeof getArchiveCleanup>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getArchiveCleanup>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getArchiveCleanup>>,
+          TError,
+          Awaited<ReturnType<typeof getArchiveCleanup>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetArchiveCleanup<
+  TData = Awaited<ReturnType<typeof getArchiveCleanup>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getArchiveCleanup>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getArchiveCleanup>>,
+          TError,
+          Awaited<ReturnType<typeof getArchiveCleanup>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetArchiveCleanup<
+  TData = Awaited<ReturnType<typeof getArchiveCleanup>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getArchiveCleanup>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useGetArchiveCleanup<
+  TData = Awaited<ReturnType<typeof getArchiveCleanup>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getArchiveCleanup>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetArchiveCleanupQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const retryArchiveCleanup = (
+  id: number,
+  retryArchiveCleanupRequest: RetryArchiveCleanupRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ArchiveCleanupStatus>({
+    url: `/api/features/${id}/archive-cleanup/retry`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: retryArchiveCleanupRequest,
+    signal,
+  });
+};
+
+export const getRetryArchiveCleanupMutationKey = () => ["retryArchiveCleanup"] as const;
+
+export const getRetryArchiveCleanupMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof retryArchiveCleanup>>,
+    TError,
+    RetryArchiveCleanupMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof retryArchiveCleanup>>,
+  TError,
+  RetryArchiveCleanupMutationVariables,
+  TContext
+> => {
+  const mutationKey = getRetryArchiveCleanupMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof retryArchiveCleanup>>,
+    RetryArchiveCleanupMutationVariables
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return retryArchiveCleanup(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RetryArchiveCleanupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof retryArchiveCleanup>>
+>;
+export type RetryArchiveCleanupMutationBody = RetryArchiveCleanupRequest;
+export type RetryArchiveCleanupMutationError = ErrorType<unknown>;
+export type RetryArchiveCleanupMutationVariables = { id: number; data: RetryArchiveCleanupRequest };
+
+export const useRetryArchiveCleanup = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof retryArchiveCleanup>>,
+      TError,
+      RetryArchiveCleanupMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof retryArchiveCleanup>>,
+  TError,
+  RetryArchiveCleanupMutationVariables,
+  TContext
+> => {
+  return useMutation(getRetryArchiveCleanupMutationOptions(options), queryClient);
 };
 
 export const getFeatureArchivePreview = (id: number, signal?: AbortSignal) => {
@@ -22475,6 +23044,111 @@ export function useGetOriginalBranch<
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+export const getGitPathPrefix = (params: GetGitPathPrefixParams, signal?: AbortSignal) => {
+  return customInstance<GitPathPrefixResponse>({
+    url: `/api/git/path-prefix`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getGetGitPathPrefixQueryKey = (params?: GetGitPathPrefixParams) => {
+  return [`/api/git/path-prefix`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetGitPathPrefixQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGitPathPrefix>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetGitPathPrefixParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getGitPathPrefix>>, TError, TData>>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGitPathPrefixQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGitPathPrefix>>> = ({ signal }) =>
+    getGitPathPrefix(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGitPathPrefix>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetGitPathPrefixQueryResult = NonNullable<Awaited<ReturnType<typeof getGitPathPrefix>>>;
+export type GetGitPathPrefixQueryError = ErrorType<unknown>;
+
+export function useGetGitPathPrefix<
+  TData = Awaited<ReturnType<typeof getGitPathPrefix>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetGitPathPrefixParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getGitPathPrefix>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGitPathPrefix>>,
+          TError,
+          Awaited<ReturnType<typeof getGitPathPrefix>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetGitPathPrefix<
+  TData = Awaited<ReturnType<typeof getGitPathPrefix>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetGitPathPrefixParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getGitPathPrefix>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGitPathPrefix>>,
+          TError,
+          Awaited<ReturnType<typeof getGitPathPrefix>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetGitPathPrefix<
+  TData = Awaited<ReturnType<typeof getGitPathPrefix>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetGitPathPrefixParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getGitPathPrefix>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useGetGitPathPrefix<
+  TData = Awaited<ReturnType<typeof getGitPathPrefix>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetGitPathPrefixParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getGitPathPrefix>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetGitPathPrefixQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 export const getPr = (params: GetPrParams, signal?: AbortSignal) => {
   return customInstance<PrStatusSnapshot>({ url: `/api/git/pr`, method: "GET", params, signal });
 };
@@ -24174,6 +24848,107 @@ export const useContinueUpdateBranch = <TError = ErrorType<unknown>, TContext = 
 > => {
   return useMutation(getContinueUpdateBranchMutationOptions(options), queryClient);
 };
+
+/**
+ * @summary The installed Git and the features it is too old for. Detected once at
+startup, so this never spawns Git again.
+ */
+export const getGitVersion = (signal?: AbortSignal) => {
+  return customInstance<GitVersionResponse>({ url: `/api/git/version`, method: "GET", signal });
+};
+
+export const getGetGitVersionQueryKey = () => {
+  return [`/api/git/version`] as const;
+};
+
+export const getGetGitVersionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGitVersion>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getGitVersion>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGitVersionQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGitVersion>>> = ({ signal }) =>
+    getGitVersion(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGitVersion>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetGitVersionQueryResult = NonNullable<Awaited<ReturnType<typeof getGitVersion>>>;
+export type GetGitVersionQueryError = ErrorType<unknown>;
+
+export function useGetGitVersion<
+  TData = Awaited<ReturnType<typeof getGitVersion>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getGitVersion>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGitVersion>>,
+          TError,
+          Awaited<ReturnType<typeof getGitVersion>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetGitVersion<
+  TData = Awaited<ReturnType<typeof getGitVersion>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getGitVersion>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getGitVersion>>,
+          TError,
+          Awaited<ReturnType<typeof getGitVersion>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetGitVersion<
+  TData = Awaited<ReturnType<typeof getGitVersion>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getGitVersion>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary The installed Git and the features it is too old for. Detected once at
+startup, so this never spawns Git again.
+ */
+
+export function useGetGitVersion<
+  TData = Awaited<ReturnType<typeof getGitVersion>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getGitVersion>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetGitVersionQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 export const createWorktree = (createWorktreeBody: CreateWorktreeBody, signal?: AbortSignal) => {
   return customInstance<CreateWorktreeResponse>({
@@ -26321,6 +27096,181 @@ export const useUpdateManagedTab = <TError = ErrorType<unknown>, TContext = unkn
   return useMutation(getUpdateManagedTabMutationOptions(options), queryClient);
 };
 
+export const getMarketplaceTrust = (signal?: AbortSignal) => {
+  return customInstance<MarketplaceTrustStatus>({
+    url: `/api/marketplace/trust`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetMarketplaceTrustQueryKey = () => {
+  return [`/api/marketplace/trust`] as const;
+};
+
+export const getGetMarketplaceTrustQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMarketplaceTrust>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getMarketplaceTrust>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMarketplaceTrustQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMarketplaceTrust>>> = ({ signal }) =>
+    getMarketplaceTrust(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMarketplaceTrust>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetMarketplaceTrustQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMarketplaceTrust>>
+>;
+export type GetMarketplaceTrustQueryError = ErrorType<unknown>;
+
+export function useGetMarketplaceTrust<
+  TData = Awaited<ReturnType<typeof getMarketplaceTrust>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMarketplaceTrust>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMarketplaceTrust>>,
+          TError,
+          Awaited<ReturnType<typeof getMarketplaceTrust>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMarketplaceTrust<
+  TData = Awaited<ReturnType<typeof getMarketplaceTrust>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMarketplaceTrust>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMarketplaceTrust>>,
+          TError,
+          Awaited<ReturnType<typeof getMarketplaceTrust>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetMarketplaceTrust<
+  TData = Awaited<ReturnType<typeof getMarketplaceTrust>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMarketplaceTrust>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useGetMarketplaceTrust<
+  TData = Awaited<ReturnType<typeof getMarketplaceTrust>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getMarketplaceTrust>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetMarketplaceTrustQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const setAsideMarketplaceTrust = (signal?: AbortSignal) => {
+  return customInstance<MarketplaceTrustStatus>({
+    url: `/api/marketplace/trust/set-aside`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getSetAsideMarketplaceTrustMutationKey = () => ["setAsideMarketplaceTrust"] as const;
+
+export const getSetAsideMarketplaceTrustMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setAsideMarketplaceTrust>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setAsideMarketplaceTrust>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = getSetAsideMarketplaceTrustMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setAsideMarketplaceTrust>>,
+    void
+  > = () => {
+    return setAsideMarketplaceTrust();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetAsideMarketplaceTrustMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setAsideMarketplaceTrust>>
+>;
+
+export type SetAsideMarketplaceTrustMutationError = ErrorType<unknown>;
+
+export const useSetAsideMarketplaceTrust = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof setAsideMarketplaceTrust>>,
+      TError,
+      void,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof setAsideMarketplaceTrust>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getSetAsideMarketplaceTrustMutationOptions(options), queryClient);
+};
+
 export const detectRoute = (signal?: AbortSignal) => {
   return customInstance<NeovimDetectResponse>({ url: `/api/neovim/detect`, method: "GET", signal });
 };
@@ -28254,7 +29204,9 @@ marketplace update (`pending_update.permissions_hash`), accept that update:
 it becomes the installed revision and its backend restarts on it. 409
 `PLUGIN_TAB_CONSENT_STALE` when `permissions_hash` is neither (409
 `MANAGED_TAB_UPDATE_CHANGED` when the staged update was replaced
-meanwhile). A changed consent revokes the tab's live grants.
+meanwhile); 422 `PLUGIN_TAB_TRUST_REQUIRED` when what is accepted runs
+commands or a backend and `trusts_code` is not set. A changed consent
+revokes the tab's live grants.
  */
 export const pluginTabConsent = (
   id: string,
@@ -28326,7 +29278,9 @@ marketplace update (`pending_update.permissions_hash`), accept that update:
 it becomes the installed revision and its backend restarts on it. 409
 `PLUGIN_TAB_CONSENT_STALE` when `permissions_hash` is neither (409
 `MANAGED_TAB_UPDATE_CHANGED` when the staged update was replaced
-meanwhile). A changed consent revokes the tab's live grants.
+meanwhile); 422 `PLUGIN_TAB_TRUST_REQUIRED` when what is accepted runs
+commands or a backend and `trusts_code` is not set. A changed consent
+revokes the tab's live grants.
  */
 export const usePluginTabConsent = <TError = ErrorType<unknown>, TContext = unknown>(
   options?: {
@@ -32989,6 +33943,83 @@ export const useSaveSessionDraft = <TError = ErrorType<unknown>, TContext = unkn
   return useMutation(getSaveSessionDraftMutationOptions(options), queryClient);
 };
 
+/**
+ * @summary Stop the session's running turn.
+ */
+export const interruptAgentSession = (sessionId: number, signal?: AbortSignal) => {
+  return customInstance<AgentSessionControlAck>({
+    url: `/api/sessions/${sessionId}/interrupt`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getInterruptAgentSessionMutationKey = () => ["interruptAgentSession"] as const;
+
+export const getInterruptAgentSessionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof interruptAgentSession>>,
+    TError,
+    InterruptAgentSessionMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof interruptAgentSession>>,
+  TError,
+  InterruptAgentSessionMutationVariables,
+  TContext
+> => {
+  const mutationKey = getInterruptAgentSessionMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof interruptAgentSession>>,
+    InterruptAgentSessionMutationVariables
+  > = (props) => {
+    const { sessionId } = props ?? {};
+
+    return interruptAgentSession(sessionId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type InterruptAgentSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof interruptAgentSession>>
+>;
+
+export type InterruptAgentSessionMutationError = ErrorType<void>;
+export type InterruptAgentSessionMutationVariables = { sessionId: number };
+
+/**
+ * @summary Stop the session's running turn.
+ */
+export const useInterruptAgentSession = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof interruptAgentSession>>,
+      TError,
+      InterruptAgentSessionMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof interruptAgentSession>>,
+  TError,
+  InterruptAgentSessionMutationVariables,
+  TContext
+> => {
+  return useMutation(getInterruptAgentSessionMutationOptions(options), queryClient);
+};
+
 export const listSessionPromptQueue = (sessionId: number, signal?: AbortSignal) => {
   return customInstance<QueuedPrompt[]>({
     url: `/api/sessions/${sessionId}/prompt-queue`,
@@ -33599,6 +34630,83 @@ export const useAskSessionSideQuestion = <TError = ErrorType<unknown>, TContext 
   TContext
 > => {
   return useMutation(getAskSessionSideQuestionMutationOptions(options), queryClient);
+};
+
+/**
+ * @summary Pause the session for an OS sleep, keeping its resume point.
+ */
+export const suspendAgentSession = (sessionId: number, signal?: AbortSignal) => {
+  return customInstance<AgentSessionControlAck>({
+    url: `/api/sessions/${sessionId}/suspend`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getSuspendAgentSessionMutationKey = () => ["suspendAgentSession"] as const;
+
+export const getSuspendAgentSessionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof suspendAgentSession>>,
+    TError,
+    SuspendAgentSessionMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof suspendAgentSession>>,
+  TError,
+  SuspendAgentSessionMutationVariables,
+  TContext
+> => {
+  const mutationKey = getSuspendAgentSessionMutationKey();
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof suspendAgentSession>>,
+    SuspendAgentSessionMutationVariables
+  > = (props) => {
+    const { sessionId } = props ?? {};
+
+    return suspendAgentSession(sessionId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SuspendAgentSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof suspendAgentSession>>
+>;
+
+export type SuspendAgentSessionMutationError = ErrorType<void>;
+export type SuspendAgentSessionMutationVariables = { sessionId: number };
+
+/**
+ * @summary Pause the session for an OS sleep, keeping its resume point.
+ */
+export const useSuspendAgentSession = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof suspendAgentSession>>,
+      TError,
+      SuspendAgentSessionMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof suspendAgentSession>>,
+  TError,
+  SuspendAgentSessionMutationVariables,
+  TContext
+> => {
+  return useMutation(getSuspendAgentSessionMutationOptions(options), queryClient);
 };
 
 export const runArchivedCleanup = (signal?: AbortSignal) => {

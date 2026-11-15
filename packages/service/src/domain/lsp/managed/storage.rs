@@ -8,7 +8,7 @@ use super::{invalid, platform};
 use crate::domain::agents::providers::installed::managed::trust::{
     pinned_index_trust_store, ManagedTrustStore,
 };
-use crate::domain::themes::managed::{catalog, models::SignedMixedCatalog, storage as io};
+use crate::domain::marketplace::{catalog, models::SignedMixedCatalog, storage as io};
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -141,6 +141,7 @@ fn inspect_revision(
         return Err(invalid("LSP archive pointer mismatch"));
     }
     super::policy::require(id, &active.version, &target)?;
+    super::super::os_requirements::require_target(&target)?;
     let mut probe = probe(&package, ServerProbeStatus::Managed)?;
     probe.path = Some(
         dir.join("payload")

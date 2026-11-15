@@ -10,10 +10,14 @@ Cadencr is a desktop IDE for multiple AI coding agents: pnpm/Turborepo, React/El
 
 ## Safety
 
-- Never delete, truncate, overwrite, or replace a Cadencr database, including development, production, and custom `CADENCR_DB_PATH` targets.
+- Never delete, truncate, overwrite, or replace the production database: `~/.cadencr/database/` on macOS, `$XDG_DATA_HOME/cadencr/database/` on Linux. Dev, worktree and QA databases are disposable.
 - Never reset, revert, restore away, or otherwise roll back committed or uncommitted work unless the user has sent exactly `I approve this rollback`.
 
 These two constraints stay visible here even before the detailed rules are loaded.
+
+## Documentation
+
+Never commit session artifacts: QA reports, qualification evidence, investigation notes, delivery plans, progress checkpoints or handoffs, dated or not. They go in the PR description, the issue or your final reply. Tracked docs hold only what stays true after the task: reference, contracts, runbooks and `docs/adr/`. When work lands, update the reference doc to the new state instead of appending history. Details: [no-session-docs](.claude/rules/no-session-docs.md).
 
 ## Repository Map
 
@@ -87,6 +91,7 @@ This index is generated from `.claude/rules/*.md`; edit those sources and run `p
 | [keyboard-shortcuts](.claude/rules/keyboard-shortcuts.md) | `**/*.tsx` |
 | [no-destructive-ops](.claude/rules/no-destructive-ops.md) | Every task |
 | [no-optimistic-updates](.claude/rules/no-optimistic-updates.md) | `packages/desktop/src/**` |
+| [no-session-docs](.claude/rules/no-session-docs.md) | Every task |
 | [platform-support](.claude/rules/platform-support.md) | Every task |
 | [provider-boundaries](.claude/rules/provider-boundaries.md) | `packages/service/src/**`, `packages/desktop/src/**`, `packages/*-sdk-rs/src/**` |
 | [routes](.claude/rules/routes.md) | `packages/desktop/src/routes/**` |

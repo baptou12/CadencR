@@ -2,25 +2,28 @@ use crate::domain::ws_session::protocol::WsSessionEvent;
 use axum::extract::ws::Message;
 use tracing::info;
 
-use super::session_prompt::PermissionResponse;
+use super::session_prompt::{PermissionResponse, PermissionResponseSender};
 use super::{parse_session_id, send_error, QueryState, SdkSessions, WsSender};
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{
-    RuntimeError, RuntimePermissionDecision, RuntimePermissionResponse, RuntimeSessionHandle,
+    RuntimeError, RuntimePermissionDecision, RuntimePermissionResponse,
+    RuntimePermissionResponseRoute, RuntimeSessionHandle,
 };
 use crate::domain::session_status::AgentStatus;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::{
     GateClosePayload, GateCloseReason, GateClosedPayload, PermissionDecision, WsEnvelope,
 };
+use crate::domain::ws_session::runtime::output::OutputTarget;
 
 struct GateRuntimeGuard {
     _barrier: Option<tokio::sync::OwnedMutexGuard<()>>,
 }
 
 struct ActiveGateRuntime {
+    runtime_provider: String,
     query: RuntimeSessionHandle,
-    permission_tx: tokio::sync::mpsc::Sender<PermissionResponse>,
+    permission_tx: PermissionResponseSender,
 }
 
 pub(super) async fn handle_gate_close(
@@ -147,7 +150,7 @@ async fn claim_gate_close(
 }
 
 pub(super) async fn clear_persisted_gate_and_notify(
-    sender: &WsSender,
+    sender: &impl OutputTarget,
     app_state: &AppState,
     db_session_id: i64,
     request_id: Option<&str>,
@@ -179,7 +182,7 @@ pub(super) async fn clear_persisted_gate_and_notify(
 }
 
 fn send_gate_closed(
-    sender: &WsSender,
+    sender: &impl OutputTarget,
     db_session_id: i64,
     request_id: Option<&str>,
     reason: GateCloseReason,
@@ -229,21 +232,7 @@ async fn deny_runtime_gate(
         feedback: None,
         updated_input: None,
     };
-    let respond_result = q.respond_permission(runtime_response).await;
-    if respond_result.is_err() {
-        let response = PermissionResponse {
-            request_id: request_id.to_string(),
-            message_uuid: None,
-            decision: PermissionDecision::Deny,
-            option_id: None,
-            feedback: None,
-            updated_input: None,
-            is_approval_gate: false,
-        };
-        if let Err(error) = target.permission_tx.try_send(response) {
-            info!(db_session_id, %error, "gate close: permission channel unavailable");
-        }
-    }
+    deny_open_request(&target, &**q, db_session_id, runtime_response).await;
 
     let result = q.interrupt().await;
     super::session_control::finish_interruption(
@@ -258,6 +247,40 @@ async fn deny_runtime_gate(
     Ok(Some(GateRuntimeGuard { _barrier: barrier }))
 }
 
+/// Resolve the open request through the adapter's declared route. The turn
+/// is interrupted right after, so a request that is already gone is benign.
+async fn deny_open_request(
+    target: &ActiveGateRuntime,
+    query: &dyn crate::domain::agents::adapter::AgentRuntimeSession,
+    db_session_id: i64,
+    response: RuntimePermissionResponse,
+) {
+    let route = crate::domain::agents::permission_modes::provider_permission_response_route(
+        &target.runtime_provider,
+    );
+    let result = match route {
+        RuntimePermissionResponseRoute::Session => query
+            .respond_permission(response)
+            .await
+            .map_err(|error| error.to_string()),
+        RuntimePermissionResponseRoute::PermissionCallback => target
+            .permission_tx
+            .deliver(PermissionResponse {
+                request_id: response.request_id,
+                message_uuid: None,
+                decision: PermissionDecision::Deny,
+                option_id: None,
+                feedback: None,
+                updated_input: None,
+                is_approval_gate: false,
+            })
+            .map_err(|error| error.to_string()),
+    };
+    if let Err(error) = result {
+        info!(db_session_id, %error, "gate close: open request already resolved; interrupting");
+    }
+}
+
 async fn active_runtime(
     sdk_sessions: &SdkSessions,
     db_session_id: i64,
@@ -269,6 +292,7 @@ async fn active_runtime(
             query,
             permission_tx,
         } => Some(ActiveGateRuntime {
+            runtime_provider: handle.runtime_provider.clone(),
             query: std::sync::Arc::clone(query),
             permission_tx: permission_tx.clone(),
         }),
@@ -295,4 +319,45 @@ async fn drain_after_gate_close(
     )
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::ws_session::handler::tests::support::InPlaceEffortSession;
+    use crate::domain::ws_session::runtime::prompt::permission_response_channel;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    #[tokio::test]
+    async fn closing_a_callback_routed_gate_denies_only_that_request() {
+        let (permission_tx, waiters) = permission_response_channel();
+        let open = waiters.register("req-1");
+        let other = waiters.register("req-2");
+        let target = ActiveGateRuntime {
+            // Claude Code answers through the permission callback.
+            runtime_provider: "claude_code".into(),
+            query: Arc::new(RwLock::new(Box::new(InPlaceEffortSession::new()))),
+            permission_tx,
+        };
+        let response = RuntimePermissionResponse {
+            request_id: "req-1".into(),
+            decision: RuntimePermissionDecision::Deny,
+            option_id: None,
+            feedback: None,
+            updated_input: None,
+        };
+        {
+            let query = target.query.read().await;
+            deny_open_request(&target, &**query, 1, response).await;
+        }
+
+        let answer = open.recv().await.expect("the closed gate is answered");
+        assert_eq!(answer.request_id, "req-1");
+        assert!(matches!(answer.decision, PermissionDecision::Deny));
+        // Closing the session resolves the untouched request as "closed", not
+        // with the other gate's denial.
+        drop(target);
+        assert!(other.recv().await.is_none());
+    }
 }

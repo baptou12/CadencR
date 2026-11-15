@@ -9,7 +9,7 @@ use std::path::Path;
 
 use axum::http::StatusCode;
 use cadencr_plugin_core::tab::{
-    inspect_signed_tab_folder, inspect_tab_folder, TabFolderReport, TabManifest,
+    inspect_signed_tab_folder, inspect_tab_folder, TabAccessLevel, TabFolderReport, TabManifest,
 };
 
 use super::managed::policy::PolicySnapshot;
@@ -69,6 +69,8 @@ pub struct AcceptedUpdate {
     /// Its revision directory name.
     pub revision: String,
     pub permissions_hash: String,
+    /// How far the update reaches: what accepting it asks the user to trust.
+    pub access_level: TabAccessLevel,
 }
 
 impl LocalTab {
@@ -76,10 +78,12 @@ impl LocalTab {
     /// is that update's (valid) permissions hash.
     pub fn pending_accepted_by(&self, submitted: &str) -> Option<AcceptedUpdate> {
         let pending = self.pending.as_ref()?;
+        let manifest = pending.report.valid_manifest()?;
         let permissions_hash = pending.permissions_hash()?;
         (permissions_hash == submitted).then(|| AcceptedUpdate {
             revision: pending.managed.facts.revision.clone(),
             permissions_hash,
+            access_level: manifest.access_level(),
         })
     }
 
@@ -203,7 +207,7 @@ pub async fn list() -> Result<Vec<LocalTab>, AppError> {
         Ok(tabs)
     })
     .await
-    .map_err(|error| AppError::Internal(format!("custom tab scan failed: {error}")))?
+    .map_err(|error| AppError::internal(format!("custom tab scan failed: {error}")))?
 }
 
 /// A verified marketplace revision, with its staged update if one verifies.
@@ -332,7 +336,7 @@ async fn read(id: &str, staged: Staged) -> Result<LocalTab, AppError> {
         Ok(LocalTab::local(id, inspect_tab_folder(dir)))
     })
     .await
-    .map_err(|error| AppError::Internal(format!("custom tab read failed: {error}")))?
+    .map_err(|error| AppError::internal(format!("custom tab read failed: {error}")))?
 }
 
 pub fn not_found(id: &str) -> AppError {
@@ -348,7 +352,7 @@ fn scan(root: &Path) -> Result<Vec<LocalTab>, AppError> {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => {
-            return Err(AppError::Internal(format!(
+            return Err(AppError::internal(format!(
                 "cannot read the custom tabs folder {}: {error}",
                 root.display()
             )))
@@ -357,7 +361,7 @@ fn scan(root: &Path) -> Result<Vec<LocalTab>, AppError> {
     let mut tabs = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|error| {
-            AppError::Internal(format!("cannot read the custom tabs folder: {error}"))
+            AppError::internal(format!("cannot read the custom tabs folder: {error}"))
         })?;
         let Some(id) = entry.file_name().to_str().map(str::to_string) else {
             continue;
@@ -492,7 +496,7 @@ mod tests {
         let backend = tab.facts().unwrap().backend.as_ref().unwrap();
         assert_eq!(
             backend.executable_sha256,
-            crate::domain::themes::managed::storage::digest(&first.executable)
+            crate::domain::marketplace::storage::digest(&first.executable)
         );
         let (manifest, current) = tab.require_valid().unwrap();
         assert_eq!(manifest.version, "1.0.0");
@@ -510,8 +514,10 @@ mod tests {
         let AcceptedUpdate {
             revision,
             permissions_hash: accepted,
+            access_level,
         } = tab.pending_accepted_by(&staged_hash).unwrap();
         assert_eq!(accepted, staged_hash);
+        assert_eq!(access_level, TabAccessLevel::Backend);
         // The listing sees the same tab.
         let listed = list().await.unwrap();
         assert_eq!(

@@ -91,6 +91,10 @@ export interface WsSessionStore {
   ) => void;
   respondToQuestion: (sessionId: string, response: AgentQuestionAnswers) => void;
   interrupt: (sessionId: string) => void;
+  /** The status book reports the session stopped working: a pending Stop succeeded. */
+  settleInterrupt: (sessionId: string) => void;
+  /** Pause the session for an OS sleep (`session.suspend`). */
+  suspendForSleep: (sessionId: string) => void;
   clearSession: (sessionId: string) => void;
   /** Rewind conversation + code back to before `messageId`, in place. */
   rewindToMessage: (sessionId: string, messageId: number, confirmDiscard?: boolean) => void;

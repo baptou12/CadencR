@@ -22,13 +22,13 @@ tab appears, so you always know what you are allowing.
 | Level             | What the tab can do                                                                                                                                       | Where you see it                                                                      |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | **Read-only**     | Show a page that reads Cadencr data through its permissions, and reach the websites it declares. Nothing else.                                            | A "Read-only" badge in Settings.                                                      |
-| **Runs commands** | Also ask Cadencr to run the programs it lists (for example `git`) in the conversation's folder, without a shell.                                          | A "Runs commands" badge, a terminal glyph on the tab, every command in **Activity…**. |
+| **Runs commands** | Also ask Cadencr to run the programs it lists (for example `git`) in the conversation's folder, without a shell. The tab picks the arguments, and most programs can run any code from them: treat it like native code. | A "Runs commands" badge, a terminal glyph on the tab, every command in **Activity…**. |
 | **Native code**   | Also run its own program on your computer, **with your user rights**. Cadencr does not sandbox it: it can read and change your files and use the network. | A "Native code" badge, a chip glyph on the tab, its state and log in **Activity…**.   |
 
 Whatever the level, the tab's access to Cadencr itself stays limited to its
 permissions: even a native backend gets its own scoped token, never yours.
-Only allow a "Runs commands" tab you trust, and a "Native code" tab only if
-you would install it as an app. A marketplace tab may ship native code too:
+Only allow a "Runs commands" or "Native code" tab if you would install it as
+an app. A marketplace tab may ship native code too:
 its listing says "Runs native code with your rights" before you install it, its
 binary is signed into the catalog and checked before every launch, and a
 blocked tab's backend is stopped.
@@ -39,8 +39,8 @@ blocked tab's backend is stopped.
    read (its permissions) and which websites it may contact. Enable it for every
    project with **Enable in all projects**, or per project with
    **Inherit / On / Off**. The first time, Cadencr asks you to accept its
-   permissions, the programs it runs and, for native code, tick
-   **I trust this code to run on my computer with my rights**. If a later
+   permissions, the programs it runs and, for a tab that runs commands or
+   native code, tick **I trust this code to run on my computer with my rights**. If a later
    version asks for more, the tab pauses until you accept again.
 2. **Add it to a conversation.** Click **+** at the end of the tab strip and
    pick the tab. It behaves like the built-in tabs: drag it into a split, move
@@ -192,6 +192,22 @@ not available and names the Cadencr shortcut that takes it. The keyboard
 shortcuts cheatsheet (⌘⇧?) lists the shortcuts that can fire. The format is
 in [CUSTOM_TABS.md](CUSTOM_TABS.md#3-manifest--tabjson).
 
+### Replace a built-in tab
+
+A tab can offer to take the place of Terminal, Git, Editor or Preview:
+
+```json
+"tab": { "label": "VCS", "replaces": ["git"] }
+```
+
+The user then picks it in Settings → Custom tabs → Replace built-in tabs. It
+shows in the built-in's place, with its shortcut, wherever the tab is on, and
+the built-in shows wherever it is not. When Cadencr has something only the
+built-in can show — a file to open, a pull request, a document, a custom action
+to run — the built-in comes back in that conversation; the tab strip's **+**
+menu switches back. If several tabs offer to replace the same built-in, the user
+chooses one. The details are in [CUSTOM_TABS.md §10](CUSTOM_TABS.md#10-replacing-a-built-in-tab).
+
 ### Look native
 
 Import the kit once:
@@ -223,8 +239,10 @@ const { stdout, success } = await client.exec.run("git", ["log", "--format=%an",
 Cadencr runs it without a shell, in the conversation's folder, finds it on
 your `PATH`, stops it after 30 s (`timeoutMs`, up to 120 s) or 1 MiB of
 output, and records it in **Activity**. Shells, interpreters and package
-runners (`bash`, `node`, `python`, `npx`…) cannot be listed: they would run
-anything. A tab that needs one ships a backend instead.
+runners (`bash`, `node`, `python`, `npx`…) cannot be listed. That is not a
+sandbox: the tab chooses the arguments, and most programs can run any code
+from them (`git -c alias…`, `find -exec`, `ssh -o ProxyCommand`), so users are
+asked to trust a tab that runs commands exactly as they trust native code.
 
 ### Shipping a native backend
 

@@ -31,7 +31,7 @@ fn temp_index_path() -> Result<PathBuf, AppError> {
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
     let parent = crate::shared::private_temp::private_temp_dir()
-        .map_err(|e| AppError::Internal(format!("checkpoint scratch dir: {e}")))?;
+        .map_err(|e| AppError::internal(format!("checkpoint scratch dir: {e}")))?;
     Ok(parent.join(format!("cadencr-checkpoint-index-{pid}-{n}")))
 }
 
@@ -70,7 +70,7 @@ async fn snapshot_inner(
     env: &[(&str, &str)],
 ) -> Result<String, AppError> {
     if let Err(error) = copy_real_index(cwd, index_path, env).await {
-        // No index yet, or a git too old for `--path-format`.
+        // No index yet.
         debug!(%error, "checkpoint: real index unavailable as a seed, using HEAD");
         run_git_with_env(&["read-tree", "HEAD"], cwd, env).await?;
     }
@@ -110,16 +110,15 @@ async fn copy_real_index(
     index_path: &Path,
     env: &[(&str, &str)],
 ) -> Result<(), AppError> {
-    let real_index = run_git(
-        &["rev-parse", "--path-format=absolute", "--git-path", "index"],
-        cwd,
-    )
-    .await?;
-    let real_index = Path::new(real_index.trim());
+    // Relative to `cwd` unless absolute (linked worktrees); joining covers
+    // both without `--path-format=absolute`, which needs Git 2.31.
+    let real_index = run_git(&["rev-parse", "--git-path", "index"], cwd).await?;
+    let real_index = cwd.join(real_index.trim_end_matches('\n'));
+    let real_index = real_index.as_path();
     tokio::fs::copy(real_index, index_path)
         .await
         .and_then(|_| copy_mtime(real_index, index_path))
-        .map_err(|error| AppError::GitCommandError(format!("failed to copy git index: {error}")))?;
+        .map_err(|error| AppError::git_command(format!("failed to copy git index: {error}")))?;
     clear_assume_unchanged(cwd, env).await
 }
 

@@ -20,7 +20,7 @@ pub(in crate::domain::ws_session) async fn build_pending_handle(
     let runtime_cwd = worktree::resolve_feature_cwd(&app_state.read_pool, row.feature_id)
         .await
         .map(std::path::PathBuf::from)
-        .map_err(AppError::Internal)?;
+        .map_err(|error| AppError::internal(error))?;
     let provider = effective_provider(app_state, project_id, &runtime_cwd, &row).await;
     persist_resolved_provider(app_state, &row, &provider).await?;
     let (options, claude_profile) =
@@ -44,7 +44,7 @@ pub(in crate::domain::ws_session) async fn build_pending_handle(
         runtime_control_endpoint: None,
         resume_session_id: row.runtime_session_id.clone(),
         config,
-        manual_compact_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        manual_compact_start: Default::default(),
         manual_compact_spawn_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
 }
@@ -135,7 +135,7 @@ async fn runtime_options(
             &options.overrides,
         )
         .await
-        .map_err(|error| AppError::DatabaseError(error.to_string()))?;
+        .map_err(|error| AppError::database(error.to_string()))?;
     }
     options.access_mode = runtime_access_mode(app_state, provider, row).await;
     let selected_profile =
@@ -284,6 +284,7 @@ mod tests {
         sqlx::raw_sql(
             "CREATE TABLE projects (id INTEGER PRIMARY KEY, path TEXT NOT NULL);
              CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL);
+             CREATE TABLE feature_settings (feature_id INTEGER, key TEXT, value TEXT);
              INSERT INTO projects (id, path) VALUES (1, '/tmp/test');
              INSERT INTO features (id, project_id) VALUES (1, 1);",
         )

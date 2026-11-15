@@ -20,7 +20,7 @@ use crate::permissions::CanUseTool;
 use crate::transport::CliProcess;
 use crate::types::McpServerStatus;
 
-use super::cancelled_control::CancelledControlRequests;
+use super::permission_requests::PermissionRequests;
 use super::reader_task::ReaderTask;
 use super::turn_state::TurnState;
 use super::wire::PendingControl;
@@ -37,7 +37,7 @@ pub(super) async fn reader_loop(
     mcp_servers: Arc<Mutex<Vec<McpServerStatus>>>,
     turn_state: Arc<Mutex<TurnState>>,
     pending_control: PendingControl,
-    cancelled_control_requests: CancelledControlRequests,
+    permission_requests: PermissionRequests,
     cancel_token: Option<CancellationToken>,
     kill_rx: mpsc::Receiver<()>,
 ) {
@@ -50,9 +50,10 @@ pub(super) async fn reader_loop(
         mcp_servers,
         turn_state,
         pending_control,
-        cancelled_control_requests,
+        permission_requests,
         cancel_token,
         kill_rx,
+        stale_task_turns: Default::default(),
     }
     .run()
     .await;
@@ -81,7 +82,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
 
         // Mock CLI: drain the SDK init handshake and initial user prompt,
-        // emit system init, then sleep forever (simulates a long-running process).
+        // emit system init, then sleep forever (simulates a long-running process;
+        // `exec`, so the kill reaches the sleep instead of orphaning it).
         let script = r#"#!/bin/sh
 read -r INIT_REQ
 read -r MCP_REQ
@@ -89,7 +91,7 @@ MCP_ID=$(printf '%s' "$MCP_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
 printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"mcpServers":[]}}}\n' "$MCP_ID"
 read -r USER_PROMPT
 echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_close","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
-sleep 300
+exec sleep 300
 "#;
         let script_path = write_mock_cli(dir.path(), script);
 

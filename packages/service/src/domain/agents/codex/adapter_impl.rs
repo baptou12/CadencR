@@ -46,11 +46,7 @@ impl AgentRuntimeAdapter for CodexAdapter {
         cwd: Option<&std::path::Path>,
         profile: Option<&str>,
     ) -> ProviderCatalogEntry {
-        profile_runtime::catalog_for_profile(
-            profile,
-            cwd.unwrap_or_else(|| std::path::Path::new(".")),
-        )
-        .await
+        profile_runtime::catalog_for_profile(profile, cwd).await
     }
 
     fn user_shell_strategy(&self) -> RuntimeUserShellStrategy {
@@ -169,12 +165,24 @@ impl AgentRuntimeAdapter for CodexAdapter {
                 Some(config.cwd.clone()),
             ))
             .await?;
-        client.initialize().await?;
-        let mut effective_config = client
-            .config_read(&config.cwd)
-            .await
-            .map_err(|_| RuntimeError::new("Codex rejected the effective configuration"))?;
-        let models = client.model_list().await?;
+        let startup = async {
+            client.initialize().await?;
+            let effective_config = client
+                .config_read(&config.cwd)
+                .await
+                .map_err(|_| RuntimeError::new("Codex rejected the effective configuration"))?;
+            let models = client.model_list().await?;
+            Ok::<_, RuntimeError>((effective_config, models))
+        }
+        .await;
+        let (mut effective_config, models) = match startup {
+            Ok(started) => started,
+            Err(error) => {
+                client.shutdown().await;
+                let secrets = app_server_failure::secrets(config.env.as_ref());
+                return Err(app_server_failure::explain(&client, error, &secrets));
+            }
+        };
         profile_runtime::enrich_resume_config(
             &mut effective_config,
             &models,
@@ -198,6 +206,7 @@ impl AgentRuntimeAdapter for CodexAdapter {
         let mut mcp_status_rx = client.subscribe();
         let mcp_config = launch::effective_thread_config(&config, &effective_config);
         let mcp_server_names = mcp_server_names(&mcp_config);
+        let browser_trust = trusted_mcp::browser_trust(&config, &effective_config);
         let thread_id = launch::start_or_resume_thread(&client, &config, &mcp_config).await?;
         let session = CodexSession::new(
             client.clone(),
@@ -214,6 +223,7 @@ impl AgentRuntimeAdapter for CodexAdapter {
                 access_mode: config.access_mode,
                 cwd: config.cwd,
                 context_window: None,
+                browser_trust,
             },
         );
         // Start the turn before reading MCP statuses: `mcpServerStatus/list`

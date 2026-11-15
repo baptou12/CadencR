@@ -50,15 +50,14 @@ pub(crate) enum PluginCommand {
         #[arg(long)]
         confirm_request_sha256: String,
     },
-    /// Validate a provider (against an explicit descriptor), theme, custom-tab
-    /// or multi-export plugin folder.
+    /// Validate a provider, theme, custom-tab, language-server or multi-export plugin folder.
     Validate {
-        /// Provider workspace containing the existing bin/provider entrypoint.
+        /// Package workspace containing its manifest and prepared content.
         folder: PathBuf,
         /// Temporary explicit host descriptor input; never discovered from user state.
         #[arg(long, required_if_eq("kind", "provider"))]
         descriptor: Option<PathBuf>,
-        /// Content kind; themes, custom tabs and multi-export plugins are
+        /// Content kind; themes, custom tabs, language servers and multi-export plugins are
         /// validated from their own manifest and need no provider descriptor
         /// (a plugin's provider members name theirs in `plugin.json`).
         #[arg(long, value_enum, default_value_t = PluginKind::Provider)]
@@ -68,6 +67,12 @@ pub(crate) enum PluginCommand {
         /// machines that cannot execute it.
         #[arg(long)]
         no_run: bool,
+        /// LSP only: validate this target's payload while checking the full manifest.
+        #[arg(long)]
+        target: Option<String>,
+        /// LSP only: also verify this exact archive against the selected signed target.
+        #[arg(long, requires = "target")]
+        archive: Option<PathBuf>,
     },
 }
 
@@ -104,6 +109,9 @@ pub(crate) enum RegistryCommand {
         base: PathBuf,
         #[arg(long)]
         candidate: PathBuf,
+        /// Review append-only provider handoffs; never used for ordinary PR validation.
+        #[arg(long)]
+        administrative: bool,
     },
     /// Build a deterministic, unsigned index from local packages.
     BuildIndex {
@@ -112,6 +120,9 @@ pub(crate) enum RegistryCommand {
         schema_version: u64,
         #[arg(long)]
         packages: PathBuf,
+        /// Trusted, reviewed administrative records; unsigned assembly only.
+        #[arg(long)]
+        provider_handoffs: Option<PathBuf>,
         #[arg(long)]
         generated_at: String,
         #[arg(long)]

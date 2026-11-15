@@ -7,9 +7,8 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
-use std::time::Duration;
 
-use agent_client_protocol::schema::v1::{CancelNotification, CloseSessionRequest};
+use agent_client_protocol::schema::v1::CancelNotification;
 use async_trait::async_trait;
 use serde_json::Value;
 use tokio::sync::{mpsc, RwLock};
@@ -34,15 +33,12 @@ use super::super::prompt_receipts::PendingPromptReceipts;
 use super::super::provider_hooks::{AcpProviderHooks, PermissionFallbackOutcome};
 use super::super::session_config::AcpSessionConfigState;
 use super::super::session_permissions::{PermissionKey, SessionPermissions};
+use super::super::terminal_registry::TerminalRegistry;
 use super::super::turn_lifecycle::{PromptCancel, PromptTurnLock};
 
 /// Channel buffer for the per-session runtime stream. Matches the size used
 /// by other adapters; deltas are coalesced upstream so even noisy turns fit.
 pub const MESSAGE_CHANNEL_CAPACITY: usize = 1024;
-// Must stay below the process-wide stream-reader shutdown deadline (2s): a
-// peer that advertises `session/close` but never replies must still leave time
-// to close the local runtime channel before the reader is joined.
-const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Provider-neutral ACP session.
 pub struct AcpRuntimeSession {
@@ -80,6 +76,9 @@ pub struct AcpRuntimeSession {
     /// ACP transport silently drops can be injected into the runtime
     /// channel). Aborted on `close()`.
     pub(in crate::domain::agents::acp::runtime) side_channel_task: Option<JoinHandle<()>>,
+    /// The session's terminals (shared with the event loop that serves
+    /// `terminal/*`). Their process groups are stopped on `close()`.
+    pub(in crate::domain::agents::acp::runtime) terminals: Arc<TerminalRegistry>,
     pub(in crate::domain::agents::acp::runtime) local_tx:
         Option<mpsc::Sender<Result<RuntimeEvent, RuntimeError>>>,
     pub(in crate::domain::agents::acp::runtime) hooks: Arc<dyn AcpProviderHooks>,
@@ -165,7 +164,14 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         // agents may reject or merge it. Serialise turns at the host boundary so
         // every accepted user message gets one authoritative turn result and the
         // frontend cannot remain stuck in `agent` after a queued follow-up.
+        let cancels = self.prompt_cancel.cancels();
         let _guard = self.prompt_turn_lock.lock().await;
+        // It waited for a turn a Stop then ended: it must not start its own.
+        if self.prompt_cancel.cancelled_since(cancels) {
+            return Err(RuntimeError::input_withdrawn(
+                "the turn was stopped before this follow-up reached the agent",
+            ));
+        }
         self.prompt_input(content, client_message_id, true).await
     }
 
@@ -194,36 +200,19 @@ impl AgentRuntimeSession for AcpRuntimeSession {
     }
 
     async fn close(&mut self) -> Result<(), RuntimeError> {
-        self.closing.store(true, Ordering::SeqCst);
-        // Prefer the stable lifecycle request when advertised. A connector
-        // that accepts it must cancel ongoing work and release the session's
-        // resources. Fall back to the baseline cancel notification if the
-        // optional request fails so teardown remains bounded and best-effort.
-        if let Some(session_id) = self.current_session_id().await {
-            let should_cancel = if self.supports_session_close {
-                match self
-                    .client
-                    .send_request_typed(
-                        CloseSessionRequest::new(session_id.clone()),
-                        SESSION_CLOSE_TIMEOUT,
-                    )
-                    .await
-                {
-                    Ok(_) => false,
-                    Err(error) => {
-                        tracing::warn!(%error, "ACP session/close failed; falling back to session/cancel");
-                        true
-                    }
-                }
-            } else {
-                true
-            };
-            if should_cancel {
-                let _ = self
-                    .client
-                    .send_notification_typed(CancelNotification::new(session_id))
-                    .await;
-            }
+        // Only the first close tells the agent. A later one (an idle reader
+        // retiring the runtime the shutdown already closed, or a retry of a
+        // close the shutdown deadline cut short) finishes the local teardown,
+        // which is safe to repeat, without asking the agent again.
+        let first_close = !self.closing.swap(true, Ordering::SeqCst);
+        self.client.begin_close();
+        let session_id = if first_close {
+            self.current_session_id().await
+        } else {
+            None
+        };
+        if let Some(session_id) = session_id {
+            super::close::tell_agent(self, session_id).await;
         }
         reject_all_pending(&self.client, &self.pending_permissions).await;
         // Drop session-scoped permission grants on close.
@@ -234,6 +223,10 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         if let Some(task) = self.side_channel_task.take() {
             task.abort();
         }
+        // After the event loop: no `terminal/create` can race the stop. The
+        // terminals lead their own process groups, so nothing else ends what
+        // they left running.
+        self.terminals.shutdown().await;
         // The stream receiver is owned outside the runtime. Drop our last
         // steady-state sender after stopping producer tasks so it observes EOF
         // even while the closed runtime remains registered for resume metadata.

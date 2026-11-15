@@ -1,14 +1,19 @@
 # Prepare a language-server release
 
 These source examples use placeholder repository URLs, lengths and digests. They
-are authoring templates, not published packages. Use the CLI built from this
-checkout; adopting or publishing that CLI is a separate release operation.
+are authoring templates, not published packages. Use the qualified released CLI
+[`0.15.6`](https://github.com/merkr-software/CadencR/releases/tag/cli/v0.15.6) selected by this template.
+
+LSP production rollout is held for application `v0.16.1`. The examples declare
+that minimum version. Keep LSP entries out of the shared production catalog and
+leave the production LSP feed unconfigured until the reviewed cutover. QA
+packages, prepared archives and CLI publication do not activate that rollout.
 
 ## Distribution contract
 
 | Runtime  | Archive contents                                                                                | Prerequisite                    |
 | -------- | ----------------------------------------------------------------------------------------------- | ------------------------------- |
-| `native` | One native executable at `entry`, mode `0755`                                                   | Exact platform and architecture |
+| `native` | Native executable at `entry`, normalized to `0755`; prepared runtime data `0644` | Exact platform and architecture |
 | `node`   | Prepared `.js`, `.cjs` or `.mjs` entry and every dependency, regular files normalized to `0644` | Existing Node executable        |
 
 The host launches the entry directly or with Node. It never runs shell install
@@ -17,6 +22,26 @@ upstream language servers outside Cadencr packaging. Native scripts are refused.
 The executable format and architecture are checked for each supported target
 (`darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`). macOS arm64 binaries must be
 signed. Do not declare targets you have not built and tested.
+
+### Signed prerequisites
+
+Targets may add optional, full stable version strings:
+
+| Field               | Allowed target                                           | Omitted behavior          |
+| ------------------- | -------------------------------------------------------- | ------------------------- |
+| `node_min_version`  | `runtime: "node"`                                        | Node.js `20.0.0` minimum  |
+| `macos_min_version` | `runtime: "native"`, `darwin-aarch64` or `darwin-x86_64` | Existing package behavior |
+
+For example, declare `"macos_min_version": "15.0.0"` when that target requires
+macOS 15. Explicit `null`, ranges, prereleases and build suffixes are invalid.
+The field belongs to the signed target, and does not change the archive digest.
+Archive verification rejects a Mach-O deployment target above the declared
+minimum. The host checks its actual OS version before installation and launch;
+unavailable versions explain the signed requirement in the marketplace.
+
+Publishing descriptors with either optional field requires a qualified CLI
+that understands it. Omitting the fields keeps existing descriptor bytes and
+their compatibility with older qualified CLIs.
 
 ## Package a native server
 
@@ -59,7 +84,9 @@ Packaging is deterministic and executes nothing. Copy `sha256`, `size`, `entry`,
 `entry_sha256`, `entry_size` and `runtime` from its JSON receipt into the target in
 `package.native.json` or `package.node.json`; replace the URL with the exact
 planned GitHub release asset. Hashes cover the compressed archive and launch
-entry separately. Limits: 64 MiB compressed, 256 MiB expanded, 4096 Node files.
+entry separately. Limits: 64 MiB compressed, 256 MiB expanded and 16,384 staging
+entries: files and subdirectories, excluding the staging root. Canonical LSP
+archives contain only regular-file members; directories are not archived.
 
 ## Metadata and plugin members
 

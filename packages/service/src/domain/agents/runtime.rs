@@ -77,6 +77,10 @@ pub struct ProviderCatalogEntry {
     pub status: ProviderStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_message: Option<String>,
+    /// Set when `models` is the last catalog known because refreshing it
+    /// failed; carries why. `None` for a fresh catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_error: Option<String>,
     pub models: Vec<ModelCatalogEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub modes: Vec<ProviderModeCatalogEntry>,
@@ -97,6 +101,7 @@ impl ProviderCatalogEntry {
             icon_data: None,
             status: ProviderStatus::Unavailable,
             status_message: Some(message.into()),
+            refresh_error: None,
             models: Vec::new(),
             modes: Vec::new(),
             access_modes: Vec::new(),
@@ -149,6 +154,9 @@ pub struct ProviderCatalogResponseEntry {
 /// Never a shell string: the desktop quotes every element itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ProviderResumeCommand {
+    /// Host-managed owner binding; never supplied by a contributor command template.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_owner: Option<String>,
     pub program: String,
     pub args: Vec<String>,
 }
@@ -156,6 +164,7 @@ pub struct ProviderResumeCommand {
 impl ProviderResumeCommand {
     pub fn new(program: &str, args: &[&str]) -> Self {
         Self {
+            session_owner: None,
             program: program.to_string(),
             args: args.iter().map(|arg| (*arg).to_string()).collect(),
         }

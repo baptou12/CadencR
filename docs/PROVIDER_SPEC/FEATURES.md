@@ -1,5 +1,9 @@
 # Cadencr Provider Capability Coverage Ledger
 
+> Pi is maintained outside this repository as
+> [edjubert's connector](https://github.com/edjubert/cadencr-plugin-provider-pi);
+> Pi details below describe the retired first-party implementation.
+
 > - **Status:** Current built-in coverage and regression reference
 > - **Last reviewed:** 2026-10-13 against `v0.13.0` (source/release review; prior live evidence retained)
 > - **Public provider contract:** ACP v1, as defined by [`BOUNDARIES.md`](./BOUNDARIES.md)

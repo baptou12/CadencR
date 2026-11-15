@@ -6,6 +6,7 @@
 
 pub(in crate::domain::ws_session) mod support;
 
+pub(in crate::domain::ws_session) mod cell_lock_probe;
 mod reader_spawn;
 mod runtime_ownership;
 
@@ -13,6 +14,7 @@ mod app;
 mod bidirectional_controls;
 mod codex_provider;
 mod dispatch;
+mod followup_stop;
 mod gate;
 mod gate_cancellation;
 mod init;
@@ -23,6 +25,7 @@ mod profile;
 mod prompt;
 mod prompt_launch;
 mod provider;
+mod restored_plan;
 mod stale_model;
 mod stream_reader;
 mod stream_reader_background_agents;

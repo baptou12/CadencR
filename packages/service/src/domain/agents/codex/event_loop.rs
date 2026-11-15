@@ -9,14 +9,15 @@ use super::async_questions::{request_id as async_question_id, PendingAsyncQuesti
 use super::event_lifecycle::SessionLifecycle;
 use super::event_state::IndexState;
 use super::event_subagent_recovery::recover_interacted_routes;
-use super::event_system::{permission_request_event, request_key};
+use super::event_system::request_key;
 use super::event_turn_state::{update_turn_state, RootTurnTracker};
 use super::events::{notification_events, rerouted_model};
 use super::permissions::PendingCodexRequest;
 use super::prompt_receipts::PendingPromptReceipts;
-use super::responses::response_value;
-use super::trusted_mcp::trusted_cadencr_browser_permission_response;
 use crate::domain::agents::adapter::{KnownSubagent, RuntimeError, RuntimeEvent};
+use crate::domain::mcp::trusted::CadencrBrowserTrust;
+
+mod server_requests;
 
 #[bon::builder]
 pub(super) fn spawn_event_loop(
@@ -32,6 +33,7 @@ pub(super) fn spawn_event_loop(
     compaction: Arc<super::session::compaction::CompactionState>,
     /// Sub-agents earlier runtimes spawned: a rehydrated child keeps its carrier.
     known_subagents: Vec<KnownSubagent>,
+    browser_trust: CadencrBrowserTrust,
 ) {
     let event_loop = EventLoop {
         client,
@@ -43,6 +45,7 @@ pub(super) fn spawn_event_loop(
         model,
         closing,
         compaction,
+        browser_trust,
     };
     tokio::spawn(async move { event_loop.run(source_rx, known_subagents).await });
 }
@@ -57,10 +60,10 @@ struct EventLoop {
     model: Arc<RwLock<Option<String>>>,
     closing: Arc<AtomicBool>,
     compaction: Arc<super::session::compaction::CompactionState>,
+    browser_trust: CadencrBrowserTrust,
 }
 
 struct NotificationState {
-    command_outputs: HashMap<String, String>,
     index_state: IndexState,
     lifecycle: SessionLifecycle,
 }
@@ -70,7 +73,6 @@ impl EventLoop {
         let mut index_state = IndexState::for_root_thread(&self.turns.root_thread_id);
         index_state.seed_known_subagents(known_subagents);
         let mut state = NotificationState {
-            command_outputs: HashMap::new(),
             index_state,
             lifecycle: SessionLifecycle::default(),
         };
@@ -82,30 +84,7 @@ impl EventLoop {
                     }
                 }
                 Some(AppServerEvent::ServerRequest { id, method, params }) => {
-                    if let Some(response) =
-                        trusted_cadencr_browser_permission_response(&id, &method, &params)
-                    {
-                        let result = response_value(&method, &params, &response);
-                        match self.client.respond_server_request(id.clone(), result).await {
-                            Ok(()) => continue,
-                            Err(error) => {
-                                tracing::warn!(
-                                    %error,
-                                    "failed to auto-allow trusted Cadencr browser MCP permission"
-                                );
-                            }
-                        }
-                    }
-                    self.pending_requests.lock().await.insert(
-                        request_key(&id),
-                        PendingCodexRequest {
-                            id: id.clone(),
-                            method: method.clone(),
-                            params: params.clone(),
-                        },
-                    );
-                    let event = permission_request_event(&id, &method, &params);
-                    if self.tx.send(Ok(event)).await.is_err() {
+                    if !self.server_request(id, &method, params).await {
                         return;
                     }
                 }
@@ -158,18 +137,16 @@ impl EventLoop {
         if super::event_turn_state::belongs_to_root_thread(&params, &self.turns.root_thread_id) {
             self.compaction.observe(&method, &params);
         }
+        // Codex multiplexes every thread (root + each sub-agent) onto one
+        // stream; item caches are kept per thread so a root turn/started
+        // never clobbers a sub-agent the lifecycle still counts as live.
+        state.index_state.enter_notification(&params);
         if method == "turn/started" {
-            let thread_id = params
-                .get("threadId")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("");
-            // Codex multiplexes every thread (root + each
-            // sub-agent) onto one stream; sub-agent turn/starteds
-            // must not clobber the root's per-turn caches.
-            if state.index_state.should_reset_for_turn_started(thread_id) {
-                state.index_state.reset();
-                state.command_outputs.clear();
-            }
+            let thread = params["threadId"].as_str().unwrap_or_default();
+            let live = &state.lifecycle.children;
+            state
+                .index_state
+                .observe_turn_started(thread, |child| live.contains_key(child));
         }
         update_turn_state(
             &method,
@@ -180,12 +157,30 @@ impl EventLoop {
         )
         .await;
         clear_resolved_request(&method, &params, &self.pending_requests).await;
-        enrich_command_output(&method, &mut params, &mut state.command_outputs);
+        if matches!(
+            method.as_str(),
+            "item/commandExecution/outputDelta" | "command/exec/outputDelta" | "item/completed"
+        ) {
+            enrich_command_output(
+                &method,
+                &mut params,
+                state.index_state.command_outputs_mut(),
+            );
+        }
         if let Some(receipt_event) = self
             .pending_prompt_receipts
             .acknowledge_completed_user_message(&method, &params, &self.turns.root_thread_id)
         {
             if self.tx.send(Ok(receipt_event)).await.is_err() {
+                return false;
+            }
+        }
+        for dropped in self.pending_prompt_receipts.drop_after_interrupted_turn(
+            &method,
+            &params,
+            &self.turns.root_thread_id,
+        ) {
+            if self.tx.send(Ok(dropped)).await.is_err() {
                 return false;
             }
         }
@@ -335,6 +330,7 @@ mod tests {
 
     use super::super::event_system::request_key;
     use super::super::permissions::PendingCodexRequest;
+    use super::super::server_request_method::CodexServerRequestMethod;
     use super::{clear_resolved_request, enrich_command_output};
 
     #[tokio::test]
@@ -344,7 +340,7 @@ mod tests {
             request_key(&request_id),
             PendingCodexRequest {
                 id: request_id.clone(),
-                method: "item/commandExecution/requestApproval".to_string(),
+                method: CodexServerRequestMethod::CommandExecutionApproval,
                 params: json!({}),
             },
         )])));

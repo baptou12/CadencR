@@ -42,7 +42,11 @@ pub(crate) use super::runtime::session_runtime_config;
 mod thinking_effort;
 mod types;
 
+pub(crate) use connection::let_controls_through;
 pub use connection::ws_handler;
+pub(crate) use session_control::{
+    owner_sessions, stop_session, suspend_session, AGENT_STARTING, NOTHING_TO_STOP,
+};
 pub use session_prompt::user_shell_recovery::recover_user_shell_context;
 
 #[cfg(test)]

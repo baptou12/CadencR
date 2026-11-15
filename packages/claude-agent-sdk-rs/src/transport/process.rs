@@ -2,17 +2,49 @@ use std::path::Path;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines};
 use tokio::process::{ChildStdin, ChildStdout};
+use tokio_util::sync::CancellationToken;
 
 use crate::error::SdkError;
 use crate::options::Options;
 
 use super::stderr::StderrCapture;
 
+/// How the CLI process ended, once it has.
+pub(crate) struct ProcessEnd {
+    pub code: Option<i32>,
+    /// The signal that ended it, on Unix.
+    pub signal: Option<i32>,
+    pub stderr: String,
+}
+
+impl ProcessEnd {
+    /// Exit code 0 with nothing on stderr: the CLI chose to stop.
+    pub fn is_clean(&self) -> bool {
+        self.code == Some(0) && self.stderr.trim().is_empty()
+    }
+
+    /// The error reporting this end.
+    pub fn into_error(self) -> SdkError {
+        match self.signal {
+            Some(signal) => SdkError::ProcessSignaled {
+                signal,
+                stderr: self.stderr,
+            },
+            None => SdkError::ProcessExit {
+                code: self.code,
+                stderr: self.stderr,
+            },
+        }
+    }
+}
+
 pub(crate) struct CliProcess {
     child: tokio::process::Child,
     stdin: Option<BufWriter<ChildStdin>>,
     stdout_lines: Lines<BufReader<ChildStdout>>,
     stderr: StderrCapture,
+    /// Cancelled once this handle lets go of the process: see [`Self::ended`].
+    ended: CancellationToken,
 }
 
 impl CliProcess {
@@ -31,6 +63,10 @@ impl CliProcess {
         cmd.stderr(std::process::Stdio::piped());
         // Prevent nested-session detection errors (matches TS SDK behavior).
         cmd.env_remove("CLAUDECODE");
+        #[cfg(unix)]
+        if options.own_process_group {
+            cmd.process_group(0);
+        }
 
         // Layer profile env on top of the inherited parent env. Keys in
         // `options.env` override any inherited values with the same name.
@@ -55,6 +91,7 @@ impl CliProcess {
             stdin,
             stdout_lines,
             stderr,
+            ended: CancellationToken::new(),
         })
     }
 
@@ -138,12 +175,15 @@ impl CliProcess {
         }
     }
 
-    /// Wait for the process to exit and return `(exit_code, captured_stderr)`.
-    pub async fn wait_with_stderr(&mut self) -> (Option<i32>, String) {
+    /// Wait for the process to exit; report how, with the captured stderr.
+    pub async fn wait_with_stderr(&mut self) -> ProcessEnd {
         let status = self.child.wait().await.ok();
         let stderr = self.stderr.finish().await;
-        let code = status.and_then(|s| s.code());
-        (code, stderr)
+        ProcessEnd {
+            code: status.and_then(|status| status.code()),
+            signal: status.and_then(exit_signal),
+            stderr,
+        }
     }
 
     /// Return the OS process ID, if the process is still running.
@@ -154,12 +194,28 @@ impl CliProcess {
         self.child.id()
     }
 
+    /// Cancelled when this handle is dropped: by then the process has exited
+    /// and been waited on, or has just been sent SIGKILL.
+    pub(crate) fn ended(&self) -> CancellationToken {
+        self.ended.clone()
+    }
+
     /// Take ownership of the stdin writer, leaving `None` in its place.
     ///
     /// Used by `Query` to hold stdin separately from the reader loop.
     pub(crate) fn take_stdin(&mut self) -> Option<BufWriter<ChildStdin>> {
         self.stdin.take()
     }
+}
+
+#[cfg(unix)]
+fn exit_signal(status: std::process::ExitStatus) -> Option<i32> {
+    std::os::unix::process::ExitStatusExt::signal(&status)
+}
+
+#[cfg(not(unix))]
+fn exit_signal(_status: std::process::ExitStatus) -> Option<i32> {
+    None
 }
 
 impl Drop for CliProcess {
@@ -177,6 +233,7 @@ impl Drop for CliProcess {
                 libc::kill(pid as libc::pid_t, libc::SIGKILL);
             }
         }
+        self.ended.cancel();
     }
 }
 
@@ -203,17 +260,18 @@ mod tests {
             child,
             stdout_lines: BufReader::new(stdout).lines(),
             stderr,
+            ended: CancellationToken::new(),
         };
         assert!(process.read_message().await.unwrap().is_none());
-        let (code, stderr) = tokio::time::timeout(
+        let end = tokio::time::timeout(
             std::time::Duration::from_secs(1),
             process.wait_with_stderr(),
         )
         .await
         .expect("MCP descendants must not delay the runtime exit event");
-        assert_eq!(code, Some(0));
-        assert!(stderr.contains("original-failure"));
-        assert!(stderr.contains("remained open after process exit"));
+        assert_eq!(end.code, Some(0));
+        assert!(end.stderr.contains("original-failure"));
+        assert!(end.stderr.contains("remained open after process exit"));
     }
 
     #[tokio::test]
@@ -290,13 +348,17 @@ mod tests {
             stdin: None,
             stdout_lines: tokio::io::BufReader::new(stdout).lines(),
             stderr,
+            ended: CancellationToken::new(),
         };
+        let ended = cli_process.ended();
 
         // Process should be alive
         assert!(is_process_alive(pid), "process should be alive before drop");
+        assert!(!ended.is_cancelled());
 
         // Drop triggers SIGKILL
         drop(cli_process);
+        assert!(ended.is_cancelled(), "dropping the handle reports the end");
 
         // Give the OS a moment to reap the process
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;

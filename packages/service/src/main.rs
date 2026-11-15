@@ -2,7 +2,9 @@
 //! the crate compiles (and its unit tests run) once; declaring them again here
 //! with `mod` would build a second full copy of the service.
 
-use cadencr_service::{api, app_state, config, dev_env, domain, remote, shared, shutdown};
+use cadencr_service::{
+    api, app_state, config, dev_clone, dev_env, domain, remote, shared, shutdown,
+};
 
 use anyhow::Context;
 use axum::serve::ListenerExt;
@@ -30,6 +32,9 @@ async fn main() -> anyhow::Result<()> {
 
     let is_mcp = config.command.is_some();
     init_tracing(is_mcp);
+    // Before anything can spawn a child: the watch also hands fd 0 back to
+    // `/dev/null`, so children never inherit the shell's open pipe.
+    let parent_watch = (!is_mcp && config.exit_with_parent).then(shutdown::watch_parent);
 
     match &config.command {
         Some(Command::McpServe {
@@ -100,7 +105,9 @@ async fn main() -> anyhow::Result<()> {
                 app_version: config.app_version.as_deref(),
             })
             .await?;
-            dev_env::consume_fresh_clone_marker(std::path::Path::new(&db_path))?;
+            // A fresh worktree clone first forgets the main checkout's live
+            // agents, turns, schedules and queues, before recovery reads them.
+            dev_clone::adopt_database(&write_pool, std::path::Path::new(&db_path)).await?;
             // The one-time image backfill needs its destination before it can
             // run. Production uses `~/.cadencr/blobs`; an ad-hoc/dev database
             // gets an isolated directory named after that exact database.
@@ -238,6 +245,9 @@ async fn main() -> anyhow::Result<()> {
                 .remote(remote_controller)
                 .remote_data_dir(&remote_data_dir)
                 .build();
+            // AppState now owns the Browser bridge credentials too (read from
+            // the env at construction): no child may inherit them.
+            shared::security::remove_service_only_env();
 
             // Stale `running` rows were reset above; restore the status book
             // every client reads before any of them can connect.
@@ -312,7 +322,11 @@ async fn main() -> anyhow::Result<()> {
             // process lifetime; survives client disconnects).
             domain::schedules::scheduler::spawn(state.clone());
             domain::restart_continuations::spawn_startup_pass(state.clone());
+            domain::features::archive_cleanup::runner::recover_at_startup(&state).await?;
             domain::mcp::control::message_queue::spawn(state.clone());
+            // Detect Git once, off the runtime: version-gated Git flows read
+            // the cached result, and an old Git is logged here once.
+            tokio::task::spawn_blocking(shared::git_cli::version::detect);
             domain::git::forge::spawn(state.clone());
             domain::git::linked_branches::spawn(state.clone());
 
@@ -355,7 +369,7 @@ async fn main() -> anyhow::Result<()> {
                 listener,
                 app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
             )
-            .with_graceful_shutdown(shutdown::stop_admitting_on_signal(drain_tx));
+            .with_graceful_shutdown(shutdown::stop_admitting_on_signal(drain_tx, parent_watch));
             shutdown::serve_then_shutdown(
                 server,
                 drain_rx,

@@ -5,6 +5,7 @@ mod config;
 mod error;
 mod event;
 mod event_mode;
+mod event_prompt;
 mod event_types;
 mod permission;
 mod prompt_attachments;
@@ -33,15 +34,15 @@ pub use event_types::{
 pub use permission::{
     RuntimeCompactionStrategy, RuntimePermissionDecision, RuntimePermissionOption,
     RuntimePermissionRequest, RuntimePermissionResponse, RuntimePermissionResponseKind,
-    RuntimePermissionUpdate, RuntimePromptCommandPlacement, RuntimePromptCommandPolicy,
-    RuntimeSkillReferenceTrigger, RuntimeSlashCommand, RuntimeSlashCommandKind,
-    RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
+    RuntimePermissionResponseRoute, RuntimePermissionUpdate, RuntimePromptCommandPlacement,
+    RuntimePromptCommandPolicy, RuntimeSkillReferenceTrigger, RuntimeSlashCommand,
+    RuntimeSlashCommandKind, RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
 };
 #[cfg(test)]
 pub(crate) use session::test_support::DummySession;
 pub use session::{
     AgentRuntimeSession, RuntimeMessageRx, RuntimeSessionHandle, RuntimeSessionWeakHandle,
-    RuntimeToolPermissionHandler,
+    RuntimeToolPermissionHandler, WithdrawnInputs,
 };
 pub use session_config::{
     RuntimeSessionConfigChoices, RuntimeSessionConfigKind, RuntimeSessionConfigOption,

@@ -108,6 +108,21 @@ pub struct FileBlobSha {
     pub sha: String,
 }
 
+/// Where the feature's directory sits in its checkout. Git tab paths are
+/// relative to the checkout root; editor paths are relative to the feature's
+/// directory, so the two differ by this prefix.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct GitPathPrefixResponse {
+    /// The feature's directory relative to the checkout root, with `/`
+    /// separators: empty at the root, `packages/app` for a monorepo project.
+    /// `None` when the directory has no Git metadata.
+    pub prefix: Option<String>,
+    /// Absolute path of the checkout root, where Git runs. Names a Git path
+    /// outside the feature's directory without ambiguity. `None` when the
+    /// directory has no Git metadata.
+    pub root: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct WorktreeInfo {
     pub path: String,
@@ -161,6 +176,12 @@ pub struct MergeResult {
     /// was something else (dirty target worktree, fast-forward refused, …).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conflict_files: Option<Vec<String>>,
+    /// Set on a *successful* merge whose cleanup did not complete — e.g. the
+    /// target worktree could not be switched back to the branch it had
+    /// checked out before. The merge itself is committed; the UI must still
+    /// tell the user the worktree was left on another branch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -289,4 +310,23 @@ mod tests {
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("oops"));
     }
+}
+
+/// The installed Git, for diagnostics.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct GitVersionResponse {
+    /// `2.34.1`; `None` when Git is missing or its version unreadable.
+    pub version: Option<String>,
+    /// Why the version is unknown.
+    pub error: Option<String>,
+    /// What this Git is too old for.
+    pub unsupported: Vec<UnsupportedGitFeature>,
+}
+
+/// A feature the installed Git is too old for.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct UnsupportedGitFeature {
+    pub label: String,
+    /// The first Git release with it, as `2.38.0`.
+    pub minimum_version: String,
 }

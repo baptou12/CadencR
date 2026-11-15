@@ -125,6 +125,9 @@ function copyPreparation(root) {
     "official-plugin-release.sh",
     "official-plugin-prepare.py",
     "official_plugin_pack.py",
+    "official_plugin_tags.py",
+    "official_plugin_lsp.py",
+    "official_plugin_lsp_archive.py",
   ])
     cpSync(resolve("scripts", name), join(root, "scripts", name));
 }
@@ -134,7 +137,7 @@ export function fixture(kind = "theme", realCli) {
   for (const dir of ["scripts", "tooling/marketplace-registry/scripts/ci", "mock"])
     mkdirSync(join(root, dir), { recursive: true });
   copyPreparation(root);
-  const id = kind === "theme" ? "graphite" : kind === "provider" ? "pi" : "inert";
+  const id = kind === "theme" ? "graphite" : kind === "provider" ? "inert-provider" : "inert";
   const plugin = `${kind}-${id}`;
   const version = "1.0.0";
   const path = `plugins/${kind}s/${id}`;

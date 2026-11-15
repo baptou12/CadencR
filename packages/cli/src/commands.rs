@@ -25,14 +25,31 @@ pub(crate) fn run(cli: &Cli) -> Result<Option<String>, Diagnostic> {
                     descriptor,
                     kind,
                     no_run,
+                    target,
+                    archive,
                 },
-        }) => match kind {
-            PluginKind::Provider => validate_provider(folder, descriptor.as_deref()),
-            PluginKind::Lsp => crate::lsp::validate(folder, descriptor.as_deref()),
-            PluginKind::Theme => crate::theme::validate(folder, descriptor.as_deref()),
-            PluginKind::Tab => crate::tab::validate(folder, descriptor.as_deref(), !no_run),
-            PluginKind::Plugin => crate::plugin::validate(folder, descriptor.as_deref(), !no_run),
-        },
+        }) => {
+            if *kind != PluginKind::Lsp && (target.is_some() || archive.is_some()) {
+                return Err(operation_error(
+                    "PLUGIN_VALIDATION_FAILED",
+                    "--target and --archive are only supported for --kind lsp",
+                ));
+            }
+            match kind {
+                PluginKind::Provider => validate_provider(folder, descriptor.as_deref()),
+                PluginKind::Lsp => crate::lsp::validate()
+                    .folder(folder)
+                    .maybe_descriptor(descriptor.as_deref())
+                    .maybe_target(target.as_deref())
+                    .maybe_archive(archive.as_deref())
+                    .call(),
+                PluginKind::Theme => crate::theme::validate(folder, descriptor.as_deref()),
+                PluginKind::Tab => crate::tab::validate(folder, descriptor.as_deref(), !no_run),
+                PluginKind::Plugin => {
+                    crate::plugin::validate(folder, descriptor.as_deref(), !no_run)
+                }
+            }
+        }
         Command::Registry(registry) => run_registry(&registry.command),
     }
 }
@@ -76,20 +93,26 @@ fn run_registry(command: &RegistryCommand) -> Result<Option<String>, Diagnostic>
         RegistryCommand::Lsp(command) => crate::lsp::run(command),
         RegistryCommand::TabBackend(command) => crate::tab_backend::run(command),
         RegistryCommand::Policy(command) => crate::policy::run(command),
-        RegistryCommand::Validate { base, candidate } => validate_registry(base, candidate),
+        RegistryCommand::Validate {
+            base,
+            candidate,
+            administrative,
+        } => validate_registry(base, candidate, *administrative),
         RegistryCommand::BuildIndex {
             schema_version,
             packages,
+            provider_handoffs,
             generated_at,
             expires_at,
             output: destination,
-        } => build_index(
-            packages,
-            *schema_version,
-            generated_at,
-            expires_at,
-            destination.as_deref(),
-        ),
+        } => build_index()
+            .packages(packages)
+            .maybe_provider_handoffs(provider_handoffs.as_deref())
+            .schema_version(*schema_version)
+            .generated_at(generated_at)
+            .expires_at(expires_at)
+            .maybe_destination(destination.as_deref())
+            .call(),
         RegistryCommand::PackProvider {
             package,
             target,
@@ -158,8 +181,17 @@ fn run_registry(command: &RegistryCommand) -> Result<Option<String>, Diagnostic>
     }
 }
 
-fn validate_registry(base: &Path, candidate: &Path) -> Result<Option<String>, Diagnostic> {
-    cadencr_registry_core::validate_contribution(base, candidate)
+fn validate_registry(
+    base: &Path,
+    candidate: &Path,
+    administrative: bool,
+) -> Result<Option<String>, Diagnostic> {
+    let result = if administrative {
+        cadencr_registry_core::validate_administrative_contribution(base, candidate)
+    } else {
+        cadencr_registry_core::validate_contribution(base, candidate)
+    };
+    result
         .map(|()| {
             Some(format!(
                 "valid registry contribution: {}",
@@ -169,14 +201,24 @@ fn validate_registry(base: &Path, candidate: &Path) -> Result<Option<String>, Di
         .map_err(|error| operation_error("REGISTRY_VALIDATION_FAILED", error))
 }
 
+#[bon::builder]
 fn build_index(
     packages: &Path,
+    provider_handoffs: Option<&Path>,
     schema_version: u64,
     generated_at: &str,
     expires_at: &str,
     destination: Option<&Path>,
 ) -> Result<Option<String>, Diagnostic> {
+    let handoffs = provider_handoffs
+        .map(|path| {
+            cadencr_registry_core::read_provider_handoffs(path)
+                .map_err(|e| operation_error("REGISTRY_VALIDATION_FAILED", e))
+        })
+        .transpose()?
+        .unwrap_or_default();
     let bytes = cadencr_registry_core::build_index()
+        .provider_handoffs(handoffs)
         .packages_dir(packages)
         .schema_version(schema_version)
         .generated_at(generated_at)
