@@ -37,6 +37,7 @@ pub use folder::{
     inspect_signed_tab_folder, inspect_tab_folder, read_tab_manifest, TabFolderReport,
 };
 pub use issues::{describe_all, TabFindings, TabIssue, TabIssueCode};
+pub use macho::macos_minimum_version;
 pub use manifest::{
     TabAccessLevel, TabBackend, TabCommand, TabConfigField, TabConfigFieldType, TabConfigScope,
     TabManifest, TabNetwork, TabSection, TabShortcut,
@@ -57,6 +58,11 @@ pub const SUPPORTED_API_VERSION: u32 = 1;
 pub const SUPPORTED_BACKEND_PROTOCOLS: [u32; 1] = [1];
 pub const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 pub const MAX_ICON_BYTES: u64 = 32 * 1024;
+
+/// Built-in feature-page tabs a custom tab may declare in `tab.replaces`, in
+/// tab-strip order. Agent and Browser are left out: the agent's own surface and
+/// its browser tools need them.
+pub const REPLACEABLE_TABS: [&str; 4] = ["terminal", "git", "editor", "preview"];
 
 /// Every scope a tab can request (§6), in documentation order.
 pub const SCOPES: [&str; 6] = [

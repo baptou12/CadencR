@@ -15,38 +15,21 @@ use crate::domain::ws_session::persistence::{
     raw_event_with_agent_message_id, PersistedEventRef, WsSessionPersistence,
 };
 use crate::domain::ws_session::protocol::{
-    SessionEndedPayload, SessionErrorPayload, SessionMessagePayload, SessionUsageUpdatePayload,
-    WsEnvelope,
+    SessionEndedPayload, SessionErrorPayload, SessionMessagePayload, WsEnvelope,
 };
 
 use super::stream_reader_task::{StreamReaderState, StreamReaderTask};
 
 impl StreamReaderTask {
     async fn record_turn_outcome(&self, state: &StreamReaderState, outcome: TurnOutcome) {
+        let stopped = matches!(outcome, TurnOutcome::Interrupted);
+        self.settle_followups(stopped, false).await;
         turn_completed(TurnSummary::new(
             outcome,
             &self.runtime_provider,
             state.turn_state.elapsed_seconds(),
         ))
         .await;
-    }
-
-    pub(in crate::domain::ws_session) async fn send_usage_update(
-        &self,
-        input_tokens: u64,
-        output_tokens: u64,
-        context_window: Option<u64>,
-    ) {
-        let usage_env =
-            WsEnvelope::session_event(&WsSessionEvent::UsageUpdate(SessionUsageUpdatePayload {
-                input_tokens,
-                output_tokens,
-                context_window,
-            }))
-            .expect("session event payload should serialize");
-        let _ = self
-            .send_and_mirror(Message::Text(String::from(usage_env).into()))
-            .await;
     }
 
     pub(in crate::domain::ws_session) async fn runtime_event_envelope(
@@ -128,14 +111,14 @@ impl StreamReaderTask {
         // resetting elapsed time to 0s. The resume turn's final `Result` arrives
         // with the set empty and ends the turn normally below.
         if interrupted_generation.is_none() && !state.live_background_agents.is_empty() {
-            WsSessionPersistence::mark_running_static(&self.write_pool, self.db_session_id).await;
+            self.record_running().await;
             return None;
         }
         if let Some(generation) = interrupted_generation {
             return self.interrupted_result_envelope(state, generation).await;
         }
 
-        WsSessionPersistence::mark_completed_static(&self.write_pool, self.db_session_id).await;
+        self.record_completed().await;
         self.record_turn_outcome(
             state,
             if failed {
@@ -191,6 +174,7 @@ impl StreamReaderTask {
             .is_current_generation(self.db_session_id, interrupted_generation)
             .await
         {
+            self.settle_followups(true, true).await;
             info!(
                 self.db_session_id,
                 interrupted_generation,
@@ -198,7 +182,7 @@ impl StreamReaderTask {
             );
             return None;
         }
-        WsSessionPersistence::mark_completed_static(&self.write_pool, self.db_session_id).await;
+        self.record_completed().await;
         self.record_turn_outcome(state, TurnOutcome::Interrupted)
             .await;
         // Both ways a stopped turn ends (its runtime's interrupted result, or

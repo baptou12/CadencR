@@ -140,6 +140,9 @@ pub async fn delete_feature_handler(
     if let Err(error) = state.neovim_manager.stop(id).await {
         debug!(%error, feature_id = id, "no neovim to stop before feature deletion");
     }
+    // Before the rows go: the setup records its cancellation, then its
+    // settings are deleted with the feature.
+    crate::domain::workflow::worktree::cancel_setups(&state.worktree_setup_runs, &[id]).await;
     service::delete_feature(&state.write_pool, &state.read_pool, id).await?;
     let runtime_cleanup = state.session_runtimes.retire_feature(id).await;
     state.persistence_health.forget_feature(id).await;
@@ -153,7 +156,7 @@ pub async fn delete_feature_handler(
         .feature_events_tx
         .emit(id, None, FeatureEventAction::Deleted);
     if let Err(error) = runtime_cleanup {
-        return Err(crate::error::AppError::Internal(format!(
+        return Err(crate::error::AppError::internal(format!(
             "Feature was deleted, but runtime cleanup failed: {error}"
         )));
     }
@@ -192,9 +195,17 @@ pub async fn update_feature_status_handler(
     Path(id): Path<i64>,
     Json(body): Json<UpdateStatusRequest>,
 ) -> Result<Json<SuccessResponse>, AppError> {
+    // Hold the cleanup slot until the active status is persisted. A timed-out
+    // destructive step must leave the conversation archived and its plan intact.
+    let _cleanup_guard = if matches!(body.status, FeatureStatus::Archived) {
+        None
+    } else {
+        Some(super::archive_cleanup::runner::abandon(&state, id).await?)
+    };
     service::update_status(&state.write_pool, id, body.status).await?;
     if matches!(body.status, FeatureStatus::Archived) {
         state.plugin_tab_presence.release_features(&[id]);
+        crate::domain::workflow::worktree::cancel_setups(&state.worktree_setup_runs, &[id]).await;
     }
     // Archive/unarchive changes which features the sidebar shows.
     state

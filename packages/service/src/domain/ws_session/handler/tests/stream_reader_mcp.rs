@@ -99,7 +99,7 @@ async fn test_stream_reader_refreshes_mcp_servers_after_turn_result() {
 }
 
 fn make_refreshing_mcp_handle(feature_id: i64) -> SdkHandle {
-    let (permission_tx, _permission_rx) = mpsc::channel::<session_prompt::PermissionResponse>(1);
+    let (permission_tx, _permission_rx) = session_prompt::permission_response_channel();
     SdkHandle {
         identity: crate::domain::ws_session::runtime::state::RuntimeHandleIdentity::default(),
         state: QueryState::Active {
@@ -137,7 +137,7 @@ fn make_refreshing_mcp_handle(feature_id: i64) -> SdkHandle {
             profile_revision: None,
             profile_state_identity: None,
         },
-        manual_compact_cancel: Arc::new(AtomicBool::new(false)),
+        manual_compact_start: Default::default(),
         manual_compact_spawn_pending: Arc::new(AtomicBool::new(false)),
     }
 }

@@ -47,6 +47,7 @@ pub(super) async fn retire_unobserved_runtime(task: &StreamReaderTask) -> bool {
         &RuntimeCloseContext::builder()
             .pool(&task.write_pool)
             .feature_senders(&task.feature_senders)
+            .idle(true)
             .build(),
         task.db_session_id,
         &task.runtime_provider,
@@ -57,20 +58,29 @@ pub(super) async fn retire_unobserved_runtime(task: &StreamReaderTask) -> bool {
     // Do not expose a closed Active handle to a delivery waiting on this cell.
     // A later command takes the Pending path and resumes in a fresh process.
     handle.state = QueryState::Pending(pending_options(handle, resume_id));
-    WsSessionPersistence::mark_completed_static(&task.write_pool, task.db_session_id).await;
+    let completed =
+        WsSessionPersistence::mark_completed_static(&task.write_pool, task.db_session_id).await;
+    drop(sessions);
+    task.check_write(completed, "that the agent finished").await;
     task.session_status_tx
         .broadcast(task.db_session_id, task.feature_id, AgentStatus::Idle, None);
     true
 }
 
+/// Whether the turn may still need this runtime. A status that cannot be read
+/// keeps it: closing needs proof the turn is over, and a later tick retries.
 async fn turn_needs_runtime(task: &StreamReaderTask) -> bool {
-    WsSessionPersistence::get_session_row(&task.write_pool, task.db_session_id)
-        .await
-        .is_some_and(|row| row.status == "running" || row.has_pending_user_input())
+    match WsSessionPersistence::try_get_session_row(&task.write_pool, task.db_session_id).await {
+        Ok(row) => row.is_some_and(|row| row.status == "running" || row.has_pending_user_input()),
+        Err(error) => {
+            tracing::warn!(task.db_session_id, %error, "could not read session status; keeping the idle runtime");
+            true
+        }
+    }
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::domain::agents::adapter::{
         AgentRuntimeSession, RuntimeError, RuntimeMessageRx, RuntimePermissionMode,
@@ -117,11 +127,14 @@ mod tests {
         }
     }
 
-    async fn idle_task() -> (StreamReaderTask, RuntimeSessionHandle, Arc<AtomicBool>) {
+    pub(in crate::domain::ws_session::runtime::prompt) async fn idle_task(
+    ) -> (StreamReaderTask, RuntimeSessionHandle, Arc<AtomicBool>) {
         let state = make_test_app_state().await;
         let id = 17;
         insert_running_session(&state, id, 1).await;
-        WsSessionPersistence::mark_completed_static(&state.write_pool, id).await;
+        WsSessionPersistence::mark_completed_static(&state.write_pool, id)
+            .await
+            .unwrap();
         let cell = super::super::super::state::new_sdk_sessions();
         let closed = Arc::new(AtomicBool::new(false));
         let query: RuntimeSessionHandle =
@@ -177,6 +190,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_unreadable_status_keeps_the_idle_runtime() {
+        let (task, _runtime, closed) = idle_task().await;
+        sqlx::query("ALTER TABLE agent_sessions RENAME TO agent_sessions_unreadable")
+            .execute(&task.write_pool)
+            .await
+            .unwrap();
+
+        assert!(!retire_unobserved_runtime(&task).await);
+        assert!(!closed.load(Ordering::SeqCst));
+        let handles = task.sdk_sessions.lock().await;
+        assert!(matches!(
+            handles.get(&task.db_session_id).unwrap().state,
+            QueryState::Active { .. }
+        ));
+    }
+
+    #[tokio::test]
     async fn running_status_is_rechecked_after_waiting_for_runtime_writer() {
         let (task, runtime, closed) = idle_task().await;
         let provider_reader = runtime.clone().read_owned().await;
@@ -195,7 +225,9 @@ mod tests {
         })
         .await
         .unwrap();
-        WsSessionPersistence::mark_running_static(&pool, id).await;
+        WsSessionPersistence::mark_running_static(&pool, id)
+            .await
+            .unwrap();
         drop(provider_reader);
         assert!(!retirement.await.unwrap());
         assert!(!closed.load(Ordering::SeqCst));

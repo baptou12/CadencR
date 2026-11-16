@@ -8,6 +8,7 @@
 //! task (shell commands included) so the runtime is not torn down while one
 //! still has to report back. Conforms to `.claude/rules/inline-rust-tests.md`.
 
+use claude_agent_sdk_rs::messages::TaskLifecycleKind;
 use serde_json::Value;
 
 use crate::domain::agents::adapter::BackgroundAgentSignal;
@@ -32,29 +33,26 @@ fn is_terminal_task_status(status: Option<&str>) -> bool {
 /// `local_bash` tasks are `task_type != "local_agent"` on start, so their
 /// notifications never match a tracked agent.
 ///
-/// The CLI tags these as `type: "system"` with a `subtype` the SDK does not
-/// type, so they arrive as `SdkMessage::Unknown` with the raw JSON preserved —
-/// we read the fields straight off that value.
+/// The SDK recognizes these `system` frames as
+/// `SdkMessage::TaskLifecycle` with the raw JSON preserved — we read the
+/// fields straight off that value.
 pub(super) fn background_agent_signal(
     msg: &claude_agent_sdk_rs::SdkMessage,
 ) -> Option<BackgroundAgentSignal> {
-    let raw = match msg {
-        claude_agent_sdk_rs::SdkMessage::Unknown(raw) => raw,
-        _ => return None,
-    };
-    if raw.get("type").and_then(Value::as_str) != Some("system") {
+    let claude_agent_sdk_rs::SdkMessage::TaskLifecycle(event) = msg else {
         return None;
-    }
-    let task_id = raw.get("task_id").and_then(Value::as_str)?;
-    match raw.get("subtype").and_then(Value::as_str) {
-        Some("task_started")
+    };
+    let raw = event.raw();
+    let task_id = event.task_id()?;
+    match event.kind() {
+        TaskLifecycleKind::Started
             if raw.get("task_type").and_then(Value::as_str) == Some("local_agent") =>
         {
             Some(BackgroundAgentSignal::Started {
                 agent_id: task_id.to_string(),
             })
         }
-        Some("task_notification")
+        TaskLifecycleKind::Notification
             if is_terminal_task_status(raw.get("status").and_then(Value::as_str)) =>
         {
             Some(BackgroundAgentSignal::Finished {
@@ -62,7 +60,7 @@ pub(super) fn background_agent_signal(
             })
         }
         // A stopped agent's end is first reported as a `killed` patch.
-        Some("task_updated")
+        TaskLifecycleKind::Updated
             if is_terminal_task_status(raw.pointer("/patch/status").and_then(Value::as_str)) =>
         {
             Some(BackgroundAgentSignal::Finished {
@@ -80,26 +78,61 @@ pub(super) fn background_agent_signal(
 /// authoritative regardless of task type. Foreground shells nested in an agent
 /// never appear in it.
 ///
-/// Like the task lifecycle above, the subtype is untyped by the SDK and arrives
-/// as `SdkMessage::Unknown` with the raw JSON preserved.
+/// Like the task lifecycle above, the SDK yields it as a raw-preserving
+/// `SdkMessage::TaskLifecycle`.
 pub(super) fn background_task_count(msg: &claude_agent_sdk_rs::SdkMessage) -> Option<usize> {
-    let claude_agent_sdk_rs::SdkMessage::Unknown(raw) = msg else {
+    let claude_agent_sdk_rs::SdkMessage::TaskLifecycle(event) = msg else {
         return None;
     };
-    if raw.get("type").and_then(Value::as_str) != Some("system")
-        || raw.get("subtype").and_then(Value::as_str) != Some("background_tasks_changed")
-    {
+    if event.kind() != TaskLifecycleKind::BackgroundTasksChanged {
         return None;
     }
-    raw.get("tasks").and_then(Value::as_array).map(Vec::len)
+    event
+        .raw()
+        .get("tasks")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+}
+
+/// Whether Claude Code reports a running shell command, in the foreground or
+/// not: a `system/task_started` with `task_type: "local_bash"`. A foreground
+/// command is reported only once it has run for a few seconds (about 3.5 s
+/// with CLI 2.1.312).
+pub(super) fn starts_shell_command(msg: &claude_agent_sdk_rs::SdkMessage) -> bool {
+    let claude_agent_sdk_rs::SdkMessage::TaskLifecycle(event) = msg else {
+        return false;
+    };
+    event.kind() == TaskLifecycleKind::Started
+        && event.raw().get("task_type").and_then(Value::as_str) == Some("local_bash")
 }
 
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
-    use super::{background_agent_signal, background_task_count};
+    use super::{background_agent_signal, background_task_count, starts_shell_command};
     use crate::domain::agents::adapter::BackgroundAgentSignal;
+
+    #[test]
+    fn only_a_started_shell_task_starts_a_shell_command() {
+        let starts = |value: serde_json::Value| {
+            starts_shell_command(&serde_json::from_value(value).expect("valid sdk message"))
+        };
+        // CLI 2.1.312 wire shape for a foreground Bash command.
+        assert!(starts(json!({
+            "type": "system", "subtype": "task_started", "uuid": "u", "session_id": "s",
+            "task_id": "b5v3b2ssu", "tool_use_id": "toolu_1", "is_backgrounded": false,
+            "task_type": "local_bash", "description": "Run slow-check.sh"
+        })));
+        assert!(!starts(json!({
+            "type": "system", "subtype": "task_started", "uuid": "u", "session_id": "s",
+            "task_id": "task-abc", "tool_use_id": "toolu_2", "task_type": "local_agent"
+        })));
+        assert!(!starts(json!({
+            "type": "system", "subtype": "task_notification", "uuid": "u", "session_id": "s",
+            "task_id": "b5v3b2ssu", "status": "completed", "task_type": "local_bash"
+        })));
+    }
 
     fn signal(value: serde_json::Value) -> Option<BackgroundAgentSignal> {
         let msg: claude_agent_sdk_rs::SdkMessage =
@@ -111,7 +144,7 @@ mod tests {
     fn task_started_for_local_agent_is_started() {
         // Real wire shape: a `run_in_background` launch surfaces as
         // `system/task_started` with `task_type: "local_agent"`. The CLI tags
-        // it `type: "system"`, so the SDK yields `Unknown(raw)`.
+        // it `type: "system"`, so the SDK yields `TaskLifecycle(raw)`.
         assert_eq!(
             signal(json!({
                 "type": "system", "subtype": "task_started", "uuid": "u", "session_id": "s",

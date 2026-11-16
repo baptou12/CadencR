@@ -12,8 +12,8 @@ use super::config::{
 use super::error::RuntimeError;
 use super::event_types::RuntimeEvent;
 use super::permission::{
-    RuntimeCompactionStrategy, RuntimePermissionRequest, RuntimePromptCommandPolicy,
-    RuntimeSlashCommand,
+    RuntimeCompactionStrategy, RuntimePermissionRequest, RuntimePermissionResponseRoute,
+    RuntimePromptCommandPolicy, RuntimeSlashCommand,
 };
 use super::session::AgentRuntimeSession;
 use super::user_shell::RuntimeUserShellStrategy;
@@ -93,9 +93,14 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         None
     }
 
-    /// Whether a rejected runtime permission response should use the legacy channel.
-    fn uses_legacy_permission_channel_on_response_error(&self) -> bool {
-        false
+    /// Where user permission answers for this runtime are delivered.
+    fn permission_response_route(&self) -> RuntimePermissionResponseRoute {
+        RuntimePermissionResponseRoute::Session
+    }
+
+    /// A saved conversation cannot be handed silently to another provider owner.
+    fn resume_session_rejection(&self, _session_id: &str) -> Option<String> {
+        None
     }
 
     /// Resolve a resume session ID from the DB-stored runtime_session_id.
@@ -402,6 +407,7 @@ mod tests {
 
     use super::super::config::RuntimeSpawnConfig;
     use super::super::error::RuntimeError;
+    use super::super::permission::RuntimePermissionResponseRoute;
     use super::super::session::test_support::DummySession;
     use super::super::session::AgentRuntimeSession;
     use super::super::user_shell::RuntimeUserShellStrategy;
@@ -418,6 +424,7 @@ mod tests {
                 icon_data: None,
                 status: crate::domain::agents::runtime::ProviderStatus::Available,
                 status_message: None,
+                refresh_error: None,
                 models: vec![],
                 modes: vec![],
                 access_modes: vec![],
@@ -446,7 +453,10 @@ mod tests {
             .parse_permission_request(&json!({"type": "none"}))
             .is_none());
         assert!(!adapter.supports_prompt_receipts());
-        assert!(!adapter.uses_legacy_permission_channel_on_response_error());
+        assert_eq!(
+            adapter.permission_response_route(),
+            RuntimePermissionResponseRoute::Session
+        );
         assert_eq!(adapter.legacy_access_mode_wire(Some("fullAccess")), None);
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         assert_eq!(adapter.bypass_permission_opt_in(&pool, 1, None).await, None);

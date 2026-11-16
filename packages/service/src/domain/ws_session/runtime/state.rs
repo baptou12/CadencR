@@ -21,7 +21,7 @@ pub(in crate::domain::ws_session) enum QueryState {
     /// Query is active (CLI subprocess running).
     Active {
         query: RuntimeSessionHandle,
-        permission_tx: mpsc::Sender<session_prompt::PermissionResponse>,
+        permission_tx: session_prompt::PermissionResponseSender,
     },
 }
 
@@ -150,7 +150,7 @@ pub struct SdkHandle {
     pub(in crate::domain::ws_session) resume_session_id: Option<String>,
     /// Config for respawning with --resume after model/mode change.
     pub(in crate::domain::ws_session) config: SessionConfig,
-    pub(in crate::domain::ws_session) manual_compact_cancel: Arc<AtomicBool>,
+    pub(in crate::domain::ws_session) manual_compact_start: Arc<super::compact_start::CompactStart>,
     pub(in crate::domain::ws_session) manual_compact_spawn_pending: Arc<AtomicBool>,
 }
 

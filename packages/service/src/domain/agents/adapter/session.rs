@@ -25,6 +25,14 @@ pub trait RuntimeToolPermissionHandler: Send + Sync {
     ) -> RuntimeToolPermissionResult;
 }
 
+/// What [`AgentRuntimeSession::withdraw_pending_inputs`] withdrew.
+#[derive(Debug, Default)]
+pub struct WithdrawnInputs {
+    pub withdrawn: Vec<String>,
+    /// Why it could not withdraw the rest; those in `withdrawn` are gone anyway.
+    pub error: Option<RuntimeError>,
+}
+
 #[async_trait]
 pub trait AgentRuntimeSession: Send + Sync {
     fn take_message_rx(&mut self) -> RuntimeMessageRx;
@@ -81,12 +89,31 @@ pub trait AgentRuntimeSession: Send + Sync {
         None
     }
     async fn interrupt(&self) -> Result<(), RuntimeError>;
+    /// Before a user Stop: withdraw the follow-ups (`client_message_ids`, as
+    /// given to `stream_input_with_client_message_id`) the runtime holds but
+    /// has not taken into a turn, so none starts a turn after the stop.
+    /// Returns those withdrawn; the others were taken in and stop with the
+    /// turn. A runtime that never keeps a follow-up past a stop (it fails it
+    /// with [`RuntimeError::InputWithdrawn`]) withdraws nothing here.
+    async fn withdraw_pending_inputs(&self, _client_message_ids: &[String]) -> WithdrawnInputs {
+        WithdrawnInputs::default()
+    }
+    /// Stop the running turn because the machine is about to sleep. The OS
+    /// does not wait long, so a runtime whose `interrupt` can take more than a
+    /// few seconds (waiting out an agent that ignores the stop) overrides this
+    /// with a shorter bound; the stop's contract is otherwise `interrupt`'s.
+    async fn interrupt_before_sleep(&self) -> Result<(), RuntimeError> {
+        self.interrupt().await
+    }
     async fn compact(&self) -> Result<(), RuntimeError> {
         Err(RuntimeError::new(
             "compaction is not supported by this runtime",
         ))
     }
     /// Release local resources even when graceful provider shutdown fails.
+    /// The message stream should end once the runtime is closed. Callers may
+    /// close a runtime twice (the shutdown, then its idle reader): a second
+    /// close should not ask the stopped provider again.
     async fn close(&mut self) -> Result<(), RuntimeError>;
     async fn set_model(&self, model: &str) -> Result<(), RuntimeError>;
     async fn set_permission_mode(&self, mode: RuntimePermissionMode) -> Result<(), RuntimeError>;

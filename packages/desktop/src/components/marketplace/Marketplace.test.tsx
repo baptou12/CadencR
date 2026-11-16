@@ -134,6 +134,8 @@ vi.mock("@/api/generated", async () => {
     removeManagedTheme: vi.fn(),
     duplicateManagedTheme: vi.fn(),
     previewManagedThemePackage: vi.fn(),
+    getMarketplaceTrust: vi.fn(async () => ({ status: "configured" })),
+    setAsideMarketplaceTrust: vi.fn(),
     // No agent CLI in these tests: the skill and MCP surfaces stay out of the way.
     getListExtensionClisQueryKey: () => ["/api/agent-extensions/clis"],
     listExtensionClis: vi.fn(async () => ({ clis: [] })),
@@ -316,13 +318,13 @@ describe("plugin detail", () => {
     expect(screen.getByRole("combobox", { name: "Exact version" })).toHaveTextContent("3.0.0");
   });
 
-  it("installs the recommended exact version with the untouched signed envelope", async () => {
+  it("installs the recommended exact version by name, never sending the catalog", async () => {
     stubBackend([], "2.0.0");
     vi.mocked(install).mockResolvedValue({ ...pi, version: "2.0.0" });
     const { user } = inMarketplace(<PluginDetail kind="provider" id="pi" />);
     await user.click(await screen.findByRole("button", { name: "Install 2.0.0" }));
     await waitFor(() =>
-      expect(install).toHaveBeenCalledWith({ provider_id: "pi", version: "2.0.0", index }),
+      expect(install).toHaveBeenCalledWith({ provider_id: "pi", version: "2.0.0" }),
     );
     expect(await screen.findByText(/pi: changes saved/)).toBeTruthy();
   });
@@ -332,7 +334,7 @@ describe("plugin detail", () => {
     vi.mocked(update).mockResolvedValue({ ...pi, version: "2.0.0" });
     const { user } = inMarketplace(<PluginDetail kind="provider" id="pi" />);
     await user.click(await screen.findByRole("button", { name: "Update to 2.0.0" }));
-    await waitFor(() => expect(update).toHaveBeenCalledWith("pi", { version: "2.0.0", index }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("pi", { version: "2.0.0" }));
   });
 
   it("removes only after confirmation, and keeps the dialog open with the error on failure", async () => {
@@ -396,14 +398,13 @@ describe("plugin detail", () => {
     expect(screen.getByRole("combobox", { name: "Exact version" })).toHaveTextContent("0.2.0");
     expect(await screen.findByText("Preview of 0.2.0 — not installed")).toBeTruthy();
     expect(previewManagedThemePackage).toHaveBeenCalledWith(
-      { theme_id: "graphite", version: "0.2.0", index },
+      { theme_id: "graphite", version: "0.2.0" },
       expect.anything(),
     );
     await waitFor(() =>
       expect(updateManagedTheme).toHaveBeenCalledWith("graphite", {
         theme_id: "graphite",
         version: "0.2.0",
-        index,
       }),
     );
   });
@@ -487,11 +488,10 @@ describe("marketplace home", () => {
       <MarketplaceHome view="updates" kind="all" query="" onChange={vi.fn()} />,
     );
     await user.click(await screen.findByRole("button", { name: "Update all 2" }));
-    await waitFor(() => expect(update).toHaveBeenCalledWith("pi", { version: "2.0.0", index }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("pi", { version: "2.0.0" }));
     expect(updateManagedTheme).toHaveBeenCalledWith("graphite", {
       theme_id: "graphite",
       version: "0.2.0",
-      index,
     });
     expect(vi.mocked(updateManagedTheme).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(update).mock.invocationCallOrder[0],
@@ -572,7 +572,8 @@ describe("marketplace home", () => {
         verified: false,
         index: null,
         recommended_versions: {},
-        error: "theme catalog source is not configured; verified cache unavailable: os error 2",
+        error:
+          "marketplace catalog source is not configured; verified cache unavailable: os error 2",
       };
       vi.mocked(getManagedThemeCatalog).mockResolvedValue(unconfigured);
       vi.mocked(getManagedTabCatalog).mockResolvedValue(unconfigured);
@@ -674,7 +675,7 @@ describe("custom tabs in the marketplace", () => {
     );
     expect(tabMutations.consent).toHaveBeenCalledWith({
       id: "graph",
-      data: { permissions_hash: "hash-1" },
+      data: { permissions_hash: "hash-1", trusts_code: false },
     });
     expect(tabMutations.enable).not.toHaveBeenCalled();
     confirmConsent();
@@ -705,15 +706,15 @@ describe("custom tabs in the marketplace", () => {
     await waitFor(() =>
       expect(tabMutations.consent).toHaveBeenCalledWith({
         id: "graph",
-        data: { permissions_hash: "updated-permissions" },
+        data: { permissions_hash: "updated-permissions", trusts_code: false },
       }),
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(tabMutations.enable).not.toHaveBeenCalled();
   });
 
-  it("installs an exact tab version with its original signed catalog", async () => {
-    const tabIndex = stubTabs();
+  it("installs an exact tab version by name, never sending the catalog", async () => {
+    stubTabs();
     vi.mocked(installManagedTab).mockResolvedValue({
       id: "graph",
       name: "Files graph",
@@ -726,14 +727,13 @@ describe("custom tabs in the marketplace", () => {
       expect(installManagedTab).toHaveBeenCalledWith({
         tab_id: "graph",
         version: "1.1.0",
-        index: tabIndex,
       }),
     );
     expect(install).not.toHaveBeenCalled();
     expect(await screen.findByText("graph: install confirmed by Cadencr.")).toBeInTheDocument();
   });
   it("updates a tab without sending it to the provider or theme endpoints", async () => {
-    const tabIndex = stubTabs(true);
+    stubTabs(true);
     vi.mocked(updateManagedTab).mockResolvedValue({
       id: "graph",
       name: "Files graph",
@@ -746,7 +746,6 @@ describe("custom tabs in the marketplace", () => {
       expect(updateManagedTab).toHaveBeenCalledWith("graph", {
         tab_id: "graph",
         version: "1.1.0",
-        index: tabIndex,
       }),
     );
     expect(updateManagedTheme).not.toHaveBeenCalled();
@@ -932,7 +931,7 @@ describe("custom tabs with a native backend in the marketplace", () => {
     await user.click(within(dialog).getByRole("button", { name: "Allow and update" }));
     expect(tabMutations.consent).toHaveBeenCalledWith({
       id: "graph",
-      data: { permissions_hash: "hash-staged" },
+      data: { permissions_hash: "hash-staged", trusts_code: false },
     });
     expect(updateManagedTab).not.toHaveBeenCalled();
   });
@@ -1241,7 +1240,7 @@ describe("multi-export plugins in the marketplace", () => {
     expect(screen.getByRole("button", { name: "Install 2 missing" })).toBeTruthy();
   });
 
-  it("installs every member in catalog order, each with its kind's signed catalog", async () => {
+  it("installs every member in catalog order, each at the plugin's version", async () => {
     stubPlugin();
     stubPluginInstalls();
     const { user } = inMarketplace(<PluginDetail kind="plugin" id="aurora" />);
@@ -1250,18 +1249,15 @@ describe("multi-export plugins in the marketplace", () => {
       expect(installManagedTheme).toHaveBeenCalledWith({
         theme_id: "aurora-theme",
         version: "1.0.0",
-        index: auroraIndex,
       }),
     );
     expect(install).toHaveBeenCalledWith({
       provider_id: "aurora-agent",
       version: "1.0.0",
-      index: auroraIndex,
     });
     expect(installManagedTab).toHaveBeenCalledWith({
       tab_id: "aurora-tab",
       version: "1.0.0",
-      index: auroraIndex,
     });
     const order = [install, installManagedTab, installManagedTheme].map(
       (fn) => vi.mocked(fn).mock.invocationCallOrder[0],
@@ -1384,12 +1380,40 @@ describe("language server marketplace", () => {
     role: "general",
     status: "legacy",
   };
-  function stubLsp(reason?: string) {
+  function stubLsp(reason?: string, minimum?: string) {
     let managed = false;
     vi.mocked(customInstance).mockImplementation(async (request) => {
       if (request.url === "/api/lsp/catalog")
         return {
-          index: signedCatalog([lspPackage]),
+          index: signedCatalog([
+            minimum
+              ? {
+                  ...lspPackage,
+                  package: {
+                    ...lspPackage.package,
+                    lsp: {
+                      ...lspPackage.package.lsp,
+                      distribution: {
+                        binary: {
+                          "darwin-aarch64": {
+                            archive:
+                              "https://github.com/acme/custom/releases/download/v1/server.tgz",
+                            sha256: "a".repeat(64),
+                            size: 200,
+                            entry: "server",
+                            entry_sha256: "b".repeat(64),
+                            entry_size: 100,
+                            runtime: "native",
+                            macos_min_version: minimum,
+                          },
+                        },
+                      },
+                    },
+                  },
+                }
+              : lspPackage,
+          ]),
+          host_platform: "darwin-aarch64",
           verified: true,
           recommended_versions: reason ? {} : { "custom-server": "1.0.0" },
           unavailable_versions: reason ? { "custom-server": { "1.0.0": reason } } : {},
@@ -1451,8 +1475,9 @@ describe("language server marketplace", () => {
     ["node", "Needs Node.js on this machine"],
     ["protocol", "Needs a newer Cadencr"],
     ["policy", "Installation policy unavailable"],
+    ["operating_system", "Requires macOS 15.0.0 or newer"],
   ])("explains %s availability without offering install", async (reason, label) => {
-    stubLsp(reason);
+    stubLsp(reason, reason === "operating_system" ? "15.0.0" : undefined);
     inMarketplace(<PluginDetail kind="lsp" id="custom-server" />);
     expect(await screen.findByRole("button", { name: label })).toBeDisabled();
     expect(screen.queryByRole("button", { name: /Install managed/ })).not.toBeInTheDocument();

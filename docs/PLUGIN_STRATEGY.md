@@ -1,55 +1,10 @@
 # Cadencr Plugin Strategy
 
-Status: v0.12.0 targets local theme/provider plugins (decision 2026-09-12).
-GitHub-only public distribution remains accepted for later, not the current
-release objective.
-
-## Current release priority — 2026-09-12
-
-[Local Plugins v0.12.0](./LOCAL_PLUGINS_V0_12.md) is the authoritative immediate
-release checklist. Both themes and providers create ordinary projects inside
-the developer's Cadencr instance. Add durable, queryable plugin-project identity
-with a theme/provider discriminator for a later GitHub publication and registry
-initial/new-version workflow. The marker is implemented for new project rows only; existing projects are not backfilled or reclassified.
-
-No marketplace UI or production registry provisioning is required for v0.12.0.
-Keep code used by local flows and real tooling; the explicit future-facing
-runtime exception is registry package-download infrastructure. Do not add inactive
-publishing UI or placeholder runtime behavior.
-
-## Current provider delivery boundary
-
-The provider implementation at `7d572e5dd` has been rebased and verified against
-local `v0.12.0` (`302cf0183`); this is not a recorded release-branch merge.
-Local authoring and the managed package/install/conformance backend are
-implemented. Marketplace UI remains deferred, and provider-account
+Status: local themes, provider connectors and custom tabs ship, and the
+GitHub-only [marketplace](./MARKETPLACE_V1.md) distributes them. A single
+marketplace package may combine several contributions: see
+[Multi-export plugins](./MULTI_EXPORT_PLUGINS.md). Provider-account
 configuration and authentication remain the user's native CLI responsibility.
-
-Session-scoped resume-persistence eligibility is implemented in the current working tree and under review; it is not a new committed release baseline.
-Production trust/blocklist provisioning, publishing and revocation operations,
-an explicit OS-isolation decision, and real signed-package lifecycle QA in
-packaged apps remain distribution gates. Canonical-event and built-in control
-migration are separate incremental work, not a reason to pre-check the wider
-boundary plan. See [the current provider audit](./PROVIDER_SPEC/BOUNDARIES.md#implementation-audit--2026-09-05)
-for ordering and acceptance criteria.
-
-## Accepted marketplace delivery decision — 2026-09-11
-
-For the later public-distribution phase, ship the first marketplace for **code-backed ACP provider connectors**
-using public GitHub repositories, metadata PRs, GitHub Actions, and approved
-packages mirrored into GitHub Releases under Cadencr control. Publish a signed
-index and signed blocklist; discover and install inside Cadencr. No S3, dedicated
-marketplace backend, publisher portal, or required website in V1.
-
-The executable contract and local **Add provider** flow already exist; this is
-not a plan to implement them again. The source-backed remaining work and external
-contribution process are in [Marketplace V1](./MARKETPLACE_V1.md), the authoritative
-delivery checklist for that deferred decision, not for v0.12.0. Public themes, custom tabs, and deeper
-plugin contributions follow independently; themes are no longer a prerequisite
-for shipping the provider marketplace.
-A single marketplace package may combine these contributions (a theme, a
-provider and a custom tab released together): see
-[Multi-export plugins](./MULTI_EXPORT_PLUGINS.md).
 
 ## 0. Thesis
 
@@ -152,7 +107,7 @@ Small internal refactors that pay off for core regardless of plugins, in rough o
 | **Workspace tabs**      | `TabKind` string union (`stores/feature-layout-schema.ts:22`); registries already generic                                                                                    | Step 3a above                                                                                                                                                                                                              |
 | **Command palette**     | No command registry; palette is 6 literal `<CommandItem>`s (`CommandPaletteCommands.tsx:66-107`) with hand-duplicated key arrays that ignore user overrides (live drift bug) | `Command { id, title, icon, group, when?, run, shortcutId? }` zustand registry; palette + cheatsheet + shortcuts render from it. Half exists (`lib/shortcuts/registry.ts` + `overrides.ts`).                               |
 | **Editor renderers**    | `EditorPane.tsx:264-317` Suspense ternary chain                                                                                                                              | Ordered `FileRendererDef { id, priority, match(path), Component }[]`. Composes with the existing `untitled://`/`artifact://` scheme pattern so a plugin owns a document type end-to-end (~30 lines, zero behavior change). |
-| **Settings sections**   | `NAV_GROUPS` + JSX list (`routes/settings.tsx:62-133, 221-230`); `SettingsNavSidebar` already prop-driven                                                                    | `SettingsSectionDef { id, label, icon, group, order, Component }[]`; with `useDebouncedSetting` every plugin gets persisted config on day one. Smallest refactor — proof-of-pattern.                                       |
+| **Settings sections**   | `NAV_GROUPS` + JSX list (`routes/settings.tsx:62-133, 221-230`); `SettingsNavSidebar` already prop-driven                                                                    | `SettingsSectionDef { id, label, icon, group, order, Component }[]`; with `useSetting` every plugin gets persisted config on day one. Smallest refactor — proof-of-pattern.                                       |
 | **Sidebar**             | Hardcoded JSX (`Sidebar.tsx:36-89`); the `data-nav-*` keyboard contract is already generic                                                                                   | `SidebarSectionDef { id, placement, order, render, navType? }` array; generalize the nav-type switch into a handler map.                                                                                                   |
 | **Tool-call renderers** | Tool-name if-chain (`AgentBlock.tsx:208-259`); MCP namespace already intercepted once (`AgentToolCallBlock.tsx:24` → `McpToolBlock`)                                         | `ToolRendererDef { id, priority, match(block), render }[]` consulted before the built-in chain — lets a plugin ship a rich renderer for its own tools.                                                                     |
 | **Themes**              | Step 1 above                                                                                                                                                                 | —                                                                                                                                                                                                                          |
@@ -163,26 +118,26 @@ Precedent that the team already accepts DB-backed, user-contributed UI: **Custom
 
 1. Every plugin-reachable HTTP path stays behind `auth_middleware` + the Host/DNS-rebinding check; no router bypasses `build_router`'s stack.
 2. Renderer CSP never widens (`script-src 'self'` packaged is absolute). No plugin JS in the renderer. Custom-tab guests get their own, stricter CSP (`connect-src 'none'`) and partition.
-9. A plugin credential is a grant: short-lived, in memory, bound to one plugin, project and feature, checked against the policy table on every request. It never reaches plugin code, and the plugin socket accepts no session-control action.
-3. Third-party installs never touch the signed bundle or the sqlx migration chain.
-4. Third-party artifacts get their own supply-chain gates (the workspace's `minimumReleaseAge`/`blockExoticSubdeps`/`allowBuilds:false` don't cover them): pinned versions, distribution-specific integrity verification, and no lifecycle scripts. Binary ACP distributions require SHA-256 under Cadencr policy even though the ACP field is optional; package distributions require exact versions and captured package-manager integrity.
-5. **Hash host authority and re-prompt on change.** For plugins, this means declared host capabilities. For agents, this means the signed distribution and launch policy (command, arguments, non-secret environment, sandbox/filesystem scope). Runtime ACP capabilities from `initialize` are compatibility metadata, not a security permission manifest. Provider credentials stay in the provider's already-configured native CLI and never enter the marketplace package.
-6. **Credential-path protection needs two layers.** Mediated Rust filesystem operations deny access to credential files (`~/.claude/.credentials.json`, `~/.codex/auth.json`, SSH keys, `gh` tokens, `.env`). That denylist cannot constrain an executable with ambient OS access, so marketplace-downloaded agent and plugin processes require a workspace-scoped OS sandbox or an explicit unresolved security gate before release. This protects existing native credentials; it does not make Cadencr their owner or authentication broker.
-7. Scan submitted executable fields, identifiers, keys, and code-bearing content as **bytes**; reject invisible Unicode used for concealment. Do not blanket-reject legitimate variation selectors in human-facing prose or icons.
-8. The Electron fuses + ASAR integrity hardening (§5, 4a) is plugin-independent — do it early. _(Verify exact fuse names against current Electron docs before implementing.)_
+3. A plugin credential is a grant: short-lived, in memory, bound to one plugin, project and feature, checked against the policy table on every request. It never reaches plugin code, and the plugin socket accepts no session-control action.
+4. Third-party installs never touch the signed bundle or the sqlx migration chain.
+5. Third-party artifacts get their own supply-chain gates (the workspace's `minimumReleaseAge`/`blockExoticSubdeps`/`allowBuilds:false` don't cover them): pinned versions, distribution-specific integrity verification, and no lifecycle scripts. Binary ACP distributions require SHA-256 under Cadencr policy even though the ACP field is optional; package distributions require exact versions and captured package-manager integrity.
+6. **Hash host authority and re-prompt on change.** For plugins, this means declared host capabilities. For agents, this means the signed distribution and launch policy (command, arguments, non-secret environment, sandbox/filesystem scope). Runtime ACP capabilities from `initialize` are compatibility metadata, not a security permission manifest. Provider credentials stay in the provider's already-configured native CLI and never enter the marketplace package.
+7. **Credential-path protection needs two layers.** Mediated Rust filesystem operations deny access to credential files (`~/.claude/.credentials.json`, `~/.codex/auth.json`, SSH keys, `gh` tokens, `.env`). That denylist cannot constrain an executable with ambient OS access, so marketplace-downloaded agent and plugin processes require a workspace-scoped OS sandbox or an explicit unresolved security gate before release. This protects existing native credentials; it does not make Cadencr their owner or authentication broker.
+8. Scan submitted executable fields, identifiers, keys, and code-bearing content as **bytes**; reject invisible Unicode used for concealment. Do not blanket-reject legitimate variation selectors in human-facing prose or icons.
+9. The Electron fuses + ASAR integrity hardening (§5, 4a) is plugin-independent — do it early. _(Verify exact fuse names against current Electron docs before implementing.)_
 
 ## 7. Marketplace
 
-**Accepted V1: GitHub-only, ACP providers first.** The detailed plan and
-contribution checklist live in [Marketplace V1](./MARKETPLACE_V1.md).
+**GitHub-only.** Architecture, trust model and remaining gates live in
+[Marketplace](./MARKETPLACE_V1.md).
 
-| Phase                                       | State and remaining scope                                                                                                                                                                                                                               |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **M0 — Public registry and publishing**     | Pending: public metadata repository, author PRs, human approval for every executable version, isolated CI, protected publication into Cadencr-owned GitHub Releases. Source remains in author repositories; binaries are release assets, not Git blobs. |
-| **M1 — Integrity**                          | Verification and immutable local installation exist. Provision production trust and publish the exact existing canonical signed-index format; keep downloaded approved bytes immutable.                                                                 |
-| **M2 — Compatibility and revocation**       | Backend compatibility, signed blocklist cache and launch enforcement exist. Provision the production source, expiry/refresh operations, incident ownership and user-visible revocation handling; resolve OS-isolation and packaged-app QA gates.        |
-| **M3 — In-app marketplace V1**              | Pending: fetch/cache the official signed index and expose browse/install/update/disable/remove plus restart and trust diagnostics. No required web storefront.                                                                                          |
-| **Later — Other content and publishing UX** | Themes, action packs and declarative plugins require their own runtime contracts. Website, publisher portal, alternative storage, private registries and monetization are outside V1.                                                                   |
+| Phase                                       | State                                                                                                                                                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **M0 — Public registry and publishing**     | Done: public registry repository, author PRs, human approval of executable versions, isolated CI, protected publication into registry-owned Releases. |
+| **M1 — Integrity**                          | Done: root-authorized signing trust, canonical signed catalog, immutable local installation of the approved bytes.                                    |
+| **M2 — Compatibility and revocation**       | Done: per-kind signed revocation policies with automated renewal and expiry watch. Open: OS-isolation decision and packaged-app QA on every platform.  |
+| **M3 — In-app marketplace V1**              | Shipped in v0.16.0: browse, install, update, disable, remove, with trust diagnostics.                                                                  |
+| **Later — Other content and publishing UX** | Action packs and declarative plugins need their own runtime contracts. Website, publisher portal, alternative storage and monetization are out of scope. |
 
 The goal is zero hosting spend using public repositories and standard hosted
 Actions runners, not a guarantee of permanently free service or zero review and
@@ -208,7 +163,7 @@ Skills and MCP servers are **not plugins and not registry content**: they are pr
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
 | **1 — Custom themes**        | 1a themes-as-data → 1b user theme import + validation → 1c theme sharing through the registry after provider marketplace V1                                                                                                                                                                                                      | S–M  |
 | **2 — Bring your own agent** | 2a registry dynamism + de-staticization → 2b generic ACP adapter + local agent entries → 2b.1 code-backed executable contract, pre-session models, native Pi validation, developer workspace, and stable v1 resume/close → 2c existing signed package backend → GitHub publication + M1/M2 release gates → in-app marketplace V1 | L    |
-| **3 — Custom tabs**          | 3a `parseTabKindArray` fix + open `TabKind` → 3c isolated web-UI plugin tabs (manifest, authoring, enablement, SDK + kit; amended 2026-10-16) → npm publication of the SDK/kit → mobile host                                                                                                                                 | M–L  |
+| **3 — Custom tabs**          | 3a `parseTabKindArray` fix + open `TabKind` → 3c isolated web-UI plugin tabs (manifest, authoring, enablement, SDK + kit; amended 2026-10-16) → npm publication of the SDK/kit → mobile host                                                                                                                                     | M–L  |
 | **4 — Deeper behavior**      | 4a foundations (fuses/ASAR, tables, installer, `plugin` WS domain, M2 kill-switch) → 4b contribution surfaces (§5.1) → 4c behavior + events + scoped tokens → 4d escape hatches only on proven demand; broader publishing UX when warranted                                                                                      | XL   |
 
 Each phase merges on its own; gate releases on their actual runtime and security dependencies, not on completion of an unrelated content track. The skills/MCP helper (§8) is scheduled independently, later.

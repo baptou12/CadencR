@@ -2,7 +2,6 @@
 
 use super::WsSessionPersistence;
 use sqlx::SqlitePool;
-use tracing::error;
 
 #[bon::bon]
 impl WsSessionPersistence {
@@ -41,6 +40,33 @@ impl WsSessionPersistence {
         Ok(())
     }
 
+    /// Persist an override document together with the config it resolves to.
+    /// The `model` and `thinking_effort` columns mirror that effective config
+    /// for the readers that never parse the document (forks, schedules, usage
+    /// stats, session lists). `None` for the model (an inherited model nothing
+    /// resolved) keeps the column; `None` for the effort means "provider
+    /// default", like `update_thinking_effort_static(None)`.
+    #[builder]
+    pub async fn update_runtime_config_static(
+        pool: &SqlitePool,
+        session_id: i64,
+        overrides: &crate::domain::agents::adapter::RuntimeConfigOverrides,
+        model: Option<&str>,
+        thinking_effort: Option<&str>,
+    ) -> Result<(), sqlx::Error> {
+        let json = serde_json::to_string(overrides).expect("runtime overrides serialize");
+        sqlx::query(
+            "UPDATE agent_sessions SET runtime_overrides = ?, model = COALESCE(?, model), thinking_effort = ? WHERE id = ?",
+        )
+        .bind(json)
+        .bind(model)
+        .bind(thinking_effort)
+        .bind(session_id)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn update_model_static(
         pool: &SqlitePool,
         session_id: i64,
@@ -54,26 +80,30 @@ impl WsSessionPersistence {
         Ok(())
     }
 
-    pub async fn update_profile_static(pool: &SqlitePool, session_id: i64, profile: &str) {
-        if let Err(e) = sqlx::query("UPDATE agent_sessions SET profile = ? WHERE id = ?")
+    pub async fn update_profile_static(
+        pool: &SqlitePool,
+        session_id: i64,
+        profile: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE agent_sessions SET profile = ? WHERE id = ?")
             .bind(profile)
             .bind(session_id)
             .execute(pool)
-            .await
-        {
-            error!(error = %e, session_db_id = session_id, "failed to update profile");
-        }
+            .await?;
+        Ok(())
     }
 
-    pub async fn update_permission_mode_static(pool: &SqlitePool, session_id: i64, mode: &str) {
-        if let Err(e) = sqlx::query("UPDATE agent_sessions SET permission_mode = ? WHERE id = ?")
+    pub async fn update_permission_mode_static(
+        pool: &SqlitePool,
+        session_id: i64,
+        mode: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE agent_sessions SET permission_mode = ? WHERE id = ?")
             .bind(mode)
             .bind(session_id)
             .execute(pool)
-            .await
-        {
-            error!(error = %e, session_db_id = session_id, "failed to update permission_mode");
-        }
+            .await?;
+        Ok(())
     }
 
     pub async fn update_access_mode_static(
@@ -119,15 +149,13 @@ impl WsSessionPersistence {
         pool: &SqlitePool,
         session_id: i64,
         thinking_effort: Option<&str>,
-    ) {
-        if let Err(e) = sqlx::query("UPDATE agent_sessions SET thinking_effort = ? WHERE id = ?")
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE agent_sessions SET thinking_effort = ? WHERE id = ?")
             .bind(thinking_effort)
             .bind(session_id)
             .execute(pool)
-            .await
-        {
-            error!(error = %e, session_db_id = session_id, "failed to update thinking_effort");
-        }
+            .await?;
+        Ok(())
     }
 
     pub async fn update_fast_mode_static(
@@ -217,7 +245,9 @@ mod tests {
         let mut p = WsSessionPersistence::new(pool.clone(), 1);
         let id = p.find_or_create_session(None, Some("plan")).await.unwrap();
 
-        WsSessionPersistence::update_permission_mode_static(&pool, id, "acceptEdits").await;
+        WsSessionPersistence::update_permission_mode_static(&pool, id, "acceptEdits")
+            .await
+            .unwrap();
 
         let row: (String,) =
             sqlx::query_as("SELECT permission_mode FROM agent_sessions WHERE id = ?")
@@ -234,7 +264,9 @@ mod tests {
         let mut p = WsSessionPersistence::new(pool.clone(), 1);
         let id = p.find_or_create_session(None, None).await.unwrap();
 
-        WsSessionPersistence::update_thinking_effort_static(&pool, id, Some("high")).await;
+        WsSessionPersistence::update_thinking_effort_static(&pool, id, Some("high"))
+            .await
+            .unwrap();
         let row: (Option<String>,) =
             sqlx::query_as("SELECT thinking_effort FROM agent_sessions WHERE id = ?")
                 .bind(id)
@@ -243,7 +275,9 @@ mod tests {
                 .unwrap();
         assert_eq!(row.0.as_deref(), Some("high"));
 
-        WsSessionPersistence::update_thinking_effort_static(&pool, id, None).await;
+        WsSessionPersistence::update_thinking_effort_static(&pool, id, None)
+            .await
+            .unwrap();
         let row: (Option<String>,) =
             sqlx::query_as("SELECT thinking_effort FROM agent_sessions WHERE id = ?")
                 .bind(id)

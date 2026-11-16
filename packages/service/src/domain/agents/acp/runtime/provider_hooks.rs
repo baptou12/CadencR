@@ -1,6 +1,7 @@
 //! Provider-specific extension points for the ACP runtime.
 
 use std::path::Path;
+use std::time::Duration;
 
 use agent_client_protocol::schema::v1::SessionConfigOption;
 use async_trait::async_trait;
@@ -13,6 +14,7 @@ use crate::domain::agents::adapter::{
     RuntimePermissionMode, RuntimePermissionResponse, RuntimeSlashCommand, RuntimeUsage,
 };
 use crate::domain::agents::runtime::ProviderPromptCapabilities;
+use crate::domain::mcp::trusted::CadencrBrowserTrust;
 
 use super::events_stream_blocks::EventIndexer;
 use super::tool_result_flatten::unwrap_text_block;
@@ -155,6 +157,12 @@ pub trait AcpProviderHooks: Send + Sync {
         false
     }
 
+    /// How long Stop waits for `session/prompt` to settle after
+    /// `session/cancel` before terminating the agent process.
+    fn cancel_grace(&self) -> Duration {
+        super::turn_lifecycle::DEFAULT_CANCEL_GRACE
+    }
+
     /// Observe handshake-owned ACP durable-resume support. Installed provider
     /// adapters use this to avoid persisting unusable IDs while still allowing
     /// a stored ID to be probed after the host process restarts.
@@ -246,15 +254,29 @@ pub trait AcpProviderHooks: Send + Sync {
     ///
     /// Implementors return an optional `JoinHandle`; the runtime aborts it on
     /// `close()` so the listener stops cleanly. Default implementation does
-    /// nothing.
+    /// nothing. `browser_trust` is the session's [`Self::cadencr_browser_trust`].
     fn start_side_channel(
         &self,
         _session_id: &str,
         _cwd: &Path,
         _context_window: Option<u64>,
+        _browser_trust: CadencrBrowserTrust,
         _tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     ) -> Option<JoinHandle<()>> {
         None
+    }
+
+    /// Provider opt-in: keep `injected` (Cadencr attached its browser server)
+    /// only once the provider has ruled out a server from the agent's own
+    /// config answering under the browser server's name. A generic ACP agent
+    /// merges `session/new` servers with config Cadencr cannot list, so the
+    /// default revokes: its browser tools go through the permission prompt.
+    async fn cadencr_browser_trust(
+        &self,
+        _cwd: &Path,
+        _injected: CadencrBrowserTrust,
+    ) -> CadencrBrowserTrust {
+        CadencrBrowserTrust::default()
     }
 
     /// Provider opt-in: invoked at the start of every `tool_call` (after the

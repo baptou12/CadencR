@@ -47,14 +47,6 @@ import {
 } from "@/lib/agent-block-content";
 import type { AgentBlockData } from "@/types/agent-block";
 
-export function buildToolResultMap(blocks: AgentBlockData[]): Map<string, AgentBlockData> {
-  const map = new Map<string, AgentBlockData>();
-  for (const block of blocks) {
-    if (block.type === "tool_result" && block.toolUseId) map.set(block.toolUseId, block);
-  }
-  return map;
-}
-
 interface AgentBlockProps {
   block: AgentBlockData;
   isStreaming?: boolean;
@@ -290,8 +282,16 @@ function ToolCallContent({
     // Same outer margin as the stream's other cards (Bash, thinking, tools).
     if (fileChangeBlocks) return <div className="my-1">{fileChangeBlocks}</div>;
   }
+  // A failed call shows its result's message (a Read of a missing file); a
+  // successful one keeps its result folded away.
+  const result = block.toolUseId ? toolResultMap?.get(block.toolUseId) : undefined;
   return (
-    <ToolCallBlock name={block.toolName ?? "unknown"} args={block.toolArgs} basePath={basePath} />
+    <ToolCallBlock
+      name={block.toolName ?? "unknown"}
+      args={block.toolArgs}
+      basePath={basePath}
+      error={result?.isError ? result.content : undefined}
+    />
   );
 }
 

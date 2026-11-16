@@ -245,7 +245,7 @@ mod tests {
         let mode = Arc::new(RwLock::new("build".to_string()));
         let indexer = Arc::new(StdMutex::new(EventIndexer::default()));
         let (tx, rx) = mpsc::channel(16);
-        let event_rx = client.subscribe();
+        let event_rx = client.subscribe_reliable();
         let hooks = Arc::new(PlainHooks);
         let cfg = EventLoopConfig {
             session_id,
@@ -265,6 +265,7 @@ mod tests {
             hooks,
             replay_suppression: Arc::new(AtomicBool::new(false)),
             pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
+            browser_trust: Default::default(),
             indexer: Arc::clone(&indexer),
         };
         let _loop_task = spawn_event_loop(client.clone(), event_rx, tx.clone(), cfg);

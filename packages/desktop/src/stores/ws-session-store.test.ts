@@ -764,6 +764,7 @@ describe("ws-session-store", () => {
     store.setPermissionMode("s1", "plan");
     expect(ws.sent).toHaveLength(0);
     expect(useWsSessionStore.getState().sessions["s1"].permissionMode).toBe("plan");
+    expect(useWsSessionStore.getState().sessions["s1"].pendingInitPermissionMode).toBe("plan");
 
     ws.simulateMessage({
       domain: "session",
@@ -778,6 +779,7 @@ describe("ws-session-store", () => {
       session_id: "srv-1",
       mode: "plan",
     });
+    expect(useWsSessionStore.getState().sessions["s1"].pendingInitPermissionMode).toBeNull();
   });
 
   it.each(["autoReview", "default", "fullAccess"] as const)(
@@ -2801,6 +2803,19 @@ describe("ws-session-store", () => {
       });
     }
 
+    /** The backend's correlated acknowledgement of the last `permission.respond`. */
+    async function acknowledgePermission(ws: MockWebSocket) {
+      const sent = lastSentEnvelope(ws, "permission.respond");
+      ws.simulateMessage({
+        domain: "session",
+        action: "acknowledged",
+        ref: String(sent.id),
+        payload: { action: "permission.respond" },
+      });
+      // The response settles on the request's promise.
+      await Promise.resolve();
+    }
+
     function sendPlanPermissionRequest(ws: MockWebSocket) {
       ws.simulateMessage({
         domain: "session",
@@ -2847,38 +2862,6 @@ describe("ws-session-store", () => {
       });
     });
 
-    it("restores synthetic plan approval request id even when live blocks already exist", () => {
-      const store = useWsSessionStore.getState();
-      store.connect("s1");
-
-      useWsSessionStore.setState(
-        updateSession(useWsSessionStore.getState(), "s1", {
-          blocks: [{ id: "live-1", type: "text" as const, content: "live block" }],
-        }),
-      );
-
-      store.setPersistedState("s1", {
-        blocks: [
-          {
-            id: "plan-1",
-            type: "tool_call" as const,
-            content: "",
-            toolName: "ExitPlanMode",
-          },
-        ],
-        lifecycle: { phase: "terminal", reason: "completed" },
-        pendingPlanApproval: { plan: "## Restored Plan" },
-      });
-
-      const session = useWsSessionStore.getState().sessions["s1"];
-      expect(session.pendingPlanApproval).toEqual({ plan: "## Restored Plan" });
-      expect(session.pendingRequestId).toMatch(/^plan_restore_/);
-      expect(session.lifecycle).toEqual({
-        phase: "paused",
-        reason: "planApproval",
-      });
-    });
-
     it("approvePlan sends permission.respond and waits for backend mode.changed", async () => {
       const { ws } = await setupWithInit();
       // mode.changed only applies once a provider is known — seed the pair as
@@ -2899,12 +2882,20 @@ describe("ws-session-store", () => {
 
       useWsSessionStore.getState().approvePlan("s1");
 
-      // Approval clears the gate immediately, but the chip is unchanged
-      // until the backend bridge has actually pushed
-      // `set_permission_mode` to the CLI and broadcast `mode.changed`.
-      // Anything else would let the chip lie about CLI state.
+      // The click only marks the decision in flight: the gate stays until
+      // the backend acknowledges the response.
       let session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPlanApproval).not.toBeNull();
+      expect(session.submittingPermissionRequestId).toBe("req-plan-1");
+      await acknowledgePermission(ws);
+
+      // Acknowledged: the gate closes, but the chip is unchanged until the
+      // backend bridge has actually pushed `set_permission_mode` to the CLI
+      // and broadcast `mode.changed`. Anything else would let the chip lie
+      // about CLI state.
+      session = useWsSessionStore.getState().sessions["s1"];
       expect(session.pendingPlanApproval).toBeNull();
+      expect(session.submittingPermissionRequestId).toBeNull();
       expect(session.pendingRequestId).toBe("");
       expect(session.permissionMode).toBe(modeBeforeApproval);
       expect(session.lifecycle).toEqual({ phase: "active" });
@@ -2979,6 +2970,7 @@ describe("ws-session-store", () => {
         throw new Error("missing permission message_uuid");
       }
       expect(messageUuid).toMatch(/^[0-9a-f-]{36}$/i);
+      await acknowledgePermission(ws);
       simulateCanonicalUserMessage(ws, "Plan approved.", messageUuid);
 
       const session = useWsSessionStore.getState().sessions["s1"];
@@ -3024,6 +3016,8 @@ describe("ws-session-store", () => {
       sendPlanPermissionRequest(ws);
 
       useWsSessionStore.getState().requestPlanChanges("s1", "Use a simpler approach");
+      expect(useWsSessionStore.getState().sessions["s1"].pendingPlanApproval).not.toBeNull();
+      await acknowledgePermission(ws);
 
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.pendingPlanApproval).toBeNull();
@@ -3051,6 +3045,7 @@ describe("ws-session-store", () => {
         throw new Error("missing permission message_uuid");
       }
       expect(messageUuid).toMatch(/^[0-9a-f-]{36}$/i);
+      await acknowledgePermission(ws);
       simulateCanonicalUserMessage(ws, "Try again differently", messageUuid);
 
       const session = useWsSessionStore.getState().sessions["s1"];
@@ -3068,6 +3063,7 @@ describe("ws-session-store", () => {
       sendPlanPermissionRequest(ws);
 
       useWsSessionStore.getState().requestPlanChanges("s1", "");
+      await acknowledgePermission(ws);
 
       const session = useWsSessionStore.getState().sessions["s1"];
       const userMsgs = session.blocks.filter((b) => b.type === "user_message");
@@ -3077,11 +3073,91 @@ describe("ws-session-store", () => {
       expect(planBlock?.planApprovalStatus).toBe("rejected");
     });
 
+    it("never writes a prompt for a plan: one with no open gate sends nothing", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+      const sentBefore = ws.sent.length;
+
+      useWsSessionStore.getState().approvePlan("s1");
+      useWsSessionStore.getState().requestPlanChanges("s1", "Revise it");
+
+      expect(ws.sent.slice(sentBefore)).toEqual([]);
+      expect(useWsSessionStore.getState().sessions["s1"].submittingPermissionRequestId).toBeNull();
+    });
+
+    it("records the plan's outcome when the status update closed the gate before the ack", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+      sendPlanPermissionRequest(ws);
+      useWsSessionStore.getState().approvePlan("s1");
+      // The app socket's question→agent update lands first and closes the gate.
+      useWsSessionStore.setState((state) =>
+        updateSession(state, "s1", {
+          pendingPlanApproval: null,
+          pendingRequestId: "",
+          submittingPermissionRequestId: null,
+        }),
+      );
+
+      await acknowledgePermission(ws);
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      const planBlock = session.blocks.find((b) => b.toolName === "ExitPlanMode");
+      expect(planBlock?.planApprovalStatus).toBe("approved");
+    });
+
+    it("retries a failed plan response with the same idempotency key", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+      sendPlanPermissionRequest(ws);
+
+      useWsSessionStore.getState().requestPlanChanges("s1", "Smaller steps");
+      const first = lastSentEnvelope(ws, "permission.respond");
+      ws.simulateMessage({
+        domain: "session",
+        action: "error",
+        ref: String(first.id),
+        payload: { code: "SDK_ERROR", message: "busy" },
+      });
+      await Promise.resolve();
+      useWsSessionStore.getState().requestPlanChanges("s1", "Smaller steps");
+      const second = lastSentEnvelope(ws, "permission.respond");
+
+      expect(second.id).not.toBe(first.id);
+      const uuid = (envelope: Record<string, unknown>) =>
+        (envelope.payload as Record<string, unknown>).message_uuid;
+      expect(uuid(second)).toBe(uuid(first));
+    });
+
+    it("a rejected plan response keeps the gate open with the reason", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+      sendPlanPermissionRequest(ws);
+
+      useWsSessionStore.getState().approvePlan("s1");
+      const sent = lastSentEnvelope(ws, "permission.respond");
+      ws.simulateMessage({
+        domain: "session",
+        action: "error",
+        ref: String(sent.id),
+        payload: { code: "SDK_ERROR", message: "CLI refused the response" },
+      });
+      await Promise.resolve();
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPlanApproval).not.toBeNull();
+      expect(session.submittingPermissionRequestId).toBeNull();
+      expect(session.blocks.at(-1)?.content).toBe("CLI refused the response");
+      const planBlock = session.blocks.find((b) => b.toolName === "ExitPlanMode");
+      expect(planBlock?.planApprovalStatus).toBeUndefined();
+    });
+
     it("turn_complete after gate-based approval does not re-trigger approval bar", async () => {
       const { ws } = await setupWithInit();
       streamExitPlanMode(ws);
       sendPlanPermissionRequest(ws);
       useWsSessionStore.getState().approvePlan("s1");
+      await acknowledgePermission(ws);
 
       // Simulate turn_complete after the CLI resumes
       ws.simulateMessage({

@@ -8,6 +8,7 @@ import {
   requiredString,
 } from "./browser-arg-validation";
 import { BrowserManager } from "./browser-manager";
+import { reclaimRendererFocus } from "./browser-manager-utils";
 import { registerBrowserDownloadIpc } from "./browser-download-ipc";
 import { parseBrowserGuestShortcutBindings } from "./browser-guest-shortcuts";
 import { BrowserProfileController } from "./browser-profile-controller";
@@ -297,11 +298,11 @@ function registerInspectionIpc(
 ): void {
   ipcMain.handle("browser:get-console", (event) => {
     assertTrustedSender(event, getMainWindow);
-    return manager.state().consoleEntries;
+    return manager.automationState().consoleEntries;
   });
   ipcMain.handle("browser:get-network", (event) => {
     assertTrustedSender(event, getMainWindow);
-    return manager.state().networkEntries;
+    return manager.automationState().networkEntries;
   });
   ipcMain.handle("browser:get-snapshot", (event, tabId: unknown) => {
     assertTrustedSender(event, getMainWindow);
@@ -333,13 +334,20 @@ function registerInspectionIpc(
       requiredString(keyCode, "key"),
     );
   });
-  ipcMain.handle("browser:select-element-context", (event, tabId: unknown, anchorId: unknown) => {
-    assertTrustedSender(event, getMainWindow);
-    return manager.inspection.selectElementContext(
-      requiredString(tabId, "tab id"),
-      requiredString(anchorId, "anchor id"),
-    );
-  });
+  ipcMain.handle(
+    "browser:select-element-context",
+    async (event, tabId: unknown, anchorId: unknown) => {
+      assertTrustedSender(event, getMainWindow);
+      const context = await manager.inspection.selectElementContext(
+        requiredString(tabId, "tab id"),
+        requiredString(anchorId, "anchor id"),
+      );
+      // The pick was a click in the guest view, which kept keyboard focus: hand
+      // it back so the comment composer can be typed into straight away.
+      reclaimRendererFocus(getMainWindow());
+      return context;
+    },
+  );
   ipcMain.handle("browser:remove-comment-badge", (event, tabId: unknown, anchorId: unknown) => {
     assertTrustedSender(event, getMainWindow);
     return manager.inspection.removeCommentBadge(

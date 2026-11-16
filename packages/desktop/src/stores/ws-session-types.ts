@@ -80,7 +80,6 @@ export interface PersistedStatePayload {
   accessMode?: AccessMode;
   runtimeProvider?: string | null;
   runtimeSessionId?: string | null;
-  pendingPlanApproval?: PendingPlanApproval | null;
   /** Raw `agent_sessions.pending_permission` JSON, or null. */
   pendingPermission?: unknown;
   /** Raw `agent_sessions.pending_questions` JSON, or null. */
@@ -167,12 +166,20 @@ export interface SessionEntry extends SessionConfigState {
    * the user doesn't double-submit while waiting for the ack.
    */
   submittingPermissionRequestId: string | null;
+  /**
+   * Actions (`interrupt`, `model.set`, …) of session commands sent and not yet
+   * settled by a correlated reply, an error, or their acknowledgement window.
+   * Drives "stopping…"-style sending states; see `ws-session-commands`.
+   */
+  pendingCommandActions: readonly string[];
   /** Stable idempotency keys retained while permission responses may be retried. */
   permissionResponseMessageUuids: Map<string, string>;
   pendingQuestions: AgentQuestion[];
   pendingQuestionToolInput: Record<string, unknown>;
   permissionMode: PermissionMode;
   accessMode: AccessMode;
+  /** Mode chosen before initialization, which the service has not saved yet. */
+  pendingInitPermissionMode: PermissionMode | null;
   /** Access choice made before initialization, replayed before queued prompts. */
   pendingInitAccessMode: AccessMode | null;
   currentThinkingEffort?: string;
@@ -255,11 +262,13 @@ export function createSessionEntry(): SessionEntry {
     pendingPermissionQueue: [],
     pendingRequestId: "",
     submittingPermissionRequestId: null,
+    pendingCommandActions: [],
     permissionResponseMessageUuids: new Map(),
     pendingQuestions: [],
     pendingQuestionToolInput: {},
     permissionMode: defaultEditModeFor(DEFAULT_PROVIDER),
     accessMode: "default",
+    pendingInitPermissionMode: null,
     pendingInitAccessMode: null,
     currentThinkingEffort: undefined,
     fastMode: false,

@@ -13,9 +13,13 @@ import tempfile
 import threading
 
 from official_plugin_pack import REPOSITORY, digest, fail, json_bytes, pack, parse_json, relative
+from official_plugin_tags import release_tag
 
 MAX_FILE = 32 * 1024 * 1024
 MAX_TREE = 64 * 1024 * 1024
+# LSP archives may reach the core 64 MiB ceiling; one bounded 16 MiB lock accompanies them.
+MAX_LSP_FILE = 64 * 1024 * 1024
+MAX_LSP_TREE = 80 * 1024 * 1024
 
 
 def git(repo, *args):
@@ -34,33 +38,39 @@ def source(repo, commit, path, expected_mode="100644"):
     return git(repo, "show", commit + ":" + path)
 
 
-def read_policy(repo, commit, plugin, version, mode):
+def read_policy(repo, commit, tag, mode):
     policy = parse_json(source(repo, commit, "plugins/release-policy.json"))
     publication = "APPROVED" if mode == "author-approved" else "PENDING"
     if policy.get("schema_version") != 2 or policy.get("publication") != publication:
         fail("unreviewed release policy")
+    plugin, version = release_tag(tag, policy)
     entry = policy.get("plugins", {}).get(plugin)
     if not isinstance(entry, dict):
         fail("unknown or unapproved official plugin")
     if entry.get("version") != version:
         fail("source plugin version mismatch")
     kind = entry.get("kind")
-    if kind not in ("theme", "provider", "tab") or plugin != kind + "-" + entry.get("id", ""):
+    if kind not in ("theme", "provider", "tab", "lsp") or plugin != kind + "-" + entry.get("id", ""):
         fail("invalid official plugin identity")
     relative(entry.get("source_path"))
     if not entry["source_path"].startswith("plugins/"):
         fail("invalid official plugin source root")
     if entry.get("preparation") != "READY":
         fail("official plugin source/package/target review is PENDING")
-    return policy, entry
+    if kind == "lsp":
+        trusted = parse_json((pathlib.Path(os.environ["ROOT"]) / "plugins/release-policy.json").read_bytes())
+        release_tag(tag, trusted)
+        if trusted.get("plugins", {}).get(plugin) != entry:
+            fail("LSP source policy differs from the trusted release policy")
+    return policy, entry, plugin, version
 
 
-def read_blobs(repo, objects):
+def read_blobs(repo, objects, *, max_file=MAX_FILE, max_tree=MAX_TREE):
     process = subprocess.Popen(["git", "-C", repo, "cat-file", "--batch"],
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     timer = threading.Timer(60, process.kill)
     timer.start()
-    remaining = MAX_TREE
+    remaining = max_tree
     try:
         for name, object_id in objects:
             if not re.fullmatch("[0-9a-f]{40}", object_id):
@@ -72,7 +82,7 @@ def read_blobs(repo, objects):
                     or not header[2].isdigit()):
                 fail("invalid tracked blob response")
             size = int(header[2])
-            if size > MAX_FILE or size > remaining:
+            if size > max_file or size > remaining:
                 fail("source payload exceeds preparation limit")
             remaining -= size
             data = process.stdout.read(size)
@@ -144,7 +154,8 @@ def stage_payload(repo, commit, entry, target, specification, stage):
         if not re.fullmatch("[0-9a-f]{64}", declaration["sha256"]):
             fail("payload digest review is PENDING")
         objects.append((name, actual[sources[name]][2]))
-    with contextlib.closing(read_blobs(repo, objects)) as blobs:
+    limits = {"max_file": MAX_LSP_FILE, "max_tree": MAX_LSP_TREE} if entry["kind"] == "lsp" else {}
+    with contextlib.closing(read_blobs(repo, objects, **limits)) as blobs:
         for name, data in blobs:
             declaration = files[name]
             if digest(data) != declaration["sha256"]:
@@ -202,14 +213,10 @@ def prepare(mode, repo, commit, tag, output):
         if (os.environ.get("GITHUB_REPOSITORY") != REPOSITORY or os.environ.get("GITHUB_SHA") != commit
                 or os.environ.get("GITHUB_REF") != "refs/tags/" + tag):
             fail("production requires matching authoritative GitHub tag context")
-    match = re.fullmatch(r"plugins/((?:provider|theme|tab)-[a-z][a-z0-9-]*)/v((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))", tag)
-    if not match:
-        fail("invalid official plugin tag")
-    plugin, version = match.groups()
+    policy, entry, plugin, version = read_policy(repo, commit, tag, mode)
     for ref in (commit, "refs/tags/" + tag):
         if git(repo, "rev-parse", "--verify", ref + "^{commit}").decode().strip() != commit:
             fail("tag source mismatch")
-    policy, entry = read_policy(repo, commit, plugin, version, mode)
     out = pathlib.Path(output)
     if not out.is_absolute() or out.exists() or out.is_symlink() or out.parent.resolve() != out.parent:
         fail("output must be new absolute canonical path")

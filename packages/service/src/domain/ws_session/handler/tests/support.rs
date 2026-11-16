@@ -357,6 +357,16 @@ pub(crate) async fn make_test_app_state() -> AppState {
     .await
     .unwrap();
 
+    // Feature directory resolution reads `worktree_path` here and surfaces a
+    // missing table as an error instead of silently using the project root.
+    sqlx::query(
+        "CREATE TABLE feature_settings (feature_id INTEGER, key TEXT, value TEXT, \
+         PRIMARY KEY (feature_id, key))",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
     sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'Test Project', '/tmp/test')")
         .execute(&pool)
         .await
@@ -458,7 +468,7 @@ pub(crate) async fn assert_next_persistence_status(
 /// Helper: insert an SdkHandle with QueryState::Active using a test stub Query.
 pub(crate) fn make_active_handle(feature_id: i64, session_id: Option<String>) -> SdkHandle {
     let query = Query::new_test_stub(session_id);
-    let (permission_tx, _permission_rx) = mpsc::channel::<session_prompt::PermissionResponse>(1);
+    let (permission_tx, _permission_rx) = session_prompt::permission_response_channel();
     SdkHandle {
         identity: crate::domain::ws_session::runtime::state::RuntimeHandleIdentity::default(),
         state: QueryState::Active {
@@ -496,13 +506,13 @@ pub(crate) fn make_active_handle(feature_id: i64, session_id: Option<String>) ->
             profile_revision: None,
             profile_state_identity: None,
         },
-        manual_compact_cancel: Arc::new(AtomicBool::new(false)),
+        manual_compact_start: Default::default(),
         manual_compact_spawn_pending: Arc::new(AtomicBool::new(false)),
     }
 }
 
 pub(crate) fn make_in_place_effort_handle(feature_id: i64) -> SdkHandle {
-    let (permission_tx, _permission_rx) = mpsc::channel::<session_prompt::PermissionResponse>(1);
+    let (permission_tx, _permission_rx) = session_prompt::permission_response_channel();
     SdkHandle {
         identity: crate::domain::ws_session::runtime::state::RuntimeHandleIdentity::default(),
         state: QueryState::Active {
@@ -540,7 +550,7 @@ pub(crate) fn make_in_place_effort_handle(feature_id: i64) -> SdkHandle {
             profile_revision: None,
             profile_state_identity: None,
         },
-        manual_compact_cancel: Arc::new(AtomicBool::new(false)),
+        manual_compact_start: Default::default(),
         manual_compact_spawn_pending: Arc::new(AtomicBool::new(false)),
     }
 }
@@ -613,4 +623,38 @@ pub(crate) async fn db_status(app_state: &AppState, db_session_id: i64) -> Strin
         .fetch_one(&app_state.write_pool)
         .await
         .unwrap()
+}
+
+/// A live runtime that only records the prompts it is given.
+pub(crate) struct RecordingRuntime {
+    pub(crate) delivered: mpsc::UnboundedSender<Value>,
+}
+
+#[async_trait::async_trait]
+impl AgentRuntimeSession for RecordingRuntime {
+    fn take_message_rx(&mut self) -> RuntimeMessageRx {
+        mpsc::channel(1).1
+    }
+    async fn session_id(&self) -> Option<String> {
+        None
+    }
+    async fn stream_input(&self, content: Value) -> Result<(), RuntimeError> {
+        self.delivered.send(content).unwrap();
+        Ok(())
+    }
+    async fn interrupt(&self) -> Result<(), RuntimeError> {
+        Ok(())
+    }
+    async fn close(&mut self) -> Result<(), RuntimeError> {
+        Ok(())
+    }
+    async fn set_model(&self, _: &str) -> Result<(), RuntimeError> {
+        Ok(())
+    }
+    async fn set_permission_mode(&self, _: RuntimePermissionMode) -> Result<(), RuntimeError> {
+        Ok(())
+    }
+    fn pid(&self) -> Option<u32> {
+        None
+    }
 }

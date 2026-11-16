@@ -22,7 +22,7 @@ import type { StartJump } from "./agent-session-scroll-utils";
 import type { MetaBarHandle } from "./MetaBar";
 import { useAutoScrollShortcut } from "./useAutoScrollShortcut";
 import { AgentImageScope } from "@/components/AgentMarkdownImage";
-import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import { useSetting } from "@/hooks/useSetting";
 import {
   AGENT_MESSAGE_NAVIGATOR_SETTING_KEY,
   parseAgentMessageNavigator,
@@ -35,6 +35,7 @@ import {
 } from "@/lib/agent-verbosity";
 import { AgentSessionComposer } from "./AgentSessionComposer";
 import { AgentSessionPersistenceNotice } from "./AgentSessionPersistenceNotice";
+import { AgentSessionStreamNotice } from "./AgentSessionStreamNotice";
 import { AgentSessionFrame } from "./AgentSessionFrame";
 import { AgentSessionStreamContent } from "./AgentSessionStreamContent";
 import { AgentSessionProvider } from "./agent-session-context";
@@ -111,14 +112,10 @@ function useAgentSessionScrollAndCatalog(props: AgentSessionProps) {
   );
   const projectPath = cwdQuery.data?.path ?? undefined;
 
-  const verbosityMode = parseAgentVerbosityMode(
-    useDebouncedSetting(AGENT_VERBOSITY_SETTING_KEY).value,
-  );
-  const summaryMode = parseAgentSummaryMode(
-    useDebouncedSetting(AGENT_SUMMARY_MODE_SETTING_KEY).value,
-  );
+  const verbosityMode = parseAgentVerbosityMode(useSetting(AGENT_VERBOSITY_SETTING_KEY).value);
+  const summaryMode = parseAgentSummaryMode(useSetting(AGENT_SUMMARY_MODE_SETTING_KEY).value);
   const messageNavigatorEnabled = parseAgentMessageNavigator(
-    useDebouncedSetting(AGENT_MESSAGE_NAVIGATOR_SETTING_KEY).value,
+    useSetting(AGENT_MESSAGE_NAVIGATOR_SETTING_KEY).value,
   );
   const loadOlder = onLoadOlder
     ? (): Promise<number | void> =>
@@ -212,6 +209,7 @@ function useAgentSessionState(props: AgentSessionProps, ref: Ref<AgentSessionHan
     isTurnActive,
     streamLifecycle,
     workingLabel,
+    workingClock,
     badge,
     IconComponent,
     displayLabel,
@@ -255,6 +253,7 @@ function useAgentSessionState(props: AgentSessionProps, ref: Ref<AgentSessionHan
     isTurnActive,
     streamLifecycle,
     workingLabel,
+    workingClock,
     verbosityMode,
     summaryMode,
     messageNavigator,
@@ -292,6 +291,7 @@ export const AgentSession = memo(
         turnActive={s.isTurnActive}
         lifecycle={s.streamLifecycle}
         workingLabel={s.workingLabel}
+        workingClock={s.workingClock}
         projectPath={s.projectPath}
         scrollContainerRef={s.scroll.scrollContainerRef}
         virtuosoRef={s.scroll.virtuosoRef}
@@ -312,6 +312,7 @@ export const AgentSession = memo(
     const bottomSection = (
       <>
         <AgentSessionPersistenceNotice sessionId={props.wsSessionId} />
+        <AgentSessionStreamNotice sessionId={props.wsSessionId} />
         <AgentSessionComposer
           sessionProps={props}
           promptBarRef={s.promptBarRef}

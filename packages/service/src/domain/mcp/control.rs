@@ -8,17 +8,19 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-pub(crate) mod archive_cleanup;
+mod agent_providers;
 mod archive_session;
-mod audit;
+pub(crate) mod audit;
 mod create_schedule;
 mod gate_envelope;
 pub(crate) mod gate_notify;
 pub(crate) mod gate_policy;
 pub(crate) mod gate_respond;
 mod generated_message;
+mod link_sessions;
 mod manage_schedule;
 pub mod message_queue;
+mod read_audit;
 mod reply_audit;
 mod reply_envelope;
 pub(crate) mod reply_wait;
@@ -123,9 +125,18 @@ pub fn control_router() -> Router<AppState> {
             post(manage_schedule::delete_schedule_handler),
         )
         .route(
+            "/internal/mcp/project/agent-providers",
+            post(agent_providers::agent_providers_handler),
+        )
+        .route(
             "/internal/mcp/project/archive-session",
             post(archive_session::archive_session_handler),
         )
+        .route(
+            "/internal/mcp/project/link-sessions",
+            post(link_sessions::link_sessions_handler),
+        )
+        .merge(read_audit::routes())
         .merge(settings_routes(SettingsTool::Project))
         .merge(settings_routes(SettingsTool::Workspace))
         .merge(gate_respond::routes())

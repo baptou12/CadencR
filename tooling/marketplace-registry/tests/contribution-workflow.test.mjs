@@ -60,9 +60,9 @@ test("released CLI pin is the qualified atomic three-field pin", async () => {
   const config = await readFile(new URL("../ci/released-cli.env", import.meta.url), "utf8");
   const version = config.match(/^CADENCR_RELEASE_VERSION=(\S+)$/m)?.[1];
   const digest = config.match(/^CADENCR_RELEASE_SHA256=(\S+)$/m)?.[1];
-  assert.equal(version, "0.15.4");
-  assert.equal(digest, "d925f203c3fd2e51621ad00ef1413bb25fdf8bc25792dbec9d5d2a67b1d4244d");
-  assert.match(config, /^CADENCR_RELEASE_TAG=cli\/v0\.15\.4$/m);
+  assert.equal(version, "0.15.7");
+  assert.equal(digest, "4bd0a2d6bb0067f976ee27a0636006a495b0ce5c9f4aed52324e7aa0a17108d7");
+  assert.match(config, /^CADENCR_RELEASE_TAG=cli\/v0\.15\.7$/m);
   assert.doesNotMatch(config, /URL|latest/);
 });
 
@@ -319,7 +319,7 @@ test("bootstrap bounds the fixed official download and never runs candidate code
   assert.match(helper, /"\$tag" != "cli\/v\$version"/);
   assert.match(helper, /--max-filesize 134217728/);
   assert.doesNotMatch(script, /npm|validate-contribution\.mjs|cd "\$candidate"/);
-  assert.match(script, /registry build-index --schema-version 2 --packages/);
+  assert.match(script, /registry build-index "\$@" --schema-version 2 --packages/);
 });
 
 test("all trusted workflow business operations use released Rust commands without legacy fallback", async () => {
@@ -348,11 +348,11 @@ test("all trusted workflow business operations use released Rust commands withou
   assert.deepEqual(
     pin.split("\n").filter((line) => line && !line.startsWith("#")),
     [
-      "CADENCR_RELEASE_VERSION=0.15.4",
-      "CADENCR_RELEASE_SHA256=d925f203c3fd2e51621ad00ef1413bb25fdf8bc25792dbec9d5d2a67b1d4244d",
-      "CADENCR_RELEASE_TAG=cli/v0.15.4",
+      "CADENCR_RELEASE_VERSION=0.15.7",
+      "CADENCR_RELEASE_SHA256=4bd0a2d6bb0067f976ee27a0636006a495b0ce5c9f4aed52324e7aa0a17108d7",
+      "CADENCR_RELEASE_TAG=cli/v0.15.7",
     ],
   );
-  assert.match(pin, /^# Qualified source 3ebb603160d9dcf054adbb6315c68cb8702cf7ce\.$/m);
+  assert.match(pin, /^# Qualified source 6135f96168c7b77ee676f01bbfb878b84226ad50\.$/m);
   assert.match(pin, /no deployment or publication authorization/);
 });

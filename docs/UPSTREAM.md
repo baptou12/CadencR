@@ -1,137 +1,163 @@
 # Upstream policy
 
-How this fork stays mergeable with upstream Cadencr (`merkr-software/CadencR`)
-while keeping its own philosophy. Draft v0, written 2026-10-14. Branch name and
-hosting are decided; the rest is to validate before it is condensed into
-`.claude/rules/upstream.md`.
+## Purpose
 
-**TL;DR**
+This fork tracks upstream Cadencr (`merkr-software/CadencR`) as closely as possible while maintaining a small, intentional layer of our own changes.
 
-- `main` is a read-only mirror of upstream. Our master is `ours`. Every change
-  lands there through a pull request.
-- We merge upstream at every release tag. Merging must always be possible:
-  conflicts are resolved by the deviation class recorded in the ledger below,
-  never by picking lines from memory.
-- Anything upstream would accept goes upstream first. The fork only carries what
-  encodes our philosophy, and each such deviation is additive, switchable,
-  marked and listed.
+Our branch, `ours`, is the current upstream `main` plus a maintained stack of fork patches.
+
+These patches are living changes. They may be rewritten, squashed, split, replaced, contributed upstream or removed as the project evolves. Preserving their original commits is less important than preserving their intent when that intent still matters.
+
+We synchronize daily and reconsider the entire patch stack at every upstream release.
 
 ## Branches and remotes
 
 | Ref | Role | Rule |
 |---|---|---|
-| `origin` | upstream `merkr-software/CadencR` | fetch only |
-| `fork` | `baptou12/CadencR` | our push target; PRs live here |
-| `main` | mirror of `origin/main` | fast-forward only, never commit on it |
-| `ours` | our master | protected; receives PRs only |
-| `sync/vX.Y.Z` | one upstream merge | from `ours`, merges tag `vX.Y.Z`, PR to `ours` |
-| `feature/*`, `fix/*` | work | from `ours`, PR to `ours` |
+| `origin` | Upstream `merkr-software/CadencR` | Fetch only |
+| `fork` | Our repository `baptou12/CadencR` | Push target |
+| `main` | Mirror of `origin/main` | Fast-forward only; no fork changes |
+| `ours` | Upstream plus our active patch stack | Linear history; controlled rewriting allowed |
+| `feature/*`, `fix/*` | Proposed fork changes | Start from `ours`; reviewed through PRs |
+| `sync/*` | Temporary synchronization candidate | Rebase and validate before updating `ours` |
 
-`fork/main` is a pure mirror of `origin/main`; only ever fast-forward it.
-`ours` is also git's word for our side of a merge: on `ours`, `--ours` is us
-and `--theirs` is upstream. CI runs on every pull request whatever its target,
-so PRs to `ours` are checked; pushes to `ours` itself do not trigger CI
-(`ci.yml` lists only `main` and `v*`). In the PR template, read `main` as
-`ours`.
+Upstream changes enter `ours` through rebase. Do not merge upstream into `ours` or introduce merge commits into the fork patch stack.
 
-## Two lanes
+If upstream rewrites its own history, stop the normal synchronization procedure and review the new base explicitly.
 
-Before writing code, decide which lane the change belongs to.
+## The patch stack
 
-| Lane | Test | Where it lands |
-|---|---|---|
-| Upstream first | A bug fix, or an improvement upstream has no reason to refuse | PR to `origin`; reaches us at the next sync (`cherry-pick -x` if urgent) |
-| Fork only | Encodes our philosophy, or upstream declined it | PR to `ours`, with a ledger entry |
+Each fork change must have a clear purpose and be independently understandable.
 
-The smaller the fork-only lane, the cheaper every sync. When in doubt, try
-upstream first.
+- Keep one logical change per patch, or a small, explicitly related patch series.
+- Keep changes focused; separate unrelated cleanup and formatting.
+- Prefer upstream extension points and isolated additions when they reduce maintenance.
+- Modify upstream code directly when that produces a simpler, smaller change.
+- Avoid unnecessary abstractions, feature flags and permanent compatibility layers.
+- Record dependencies between patches when they cannot stand alone.
 
-## Deviation classes
+The goal is the smallest maintainable difference from upstream that delivers our desired behavior.
 
-Every area of the codebase is in exactly one class. The class decides who wins
-at merge time.
+No patch owns an upstream area permanently. Every patch must remain open to reconsideration.
 
-| Class | Meaning | At conflict |
-|---|---|---|
-| FOLLOW | We do not touch it (default for everything) | Take upstream. There should be no conflict. |
-| EXTEND | We add next to upstream code: new files, new registry entries, new rule files | Take upstream, re-attach our additions. |
-| ADAPT | We changed upstream code in place | Take upstream, then re-apply our intent (not our old lines), guided by the marker and the ledger entry. |
-| OWN | We replaced it; upstream's version is irrelevant (branding, defaults, a UX flow) | Keep ours, then read upstream's diff for the area and port what fits our philosophy. |
-| OFF | Upstream feature we do not want | Disabled behind one switch, never deleted. Take upstream, keep the switch off. |
-| Derived | Generated and lock files | Never hand-resolve: regenerate (`generate:api`, routeTree, `build:agents-md`, `pnpm install`, `pnpm rust -- build`). |
+## Patch register
 
-## Rules for any fork-only change
+Maintain a short register in `docs/fork-patches.md`.
 
-1. Additive first: new file > new function > in-place edit. Never delete
-   upstream code; use OFF.
-2. One switch per deviation: a single place to flip or remove it (flag, registry
-   entry, settings key, descriptor file).
-3. Mark every in-place edit of upstream code with `// FORK: <why>` (`-- FORK:`
-   in SQL, `<!-- FORK: -->` in docs) so a conflict hunk tells which side is ours.
-4. Record it: a deviation without a ledger entry is a bug. The PR that
-   introduces it updates the ledger.
-5. In shared lists upstream keeps growing (`BUILTIN_PROVIDERS`, settings
-   allowlist keys, the `openapi.rs` lists), our entries come last under a
-   `// FORK` comment so hunks stay separate.
-6. Our agent rules live in their own files under `.claude/rules/`, followed by
-   `pnpm build:agents-md`. Never edit `CLAUDE.md` or an upstream rule file in
-   place.
-7. Migrations are additive only; never edit an upstream migration. Follow the
-   `migration-safety` skill.
-8. Never touch derived files by hand (see the class table).
-9. An ADAPT that conflicts at two consecutive syncs is reconsidered: move it to
-   EXTEND or OWN, or propose it upstream.
-10. All repository rules (`CLAUDE.md`, `.claude/rules/*.md`, definition of done)
-    stay in force on the fork.
+Each active change has a stable identifier, independent of its commit hashes.
 
-## Sync procedure (every upstream release tag)
+| Field | Required information |
+|---|---|
+| ID | Stable identifier, such as `FORK-001` |
+| Purpose | Behavior we need and why |
+| Scope | Main files or components affected |
+| Dependencies | Other fork patches it requires, if any |
+| Validation | How to verify the intended behavior |
+| Retirement condition | What would make the patch unnecessary |
+| Last review | Upstream release or commit reviewed against |
 
-1. `git fetch origin --tags`, then fast-forward `main`.
-2. `git switch -c sync/vX.Y.Z ours && git merge vX.Y.Z` (a real merge:
-   no squash, no rebase).
-3. Resolve each conflict by its class. Regenerate derived files last.
-4. Triage upstream news: `git log --oneline vPREV..vX.Y.Z` plus the release
-   notes. For each new feature decide FOLLOW, ADAPT or OFF and update the ledger.
-5. Checks: `pnpm --filter @cadencr/desktop ts-check`, `pnpm lint`, `pnpm test`,
-   `pnpm --filter @cadencr/desktop knip`, `pnpm build:agents-md --check`,
-   `CADENCR_PRECOMMIT_FULL=1 node scripts/pre-commit.mjs`.
-6. Run the app (`pnpm dev`) and exercise every OWN and ADAPT area (the `qa`
-   skill).
-7. PR `sync/vX.Y.Z` to `ours` with the triage table in the description.
-   Merge, do not squash, so the next merge base is the tag.
+Reference the identifier in the relevant commit messages.
 
-Between tags, an urgent upstream fix is `git cherry-pick -x <sha>`; the `-x`
-trailer keeps the later tag merge clean.
+The register describes the current stack. Git history and synchronization reports preserve earlier decisions.
 
-## Deviation ledger
+## New changes
 
-| Area | Class | Why | Files | Since |
-|---|---|---|---|---|
-| Upstream policy | EXTEND | This document | `docs/UPSTREAM.md` | v0.13.0 |
+Before adding a patch, check whether upstream already provides the behavior or offers a suitable extension point.
 
-## Our philosophy (to fill)
+General bug fixes and broadly useful improvements should be proposed upstream when practical. They may be carried locally while awaiting adoption.
 
-The triage in step 4 and every OWN or ADAPT decision need a written reference.
-Answer these in a few lines each:
+Fork-specific changes are welcome when their benefit justifies their maintenance cost.
 
-- What do we optimize Cadencr for that upstream does not? Workflows, team
-  orchestration, MCP tooling, locale, hosting.
-- Which upstream directions would we refuse, and which do we always follow
-  (security patches, provider SDKs, dependency bumps)?
-- Who arbitrates a class change (FOLLOW to ADAPT, ADAPT to OWN)?
-- Do we ship our own builds (release pipeline, branding) or always run from
-  source?
+Every PR must explain:
 
-Local branches already hint at candidates to classify at the first triage: MCP
-write gating and audit journal, steward grants, schedules tools, project
-update and stop tools, worktree-mode gates.
+- The intended behavior.
+- Why a local difference is currently necessary.
+- How it was validated.
+- When it could be removed or replaced.
 
-## Bootstrap (first session)
+Accepted changes enter `ours` as focused commits. Squash or reorganize them when that makes future rebases easier.
 
-- [x] 1. Master branch named `ours`, hosted on GitHub `baptou12/CadencR`.
-- [x] 2. Create `ours` from `origin/main`, push it to `fork`, protect it on GitHub.
-- [x] 3. Fast-forward the mirror: `git push fork origin/main:main`.
-- [x] 4. First PR to `ours`: this document only, zero upstream files touched.
-- [ ] 5. Fill "Our philosophy"; classify the candidates above.
-- [ ] 6. Condense rules 1 to 10 into `.claude/rules/upstream.md`, run `pnpm build:agents-md`.
-- [x] 7. First real sync at the next upstream tag, to rehearse the procedure.
+## Daily synchronization
+
+A daily agent prepares and validates a rebase onto the latest upstream `main`.
+
+For each run:
+
+1. Fetch both remotes and record the exact upstream base and published `ours` tip.
+2. Preserve the previous `ours` tip in a recoverable remote reference.
+3. Create a synchronization candidate in an isolated worktree.
+4. Rebase the fork stack from its recorded old base onto the fetched upstream commit.
+5. Resolve conflicts using the patch’s documented intent and the new upstream implementation.
+6. Regenerate derived files using repository tooling.
+7. Compare the old and new patch stacks with `git range-diff`; inspect the resulting diff against upstream.
+8. Run the repository’s required checks and the validation relevant to affected patches.
+9. Publish only after validation succeeds.
+
+A clean rebase alone is not sufficient: upstream may change behavior without causing a textual conflict.
+
+The agent may adapt implementation details to preserve documented behavior. Product decisions, unclear intent and significant behavioral changes require maintainer review.
+
+On failure or uncertainty, keep the published `ours` unchanged and report the blocker with the prepared candidate.
+
+## Publishing a synchronization
+
+Normal development goes through PRs. The synchronization agent has a narrowly scoped exception to rewrite `ours` after successful validation.
+
+- Serialize synchronization runs.
+- Publish with an explicit lease against the `ours` tip recorded at the start.
+- Never use an unconditional force push.
+- If `ours` changed meanwhile, rebuild and revalidate the candidate.
+- Keep a recoverable reference to the previous published stack.
+- Ensure CI runs on synchronization candidates and on PRs targeting `ours`.
+
+Branch protection must permit this controlled update by the synchronization identity.
+
+Every successful synchronization records the old and new upstream bases, old and new fork tips, patch adaptations or removals, and validation results.
+
+## Conflict resolution
+
+Resolve conflicts by intent, not by preserving old lines.
+
+For each affected patch:
+
+1. Understand the upstream change.
+2. Check whether upstream now satisfies our requirement.
+3. Remove the patch if it is redundant.
+4. Otherwise, implement its remaining intent using the current upstream design.
+5. Update its validation and register entry.
+
+Do not apply blanket “ours” or “theirs” resolutions. Repeated conflicts are a reason to simplify, redesign or upstream a patch.
+
+## Review at every upstream release
+
+Daily rebases keep the fork current. Release reviews decide which differences are still worth carrying.
+
+Review every active patch, including those that rebased without conflicts.
+
+| Decision | Action |
+|---|---|
+| Keep | The requirement and implementation still fit |
+| Adapt | Preserve the requirement using the new upstream design |
+| Replace | Use an upstream capability or a smaller local patch |
+| Upstream | Propose the generalizable change upstream |
+| Drop | Remove an obsolete, redundant or unjustified change |
+
+Read release notes and relevant code changes, assess dependencies between patches, and exercise the affected application flows.
+
+The review may reorder, squash, split or rewrite the stack. Update the register and record a decision for every active patch.
+
+The maintainer arbitrates changes to intended behavior. The agent prepares the analysis and implementation.
+
+## Shared development and releases
+
+`ours` is a moving integration branch whose commit hashes may change after synchronization.
+
+Work in progress must be transplanted onto the refreshed stack without reintroducing its previous versions. Use the saved old tip to identify only the feature’s own commits.
+
+Published fork releases use immutable tags identifying the exact validated source. Never move a release tag when rebasing `ours`.
+
+Database and persistent-data compatibility must survive history rewriting: removing a source patch does not undo migrations or data already deployed. Follow the repository’s migration-safety rules.
+
+## Guiding principle
+
+Follow upstream continuously. Carry only useful differences. Preserve intent while it matters, and remove the patch when it no longer does.

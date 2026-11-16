@@ -5,6 +5,7 @@ use tracing::{debug, warn};
 
 use super::helpers::{
     parse_permission_mode, post_plan_approval_fallback_mode_wire, post_plan_approval_mode_wire,
+    send_session_error, state_not_saved_message, SESSION_STATE_NOT_SAVED,
 };
 use super::state::{QueryState, SdkHandle, SdkSessions};
 use crate::domain::agents::adapter::{
@@ -101,8 +102,20 @@ pub(in crate::domain::ws_session) async fn transition_session_to_post_plan_mode(
         }
     }
 
-    WsSessionPersistence::update_permission_mode_static(write_pool, db_session_id, &applied_wire)
-        .await;
+    if let Err(error) = WsSessionPersistence::update_permission_mode_static(
+        write_pool,
+        db_session_id,
+        &applied_wire,
+    )
+    .await
+    {
+        warn!(db_session_id, %error, "post-plan-approval: failed to save the permission mode");
+        send_session_error(
+            sender,
+            SESSION_STATE_NOT_SAVED,
+            state_not_saved_message("the permission mode after plan approval", &error),
+        );
+    }
     let envelope = WsEnvelope::session_event(&WsSessionEvent::ModeChanged(ModeChangedPayload {
         mode: applied_wire.clone(),
     }))
@@ -207,7 +220,7 @@ mod tests {
         AgentRuntimeSession, RuntimeError, RuntimeMessageRx, RuntimePermissionMode,
     };
     use crate::domain::ws_session::protocol::WsEnvelope;
-    use crate::domain::ws_session::runtime::prompt::PermissionResponse;
+    use crate::domain::ws_session::runtime::prompt::permission_response_channel;
     use crate::domain::ws_session::runtime::state::{
         QueryState, SdkHandle, SdkSessions, SessionConfig,
     };
@@ -285,7 +298,7 @@ mod tests {
     }
 
     fn codex_plan_handle(modes: Arc<Mutex<Vec<RuntimePermissionMode>>>) -> SdkHandle {
-        let (permission_tx, _permission_rx) = mpsc::channel::<PermissionResponse>(1);
+        let (permission_tx, _permission_rx) = permission_response_channel();
         SdkHandle {
             identity: crate::domain::ws_session::runtime::state::RuntimeHandleIdentity::default(),
             state: QueryState::Active {
@@ -323,7 +336,7 @@ mod tests {
                 profile_revision: None,
                 profile_state_identity: None,
             },
-            manual_compact_cancel: Arc::new(AtomicBool::new(false)),
+            manual_compact_start: Default::default(),
             manual_compact_spawn_pending: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -409,7 +422,7 @@ mod tests {
             supports_auto_mode: Some(true),
         }]);
 
-        let (permission_tx, _permission_rx) = mpsc::channel::<PermissionResponse>(1);
+        let (permission_tx, _permission_rx) = permission_response_channel();
         SdkHandle {
             identity: crate::domain::ws_session::runtime::state::RuntimeHandleIdentity::default(),
             state: QueryState::Active {
@@ -447,7 +460,7 @@ mod tests {
                 profile_revision: None,
                 profile_state_identity: None,
             },
-            manual_compact_cancel: Arc::new(AtomicBool::new(false)),
+            manual_compact_start: Default::default(),
             manual_compact_spawn_pending: Arc::new(AtomicBool::new(false)),
         }
     }
