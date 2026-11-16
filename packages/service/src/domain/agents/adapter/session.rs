@@ -88,6 +88,10 @@ pub trait AgentRuntimeSession: Send + Sync {
     async fn turn_control_guard(&self) -> Option<tokio::sync::OwnedMutexGuard<()>> {
         None
     }
+    /// Stop the running turn. A runtime that can tell no turn was running
+    /// returns [`RuntimeError::NothingToInterrupt`]: no stopped turn will be
+    /// reported, so the host drops its stop mark instead of ending the next
+    /// turn with it.
     async fn interrupt(&self) -> Result<(), RuntimeError>;
     /// Before a user Stop: withdraw the follow-ups (`client_message_ids`, as
     /// given to `stream_input_with_client_message_id`) the runtime holds but
@@ -163,6 +167,13 @@ pub trait AgentRuntimeSession: Send + Sync {
     }
     fn permission_response_kind(&self, _request_id: &str) -> RuntimePermissionResponseKind {
         RuntimePermissionResponseKind::Normal
+    }
+    /// The user closed `request_id` without answering. `Ok(true)` when the
+    /// agent never waited on it (a question asked without blocking): the
+    /// runtime dropped it and the turn goes on. `Ok(false)`, the default, means
+    /// the agent is blocked on it, so the caller denies it and stops the turn.
+    async fn dismiss_nonblocking_request(&self, _request_id: &str) -> Result<bool, RuntimeError> {
+        Ok(false)
     }
     /// Pid of the runtime's own process, when it has one. Port attribution
     /// walks process ancestry from it to find servers the agent started.

@@ -148,6 +148,13 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
     fn supports_durable_resume(&self) -> bool {
         true
     }
+    async fn before_session_resume(
+        &self,
+        session_id: &str,
+        cwd: &Path,
+    ) -> Result<(), RuntimeError> {
+        super::session_location::follow_session_to(&self.http, session_id, cwd).await
+    }
     fn tool_call_start_override(
         &self,
         tool_call_id: &str,
@@ -256,16 +263,18 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
         browser_trust: CadencrBrowserTrust,
         tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     ) -> Option<JoinHandle<()>> {
-        Some(spawn_side_channel_listeners(
-            self.http.clone(),
-            cwd.to_path_buf(),
-            session_id.to_string(),
-            context_window,
-            Arc::clone(&self.pending_subagent_calls),
-            Arc::clone(&self.permissions),
-            browser_trust,
-            tx,
-        ))
+        Some(
+            spawn_side_channel_listeners()
+                .client(self.http.clone())
+                .cwd(cwd.to_path_buf())
+                .root_session_id(session_id.to_string())
+                .maybe_context_window(context_window)
+                .pending_tasks(Arc::clone(&self.pending_subagent_calls))
+                .permissions(Arc::clone(&self.permissions))
+                .browser_trust(browser_trust)
+                .runtime_tx(tx)
+                .call(),
+        )
     }
     async fn cadencr_browser_trust(
         &self,
