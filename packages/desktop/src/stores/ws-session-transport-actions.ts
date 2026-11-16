@@ -4,8 +4,7 @@ import {
   type SessionConfig,
   type WsEnvelope,
 } from "@/lib/ws-envelope";
-import { clearReconnect, unregisterReconnector } from "@/lib/ws-reconnect";
-import { useConnectionStatusStore } from "@/stores/connection-status-store";
+import { retireSocket } from "@/lib/ws-lifecycle";
 import { discardStreamDeltas } from "./ws-delta-coalescer";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import { WS_REPLY_TIMEOUT_MS } from "./ws-session-transport";
@@ -28,9 +27,7 @@ export function createWsSessionTransportActions(deps: TransportActionDeps): Tran
   const { get, set } = ctx;
 
   function closeSession(sessionId: string, stopRuntime: boolean): void {
-    clearReconnect(sourceKey(sessionId));
-    unregisterReconnector(sourceKey(sessionId));
-    useConnectionStatusStore.getState().clearSource(sourceKey(sessionId));
+    retireSocket(sourceKey(sessionId));
     discardStreamDeltas(ctx, sessionId);
     const session = get().sessions[sessionId];
     const transport = ctx.transport.get(sessionId);
@@ -49,7 +46,11 @@ export function createWsSessionTransportActions(deps: TransportActionDeps): Tran
 
     send: sendRaw,
 
-    sendRequest(sessionId: string, envelope: WsEnvelope): Promise<unknown> {
+    sendRequest(
+      sessionId: string,
+      envelope: WsEnvelope,
+      timeoutMs = WS_REPLY_TIMEOUT_MS,
+    ): Promise<unknown> {
       return new Promise((resolve) => {
         const session = get().sessions[sessionId];
         if (!session) {
@@ -69,7 +70,7 @@ export function createWsSessionTransportActions(deps: TransportActionDeps): Tran
           // reach the backend on the next onOpen.
           ctx.transport.unqueue(sessionId, envelope.id);
           resolve(null);
-        }, WS_REPLY_TIMEOUT_MS);
+        }, timeoutMs);
         transport.pendingWsRequests.set(envelope.id, (payload) => {
           clearTimeout(timer);
           resolve(payload);
