@@ -1,6 +1,7 @@
 //! Run a one-shot command with a hard timeout and a bounded output capture, so
 //! a hung or chatty program can neither stall nor flood the service.
 
+use crate::shared::discard::cleanup;
 use std::process::Output;
 use std::time::Duration;
 
@@ -8,20 +9,43 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 
 const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BoundedCommandErrorKind {
+    Other,
+    OutputExceeded,
+}
+
 /// Failure fragment; callers prefix it with the command they ran, e.g.
 /// "provider model discovery " + "timed out after 10 seconds".
 #[derive(Debug, Clone)]
-pub struct BoundedCommandError(String);
+pub struct BoundedCommandError {
+    message: String,
+    kind: BoundedCommandErrorKind,
+}
 
 impl BoundedCommandError {
     pub fn new(message: impl Into<String>) -> Self {
-        Self(message.into())
+        Self {
+            message: message.into(),
+            kind: BoundedCommandErrorKind::Other,
+        }
+    }
+
+    fn output_exceeded(limit: usize) -> Self {
+        Self {
+            message: format!("output exceeded {limit} bytes"),
+            kind: BoundedCommandErrorKind::OutputExceeded,
+        }
+    }
+
+    pub fn is_output_exceeded(&self) -> bool {
+        self.kind == BoundedCommandErrorKind::OutputExceeded
     }
 }
 
 impl std::fmt::Display for BoundedCommandError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
+        formatter.write_str(&self.message)
     }
 }
 
@@ -47,7 +71,17 @@ pub async fn capture_bounded(
     command: tokio::process::Command,
     timeout: Duration,
 ) -> Result<Output, BoundedCommandError> {
-    capture(command, timeout, Overflow::Fail(MAX_OUTPUT_BYTES)).await
+    capture_bounded_with_spawn(command, timeout, |_| ()).await
+}
+
+/// Like bounded capture, with a guard held from successful spawn through
+/// output collection and cleanup.
+pub(crate) async fn capture_bounded_with_spawn<G>(
+    command: tokio::process::Command,
+    timeout: Duration,
+    register: impl FnOnce(u32) -> G,
+) -> Result<Output, BoundedCommandError> {
+    capture(command, timeout, Overflow::Fail(MAX_OUTPUT_BYTES), register).await
 }
 
 /// [`capture_bounded`] for a command whose complete output is legitimately
@@ -57,7 +91,7 @@ pub async fn capture_bounded_up_to(
     timeout: Duration,
     max_bytes: usize,
 ) -> Result<Output, BoundedCommandError> {
-    capture(command, timeout, Overflow::Fail(max_bytes)).await
+    capture(command, timeout, Overflow::Fail(max_bytes), |_| ()).await
 }
 
 /// [`capture_bounded`] for output that is only read from the end, like a
@@ -67,19 +101,21 @@ pub async fn capture_tail(
     command: tokio::process::Command,
     timeout: Duration,
 ) -> Result<Output, BoundedCommandError> {
-    capture(command, timeout, Overflow::KeepTail).await
+    capture(command, timeout, Overflow::KeepTail, |_| ()).await
 }
 
-async fn capture(
+async fn capture<G>(
     mut command: tokio::process::Command,
     timeout: Duration,
     overflow: Overflow,
+    register: impl FnOnce(u32) -> G,
 ) -> Result<Output, BoundedCommandError> {
     #[cfg(unix)]
     crate::shared::process_group::lead_new_process_group(&mut command);
     let mut child = command
         .spawn()
         .map_err(|error| BoundedCommandError::new(format!("could not start: {error}")))?;
+    let _registration = child.id().map(register);
     // `wait` clears the child's id when a launcher exits before its descendants.
     #[cfg(unix)]
     let process_group = child.id();
@@ -91,8 +127,8 @@ async fn capture(
         .stderr
         .take()
         .ok_or_else(|| BoundedCommandError::new("stderr was unavailable"))?;
-    let mut stdout_task = tokio::spawn(read_bounded(stdout, overflow));
-    let mut stderr_task = tokio::spawn(read_bounded(stderr, overflow));
+    let mut stdout_task = tokio::spawn(read_bounded(stdout, overflow, 0));
+    let mut stderr_task = tokio::spawn(read_bounded(stderr, overflow, 0));
 
     let capture = async {
         let wait = async {
@@ -139,17 +175,28 @@ async fn capture(
     }
     // The child may already have exited; the error being reported is the one
     // that matters.
-    let _ = child.kill().await;
+    cleanup(child.kill().await, "kill the timed-out command");
     stdout_task.abort();
     stderr_task.abort();
     Err(error)
 }
 
+/// Read an async stream up to `limit` bytes, returning
+/// [`BoundedCommandError::is_output_exceeded`] as soon as the limit is passed.
+pub(crate) async fn read_stream_capped(
+    reader: impl AsyncRead + Unpin,
+    limit: usize,
+    initial_capacity: usize,
+) -> Result<Vec<u8>, BoundedCommandError> {
+    read_bounded(reader, Overflow::Fail(limit), initial_capacity.min(limit)).await
+}
+
 async fn read_bounded(
     mut reader: impl AsyncRead + Unpin,
     overflow: Overflow,
+    initial_capacity: usize,
 ) -> Result<Vec<u8>, BoundedCommandError> {
-    let mut bytes = Vec::new();
+    let mut bytes = Vec::with_capacity(initial_capacity);
     let mut buffer = [0_u8; 8192];
     loop {
         let count = reader
@@ -161,9 +208,7 @@ async fn read_bounded(
         }
         if let Overflow::Fail(limit) = overflow {
             if bytes.len().saturating_add(count) > limit {
-                return Err(BoundedCommandError::new(format!(
-                    "output exceeded {limit} bytes"
-                )));
+                return Err(BoundedCommandError::output_exceeded(limit));
             }
         }
         bytes.extend_from_slice(&buffer[..count]);
@@ -191,9 +236,11 @@ mod tests {
         let error = read_bounded(
             std::io::Cursor::new(bytes),
             Overflow::Fail(MAX_OUTPUT_BYTES),
+            0,
         )
         .await
         .unwrap_err();
+        assert!(error.is_output_exceeded());
         assert!(error.to_string().contains("exceeded"));
     }
 
@@ -233,6 +280,7 @@ mod tests {
         let error = capture_bounded(slow, Duration::from_millis(100))
             .await
             .unwrap_err();
+        assert!(!error.is_output_exceeded());
         assert!(error.to_string().contains("timed out"));
     }
 

@@ -176,7 +176,8 @@ fn agent_types_for_scope(feature_id: Option<i64>) -> Vec<String> {
     ),
     responses(
         (status = 200, body = AgentSelectionResponse),
-        (status = 400, description = "No model is available for the resolved provider")
+        (status = 400, description = "No model is available for the resolved provider"),
+        (status = 422, description = "A settings level could not be read (code SETTINGS_READ_FAILED)")
     )
 )]
 pub async fn get_agent_selection(
@@ -192,8 +193,7 @@ pub async fn get_agent_selection(
             query.feature_id,
             query.profile.as_deref(),
         )
-        .await
-        .map_err(|error| AppError::BadRequest(error.to_string()))?;
+        .await?;
         selections.insert(agent_type, selection);
     }
     Ok(Json(AgentSelectionResponse { selections }))
@@ -292,9 +292,12 @@ pub fn build_api_routes() -> Router<AppState> {
 fn compression_layer() -> tower_http::compression::CompressionLayer {
     // Compression sits OUTSIDE auth so 401 bodies also compress.
     // Tower's CompressionLayer automatically skips `Upgrade` (WebSocket) requests.
+    // Use fast gzip only: default Brotli runs at high CPU quality on the Tokio
+    // worker threads and can stall the runtime on multi-MB JSON responses.
     tower_http::compression::CompressionLayer::new()
         .gzip(true)
-        .br(true)
+        .br(false)
+        .quality(tower_http::CompressionLevel::Fastest)
 }
 
 /// Loopback router for the local Electron renderer. Also hosts the loopback-only

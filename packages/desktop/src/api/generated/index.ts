@@ -204,7 +204,22 @@ export interface AgentBlock {
   type: string;
 }
 
+/**
+ * A theme accent for a provider-declared permission mode.
+ */
+export type ProviderModeAccent = (typeof ProviderModeAccent)[keyof typeof ProviderModeAccent];
+
+export const ProviderModeAccent = {
+  blue: "blue",
+  green: "green",
+  yellow: "yellow",
+  violet: "violet",
+} as const;
+
+export type ProviderModeCatalogEntryAccent = null | ProviderModeAccent;
+
 export interface ProviderModeCatalogEntry {
+  accent?: ProviderModeCatalogEntryAccent;
   /** @nullable */
   description?: string | null;
   id: string;
@@ -1429,6 +1444,7 @@ export interface ConversationReferenceCandidate {
   feature_id: number;
   feature_status: FeatureStatus;
   feature_title: string;
+  project_id: number;
   project_name: string;
 }
 
@@ -5460,6 +5476,7 @@ export interface ProviderSetOkPayload {
   model: string;
   /** @nullable */
   profile?: string | null;
+  prompt_receipts_at_submission?: boolean;
   provider: string;
   runtime_overrides: RuntimeConfigOverrides;
   supports_prompt_receipts: boolean;
@@ -5855,6 +5872,8 @@ export interface QueuePromptRequest {
   content: string;
 }
 
+export type QueuedPromptOrigin = null | AgentMessageOrigin;
+
 /**
  * Where a queued prompt stands.
  */
@@ -5875,6 +5894,7 @@ export interface QueuedPrompt {
   /** @nullable */
   error?: string | null;
   id: number;
+  origin?: QueuedPromptOrigin;
   session_id: number;
   status: QueuedPromptStatus;
 }
@@ -6685,6 +6705,8 @@ export interface SessionInitializedPayload {
   permission_mode?: string | null;
   /** @nullable */
   profile?: string | null;
+  /** Keep provider-pending prompts in their submission order. */
+  prompt_receipts_at_submission?: boolean;
   /** @nullable */
   provider?: string | null;
   runtime_overrides: RuntimeConfigOverrides;
@@ -6725,7 +6747,14 @@ export interface SessionLifecyclePayload {
 }
 
 export interface SessionMcpServersPayload {
+  /**
+   * Why the servers could not be read; `mcp_servers` is then empty and
+   * says nothing about what the agent has.
+   * @nullable
+   */
+  error?: string | null;
   mcp_servers: McpServerStatusPayload[];
+  session_id: string;
 }
 
 export interface SessionMessagePayload {
@@ -6755,6 +6784,11 @@ export interface SessionPrompt {
   image_count: number;
   /** Start of the prompt's text, whitespace-collapsed. */
   preview: string;
+}
+
+export interface SessionPromptSteeringPayload {
+  session_id: string;
+  supported: boolean;
 }
 
 export interface SessionPromptsResponse {
@@ -7614,6 +7648,7 @@ export const WsSessionAction = {
   stream_status: "stream_status",
   persistence_status: "persistence_status",
   subagent_updated: "subagent_updated",
+  prompt_steering: "prompt_steering",
 } as const;
 
 export type WsSessionCommandOneOfAction =
@@ -8477,6 +8512,18 @@ export type WsSessionEventOneOfEightone = {
   payload: SubagentRun;
 };
 
+export type WsSessionEventOneOfEightthreeAction =
+  (typeof WsSessionEventOneOfEightthreeAction)[keyof typeof WsSessionEventOneOfEightthreeAction];
+
+export const WsSessionEventOneOfEightthreeAction = {
+  prompt_steering: "prompt_steering",
+} as const;
+
+export type WsSessionEventOneOfEightthree = {
+  action: WsSessionEventOneOfEightthreeAction;
+  payload: SessionPromptSteeringPayload;
+};
+
 /**
  * Session-domain server events, flattened beside the envelope id/domain/ref.
  */
@@ -8521,7 +8568,8 @@ export type WsSessionEvent =
   | WsSessionEventOneOfSevenfive
   | WsSessionEventOneOfSevenseven
   | WsSessionEventOneOfSevennine
-  | WsSessionEventOneOfEightone;
+  | WsSessionEventOneOfEightone
+  | WsSessionEventOneOfEightthree;
 
 export type GetAgentCatalogParams = {
   /**
@@ -8803,6 +8851,24 @@ export type GetFeatureAgentStateParams = {
    * @nullable
    */
   before?: string | null;
+  /**
+   * JSON-encoded map of session_id -> exclusive upper bound for an `after`
+   * page: it stops before this message id (a gap in the client's history).
+   * @nullable
+   */
+  until?: string | null;
+  /**
+   * JSON-encoded map of session_id -> exclusive lower bound for a `before`
+   * page: it stops after this message id (a gap in the client's history).
+   * @nullable
+   */
+  since?: string | null;
+  /**
+   * Only this session of the feature (a history page for one conversation
+   * needs no other session's latest page).
+   * @nullable
+   */
+  session?: number | null;
 };
 
 export type UnmarkDiffViewedParams = {
@@ -19748,7 +19814,7 @@ export const respondGate = (
 export const getRespondGateMutationKey = () => ["respondGate"] as const;
 
 export const getRespondGateMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -19784,10 +19850,10 @@ export const getRespondGateMutationOptions = <
 
 export type RespondGateMutationResult = NonNullable<Awaited<ReturnType<typeof respondGate>>>;
 export type RespondGateMutationBody = FeatureRespondGateRequest;
-export type RespondGateMutationError = ErrorType<unknown>;
+export type RespondGateMutationError = ErrorType<void>;
 export type RespondGateMutationVariables = { id: number; data: FeatureRespondGateRequest };
 
-export const useRespondGate = <TError = ErrorType<unknown>, TContext = unknown>(
+export const useRespondGate = <TError = ErrorType<void>, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof respondGate>>,
