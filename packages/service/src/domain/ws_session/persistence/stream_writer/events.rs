@@ -1,5 +1,5 @@
-use super::super::{PersistedMessageRef, TranscriptPersistenceError};
-use super::TranscriptWriter;
+use super::super::PersistedMessageRef;
+use super::{PersistEventError, TranscriptWriter};
 use crate::domain::agents::adapter::{RuntimeEvent, RuntimeStreamEvent, RuntimeStreamScope};
 
 impl TranscriptWriter {
@@ -9,23 +9,31 @@ impl TranscriptWriter {
         runtime_session_id: Option<&str>,
         event: &RuntimeStreamEvent,
         ptuid: Option<&str>,
-    ) -> Result<Option<PersistedMessageRef>, TranscriptPersistenceError> {
+    ) -> Result<Option<PersistedMessageRef>, PersistEventError> {
         let stream_scope = RuntimeStreamScope::new(runtime_session_id, ptuid);
 
         match event {
             RuntimeStreamEvent::MessageStart { model, .. } => {
-                // A new message cycle begins: clear the streamed-text marker so
-                // each message is judged on its own deltas.
+                // Flush any buffered deltas from the previous cycle before
+                // starting a fresh one; if that flush fails, `begin_cycle`
+                // promotes the damaged scope to unrecoverable.
+                let flush_result = self.flush_deltas_for_scope(&stream_scope).await;
                 self.transcript.begin_cycle(&stream_scope);
                 self.pending_mergeable_blocks
+                    .retain(|(scope, _), _| scope != &stream_scope);
+                self.pending_delta_buffers
                     .retain(|(scope, _), _| scope != &stream_scope);
                 self.streamed_assistant_content.remove(&stream_scope);
                 if let Some(model) = model.clone() {
                     self.current_models.insert(stream_scope, model);
                 }
+                flush_result.map_err(PersistEventError::EventFailure)?;
                 Ok(None)
             }
             RuntimeStreamEvent::ContentBlockStart { index, block } => {
+                if let Err(error) = self.flush_deltas_for_scope(&stream_scope).await {
+                    self.log_boundary_delta_flush_error(session_id, "content_block_start", &error);
+                }
                 let current_model = self.current_models.get(&stream_scope).cloned();
                 self.persist_content_block_start(
                     session_id,
@@ -36,13 +44,14 @@ impl TranscriptWriter {
                     current_model.as_deref(),
                 )
                 .await
+                .map_err(PersistEventError::EventFailure)
             }
-            RuntimeStreamEvent::ContentBlockDelta { index, delta } => {
-                self.persist_content_block_delta(session_id, &stream_scope, *index, delta, ptuid)
-                    .await
-            }
+            RuntimeStreamEvent::ContentBlockDelta { index, delta } => self
+                .persist_content_block_delta(session_id, stream_scope, *index, delta, ptuid)
+                .await
+                .map_err(PersistEventError::EventFailure),
             RuntimeStreamEvent::ContentBlockStop { index } => {
-                self.persist_content_block_stop(&stream_scope, *index)
+                self.persist_content_block_stop(stream_scope, *index)
                     .await?;
                 Ok(None)
             }
@@ -62,12 +71,22 @@ impl TranscriptWriter {
         self.current_models.get(&scope).map(String::as_str)
     }
 
+    /// Flag the session as having changed files. Only a saved flag counts:
+    /// after a failure the next file-change tool tries again, so the
+    /// indicator is late rather than lost.
     pub(super) async fn mark_has_file_changes(&mut self, session_id: i64) {
-        self.file_change_marked = true;
-        let _ = sqlx::query("UPDATE agent_sessions SET has_file_changes = 1 WHERE id = ?")
+        match sqlx::query("UPDATE agent_sessions SET has_file_changes = 1 WHERE id = ?")
             .bind(session_id)
             .execute(&self.write_pool)
-            .await;
+            .await
+        {
+            Ok(_) => self.file_change_marked = true,
+            Err(error) => tracing::warn!(
+                session_id,
+                %error,
+                "failed to flag file changes; retrying on the next file-change tool"
+            ),
+        }
     }
 }
 
@@ -160,6 +179,36 @@ pub(super) mod session_events_tests {
                 parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
             },
         )
+    }
+
+    /// A failed flag write used to count as done, so the file-change
+    /// indicator never showed for that session. It now retries.
+    #[tokio::test]
+    async fn file_change_flag_is_retried_after_a_failed_write() {
+        let pool = setup_test_db().await;
+        sqlx::query(
+            "CREATE TRIGGER refuse_flag BEFORE UPDATE OF has_file_changes ON agent_sessions
+             BEGIN SELECT RAISE(FAIL, 'refused'); END",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let mut writer = super::super::TranscriptWriter::new(pool.clone());
+
+        writer.mark_has_file_changes(1).await;
+        assert!(!writer.file_change_marked);
+
+        sqlx::query("DROP TRIGGER refuse_flag")
+            .execute(&pool)
+            .await
+            .unwrap();
+        writer.mark_has_file_changes(1).await;
+        assert!(writer.file_change_marked);
+        let flagged: i64 = sqlx::query_scalar("SELECT has_file_changes FROM agent_sessions")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(flagged, 1);
     }
 
     #[tokio::test]

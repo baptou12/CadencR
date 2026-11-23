@@ -43,7 +43,12 @@ use crate::walk::{canonicalize_executable, walk_path_var, walk_well_known};
 /// All candidates are deduped by canonical path. Version is queried for each.
 pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) -> Vec<Candidate> {
     if let Some(path) = override_path {
-        if let Some(canonical) = canonicalize_executable(path) {
+        let path_owned = path.to_path_buf();
+        let canonical = tokio::task::spawn_blocking(move || canonicalize_executable(&path_owned))
+            .await
+            .ok()
+            .flatten();
+        if let Some(canonical) = canonical {
             // Probe the override. Apply the substring filter too — a shim
             // dressed as the requested binary still wouldn't speak the
             // expected protocol, so silently dropping it is safer than
@@ -70,38 +75,49 @@ pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) ->
         }
     }
 
-    let mut seen_canonical = HashSet::new();
-    let mut candidates = Vec::new();
-
-    // 1. $PATH (works in Terminal launches; usually stripped under GUI launch).
+    // Resolve the cached login-shell PATH asynchronously before offloading the
+    // synchronous PATH/well-known filesystem walks to the blocking pool.
+    let login_path = login_shell_path().await;
     let env_path = std::env::var_os("PATH");
-    walk_path_var(
-        env_path.as_deref(),
-        &spec.bin_name,
-        CandidateSource::EnvPath,
-        &mut seen_canonical,
-        &mut candidates,
-    );
+    let home_dir = std::env::var_os("HOME").map(PathBuf::from);
+    let spec_owned = spec.clone();
 
-    // 2. Login-shell PATH (fixes macOS GUI launches).
-    if let Some(login_path) = login_shell_path().await {
+    let candidates = tokio::task::spawn_blocking(move || {
+        let mut seen_canonical = HashSet::new();
+        let mut candidates = Vec::new();
+
+        // 1. $PATH (works in Terminal launches; usually stripped under GUI launch).
         walk_path_var(
-            Some(std::ffi::OsStr::new(login_path.as_str())),
-            &spec.bin_name,
-            CandidateSource::LoginShellPath,
+            env_path.as_deref(),
+            &spec_owned.bin_name,
+            CandidateSource::EnvPath,
             &mut seen_canonical,
             &mut candidates,
         );
-    }
 
-    // 3. Well-known dirs (deterministic, no subprocess).
-    let home_dir = std::env::var_os("HOME").map(PathBuf::from);
-    walk_well_known(
-        spec,
-        home_dir.as_deref(),
-        &mut seen_canonical,
-        &mut candidates,
-    );
+        // 2. Login-shell PATH (fixes macOS GUI launches).
+        if let Some(login_path) = login_path {
+            walk_path_var(
+                Some(std::ffi::OsStr::new(login_path.as_str())),
+                &spec_owned.bin_name,
+                CandidateSource::LoginShellPath,
+                &mut seen_canonical,
+                &mut candidates,
+            );
+        }
+
+        // 3. Well-known dirs (deterministic, no subprocess).
+        walk_well_known(
+            &spec_owned,
+            home_dir.as_deref(),
+            &mut seen_canonical,
+            &mut candidates,
+        );
+
+        candidates
+    })
+    .await
+    .unwrap_or_default();
 
     // Probe versions in parallel — each probe is an independent subprocess
     // with its own 5s timeout, so serial waits would compound badly when
@@ -182,7 +198,14 @@ pub fn select_best(candidates: &[Candidate]) -> Option<&Candidate> {
 /// launched from Finder/Dock) is found the same way `NeovimManager::start`
 /// will later resolve it when spawning the headless process.
 pub async fn detect_nvim() -> bool {
-    let spec = DiscoverySpec {
+    let candidates = discover_all(&nvim_spec(), None).await;
+    select_best(&candidates).is_some()
+}
+
+/// `nvim` and nothing that merely shares its name: a run must succeed and
+/// print `NVIM` with a version.
+fn nvim_spec() -> DiscoverySpec {
+    DiscoverySpec {
         bin_name: "nvim".to_string(),
         well_known_relative_to_home: vec![],
         well_known_absolute: vec![
@@ -193,25 +216,33 @@ pub async fn detect_nvim() -> bool {
         ],
         version_args: vec!["--version".to_string()],
         version_must_contain: Some("NVIM".to_string()),
-    };
-    let candidates = discover_all(&spec, None).await;
-    select_best(&candidates).is_some()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::tests_support::{dummy_spec, make_executable_with_body};
+    use crate::version::VersionProbe;
     use tempfile::TempDir;
 
-    #[tokio::test]
-    async fn detect_nvim_returns_true_when_binary_available() {
-        let expected = std::process::Command::new("nvim")
-            .arg("--version")
-            .output()
-            .is_ok();
-        let detected = detect_nvim().await;
-        assert_eq!(detected, expected);
+    /// Judged on recorded output, not on a run of the installed `nvim`,
+    /// whose start-up can outlast the probe's deadline on a loaded machine.
+    #[test]
+    fn the_nvim_probe_accepts_neovim_and_nothing_else() {
+        let spec = nvim_spec();
+        assert_eq!(spec.bin_name, "nvim");
+        let needle = spec.version_must_contain.as_deref().unwrap();
+        let probe = |output: &str, success| VersionProbe::from_output(output.into(), success);
+        let neovim = "NVIM v0.11.4\nBuild type: Release\nLuaJIT 2.1.1741730670\n";
+        assert!(probe(neovim, true).passes_filter(needle));
+        assert!(
+            !probe(neovim, false).passes_filter(needle),
+            "a failed run is not an install"
+        );
+        let vim = "VIM - Vi IMproved 9.1.1000 (2024 Jan 02)\n";
+        assert!(!probe(vim, true).passes_filter(needle));
+        assert!(!probe("nvim: command not found\n", true).passes_filter(needle));
     }
 
     #[test]

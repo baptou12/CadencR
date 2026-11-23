@@ -31,19 +31,22 @@ struct MessagePage {
 
 /// Fetch messages for sessions that need a full (re)hydration. Limited fetches
 /// use per-session indexed queries so SQLite can stop after `limit + 1` rows;
-/// unbounded legacy fetches keep the original batch IN-query.
+/// unbounded legacy fetches keep the original batch IN-query. `since` bounds a
+/// `before` page from below (exclusive), as `until` does an incremental one.
 pub(super) async fn fetch_full_messages(
     pool: &SqlitePool,
     session_ids: &[i64],
     limit: Option<i64>,
     before_map: &HashMap<i64, i64>,
+    since: &HashMap<i64, i64>,
 ) -> Result<FullMessagesResult, AppError> {
     if session_ids.is_empty() {
         return Ok(empty_full_messages_result());
     }
 
     if !before_map.is_empty() || limit.is_some() {
-        return fetch_before_or_latest_per_session(pool, session_ids, limit, before_map).await;
+        return fetch_before_or_latest_per_session(pool, session_ids, limit, before_map, since)
+            .await;
     }
 
     fetch_unbounded_batch(pool, session_ids).await
@@ -62,10 +65,12 @@ async fn fetch_before_or_latest_per_session(
     session_ids: &[i64],
     limit: Option<i64>,
     before_map: &HashMap<i64, i64>,
+    since: &HashMap<i64, i64>,
 ) -> Result<FullMessagesResult, AppError> {
     let mut result = empty_full_messages_result();
     let with_before_sql = format!(
-        "{MESSAGE_SELECT} FROM agent_messages WHERE session_id = ? AND id < ? ORDER BY id DESC LIMIT ?"
+        "{MESSAGE_SELECT} FROM agent_messages
+         WHERE session_id = ? AND id < ? AND id > ? ORDER BY id DESC LIMIT ?"
     );
     let latest_sql = format!(
         "{MESSAGE_SELECT} FROM agent_messages WHERE session_id = ? ORDER BY id DESC LIMIT ?"
@@ -76,6 +81,7 @@ async fn fetch_before_or_latest_per_session(
             sqlx::query_as::<_, AgentMessageRow>(AssertSqlSafe(with_before_sql.as_str()))
                 .bind(sid)
                 .bind(before_id)
+                .bind(since.get(sid).copied().unwrap_or(0))
         } else {
             sqlx::query_as::<_, AgentMessageRow>(AssertSqlSafe(latest_sql.as_str())).bind(sid)
         };
@@ -220,6 +226,8 @@ fn is_todo_source_message(message: &AgentMessageRow) -> bool {
     )
 }
 
+const TODO_SESSION_CHUNK_SIZE: usize = 200;
+
 /// Fetch latest todo state for each session from `TodoWrite` snapshots or
 /// Claude Code task tool deltas.
 pub(super) async fn fetch_latest_todos(
@@ -231,15 +239,16 @@ pub(super) async fn fetch_latest_todos(
         return Ok(todos_by_session);
     }
 
-    let sql = latest_todos_sql(session_ids.len());
-    let mut query = sqlx::query_as::<_, AgentMessageRow>(AssertSqlSafe(sql));
-    for sid in session_ids {
-        query = query.bind(sid);
-    }
-    let rows = query.fetch_all(pool).await?;
     let mut rows_by_session: HashMap<i64, Vec<AgentMessageRow>> = HashMap::new();
-    for row in rows {
-        rows_by_session.entry(row.session_id).or_default().push(row);
+    for chunk in session_ids.chunks(TODO_SESSION_CHUNK_SIZE) {
+        let sql = latest_todos_sql(chunk.len());
+        let mut query = sqlx::query_as::<_, AgentMessageRow>(AssertSqlSafe(sql));
+        for sid in chunk {
+            query = query.bind(sid);
+        }
+        for row in query.fetch_all(pool).await? {
+            rows_by_session.entry(row.session_id).or_default().push(row);
+        }
     }
     for (session_id, rows) in rows_by_session {
         if let Some(todos) = latest_todos_from_messages(&rows) {
@@ -315,9 +324,15 @@ mod tests {
         )
         .await;
 
-        let result = fetch_full_messages(&pool, &[session_id], Some(3), &HashMap::new())
-            .await
-            .unwrap();
+        let result = fetch_full_messages(
+            &pool,
+            &[session_id],
+            Some(3),
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .await
+        .unwrap();
 
         let rows = result.messages.get(&session_id).unwrap();
         let ids: Vec<i64> = rows.iter().map(|m| m.id).collect();

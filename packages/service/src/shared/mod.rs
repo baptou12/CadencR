@@ -5,7 +5,9 @@ pub mod atomic_file;
 pub mod bounded_command;
 pub mod capped_read;
 pub mod cli_stderr;
+pub mod data_roots;
 pub mod db;
+pub mod discard;
 pub mod disk_space;
 pub mod document_file;
 pub mod env_file;
@@ -28,13 +30,17 @@ pub mod no_replace_rename;
 pub mod path_rebase;
 pub mod private_temp;
 pub mod process_group;
+pub mod process_table;
 pub mod quarantine;
 pub mod security;
 pub mod setup_log;
+pub mod singleflight;
 pub mod slug;
 pub mod ssh_env;
 pub mod startup_progress;
 pub mod terminal_shell;
+#[cfg(test)]
+pub(crate) mod test_dirs;
 #[cfg(test)]
 pub mod test_env;
 #[cfg(all(test, unix))]
